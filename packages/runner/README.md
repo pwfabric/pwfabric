@@ -23,6 +23,13 @@ Under `router: 'path'`, the app's relative asset URLs resolve against the
 shell's `<base href>`; a host serving the app under a sub-path should inject
 one. See [self-hosting](https://pwfabric.com/self-host).
 
+A host that republishes an app under the same addresses should pass the
+publish as `version` (`runApp({ …, version: 42 })`): every file the runner
+reads under `source` — `project.json`, `auth.json`, `navigation.json`,
+`appearance.json`, `connections.json` and the receipts — is then asked for
+as `<file>?v=42`, so a cached file from the previous publish is never read
+beside a new one. Without `version` the addresses are unchanged.
+
 ## Main exports
 
 | Export | What it is |

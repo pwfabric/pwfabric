@@ -73,3 +73,32 @@ describe('wantsAuthJson', () => {
     expect(wantsAuthJson({ identity: { required: false } })).toBe(true)
   })
 })
+
+describe('loadEnvelope with a publish version', () => {
+  it('asks for every envelope file under the source as ?v=<version>, and nothing outside it', async () => {
+    const identity = { required: false, topology: 'app', methods: ['password'] }
+    const { fetchJson, asked } = served({
+      ...base,
+      './pwpack/project.json?v=7': { ...project, identity },
+      './pwpack/auth.json?v=7': { provider: 'password', loginUrl: '/login' },
+      './pwpack/navigation.json?v=7': { items: [] },
+    })
+    const env = await loadEnvelope({ ...AT, version: 7 }, fetchJson)
+    expect(env.project.identity).toEqual(identity)
+    expect(env.auth).toEqual({ provider: 'password', loginUrl: '/login' })
+    expect(asked.filter((u) => u.startsWith('./pwpack/')).sort()).toEqual([
+      './pwpack/appearance.json?v=7',
+      './pwpack/auth.json?v=7',
+      './pwpack/connections.json?v=7',
+      './pwpack/navigation.json?v=7',
+      './pwpack/project.json?v=7',
+    ])
+    expect(asked).toContain('./blocks/manifest.json')
+  })
+
+  it('keeps the addresses unversioned without one', async () => {
+    const { fetchJson, asked } = served({ ...base, './pwpack/project.json': project })
+    await loadEnvelope({ ...AT, version: undefined }, fetchJson)
+    expect(asked.every((u) => !u.includes('?'))).toBe(true)
+  })
+})

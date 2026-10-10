@@ -316,6 +316,15 @@ export type RouterMode = 'hash' | 'path' | 'auto'
 export interface RunAppOptions {
   /** pwpack folder path OR absolute URL. Default `'./pwpack'`. */
   readonly source?: string
+  /**
+   * The publish this page belongs to. When set, every file the runner reads
+   * under {@link source} (`project.json`, `auth.json`, `navigation.json`,
+   * `appearance.json`, `connections.json`, the receipts) is asked for as
+   * `<file>?v=<version>` (`&v=` when the address has a query already), so a
+   * page never mixes two publishes' envelope files out of a cache. Absent:
+   * the addresses carry no version, as before.
+   */
+  readonly version?: string | number
   /** Folder containing `manifest.json`. Default `'./blocks/'`. */
   readonly blocks?: string
   /** Folder containing the connector-engine `manifest.json`.

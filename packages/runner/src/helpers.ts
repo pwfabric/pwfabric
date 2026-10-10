@@ -384,6 +384,24 @@ export function doorHeaders(credential: {
   return {}
 }
 
+/**
+ * `url` with `v=<version>` appended to its query (`?` or `&`), or `url`
+ * unchanged when there is no version. A fragment stays last.
+ *
+ * WHY. A host that republishes an app serves the new envelope under the same
+ * names; with a short cache on them a browser can read the old `project.json`
+ * beside the new `auth.json` and draw nothing. A version the host puts on
+ * every envelope address makes each publish a distinct set of URLs, so one
+ * page load reads one publish.
+ */
+export function withVersion(url: string, version: string | number | undefined): string {
+  if (version === undefined || version === '') return url
+  const hashAt = url.indexOf('#')
+  const base = hashAt === -1 ? url : url.slice(0, hashAt)
+  const hash = hashAt === -1 ? '' : url.slice(hashAt)
+  return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}${hash}`
+}
+
 export async function fetchJson<T>(url: string, headers?: Record<string, string> | undefined): Promise<T> {
   const res = await fetch(url, headers && Object.keys(headers).length > 0 ? { headers } : undefined)
   if (!res.ok) throw new Error(`${url} → ${res.status}`)

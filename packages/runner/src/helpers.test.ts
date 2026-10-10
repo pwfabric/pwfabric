@@ -10,6 +10,7 @@ import {
   receiptFilesOf,
   rewriteHrefs,
   strayPageKeyOf,
+  withVersion,
 } from './helpers.js'
 import type { SurfaceBlockNode } from './types.js'
 
@@ -439,5 +440,27 @@ describe('doorHeaders — the credential a receipt request carries', () => {
 
   it('prefers the platform session when both exist', () => {
     expect(doorHeaders({ appSession: 'sess-1', doorToken: 'door-jwt' })).toEqual({ 'x-app-session': 'sess-1' })
+  })
+})
+
+describe('withVersion', () => {
+  it('appends v as the first or a further query parameter', () => {
+    expect(withVersion('./pwpack/project.json', 3)).toBe('./pwpack/project.json?v=3')
+    expect(withVersion('https://x.example/p/auth.json?token=a', '2026-10-10')).toBe(
+      'https://x.example/p/auth.json?token=a&v=2026-10-10'
+    )
+  })
+
+  it('encodes the version and keeps a fragment last', () => {
+    expect(withVersion('/p/home.receipt.json#x', 'a b&c')).toBe('/p/home.receipt.json?v=a%20b%26c#x')
+  })
+
+  it('leaves the address alone without a version', () => {
+    expect(withVersion('./pwpack/project.json', undefined)).toBe('./pwpack/project.json')
+    expect(withVersion('./pwpack/project.json', '')).toBe('./pwpack/project.json')
+  })
+
+  it('treats 0 as a version', () => {
+    expect(withVersion('a.json', 0)).toBe('a.json?v=0')
   })
 })

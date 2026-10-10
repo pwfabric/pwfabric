@@ -12,6 +12,7 @@
  * @module @pwfabric/runner/load-envelope
  */
 
+import { withVersion } from './helpers.js'
 import type {
   BlockManifest,
   PwappAuth,
@@ -30,6 +31,8 @@ export interface EnvelopeLocations {
   readonly blocksBase: string
   /** The engine folder (`./engines`), no trailing slash. */
   readonly enginesBase: string
+  /** Appended as `?v=` to every address under {@link source}; see {@link RunAppOptions.version}. */
+  readonly version?: string | number | undefined
 }
 
 export interface LoadedEnvelope {
@@ -48,17 +51,18 @@ export function wantsAuthJson(project: Pick<PwappProject, 'identity'>): boolean 
 }
 
 export async function loadEnvelope(at: EnvelopeLocations, fetchJson: JsonFetcher): Promise<LoadedEnvelope> {
-  const { source, blocksBase, enginesBase } = at
-  const projectP = fetchJson<PwappProject>(`${source}/project.json`)
+  const { source: base, blocksBase, enginesBase, version } = at
+  const inSource = (file: string): string => withVersion(`${base}/${file}`, version)
+  const projectP = fetchJson<PwappProject>(inSource('project.json'))
   const [project, navigation, appearance, auth, connections, blockManifest, engineManifest] = await Promise.all([
     projectP,
-    fetchJson<PwappNavigation>(`${source}/navigation.json`).catch(() => null),
-    fetchJson<unknown>(`${source}/appearance.json`).catch(() => null),
+    fetchJson<PwappNavigation>(inSource('navigation.json')).catch(() => null),
+    fetchJson<unknown>(inSource('appearance.json')).catch(() => null),
     projectP.then(
-      (p) => (wantsAuthJson(p) ? fetchJson<PwappAuth>(`${source}/auth.json`).catch(() => null) : null),
+      (p) => (wantsAuthJson(p) ? fetchJson<PwappAuth>(inSource('auth.json')).catch(() => null) : null),
       () => null
     ),
-    fetchJson<PwappConnections>(`${source}/connections.json`).catch(() => null),
+    fetchJson<PwappConnections>(inSource('connections.json')).catch(() => null),
     fetchJson<BlockManifest>(`${blocksBase}/manifest.json`),
     // Shipped connector/provider engine descriptors. Absent on exports built
     // before they existed, or apps with no bundled engine — connector panels
