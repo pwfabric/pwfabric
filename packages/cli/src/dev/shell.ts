@@ -291,3 +291,25 @@ export function buildShellHtml(options: ShellOptions): string {
 </html>
 `
 }
+
+/**
+ * The shell with `<base href="/">` as the first element of its head, unless it
+ * already declares a base.
+ *
+ * The shell addresses its scripts and the import map relatively (`./assets/…`,
+ * `./shims/…`) so the folder works under any sub-path. When a server answers a
+ * nested page path (`/team/members`) with that shell, the browser would resolve
+ * those addresses against `/team/` and miss every file. The pwapp format puts
+ * the fix on the host: under path routing it declares the app's base with
+ * `<base href>`. This server serves the app at its root, so the base is `/`.
+ */
+export function withBaseHref(body: Uint8Array, href = '/'): Uint8Array {
+  const html = new TextDecoder().decode(body)
+  if (/<bases/i.test(html)) return body
+  const at = html.search(/<head[^>]*>/i)
+  if (at < 0) return body
+  const end = html.indexOf('>', at) + 1
+  const tag = `
+    <base href="${href.replace(/"/g, '&quot;')}" />`
+  return new TextEncoder().encode(html.slice(0, end) + tag + html.slice(end))
+}

@@ -9,9 +9,9 @@ description: Every pwf command and option — create, dev, build, validate, pack
 only the engine's own packages. It never calls a hosted service: there is no
 login, publish or deploy command.
 
-It is not published to npm yet. Build it from the engine repository
-(`pnpm install && pnpm build`), then run `pnpm link --global` in
-`packages/cli`, or call `node packages/cli/dist/bin.js` directly. The
+Install it from npm (Node 22): `npm install -g @pwfabric/cli@rc`, or run it
+once with `npx -p @pwfabric/cli@rc pwf <command>`. `pwf --version` prints the
+installed version. The
 [quick start](/quickstart#track-c--build-a-pwfabric-app-from-scratch) walks
 through the commands in the order you use them.
 
@@ -56,13 +56,15 @@ theme is one of the foundation's themes. The foundation is copied into
 `.pwf/packs/<id>@<version>/` and pinned in `pwpack.json` by content hash, so
 `dev` and `run` work offline.
 
-The foundation pack is not published to a registry yet; `--foundation` (or
-`PWF_FOUNDATION`) must point at a copy.
+The foundation pack is released as a `.pwpack` file on
+[pwfabric/foundation](https://github.com/pwfabric/foundation)'s GitHub
+releases; `--foundation` (or `PWF_FOUNDATION`) points at that file or at a
+foundation folder.
 
 ## `pwf dev`
 
 ```text
-pwf dev [dir] [--port <n>] [--host <name>]
+pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host]
 ```
 
 | Argument / option | Meaning |
@@ -70,6 +72,15 @@ pwf dev [dir] [--port <n>] [--host <name>]
 | `dir` | The app folder. Default: the current folder. |
 | `--port <n>` | Port to listen on, `0`–`65535`. Default `4600`; `0` picks any free port. |
 | `--host <name>` | Interface name or address to bind. Default `127.0.0.1`. |
+| `--local-host` | Mount the local host for sign-in and data even when the app declares neither. |
+| `--no-host` | Do not mount the local host, even when the app declares sign-in or records. |
+
+**The local host.** When the app declares sign-in or records, `pwf dev`
+mounts a development host under `/_host` beside the pages: records live in
+memory, seeded from `app/data/`; one development user signs in with any
+e-mail and password; nothing survives a restart. It answers the
+[data](/self-host/data) and [session](/self-host/session) protocols, so the
+whole loop runs on your machine.
 
 Builds the app, serves it, watches the folder and rebuilds and reloads the
 page on every change. Runs until Ctrl+C. When a build fails, the page shows
@@ -165,7 +176,8 @@ pwf run <dir|file.pwapp> [--port <n>] [--host <name>]
 | `--port <n>` | Port to listen on. Default `4700`; `0` picks a free one. |
 | `--host <name>` | Interface to bind. Default `127.0.0.1`. |
 
-Page paths without a file extension are answered with `index.html`, so
+Page paths without a file extension are answered with `index.html` and a
+`<base href="/">`, so
 path-routed apps work; a missing asset is a 404. Headers declared in the
 folder's `_headers` file (such as the app's Content Security Policy) are sent
 with the files they match. Runs until Ctrl+C.

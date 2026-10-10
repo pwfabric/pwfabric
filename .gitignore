@@ -10,3 +10,6 @@ coverage/
 
 # The specification, cloned here for spec:conformance and the CLI smoke
 spec/
+
+# defineBlock type test fixtures (created and removed by the test)
+.type-fixture-*

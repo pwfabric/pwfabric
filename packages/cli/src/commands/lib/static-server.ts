@@ -7,6 +7,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFile, stat } from 'node:fs/promises'
 import { extname, join, resolve, sep } from 'node:path'
 import type { AddressInfo } from 'node:net'
+import { withBaseHref } from '../../dev/shell.js'
 
 export const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.html': 'text/html; charset=utf-8',
@@ -152,14 +153,16 @@ async function handle(source: StaticSource, req: IncomingMessage, res: ServerRes
     res.writeHead(404, TEXT).end('not found\n')
     return
   }
+  // A page path answered with the shell gets the app's base (see withBaseHref).
+  const body = found.path === 'index.html' && rel !== '' && rel !== 'index.html' ? withBaseHref(found.body) : found.body
   res.writeHead(200, {
     ...(await extraHeaders(source, rel ?? '')),
     'content-type': contentTypeOf(found.path),
-    'content-length': String(found.body.byteLength),
+    'content-length': String(body.byteLength),
     'cache-control': 'no-cache',
   })
   if (req.method === 'HEAD') res.end()
-  else res.end(found.body)
+  else res.end(body)
 }
 
 /** Starts the server; resolves once it is listening. */

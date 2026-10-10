@@ -46,16 +46,19 @@ export const PricingCard = defineBlock({
 ## Signature
 
 ```ts
-function defineBlock<
-  TProps extends Record<string, unknown>,
-  TSchema extends ZodSchema<TProps, ZodTypeDef, unknown> = ZodSchema<TProps>,
->(options: CustomBlockOptions<TProps, TSchema>): CustomBlockDefinition<TProps>
+function defineBlock<TSchema extends ZodTypeAny>(
+  options: CustomBlockOptions<TSchema>
+): CustomBlockDefinition<SchemaProps<TSchema>>
 ```
 
-The result is `Object.freeze`d. Props are inferred from the schema you pass.
+The result is `Object.freeze`d. The props are the schema's output
+(`SchemaProps<TSchema>`, exported): they are inferred from `schema` alone,
+and `defaultProps` and `component` are checked against them — a field the
+schema marks `.optional()` stays optional even when `defaultProps` gives it a
+value.
 
 Source: `packages/authoring/src/define-block.ts` (`defineBlock`),
-`packages/authoring/src/types.ts` (`CustomBlockOptions`, `CustomBlockDefinition`).
+`packages/authoring/src/types.ts` (`CustomBlockOptions`, `CustomBlockDefinition`, `SchemaProps`).
 
 ## Options
 
