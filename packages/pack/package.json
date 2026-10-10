@@ -3,12 +3,24 @@
   "version": "1.0.0-rc.0",
   "description": "Read, validate, hash and write the pwpack folder and its deterministic .pwpack archive",
   "type": "module",
+  "license": "Apache-2.0",
+  "author": "PhiMajor Solutions",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pwfabric/pwfabric.git",
+    "directory": "packages/pack"
+  },
+  "homepage": "https://github.com/pwfabric/pwfabric#readme",
+  "bugs": {
+    "url": "https://github.com/pwfabric/pwfabric/issues"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "files": [
@@ -17,6 +29,9 @@
     "README.md",
     "COMPAT.md"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "rm -rf dist tsconfig.tsbuildinfo && tsc",
     "dev": "tsc --watch",
@@ -39,19 +54,5 @@
   },
   "publishConfig": {
     "access": "public"
-  },
-  "engines": {
-    "node": ">=22"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/pwfabric/pwfabric",
-    "directory": "packages/pack"
-  },
-  "homepage": "https://github.com/pwfabric/pwfabric#readme",
-  "bugs": {
-    "url": "https://github.com/pwfabric/pwfabric/issues"
-  },
-  "license": "Apache-2.0",
-  "author": "PhiMajor Solutions"
+  }
 }

@@ -12,8 +12,8 @@ import {
   blockRegistry,
   createBlockRegistry,
   getBlockRegistry,
-  TEST_BLOCK_DEFINITIONS,
 } from '../index.js'
+import { TEST_BLOCK_DEFINITIONS } from '../__test-fixtures__/block-fixtures.js'
 import type { BlockCategory, BlockDefinition } from '@pwfabric/core'
 
 // per-block `*Definition` exports retired. Resolve

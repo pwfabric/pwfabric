@@ -30,6 +30,15 @@ describe('main', () => {
     expect(await main([], c.io)).toBe(0)
     expect(c.out[0]).toContain('Usage: pwf')
   })
+  it('prints the package version on --version, -v and version', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { version } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }
+    for (const flag of ['--version', '-v', 'version']) {
+      const c = capture()
+      expect(await main([flag], c.io)).toBe(0)
+      expect(c.out).toEqual([version])
+    }
+  })
   it('fails with exit 2 on an unknown command', async () => {
     const c = capture()
     expect(await main(['nope'], c.io)).toBe(2)

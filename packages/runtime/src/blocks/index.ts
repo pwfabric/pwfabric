@@ -17,9 +17,8 @@ export { SurfaceEventContext } from './surface-event-context.js'
 export { SurfaceIdContext } from './surface-id-context.js'
 export { useSurfaceEvents, useSurfaceId } from './hooks.js'
 
-// canonical test fixture — opt-in for suites that
-// exercise registry-dependent behaviour (BlockRegistry, rule engine,
-// composer prompt, block introspection). Production code must NOT
-// import this; the install pipeline supplies block metadata via
-// `useInstalledAtoms` (browser) / `installedBlocksOverride` (server).
-export { populateTestBlocks, TEST_BLOCK_DEFINITIONS } from './__test-fixtures__/block-fixtures.js'
+// The test fixtures (populateTestBlocks, TEST_BLOCK_DEFINITIONS) are NOT
+// exported: tests import ./__test-fixtures__/block-fixtures.js directly, and
+// the published package does not ship that folder. Block metadata reaches a
+// running app through the install pipeline (`useInstalledAtoms` in the
+// browser, `installedBlocksOverride` on the server).

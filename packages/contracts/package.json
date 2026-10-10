@@ -3,12 +3,24 @@
   "version": "1.0.0-rc.0",
   "description": "PWFabric contract definitions and interfaces",
   "type": "module",
+  "license": "Apache-2.0",
+  "author": "PhiMajor Solutions",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pwfabric/pwfabric.git",
+    "directory": "packages/contracts"
+  },
+  "homepage": "https://github.com/pwfabric/pwfabric#readme",
+  "bugs": {
+    "url": "https://github.com/pwfabric/pwfabric/issues"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "files": [
@@ -16,6 +28,9 @@
     "LICENSE",
     "README.md"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "rm -rf dist tsconfig.tsbuildinfo && tsc",
     "dev": "tsc --watch",
@@ -27,30 +42,18 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
-  "dependencies": {
+  "dependencies": {},
+  "peerDependencies": {
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^2.1.9",
     "typescript": "^5.4.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0",
+    "zod": "^3.25.76"
   },
   "publishConfig": {
     "access": "public"
-  },
-  "peerDependencies": {
-    "typescript": "^5.4.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/pwfabric/pwfabric",
-    "directory": "packages/contracts"
-  },
-  "homepage": "https://github.com/pwfabric/pwfabric#readme",
-  "bugs": {
-    "url": "https://github.com/pwfabric/pwfabric/issues"
-  },
-  "license": "Apache-2.0",
-  "author": "PhiMajor Solutions"
+  }
 }

@@ -3,12 +3,24 @@
   "version": "1.0.0-rc.0",
   "description": "Portable embed runtime — renders a PWFabric CanonicalSurface anywhere (thin or fully-offline fat mode) using the real SurfaceRenderer",
   "type": "module",
+  "license": "BUSL-1.1",
+  "author": "PhiMajor Solutions",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pwfabric/pwfabric.git",
+    "directory": "packages/embed"
+  },
+  "homepage": "https://github.com/pwfabric/pwfabric#readme",
+  "bugs": {
+    "url": "https://github.com/pwfabric/pwfabric/issues"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./embed.js": "./dist/embed.js"
   },
@@ -17,6 +29,9 @@
     "LICENSE",
     "README.md"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "rm -rf dist && tsup",
     "dev": "tsup --watch",
@@ -30,23 +45,12 @@
   },
   "dependencies": {
     "@pwfabric/contracts": "workspace:*",
-    "@pwfabric/runtime": "workspace:*",
-    "zod": "^3.23.0"
+    "@pwfabric/runtime": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
-    "react-dom": "^18.0.0 || ^19.0.0"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": false
-    },
-    "react-dom": {
-      "optional": false
-    }
-  },
-  "publishConfig": {
-    "access": "public"
+    "react-dom": "^18.0.0 || ^19.0.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@pwfabric/authoring": "workspace:*",
@@ -60,17 +64,10 @@
     "react-dom": "^19.0.0",
     "tsup": "^8.3.0",
     "typescript": "^5.4.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0",
+    "zod": "^3.25.76"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/pwfabric/pwfabric",
-    "directory": "packages/embed"
-  },
-  "homepage": "https://github.com/pwfabric/pwfabric#readme",
-  "bugs": {
-    "url": "https://github.com/pwfabric/pwfabric/issues"
-  },
-  "license": "BUSL-1.1",
-  "author": "PhiMajor Solutions"
+  "publishConfig": {
+    "access": "public"
+  }
 }
