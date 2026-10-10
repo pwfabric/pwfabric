@@ -1,6 +1,6 @@
 # @pwfabric/runner
 
-## Unreleased
+## 1.0.0-rc.1
 
 - Removed: `mountLoginButton` (deprecated; use `mountSessionPill`).
 - Ships type declarations; `exports` lists `types`. `zod` is a peer dependency (`^3.23.0`).
