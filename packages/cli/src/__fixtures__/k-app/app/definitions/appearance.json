@@ -1,0 +1,8 @@
+{
+  "use": "theme-sand",
+  "theme": {
+    "colors": {
+      "accent": "#b45309"
+    }
+  }
+}

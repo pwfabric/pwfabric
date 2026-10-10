@@ -1,0 +1,9 @@
+{
+  "id": "@pwpack/k/kit",
+  "version": "1.0.0",
+  "formatVersion": "1.0",
+  "license": {
+    "fork": true,
+    "redistribute": true
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "theme-plain",
+  "kind": "ui-appearance",
+  "version": "1.0.0",
+  "category": "ui",
+  "name": "Plain",
+  "state": "stable",
+  "theme": {
+    "colors": { "primary": "#18181b", "background": "#ffffff", "text": "#09090b" }
+  }
+}

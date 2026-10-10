@@ -1,0 +1,29 @@
+{
+  "entities": [
+    {
+      "typeId": "Bad"
+    },
+    {
+      "typeId": "Arr"
+    },
+    {
+      "typeId": "Obj"
+    },
+    {
+      "fields": []
+    },
+    "x",
+    {
+      "typeId": "Ok",
+      "fields": [
+        {
+          "name": ""
+        },
+        {
+          "name": "a"
+        },
+        "y"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,275 @@
+---
+title: Data and receipts
+description: What a self-hosted pwapp puts on the wire when it has data — the source model the runtime expects, the exact endpoints it calls, the request and response shapes, and what your host must therefore serve or proxy.
+---
+
+# Data and receipts
+
+A static pwapp makes no network call beyond fetching its own files. The moment
+a page declares a data source — a list, a table, a form — the runtime fetches
+over HTTP. This page is written from the engine source and says, per call:
+where the base URL comes from, which method and path are used, what auth is
+attached, and what the response must look like.
+
+## Three transports, one contract
+
+| A source that… | Goes through | Talks to |
+|---|---|---|
+| reads or writes the app's own records | `DataService` (`kind: 'rest'`) | the app's record API base — whichever server implements this protocol |
+| is bound to a connection (`connector: …`) | a **declared engine** on `HttpEntityConnector` | the host named in the declaration (Graph, your API…) |
+| has no address (`kind: 'entity'`, no facade) | nothing — renders `fallback` or an empty list | nobody |
+
+There is one HTTP transport (`HttpEntityConnector`); every engine is a
+layer of declared facts on top of it, never a second `fetch` body.
+
+Source: `packages/runtime/src/data/manager.ts`,
+`packages/runtime/src/entity/http-connector.ts`.
+
+## The data model the runtime reads
+
+Data lives in a page's **receipt**, inside two capability entries:
+
+- `platform/persistence` → `config.dataSources[]` (reads) and `config.initialState`.
+- `platform/entities` → `config.formBindings[]` (writes: `{ formId, sourceId }`).
+
+A data source is JSON with these fields (`dataSourceSchema`):
+
+| Field | Meaning |
+|---|---|
+| `id` | key in the binding context — `{{products}}` |
+| `kind` | `rest` · `static` · `state` · `entity` |
+| `endpoint`, `method` | `rest` only; `method` is `GET` unless stated. `{{state.x}}` in the endpoint is resolved first |
+| `returns` | the property holding the list (`data`), dotted paths allowed; absent when the body **is** the array. A named path that is missing throws |
+| `authProviderRef` | a **name** the host answers with a live token; never a value |
+| `query` | `{ filter, sort, pagination }` — for a `rest` source, applied **client-side after** the fetch and never sent; a read through the entity connector sends it as list parameters (see the endpoint table) |
+| `entityType`, `connector` | `entity` only — which collection, and which declared connection serves it |
+| `fallback` | bound as the data when the source cannot be served; `__errors.<id>` stays set |
+
+The query language is `filter: { field, operator, value, and?, or? }` with
+operators `eq neq gt gte lt lte in contains startsWith`, `sort: [{ field,
+direction }]`, `pagination: { offset, limit }`. It is applied by
+`applyEntityQuery` on whatever rows came back — so a self-host API does not
+need to implement filtering at all; it only needs to return the rows.
+
+Source: `packages/contracts/src/fabric/surface-schema.ts` (`dataSourceSchema`),
+`packages/runtime/src/entity/types.ts`,
+`packages/runtime/src/entity/apply-query.ts`.
+
+## What a receipt is
+
+A receipt is the per-page render input: `pwpack/surfaces/<pageKey>.receipt.json`,
+shaped `{ title?, blocks[], appearance?, capabilities[] }`. It is a
+**design-time artifact**: the build writes one per page, with entity sources
+already rewritten into REST sources when the app has a record API (next
+section) and form bindings derived from the plan. The runner fetches it per
+route with plain `fetch()` and hands it to the renderer; nothing at runtime
+generates, validates or posts a receipt back.
+
+The only runtime request that mentions a receipt is the file fetch itself. A
+host that gates an app's pages MAY also gate the files: refuse
+`*.receipt.json` with `401 SIGN_IN_REQUIRED` unless the request carries
+`x-app-session` (or a bearer) that its session endpoint accepts. The runner
+sends `x-app-session` on receipt fetches for that reason. On a plain static
+host that gate does not exist: a receipt is a file, served like any other.
+
+Source: `packages/runner/src/types.ts` (`SurfaceReceipt`),
+`packages/runner/src/helpers.ts` (`fetchJson`),
+`packages/runner/src/run-app.ts` (`route()`).
+
+## Where the base URL comes from
+
+There is no `apiBaseUrl` option on `runApp()`. The base is frozen into the
+bundle when the app is built and recovered from it at runtime:
+
+1. The build is given the app's record API base, `<appApiBase>`: one URL under
+   which the server answers the endpoint table below for this app.
+2. The build rewrites every `kind: 'entity'` source with no `connector`
+   into `{ kind: 'rest', endpoint: '<appApiBase>/records/<entityType>', method: 'GET', authProviderRef: '<appApiBase>', returns: 'data' }`,
+   and adds one such source per type the plan says the page reads.
+3. `auth.json` writes the app door as addresses: `loginUrl = <appApiBase>/login`, `registerUrl`, `logoutUrl`, `sessionUrl`. An external-issuer `auth.json` has no `loginUrl`, so the steps below find no own base for it (see [What your host must provide](#what-your-host-must-provide)).
+4. The runner derives `ownApiBase` by stripping `/login` off `auth.json.loginUrl`.
+   `getAccessToken(ref)` answers **only** when `ref === ownApiBase`, with the
+   app session token, else the PKCE bridge token, else `null` — a ref that is
+   not the app's own door gets nothing, so a token never reaches a third party.
+
+Consequence for a self-host: the addresses are in `pwpack/surfaces/*.receipt.json`
+(`endpoint`, `authProviderRef`) and `pwpack/auth.json`. To point the app at a
+different API you edit those strings; the two must stay equal or no token is
+attached. An app with **no** `auth.json` has no `ownApiBase` and every request
+goes out anonymous.
+
+Requests carry `Content-Type: application/json`, the source's `headers`, and
+`Authorization: Bearer <token>` when a ref resolves. `credentials` is `'include'`
+only if `DataServiceConfig.platformApiOrigin` matches the URL's origin; the
+runner never sets that field, so a pwapp sends `credentials: 'omit'` —
+cookies are never used on this path.
+
+Source: `packages/runner/src/run-app.ts` (`ownApiBase`, `dataServiceConfig.getAccessToken`),
+`packages/runtime/src/data/manager.ts` (`fetchRest`, `isPlatformOrigin`).
+
+## The endpoint table
+
+Base: `<appApiBase>`, any URL the server chooses (for example
+`https://api.example.com/apps/:appId`). The server resolves the **visitor**
+from `x-app-session` or `Authorization: Bearer`. A bad token is `401 SESSION_INVALID`
+(or `401 INVALID_TOKEN` for an external issuer). No token is allowed unless the
+app's identity says `required: true`, in which case the answer is
+`401 { error: { code: 'SIGN_IN_REQUIRED', topology, methods?, issuer? } }`.
+
+| Method | Path | Auth | Body | 2xx response |
+|---|---|---|---|---|
+| GET | `/records/:entityType?limit&offset&sort&filter&include` | visitor (optional unless required) | — | `{ data: Record[], meta: { total, scope, timestamp } }` |
+| GET | `/records/:entityType/count[?filter=]` | visitor | — | `{ data: { fn: "count", value, count } }` |
+| GET | `/records/:entityType/aggregate?fn=count\|sum\|avg&field=&filter=` | visitor | — | `{ data: { fn, field?, value, count } }` |
+| GET | `/records/:entityType/:id` | visitor | — | `{ data: Record }` |
+| POST | `/records/:entityType` | visitor | `{ …fields }` — the record itself; a lone `{ data: { …fields } }` is unwrapped | `201 { data: Record }` |
+| PATCH | `/records/:entityType/:id` | visitor | `{ …partial }` — same rule as POST | `{ data: Record }` |
+| DELETE | `/records/:entityType/:id` | visitor | — | `{ data: { id, deleted: true } }` |
+| POST | `/login` | none (5/min) | `{ email, password }` | `{ data: { id, principalId, projectId, expiresAt, token, principal } }` |
+| POST | `/register` | none (5/min) | `{ email, password, displayName? }` | `201`, same shape |
+| POST | `/logout` | `x-app-session` | — | `{ data: { signedOut: true } }` |
+| GET | `/session` | visitor | — | `{ data: { principal: AppPrincipal \| null } }` |
+
+`Record` is `{ id, entityType, …fields, createdAt, updatedAt }` — the stored
+fields are spread to the top level. `limit` is clamped to 1–500 (default 100);
+`offset` ≥ 0; ordering is `updatedAt` descending unless `sort` says otherwise.
+The client sends `limit`, `offset`, `sort=<field>:<asc|desc>,…` and
+`filter=<json>` (the query-language filter object); a server should apply
+`filter`, then `sort`, then cut the page, and may ignore `include`.
+`meta.total` is the number of records **matching** the request — after
+`filter`, before `offset`/`limit` — because the runtime computes "there is
+more" as `total > offset + data.length`. Create, read and update answer
+`{ data: Record }`; read a created record's id from `data.id`.
+`scope` is `project` or, for a
+collection the app's entity definitions mark per-visitor, `owner` — an
+owner-scoped read with no visitor matches nothing. Errors are
+`{ error: { code, message } }` with `400 INVALID_BODY` / `VALIDATION_FAILED`,
+`403 FORBIDDEN`, `404 NOT_FOUND` / `PROJECT_NOT_FOUND`. A server should
+validate a POST body against the app's entity definition. How long a session
+lives is the server's choice; store only a hash of the token.
+
+CORS: the server must allow `Authorization`, `Content-Type` and
+`X-App-Session` from every origin the app is served from. A pwapp served from
+an origin outside that list is refused at preflight.
+
+## Worked example — a list read and a form write
+
+A built catalog page carries this source:
+
+```json
+{ "id": "Product", "kind": "rest", "method": "GET",
+  "endpoint": "https://api.example.com/apps/demo/records/Product",
+  "authProviderRef": "https://api.example.com/apps/demo",
+  "returns": "data" }
+```
+
+The runtime sends, for a signed-in visitor:
+
+```http
+GET /apps/demo/records/Product HTTP/1.1
+Host: api.example.com
+Content-Type: application/json
+Authorization: Bearer 8f3c…   ← the x-app-session token, as a bearer
+```
+
+and the server answers (row fields spread; `data` plucked by `returns`):
+
+```json
+{ "data": [ { "id": "3b1e…", "entityType": "Product", "name": "Pear", "price": 4.5,
+              "createdAt": "2026-09-15T09:12:03.000Z", "updatedAt": "2026-09-15T09:12:03.000Z" } ],
+  "meta": { "total": 1, "scope": "project", "timestamp": "2026-09-16T08:00:00.000Z" } }
+```
+
+`{{Product}}` now binds to the array. A form bound with
+`formBindings: [{ formId: "form-1", sourceId: "Product" }]` submits through the
+same source with `method: 'POST'` and the form values **as they are** as the
+JSON body (`JSON.stringify(values)`), then emits `refreshAll` so the list
+re-reads. That is the engine's write contract everywhere — the form bridge and
+`HttpEntityConnector.create()` both send the record itself — and a server
+should read it that way. It may also unwrap a lone `{ data: { … } }`, because the
+response envelope is `{ data }` and some callers mirror it; a record whose only
+field is named `data` and holds an object is read as that envelope, which no
+entity definition today has. A self-host implementing the write side should
+accept the record itself and may accept the mirrored envelope.
+
+Source: `packages/runtime/src/render/BehaviorSurfaceProvider.tsx` (`writer`),
+`packages/runtime/src/entity/http-connector.ts` (`create`, `request`).
+
+## Sources bound to a connection — declared engines
+
+A source with `connector: '<name>'` is served by the connection of that name in
+`pwpack/connections.json`, whose engine arrives as **data** in
+`engines/manifest.json` (`{ connection, atomId, kind, engine }`; a bundled
+engine carries `moduleUrl` + `integrity` instead). The declaration is seven
+facts, no code:
+
+```json
+{ "host": "{baseUrl}", "path": "/{entityType}", "params": { "format": "json" },
+  "auth": { "type": "bearer" },
+  "read": { "items": "data", "id": "id", "flatten": "*" },
+  "write": { "bodyWrap": "data" },
+  "transforms": [ { "field": "price", "use": "numeric-string" } ] }
+```
+
+`{name}` placeholders are filled from the connection's `config` strings; the
+scheme is stripped and `https://` prepended. One exception, for development:
+an explicit `http://` is kept when the host is loopback (`localhost`,
+`127.0.0.1`, `[::1]`, `*.localhost`). An `http://` host anywhere else is
+treated like one with no scheme: the request goes to `https://`, never over
+plain HTTP.
+Reads are `GET https://<host><path>?<params>`
+with **no** surface query parameters (the query is applied client-side);
+`read.items` names the array, `read.id` the id, `flatten: "*"` means the item
+is the row. Creates `POST` the row (wrapped in `bodyWrap` if set); deletes
+`DELETE …/<id>`; `update` is refused. Auth `bearer` attaches the app's live
+token; `none` sends no header. Retries `408 429 500 502 503 504` three times
+with backoff; 30 s timeout. These requests go to the declared host, never to
+the app's own record API. The facade is built only when the app has a live external-issuer (PKCE) sign-in **or** some
+engine declares `auth.type: 'none'`; otherwise those panels draw `fallback`.
+
+Source: `packages/contracts/src/fabric/atom.ts` (`engineDeclarationSchema`),
+`packages/runtime/src/connectors/declared-connector.ts`,
+`packages/runtime/src/entity/http-connector.ts`,
+`packages/runner/src/entity-facade.ts`, `run-app.ts` (`needsNoIdentity`).
+
+## Thin vs fat
+
+The runner always renders in **fat** mode: the receipt is inline, blocks come
+from `blocks/manifest.json`, and no API is needed to draw the page; the data
+calls above are the only ones it makes. If a receipt declares
+`platform/entities` and no facade was built, fat mode supplies an **offline**
+in-memory facade — `kind: 'entity'` sources and their writes work for the life
+of the tab and vanish on reload. **Thin** mode is a different embed path
+(`PWFabric.render(target, { surfaceId }, { apiBaseUrl })`) that fetches
+`GET {apiBaseUrl}/api/surfaces/:id/published` or `/api/surfaces/by-slug/:tenant/:slug`
+and needs a server that publishes surfaces at those paths; a pwapp never uses it.
+
+Source: `packages/embed/src/index.ts`, `fat.ts`,
+`capabilities-stub.ts`, `thin.ts`; `packages/runner/src/run-app.ts` (`mode: 'fat'`).
+
+## What your host must provide
+
+**Static only** — nothing beyond the files.
+
+**Data** — implement the table above under one base, and make sure that base
+is what `endpoint`/`authProviderRef` in every receipt and the URLs in
+`auth.json` say (build the app against it, or rewrite those strings in the
+built files). Your page origin must be in the server's CORS allow list, and
+the app's identity declaration decides whether anonymous reads are answered.
+Minimum for read-only apps: `GET /records/:type`
+returning `{ data: Record[] }` with permissive CORS on `Authorization` and
+`Content-Type`. For sign-in-gated apps, also `POST /login` returning
+`{ data: { token, expiresAt, … } }` and honour `Authorization: Bearer` on reads.
+Filtering, sorting and pagination beyond `limit`/`offset` are optional — the
+runtime applies the declared query itself.
+
+**Developing locally** — `pwf dev` serves the app's records from memory and
+seeds each collection from `app/data/<Entity>.json`, shaped
+`{ "data": [ records ] }`. The seed files are a development convention only;
+a published app does not carry them as its records. An entity declared with
+`"scope": "owner"` (draft) is kept per visitor.
+
+**External issuer** — an app whose visitors sign in at an external issuer
+sends no token on its own record requests in format 1.0 (session-protocol §9).
+Serve those records without a gate, or read them through a connection whose
+engine uses the issuer's token.

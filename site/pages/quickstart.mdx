@@ -1,0 +1,322 @@
+---
+title: Quick start
+description: Three short tracks — run an exported app with pwf run, write a first block with defineBlock(), or build a PWFabric app from scratch with the pwf command line.
+---
+
+# Quick start
+
+Three things bring people here. Pick the one that is yours.
+
+| You have… | Track |
+|---|---|
+| a built PWFabric app, and a machine or host of your own | [A — run an exported app](#track-a--run-an-exported-app) |
+| an idea for a block the catalog does not have | [B — write a first block](#track-b--write-a-first-block) |
+| nothing yet, and want an app of your own | [C — build a PWFabric app from scratch](#track-c--build-a-pwfabric-app-from-scratch) |
+
+Tracks A and C use `pwf`, the PWFabric command line. It is not published to
+npm yet; build it from the engine repository once:
+
+```bash
+git clone https://github.com/pwfabric/pwfabric.git
+cd pwfabric
+pnpm install
+pnpm build
+cd packages/cli && pnpm link --global   # puts `pwf` on your PATH
+```
+
+If you would rather not link it, `node <repo>/packages/cli/dist/bin.js`
+works everywhere `pwf` appears below. Every command lists its options with
+`pwf <command> --help`; all of them are on the [CLI](/cli) page.
+
+## Track A — run an exported app
+
+A pwapp runs on anything that serves files. There is no build step and no
+Node process: the runner is a browser ES module that reads the app's JSON
+files and mounts the renderer.
+
+**1. Get the built app.** A host that builds PWFabric apps can export one as a
+complete runnable folder, usually zipped; [`pwf build`](#track-c--build-a-pwfabric-app-from-scratch)
+writes the same folder. (A `pwpack` on its own is the app's source: it has no
+engine in it and is not runnable by itself.)
+
+**2. Unzip it.** You get:
+
+```text
+index.html      ← the shell: import map, renderer, mount point
+_headers        ← the app's Content Security Policy, for hosts that read it
+publish.json    ← what was built: atoms, hashes, the policy
+assets/         ← runner.js, boot.js (calls runApp()), seed.js, embed.js, theme.css
+shims/          ← import-map targets the block bundles resolve against
+pwpack/         ← project.json, surfaces/*.receipt.json, navigation, appearance…
+blocks/         ← manifest.json + one hash-pinned bundle per block type
+engines/        ← connector engines, if the app has connections
+```
+
+**3. Run it.**
+
+```bash
+pwf run ./my-app-export
+# Serving ./my-app-export at http://127.0.0.1:4700/
+```
+
+`pwf run <folder>` serves any built pwapp folder, the one an export gives or
+the one [`pwf build`](#track-c--build-a-pwfabric-app-from-scratch) writes. It
+also takes a packaged `.pwapp` file and serves it from memory. Page paths
+without a file extension are answered with `index.html`, so apps that use
+clean URLs work too. `--port <n>` picks another port (`0` for any free one)
+and `--host <name>` another interface.
+
+The runner fetches `pwpack/project.json` and `blocks/manifest.json`, mounts
+into `#root`, and routes with `#/<page>` in the URL. Hash routing is the
+default because it works on every host without configuration.
+
+**4. Put it anywhere.** `pwf run` is a convenience, not a requirement: the
+folder is plain static files, and any static file server or host serves it
+the same way. The shell the export writes is, in essence:
+
+```html
+<link rel="stylesheet" href="./assets/theme.css" />
+<script type="importmap">{ "imports": { … } }</script>
+<script src="./assets/embed.js"></script>
+<script src="./assets/seed.js"></script>
+<div id="root"></div>
+<script type="module" src="./assets/boot.js"></script>
+```
+
+and `assets/boot.js` calls
+`runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', router: 'hash', locale: 'en' })`.
+The import map is the only inline script, so the app's Content Security
+Policy can allow it by hash; start-up code of your own goes in a file too.
+
+`runApp()` takes `source`, `blocks`, `engines`, `router` (`'hash'` ·
+`'path'` · `'auto'`), `mount` and `locale`; every one has a default that
+matches the folder above, so `runApp()` with no arguments is equivalent. Clean
+URLs (`router: 'path'`) need the host to serve `index.html` for every path;
+`router: 'auto'` chooses them only when the shell also carries
+`<meta name="pw-router" content="path" />`.
+
+That is the whole self-host for a static app. If the app reads or writes data
+it will call an API; if it gates pages behind sign-in it will talk to an
+issuer. What goes on the wire in each case, and what your host must provide,
+is in [Self-hosting](/self-host):
+[the envelope](/self-host/envelope), [data and receipts](/self-host/data),
+[visitor sign-in](/self-host/session).
+
+Source: `packages/cli/src/commands/run.ts` (`pwf run`),
+`packages/cli/src/dev/shell.ts` (the shell and `boot.js`),
+`packages/runner/src/types.ts` (`RunAppOptions`),
+`packages/runner/src/run-app.ts` (`runApp`).
+
+## Track B — write a first block
+
+You need Node 22, pnpm 10, and a project that renders React 19 — or an empty
+package to try this in.
+
+**1. Install the authoring package.**
+
+```bash
+pnpm add @pwfabric/authoring @pwfabric/runtime @pwfabric/contracts zod react
+```
+
+Until the 1.0.0 release is on npm, link them from the engine repository you
+built above (`pnpm add link:<repo>/packages/authoring` and the same for
+`runtime` and `contracts`).
+
+**2. Write the block.** Put it at `atoms/blocks/text/customer-quote/component.tsx`, the
+place a pwpack source tree expects it:
+
+```tsx
+import { defineBlock } from '@pwfabric/authoring'
+import { z } from 'zod'
+
+export const CustomerQuote = defineBlock({
+  type: 'customer-quote',
+  name: 'Customer quote',
+  category: 'text',
+  schema: z.object({
+    quote: z.string().min(10).max(500),
+    author: z.string(),
+    role: z.string().optional(),
+  }),
+  defaultProps: {
+    quote: 'A great product to work with.',
+    author: 'Jane Doe',
+    role: 'Product Manager',
+  },
+  component: ({ props }) => (
+    <blockquote>
+      <p>"{props.quote}"</p>
+      <footer>{props.author}{props.role ? `, ${props.role}` : ''}</footer>
+    </blockquote>
+  ),
+})
+```
+
+`type` is the block's identity: 2–50 characters, kebab-case, and not one of
+the first-party names. `defineBlock()` throws on a bad `type` and warns on
+anything else it can work around.
+
+**3. Validate it.** `validateBlockDefinition()` is the check a publish gate
+runs on a definition; `validateBlock()` checks an instance against your schema.
+
+```ts
+import {
+  validateBlockDefinition,
+  validateBlock,
+  formatValidationErrors,
+} from '@pwfabric/authoring'
+import { DEFAULT_BLOCK_LAYOUT } from '@pwfabric/contracts'
+import { CustomerQuote } from './atoms/blocks/text/customer-quote/component'
+
+const issues = validateBlockDefinition(CustomerQuote)
+if (issues.some((i) => i.severity === 'error')) {
+  throw new Error(issues.map((i) => `${i.code}: ${i.message}`).join('\n'))
+}
+
+const result = validateBlock(
+  { id: 'q1', type: 'customer-quote', props: { quote: 'Too short', author: 'A. Reader' }, layout: DEFAULT_BLOCK_LAYOUT },
+  CustomerQuote,
+)
+console.log(result.valid ? 'ok' : formatValidationErrors(result.errors))
+// [VALIDATION_ERROR] at quote: String must contain at least 10 character(s)
+```
+
+**4. See it render.** A registry turns definitions into the component map
+the renderer takes:
+
+```tsx
+import { createCustomBlockRegistry } from '@pwfabric/authoring'
+import { BlockSurfaceRenderer } from '@pwfabric/runtime'
+import { DEFAULT_BLOCK_LAYOUT } from '@pwfabric/contracts'
+import { CustomerQuote } from './atoms/blocks/text/customer-quote/component'
+
+const registry = createCustomBlockRegistry()
+registry.register(CustomerQuote)
+
+export function Page() {
+  const surface = {
+    blocks: [{ id: 'q1', type: 'customer-quote', props: { quote: 'Shipped in an afternoon.', author: 'A. Reader' }, layout: DEFAULT_BLOCK_LAYOUT }],
+  }
+  return <BlockSurfaceRenderer surface={surface} components={registry.getComponents()} />
+}
+```
+
+**5. Ship it.** A block reaches other people's pages as a hash-pinned ES
+module listed in an app's block manifest, built from the folder you wrote in
+step 2. The shapes are in
+[How a block reaches a page](/authoring#how-a-block-reaches-a-page).
+
+Source: `packages/authoring/src/define-block.ts`
+(`defineBlock`, `validateBlockDefinition`),
+`packages/authoring/src/validation.ts` (`validateBlock`, `formatValidationErrors`),
+`packages/authoring/src/registry.ts` (`getComponents`).
+
+
+## Track C — build a PWFabric app from scratch
+
+You need Node 22 and `pwf` (see the top of this page). No account, no
+hosted service: everything below runs on your machine.
+
+**1. Get a foundation pack.** Every app stands on a foundation pack, the pack
+that supplies the blocks and themes its pages are made of. Download
+`foundation-<version>.pwpack` from the releases of
+[pwfabric/foundation](https://github.com/pwfabric/foundation),
+or build it in a clone: `pnpm install`, then
+`node scripts/export-tgz.mjs --canonical` writes it to `dist/`.
+
+**2. Create the app.**
+
+```bash
+pwf create my-app --foundation <path>
+```
+
+`<path>` is the foundation `.pwpack` (or the foundation folder). (Set
+`PWF_FOUNDATION` to it once and you can leave `--foundation` out.) `pwf create` writes a canonical pwpack
+folder:
+
+```text
+my-app/
+├── pwpack.json                      the app's id, version and pages; pins the foundation by content hash
+├── app/
+│   ├── plan.json                    what the app is for, page by page
+│   ├── definitions/appearance.json  one of the foundation's themes
+│   ├── definitions/navigation.json
+│   └── surfaces/home.receipt.json   the first page, from the foundation's blocks
+├── atoms/README.md                  your own blocks go here
+└── .pwf/packs/…                     a local copy of the foundation, so everything works offline
+```
+
+**3. Work on it.**
+
+```bash
+cd my-app
+pwf dev
+# pwf dev: serving … at http://127.0.0.1:<port>/
+```
+
+`pwf dev` builds the app, serves it and rebuilds on every change. Open
+`app/surfaces/home.receipt.json`, change a `content` prop, save: the page
+reloads. Add a page by writing another `*.receipt.json` and listing its key in
+`pwpack.json` under `app.surfaceOrder`. Stop it with Ctrl+C.
+
+**4. Check it.**
+
+```bash
+pwf validate
+# @pwpack/local/my-app@0.1.0: valid (0 errors, 0 warnings; layout canonical; …)
+```
+
+`pwf validate` checks the folder against the pwpack format and every pinned
+pack against its content hash. It exits `1` on any error.
+
+**5. Pack it.**
+
+```bash
+pwf pack
+# Packed @pwpack/local/my-app@0.1.0
+#   file  …/my-app/my-app-0.1.0.pwpack
+```
+
+The `.pwpack` is the app's source in one deterministic archive: the same
+folder always gives the same bytes. It is the form you hand to someone else
+or import elsewhere.
+
+**6. Build it.**
+
+```bash
+pwf build
+# built 1 page, … — wrote … files to .pwf/out
+```
+
+`.pwf/out/` is the runnable app, a **pwapp**: `index.html`, the runner, one
+compiled bundle per block type and the app's JSON. `--out <dir>` writes it
+somewhere else.
+
+**7. Run it.**
+
+```bash
+pwf run .pwf/out
+# Serving .pwf/out at http://127.0.0.1:4700/
+```
+
+Open the address. That folder is plain static files: copy it to any static
+host and it runs there the same way.
+
+You just built a PWFabric application from scratch.
+
+Three finished apps to read and copy, from a static two-page site to one with
+data and sign-in, are in
+[pwfabric/examples](https://github.com/pwfabric/examples),
+each with a README.
+
+Source: `packages/cli/src/commands/` (`create.ts`, `dev.ts`,
+`validate.ts`, `pack.ts`, `build.ts`, `run.ts`).
+
+## Next steps
+
+- [CLI](/cli) — every `pwf` command and option
+- [Specification](/specification) — the formats a pwpack and a pwapp are made of
+- [Authoring](/authoring) — the full export surface, and factories and capabilities
+- [`defineBlock()`](/authoring/define-block) — every option, and what the runtime does with each
+- [Self-hosting](/self-host) — everything a downloaded app needs from a host
+- [Licensing](/licence) — what you may do with the code

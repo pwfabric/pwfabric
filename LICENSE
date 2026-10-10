@@ -1,0 +1,19 @@
+PWFabric is licensed in two parts.
+
+  Apache License 2.0        packages/contracts, packages/authoring,
+                            packages/pack, packages/cli
+  Business Source License   packages/core, packages/runtime,
+  1.1                       packages/runner, packages/embed,
+                            packages/compiler
+
+Each package directory carries the licence that governs it. LICENCE.md
+explains which part is which and why, and LICENSE-APACHE holds the full
+Apache text referenced by the packages under it.
+
+Copyright (c) 2026 PhiMajor Solutions.
+
+"PWFabric", "PhiMajor" and the PhiMajor logo are trademarks of PhiMajor
+Solutions. These licences grant rights to the code, not to the
+names.
+
+For a commercial licence: licensing@phimajor.com

@@ -1,0 +1,22 @@
+{
+  "entities": [
+    {
+      "typeId": "Task",
+      "fields": [
+        {
+          "name": "title",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "done",
+          "type": "boolean"
+        },
+        {
+          "name": "points",
+          "type": "number"
+        }
+      ]
+    }
+  ]
+}

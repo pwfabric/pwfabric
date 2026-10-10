@@ -1,0 +1,13 @@
+{
+  "entities": [
+    {
+      "typeId": "Doc",
+      "fields": [
+        {
+          "name": "title",
+          "type": "text"
+        }
+      ]
+    }
+  ]
+}

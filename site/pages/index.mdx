@@ -1,0 +1,65 @@
+---
+title: PWFabric
+description: The engine that renders an app — blocks, bindings, capabilities, appearance. Open source, and yours to run.
+---
+
+# PWFabric
+
+PWFabric turns a declarative surface — blocks, bindings, capabilities,
+appearance — into a live page, in a browser or on a server. It needs no hosted
+service: what an app needs at runtime is in its bundle or behind a documented
+protocol any host can implement.
+
+An app built on PWFabric travels. Its source moves as a `pwpack`, its runnable
+form as a `pwapp`, and either can be served from any static host. That
+portability is why this engine is open: a promise that your app is yours cannot
+rest on an engine you are not allowed to read.
+
+```bash
+pwf create my-app --foundation /path/to/foundation.pwpack
+cd my-app
+pwf dev      # serves the app and reloads on every change
+pwf build    # writes the static app to .pwf/out/
+```
+
+`pwf` is the PWFabric command line. The packages are at 1.0.0-rc.0 and not on
+npm yet: the [quick start](/quickstart) shows how to build `pwf` from source
+and where the foundation pack comes from.
+
+## The packages
+
+| Package | What it is | Licence |
+|---|---|---|
+| `@pwfabric/contracts` | The types and schemas everything agrees on | Apache-2.0 |
+| `@pwfabric/authoring` | `defineBlock`, `defineFactory` — write your own blocks | Apache-2.0 |
+| `@pwfabric/pack` | Reads, validates, hashes and writes pwpacks | Apache-2.0 |
+| `@pwfabric/cli` | `pwf` — create, validate, pack, build and run apps | Apache-2.0 |
+| `@pwfabric/core` | Primitives the rest is built from | BSL 1.1 |
+| `@pwfabric/runtime` | The renderer | BSL 1.1 |
+| `@pwfabric/runner` | Runs a `pwapp` — routing, navigation, sign-in | BSL 1.1 |
+| `@pwfabric/embed` | Puts one surface inside a page you already have | BSL 1.1 |
+| `@pwfabric/compiler` | Compiles block and capability source into the modules the runtime loads | BSL 1.1 |
+
+Source: [github.com/pwfabric/pwfabric](https://github.com/pwfabric/pwfabric).
+
+## Where to start
+
+| You want to… | Go to |
+|---|---|
+| Run a built app on any static host | [Quickstart, track A](/quickstart#track-a--run-an-exported-app) |
+| Write your own block | [`defineBlock`](/authoring/define-block) |
+| Build an app of your own from scratch | [Quickstart, track C](/quickstart#track-c--build-a-pwfabric-app-from-scratch) |
+| Run a built app on your own host | [Self-hosting](/self-host) |
+| Look up a `pwf` command | [CLI](/cli) |
+| Read the formats themselves | [Specification](/specification) |
+| Understand what you may do with the code | [Licensing](/licence) |
+
+## Two licences, on purpose
+
+The contracts are Apache-2.0: an interface that is not free to adopt is not an
+interface. The engine is under the Business Source License — use it, change it,
+host what you build with it, including for your own customers. The one thing
+reserved is offering PWFabric itself as a competing hosted service. Four years
+after each release, that version becomes Apache-2.0.
+
+[Read the licensing model →](/licence)

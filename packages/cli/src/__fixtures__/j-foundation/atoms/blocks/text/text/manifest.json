@@ -1,0 +1,10 @@
+{
+  "id": "text.text",
+  "kind": "block",
+  "version": "1.0.0",
+  "category": "text",
+  "name": "text",
+  "state": "stable",
+  "knowledge": { "purpose": "Test fixture block text" },
+  "definition": { "props": [{ "name": "content", "type": "string" }], "canHaveChildren": false }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Echo",
+  "kind": "connector",
+  "connection": "echo",
+  "knowledge": {
+    "purpose": "Answers with what it was asked",
+    "useCases": [
+      "A fixture page"
+    ],
+    "composesWith": [],
+    "antiPatterns": [
+      "Anything real"
+    ]
+  }
+}

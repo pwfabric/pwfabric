@@ -1,0 +1,68 @@
+{
+  "name": "@pwfabric/cli",
+  "version": "1.0.0-rc.0",
+  "description": "The PWFabric command line: create, develop, validate, pack and run PWFabric applications without any hosted service",
+  "type": "module",
+  "bin": {
+    "pwf": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@pwfabric/authoring": "workspace:*",
+    "@pwfabric/compiler": "workspace:*",
+    "@pwfabric/contracts": "workspace:*",
+    "@pwfabric/core": "workspace:*",
+    "@pwfabric/embed": "workspace:*",
+    "@pwfabric/pack": "workspace:*",
+    "@pwfabric/runner": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pwfabric/pwfabric",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/pwfabric/pwfabric#readme",
+  "bugs": {
+    "url": "https://github.com/pwfabric/pwfabric/issues"
+  },
+  "license": "Apache-2.0",
+  "author": "PhiMajor Solutions"
+}

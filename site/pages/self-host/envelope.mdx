@@ -1,0 +1,290 @@
+---
+title: The envelope
+description: The pwapp envelope format — the JSON files a built PWFabric app is made of, how pages, routes and blocks are declared in them, and how the runner reads them.
+---
+
+# The envelope
+
+A pwapp is two things: an **envelope** (the app as data — plain JSON files
+under `pwpack/`) and a **runtime** that runs it (the runner, the renderer, and
+the block bundles the pages use). The runner never compiles the envelope in;
+it fetches the files at load time from a folder path or an absolute URL, so
+the same package works at a host root, under a sub-path, or on a CDN.
+
+Every claim here is taken from the engine source; each section names its
+file. What the code leaves open is under [Unverified](#unverified).
+Repo-relative paths below are under `packages/runner/src/` unless a longer
+path is given.
+
+## The built app and the bare envelope
+
+| Form | Contents | Runs by itself? |
+|---|---|---|
+| Built app (a folder, often zipped) | envelope under `pwpack/` **plus** `index.html`, `_headers`, `publish.json`, `assets/`, `shims/`, `blocks/`, `engines/` | yes — serve the folder |
+| Bare envelope | envelope only: `project.json`, `navigation.json`, `connections.json`, `appearance.json`, `surfaces/*.receipt.json`, `auth.json` when the app has a door | no — you supply the runtime and a block manifest |
+
+A host that exports apps may offer either. In a bare envelope the paths are
+relative to the archive root; the built app places the same files under
+`pwpack/`.
+
+## Layout of a built pwapp
+
+```text
+index.html                     the single shell: import map, renderer, mount point
+_headers                       the app's Content Security Policy, for hosts that read it
+publish.json                   what was built: atoms, hashes, the policy
+assets/boot.js                 the module that calls runApp()
+assets/seed.js                 seeds the shared globals the block bundles read
+assets/embed.js                the renderer (defines window.PWFabric.render)
+assets/runner.js               @pwfabric/runner, ES module
+assets/theme.css               the app's token set as CSS custom properties
+shims/*.mjs                    import-map targets for react, zod, @pwfabric/*
+blocks/manifest.json           block type -> bundle file + SHA-256
+blocks/<type>.<hash8>.mjs      one ESM bundle per block type the pages use
+engines/manifest.json          connector/provider engines (bundled or declared)
+engines/<atomId>.<hash8>.mjs   bundled engines only
+pwpack/project.json            pages, routes, identity              (required)
+pwpack/navigation.json         navbar links                         (optional)
+pwpack/appearance.json         appearance config                    (optional)
+pwpack/connections.json        data connections                     (optional)
+pwpack/auth.json               who the visitor is                   (optional)
+pwpack/surfaces/<key>.receipt.json   one receipt per page
+pwpack/media/<file>            media files the pages use, copied into the envelope
+```
+
+There is no per-page HTML. The runner fetches `project.json` and
+`blocks/manifest.json` (both required), then `navigation.json`,
+`appearance.json`, `connections.json` and `engines/manifest.json`, each of
+which may be absent. It asks for `auth.json` only when `project.json`
+declares an `identity`.
+
+Source: `packages/runner/src/load-envelope.ts` (`loadEnvelope`, `wantsAuthJson`).
+
+## `project.json`
+
+The runner's read contract is `PwappProject`. Two fields are required.
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `entrySurfaceId` | `string` | yes | page key of the entry page (`/` and `#/` resolve here) |
+| `surfaceOrder` | `string[]` | yes | every page key, in order; this is the route table |
+| `surfaceReceiptFiles` | `Record<key, path>` | no | page key → receipt path relative to `source`; absent ⇒ `surfaces/<key>.receipt.json` |
+| `schemaVersion` | `string \| number` | no | `"1.0.0"` today |
+| `id` | `string` | no | the app's slug; keys the app session in session storage |
+| `title` | `string` | no | document title, and the prefix of every page title |
+| `identity` | `{ required, topology?, methods? }` | no | `required: boolean`; `topology` is `'app'` (the default) or `'external'`; `methods` only when `topology === 'app'`. |
+
+A host may write further fields for its own use (for example ids its record
+API needs); the runner does not read them. Despite the names,
+`entrySurfaceId` and `surfaceOrder` hold **page keys** (short route names such
+as `home`, `people`), not surface ids.
+
+Source: `packages/runner/src/types.ts` (`PwappProject`),
+`packages/runner/src/helpers.ts` (`receiptFilesOf`).
+
+## Pages, routes and links
+
+A page is a key in `surfaceOrder`; its receipt is `surfaceReceiptFiles[key]`.
+Routing is one rule in both modes: the location either names a key in
+`surfaceOrder`, or it names nothing and the runner renders its not-found
+page. It never falls back to the entry page.
+
+- **hash mode** (default): `#/<key>`; `#/` and no hash mean the entry page.
+  `#section` without a slash is an in-page anchor and is left to the browser.
+- **path mode**: `<base>/<key>`, where `<base>` is the shell's `<base href>`.
+  Needs an SPA fallback on the host. `router: 'auto'` chooses path mode only
+  when the page also declares `<meta name="pw-router" content="path">`.
+
+Links inside receipts are written **root-relative to the app**: `/people`,
+`/people/`, or `/` for the entry page. At render time the runner rewrites
+every internal string under a `href` prop or any prop ending in `Href`
+(`ctaHref`, `linkHref`) into the active router's form. Absolute-scheme URLs
+(`https:`, `mailto:`) and fragment links (`#…`) are left alone. An unknown key
+is still rewritten, so the click lands on the in-app not-found page.
+
+Source: `packages/runner/src/router.ts`,
+`packages/runner/src/helpers.ts` (`pageKeyOf`, `isHrefKey`, `rewriteHrefs`).
+
+## `surfaces/<key>.receipt.json`
+
+A receipt is the render input for one page. The runner reads:
+
+| Field | Type | Notes |
+|---|---|---|
+| `blocks` | `BlockNode[]` | required; each node has `type`, `props`, optional `children` |
+| `title` | `string` | optional; composed with `project.title` unless it already starts with it |
+| `appearance` | `{ config: {...} }` | optional; a ref object with the page's resolved theme |
+| `capabilities` | `{ capability, config? }[]` | optional; passed to the renderer as-is (data-bound blocks derive their sources from it) |
+
+A receipt may also carry `description`, `readme`, `tags` and `intent`; the
+runner ignores them. Blocks are referenced only by `type`;
+that string is the join key into `blocks/manifest.json`.
+
+Source: `types.ts` (`SurfaceReceipt`, `SurfaceBlockNode`), `run-app.ts` (`route()`).
+
+## Atoms: how blocks reach the page
+
+A pwapp ships no atom source. Of the nine atom kinds the contracts define
+(`block`, `surface`, `capability`, `ui-appearance`, `pattern`, `icon-set`,
+`connector`, `provider`, `auth-provider`), two travel in a built app, both
+as compiled ESM: **blocks** (one bundle per block type any page uses, listed
+in `blocks/manifest.json`) and **connector/provider engines** (one per
+declared connection, listed in `engines/manifest.json`). Surfaces travel as
+receipts; appearance travels as `appearance.json`.
+
+Each `blocks/manifest.json` entry is a `DynamicBlockDescriptor`:
+
+```json
+{ "blockType": "navbar", "moduleUrl": "blocks/navbar.3f9c1a2b.mjs",
+  "integrity": "<sha256 hex>", "publisher": "example",
+  "publisherVerified": true, "definition": { "name": "navbar" } }
+```
+
+Before evaluating a bundle the renderer fetches `moduleUrl`, hashes the bytes
+with SHA-256 and compares them to `integrity` (hex, or SRI `sha256-<base64>`).
+A missing or mismatching hash is a hard failure. Bundles keep `react`, `zod`
+and `@pwfabric/*` external; the shell's import map points those
+specifiers at `./shims/*.mjs`.
+
+`engines/manifest.json` entries are either **bundled** (`moduleUrl` +
+`integrity`, same rule as blocks) or **declared** (an `engine` object and no
+module — the runtime interprets it as data). Never both.
+
+Source: `packages/contracts/src/fabric/atom.ts` (`ATOM_KINDS`, `classifyAtom`),
+`packages/contracts/src/fabric/dynamic-artifact.ts` (`DynamicBlockDescriptor`),
+`packages/runtime/src/render/dynamic-block-loader.ts` (`verifyIntegrity`),
+`types.ts` (`PwappEngineDescriptor`).
+
+## The other envelope files
+
+- **`navigation.json`** — `{ navbar: { links: [{ label, href }] } }`. A navbar
+  block whose `props.links` is empty is filled from here (hrefs rewritten); one
+  that already has links is left as authored. A project with no authored
+  navigation gets one derived link per page, `href: "/<key>"`.
+- **`appearance.json`** — the appearance config (`{ theme, styleVariables,
+  darkTheme, … }`). The runner wraps a bare config as `{ config }` and passes
+  it as the renderer's appearance override; an object that already has
+  `config` passes through; anything else (including the legacy
+  `{ use: 'default' }`) is ignored and each receipt's own `appearance` applies.
+- **`connections.json`** — `{ connections: [{ name, connector?, config? }] }`.
+  `name` is what engine entries bind to. Credential-like keys are never written.
+- **`auth.json`** — only when the app has a way in. `provider` is
+  `oauth2-pkce` for an external issuer (`issuer`, `clientId`, `scopes` — the
+  publisher appends `offline_access` — and optional `audience`,
+  `authorizeUrl`, `tokenUrl`); `password` for an app door that takes a
+  password (`loginUrl`, `registerUrl`, `logoutUrl`, `sessionUrl`, plus any
+  provider buttons); or `platform` for an app door with provider buttons only.
+  Provider buttons are `providers: [{ method }]` with the app origin's
+  `startUrl`, `gatewaySessionUrl` and `gatewayLogoutUrl`; `methods` copies the
+  declaration. A `required` app with no way in ships no `auth.json`. See
+  [Visitor sign-in](/self-host/session).
+
+Source: `helpers.ts` (`assembleNav`), `run-app.ts` (`projectAppearanceRef`),
+`types.ts` (`PwappNavigation`, `PwappConnections`, `PwappAuth`).
+
+## From the built folder to `runApp`
+
+A built app contains its shell; serving the folder is the whole self-host. `index.html` is, in essence:
+
+```html
+<link rel="stylesheet" href="./assets/theme.css" />
+<script type="importmap">{ "imports": { "react": "./shims/react.mjs", "...": "..." } }</script>
+<script src="./assets/embed.js"></script>
+<script src="./assets/seed.js"></script>
+<div id="root"></div>
+<script type="module" src="./assets/boot.js"></script>
+```
+
+and `assets/boot.js` is:
+
+```js
+import { runApp } from './runner.js'
+
+runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', router: 'hash', locale: 'en' })
+```
+
+The import map is the only inline script, so the built Content Security
+Policy allows it by hash and blocks any other inline script.
+
+`runApp` reads the envelope from `source`, mounts into `mount`, resolves the
+router, and per route: fetches the receipt, rewrites hrefs, fills the navbar,
+sets the title, and calls `window.PWFabric.render(...)` in `fat` mode with the
+block manifest and appearance. The renderer is `embed.js`; if `window.PWFabric`
+is missing the runner throws. When the app declares sign-in, receipts are
+fetched with an `x-app-session` header; a plain static host ignores it.
+
+Starting from a bare envelope instead, you must supply what a built app
+ships: `embed.js`, `runner.js`, the shims and import map, and a
+`blocks/manifest.json` pointing at bundles you host.
+
+Source: `run-app.ts` (`runApp`), `helpers.ts` (`fetchJson`),
+`packages/cli/src/dev/shell.ts` (`buildShellHtml`, `bootScript`).
+
+## Versioning
+
+- `project.json.schemaVersion` is `"1.0.0"` in every envelope written today.
+  The runner types it `string | number` and does not branch on it.
+- There is **no contracts-version field** in the envelope. Compatibility is
+  carried by the copies inside the built app: `assets/runner.js` and
+  `assets/embed.js` are whatever `@pwfabric/runner` / `@pwfabric/embed` the
+  builder used, and block bundles are pinned by hash.
+- The one compatibility rule in code is the legacy fallback: no
+  `surfaceReceiptFiles` ⇒ `surfaces/<key>.receipt.json` for every key.
+
+Source: `types.ts` (`PwappProject.schemaVersion`), `helpers.ts` (`receiptFilesOf`).
+
+## Worked example
+
+A two-page app. `pwpack/project.json`:
+
+```json
+{
+  "schemaVersion": "1.0.0",
+  "id": "cadence",
+  "title": "Cadence",
+  "entrySurfaceId": "home",
+  "surfaceOrder": ["home", "people"],
+  "surfaceReceiptFiles": { "home": "surfaces/home.receipt.json", "people": "surfaces/people.receipt.json" },
+  "identity": { "required": false, "topology": "app", "methods": [] }
+}
+```
+
+`pwpack/navigation.json` is `{ "navbar": { "links": [ { "label": "Home",
+"href": "/" }, { "label": "People", "href": "/people" } ] } }`.
+`pwpack/surfaces/home.receipt.json`:
+
+```json
+{
+  "title": "Home",
+  "blocks": [
+    { "id": "nav",  "type": "navbar", "props": { "links": [], "logoText": "Cadence", "showCTA": false } },
+    { "id": "hero", "type": "hero",   "props": { "title": "Cadence", "ctaHref": "/people" } }
+  ],
+  "appearance": { "config": { "theme": { } } },
+  "capabilities": []
+}
+```
+
+`blocks/manifest.json` lists `navbar` and `hero` as in the descriptor above.
+Served in hash mode: `#/people` renders `people.receipt.json`; the navbar's
+empty `links` are filled as `#/` and `#/people`; the hero's `ctaHref` becomes
+`#/people`; `#/nowhere` renders the not-found page.
+
+## Not the same thing: the pwpack source archive
+
+A **pwpack** archive (`.pwpack`, see the `pwpack-format` document of the
+[specification](/specification)) carries atom source trees under `atoms/`
+(`atoms/blocks/`, `atoms/capabilities/`, `atoms/appearance/`,
+`atoms/patterns/`, `atoms/icons/`, `atoms/connectors/`, `atoms/providers/`,
+`atoms/auth/`) and the app's own files under `app/` (`app/surfaces/` and the
+rest). The older layout, with the same families at the archive root, is still
+accepted. A tool that
+consumes it classifies each path into an atom kind (`classifyAtom` in
+`atom.ts`) and compiles it. It is not an app envelope; the runner cannot run
+it.
+
+## Unverified
+
+- The token keys inside `appearance.config.theme` are `SurfaceTheme` in
+  contracts; not enumerated here, and the example leaves the object empty.
+- How the runner absolutizes `media/<file>` refs against `source` was not traced.

@@ -1,0 +1,4 @@
+# Line endings — keep the repo LF and check out LF on every platform.
+# Prevents Windows CRLF conversion from dirtying generated files with
+# phantom diffs.
+* text=auto eol=lf

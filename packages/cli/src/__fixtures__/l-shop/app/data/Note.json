@@ -1,0 +1,14 @@
+{
+  "data": [
+    {
+      "id": "n1",
+      "text": "mine",
+      "ownerId": "dev-user"
+    },
+    {
+      "id": "n2",
+      "text": "theirs",
+      "ownerId": "someone-else"
+    }
+  ]
+}

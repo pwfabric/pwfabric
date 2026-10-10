@@ -1,0 +1,174 @@
+---
+title: CLI
+description: Every pwf command and option — create, dev, build, validate, pack, add and run.
+---
+
+# The `pwf` command line
+
+`pwf` creates, develops, checks, packs and serves PWFabric applications using
+only the engine's own packages. It never calls a hosted service: there is no
+login, publish or deploy command.
+
+It is not published to npm yet. Build it from the engine repository
+(`pnpm install && pnpm build`), then run `pnpm link --global` in
+`packages/cli`, or call `node packages/cli/dist/bin.js` directly. The
+[quick start](/quickstart#track-c--build-a-pwfabric-app-from-scratch) walks
+through the commands in the order you use them.
+
+```text
+pwf <command> [options]
+pwf help                   lists the commands
+pwf <command> --help       prints one command's usage
+```
+
+Options take a value as `--flag value` or `--flag=value`; everything after a
+lone `--` is positional. Exit codes: `0` success, `1` failure (an invalid
+pack, a missing file, a refused write), `2` wrong usage.
+
+| Command | What it does |
+|---|---|
+| [`create`](#pwf-create) | Create a new app folder standing on a foundation pack |
+| [`dev`](#pwf-dev) | Serve the app locally and reload it on every change |
+| [`build`](#pwf-build) | Assemble the app into a static pwapp folder |
+| [`validate`](#pwf-validate) | Check a pwpack folder and the packs it pins |
+| [`pack`](#pwf-pack) | Write the deterministic `.pwpack` archive of a folder |
+| [`add`](#pwf-add) | Install a pack (`.pwpack` or folder) into the project and pin it |
+| [`run`](#pwf-run) | Serve a built pwapp (folder or `.pwapp`) on a local port |
+
+## `pwf create`
+
+```text
+pwf create <name> [--dir <path>] [--foundation <folder|.pwpack>] [--force]
+```
+
+| Argument / option | Meaning |
+|---|---|
+| `<name>` | Lower-case letters, digits and hyphens. The app's id is `@pwpack/local/<name>`. |
+| `--dir <path>` | Where to write the app. Default `./<name>`. |
+| `--foundation <folder\|.pwpack>` | The foundation pack the app stands on. Default: the `PWF_FOUNDATION` environment variable. One of the two is required. |
+| `--force` | Write into a folder that is not empty. |
+
+Writes `pwpack.json`, `app/plan.json`, `app/definitions/appearance.json`,
+`app/definitions/navigation.json`, `app/surfaces/home.receipt.json`,
+`atoms/README.md` and `.gitignore`. The home page is made from the
+foundation's own heading, text and button blocks (whichever it has), and the
+theme is one of the foundation's themes. The foundation is copied into
+`.pwf/packs/<id>@<version>/` and pinned in `pwpack.json` by content hash, so
+`dev` and `run` work offline.
+
+The foundation pack is not published to a registry yet; `--foundation` (or
+`PWF_FOUNDATION`) must point at a copy.
+
+## `pwf dev`
+
+```text
+pwf dev [dir] [--port <n>] [--host <name>]
+```
+
+| Argument / option | Meaning |
+|---|---|
+| `dir` | The app folder. Default: the current folder. |
+| `--port <n>` | Port to listen on, `0`–`65535`. Default `4600`; `0` picks any free port. |
+| `--host <name>` | Interface name or address to bind. Default `127.0.0.1`. |
+
+Builds the app, serves it, watches the folder and rebuilds and reloads the
+page on every change. Runs until Ctrl+C. When a build fails, the page shows
+the errors instead of the app until the next good build. If the port is taken,
+it says so; pass another `--port`
+or `--port 0`.
+
+## `pwf build`
+
+```text
+pwf build [dir] [--out <dir>]
+```
+
+| Argument / option | Meaning |
+|---|---|
+| `dir` | The app folder. Default: the current folder. |
+| `--out <dir>` | Where to write the built app. Default `<dir>/.pwf/out/`. |
+
+Assembles the app into a static **pwapp**: `index.html`, the runner and its
+assets, one compiled bundle per block type, connector engines, and the app's
+JSON under `pwpack/`. Prints every diagnostic; on any error, nothing is
+written and the exit code is `1`. Compiled atoms are cached in
+`.pwf/build-cache/`.
+
+The build also writes the app's **Content Security Policy**, derived from what
+the app declares: its data addresses, its connections' engine hosts, its
+sign-in addresses, its media and its webfonts. The policy is in `index.html`
+as a `<meta>`, in `_headers` (the convention most static hosts read) and in
+`publish.json` as `csp.policy`; serve it as a header where you can. Anything
+it cannot resolve at build time (a compiled engine, a host templated with
+config the connection does not set) is listed in `csp.unresolved` and is not
+allowed. What a host must add is in the `hosting-security` document of the
+[specification](/specification).
+
+## `pwf validate`
+
+```text
+pwf validate [dir] [--json]
+```
+
+| Argument / option | Meaning |
+|---|---|
+| `dir` | The pwpack folder. Default: the current folder. |
+| `--json` | Print the raw result (`ok`, `issues`, `identity`, `layout`, `atoms`). |
+
+Runs the pack validator and prints its findings as errors, warnings and notes,
+with the path each is about. Every `packs[]` pin is looked up in
+`.pwf/packs/<id>@<version>/`: a build that is not there is a warning, one
+whose content hash differs from the pin is an error. Exit `1` when there is
+any error, `0` otherwise.
+
+## `pwf pack`
+
+```text
+pwf pack [dir] [--out <file>]
+```
+
+| Argument / option | Meaning |
+|---|---|
+| `dir` | The pwpack folder. Default: the current folder. |
+| `--out <file>` | Where to write. Default `<dir>/<name>-<version>.pwpack`, where `<name>` is the last segment of the pack id. |
+
+Validates first and refuses on errors. The archive never contains `.pwf/`,
+`.gitignore` or `atoms/README.md`. The same folder always gives the same
+bytes; the printed hash is the content hash that pins use.
+
+## `pwf add`
+
+```text
+pwf add <path-to.pwpack|dir> [--dir <project>]
+```
+
+| Argument / option | Meaning |
+|---|---|
+| `<path>` | A `.pwpack` (or `.tgz`) archive, or a pwpack folder. |
+| `--dir <path>` | The project folder. Default: the current folder. |
+
+Validates the pack, copies it to `.pwf/packs/<id>@<version>/`, pins it in
+`pwpack.json` `packs[]` by content hash and adds
+`{ id, range: ^<major>.0.0 }` to `requires`. Only local files and folders:
+resolving packs from npm or a pack registry is not supported.
+
+## `pwf run`
+
+```text
+pwf run <dir|file.pwapp> [--port <n>] [--host <name>]
+```
+
+| Argument / option | Meaning |
+|---|---|
+| `<dir>` | A built pwapp folder with an `index.html` (see `pwf build`, or an app exported by any other host). |
+| `<file.pwapp>` | A packaged pwapp (a gzipped tar, read like a `.pwpack`), served from memory. |
+| `--port <n>` | Port to listen on. Default `4700`; `0` picks a free one. |
+| `--host <name>` | Interface to bind. Default `127.0.0.1`. |
+
+Page paths without a file extension are answered with `index.html`, so
+path-routed apps work; a missing asset is a 404. Headers declared in the
+folder's `_headers` file (such as the app's Content Security Policy) are sent
+with the files they match. Runs until Ctrl+C.
+
+Source: `packages/cli/src/commands/*.ts` (each command's
+`usage`), `packages/cli/src/args.ts` (option parsing).

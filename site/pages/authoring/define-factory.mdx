@@ -1,0 +1,160 @@
+---
+title: defineFactory()
+description: Generate a block tree from typed configuration with defineFactory() — what build() returns, when configuration is validated, and the composition helpers.
+---
+
+# `defineFactory()`
+
+`defineFactory()` registers a builder that turns a configuration object into
+an array of blocks with generated ids. Factories are how you write a
+parameterised fragment — a hero, a feature grid, a whole pricing section — as
+code, once.
+
+```ts
+import { defineFactory } from '@pwfabric/authoring'
+import { z } from 'zod'
+
+export const LandingPageFactory = defineFactory({
+  id: 'landing-page',
+  name: 'Landing Page',
+  configSchema: z.object({
+    title: z.string(),
+    subtitle: z.string().optional(),
+    ctaLabel: z.string().default('Get started'),
+    ctaHref: z.string().url(),
+  }),
+  build: (config) => [
+    { type: 'heading', props: { content: config.title, level: 1, align: 'center' } },
+    { type: 'text', props: { content: config.subtitle ?? '', align: 'center' } },
+    { type: 'button', props: { label: config.ctaLabel, href: config.ctaHref, variant: 'primary' } },
+  ],
+})
+
+const blocks = LandingPageFactory.build({ title: 'Welcome', ctaLabel: 'Start', ctaHref: 'https://example.com' })
+```
+
+## Signature
+
+```ts
+function defineFactory<TConfig extends Record<string, unknown> = Record<string, unknown>>(
+  options: FactoryOptions<TConfig>
+): FactoryDefinition<TConfig>
+```
+
+The result is `Object.freeze`d.
+
+Source: `packages/authoring/src/define-factory.ts` (`defineFactory`),
+`packages/authoring/src/types.ts` (`FactoryOptions`, `FactoryDefinition`).
+
+## Options
+
+| Field | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | `string` | yes | 2–50 characters, kebab-case (`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`); anything else throws |
+| `build` | `(config: TConfig) => readonly BlockSpec[]` | yes | Returns block specs; a non-function throws `Factory build function is required` |
+| `name` | `string` | no | Defaults to `id` |
+| `description` | `string` | no | Defaults to `''` |
+| `configSchema` | `ZodSchema<TConfig>` | no | Used by `validateConfig()` only, see below |
+
+A `BlockSpec` is `{ type, props, children? }` — a block without an `id`.
+
+Source: `packages/authoring/src/define-factory.ts` (`validateFactoryId`),
+`packages/authoring/src/types.ts` (`BlockSpec`, `FactoryOptions`).
+
+## What you get back
+
+| Member | Type | Meaning |
+|---|---|---|
+| `id`, `name`, `description` | `string` | As given, with the defaults above |
+| `configSchema` | `ZodSchema?` | Present only if you passed one |
+| `build(config)` | `(config) => readonly Block[]` | Your `build`, with every spec turned into a `Block` |
+| `validateConfig(config)` | `(config: unknown) => FactoryValidationResult` | Checks `config` against `configSchema` |
+
+`build()` converts each spec by adding an `id` of the form
+`<type>-<counter>-<base36 time>` and a `layout` — the registered default
+layout for that block type, or the engine default
+`{ span: { xs: 4, sm: 8, md: 8, lg: 12 } }`. Children are converted
+recursively.
+
+Source: `packages/authoring/src/define-factory.ts`
+(`specToBlock`, `generateBlockId`),
+`packages/core/src/blocks/layout-schema.ts` (`DEFAULT_BLOCK_LAYOUT`).
+
+## Validation is a separate call
+
+`build()` does **not** validate its argument. It passes `config` straight to
+your function, so a wrong config produces wrong blocks, not an error. Call
+`validateConfig()` first when the input is untrusted:
+
+```ts
+const check = LandingPageFactory.validateConfig({ title: 'Welcome', ctaHref: 'not-a-url' })
+
+if (!check.valid) {
+  for (const e of check.errors ?? []) console.error(e.path, e.message)
+} else {
+  const blocks = LandingPageFactory.build(check.config!)
+}
+```
+
+The result is `{ valid: true, config }` (the parsed config, Zod defaults
+applied) or `{ valid: false, errors: [{ path, message }] }`. With no
+`configSchema`, every config is valid and returned as given.
+
+Source: `packages/authoring/src/define-factory.ts` (`validateConfig`),
+`packages/authoring/src/types.ts` (`FactoryValidationResult`, `FactoryValidationError`).
+
+## Composing
+
+A factory's `build` returns specs by `type`, so it can reference any block
+the surface will be able to resolve — first-party, installed, or one of your
+own `defineBlock` types.
+
+```ts
+defineFactory({
+  id: 'pricing-section',
+  configSchema: z.object({
+    heading: z.string(),
+    tiers: z.array(z.object({ name: z.string(), price: z.number(), features: z.array(z.string()) })),
+  }),
+  build: (config) => [
+    { type: 'heading', props: { content: config.heading, level: 2, align: 'center' } },
+    {
+      type: 'grid',
+      props: { columns: config.tiers.length, gap: 'lg' },
+      children: config.tiers.map((tier) => ({
+        type: 'pricing-card',
+        props: { title: tier.name, price: tier.price, features: tier.features },
+      })),
+    },
+  ],
+})
+```
+
+Three helpers work on `build()` output:
+
+| Helper | Returns |
+|---|---|
+| `composeFactoryOutputs(a, b, …)` | One flat block array |
+| `wrapInContainer(blocks, props?)` | A single `container` block whose `children` are `blocks`; `props` defaults to `{ direction: 'column', gap: 24 }` and is spread over |
+| `isFactoryDefinition(value)` | Type guard: `id`, `name`, `build`, `validateConfig` present |
+
+`resetIdCounter()` resets the counter used in generated ids, for
+deterministic tests.
+
+Source: `packages/authoring/src/define-factory.ts`
+(`composeFactoryOutputs`, `wrapInContainer`, `isFactoryDefinition`, `resetIdCounter`).
+
+## Where a factory lives
+
+A factory is not an atom. The kinds a pwpack can carry are `block`,
+`surface`, `capability`, `ui-appearance`, `pattern`, `icon-set`, `connector`,
+`provider` and `auth-provider`; there is no `factory` kind and no folder for
+one. A factory is code you run: its `build()` output is blocks, and blocks go
+wherever blocks go — into a surface you save, or a receipt you write.
+
+Source: `packages/contracts/src/fabric/atom.ts` (`ATOM_KINDS`).
+
+## See also
+
+- [`defineBlock()`](/authoring/define-block) — author a single block type
+- [`defineCapability()`](/authoring/define-capability) — declare a behaviour with a typed contract

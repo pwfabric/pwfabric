@@ -1,0 +1,77 @@
+---
+title: Licensing
+description: Apache-2.0 for the contracts, Business Source License 1.1 for the engine — what each permits, and why the line falls there.
+---
+
+# Licensing
+
+PWFabric ships under two licences, and which one applies depends on which
+package you are using.
+
+## Apache License 2.0
+
+- `@pwfabric/contracts`
+- `@pwfabric/authoring`
+- `@pwfabric/pack`
+- `@pwfabric/cli`
+
+These are the interface: the types, schemas and authoring functions that
+anything interoperating with PWFabric has to agree on. An interface that is not
+free to adopt is not an interface, so these carry Apache-2.0 with no additional
+conditions — including the patent grant.
+
+## Business Source License 1.1
+
+- `@pwfabric/core`
+- `@pwfabric/runtime`
+- `@pwfabric/runner`
+- `@pwfabric/embed`
+- `@pwfabric/compiler`
+
+You may read the source, change it, build on it, and run what you build.
+
+### What the Additional Use Grant permits
+
+Production use. Concretely, and stated this plainly on purpose:
+
+- Building applications with PWFabric and running them in production.
+- Hosting those applications **for your own customers**.
+- Self-hosting a `pwapp` — forever, on any infrastructure.
+- Modifying the engine for your own use.
+
+If you took your app out of the service that built it and run it yourself, the
+licence is on your side. That case is the reason the grant is written this
+wide.
+
+### What it does not permit
+
+Offering PWFabric itself to third parties as a hosted or managed service that
+gives them substantially the functionality of PWFabric. That is the single
+reserved use, and it is reserved because hosting the engine is the business
+that pays for writing it.
+
+### Change Date
+
+Four years after a version is first published, that version becomes available
+under Apache-2.0. The exact date is written into each package's `LICENSE`
+file — it does not move, and it does not depend on us.
+
+## Commercial licensing
+
+If your use falls outside the grant — most often, you want to offer a hosted
+service built on the engine — that is a conversation, not a refusal. Write to
+[licensing@phimajor.com](mailto:licensing@phimajor.com).
+
+## Trademarks
+
+"PWFabric", "PhiMajor" and the PhiMajor logo are trademarks of PhiMajor
+Solutions. These licences grant rights to the code, not to the names. You may
+say your product is built with PWFabric. You may not name it in a way that
+suggests it *is* PWFabric, or that PhiMajor published it.
+
+## Why the line falls here
+
+The split follows the shape of the thing. A contract describes an agreement,
+and an agreement should be free to enter — otherwise nobody can interoperate
+without permission. The engine is the work, and the work is paid for by being
+hosted by the people who wrote it.

@@ -1,0 +1,28 @@
+{
+  "id": "theme-sand",
+  "kind": "ui-appearance",
+  "version": "1.0.0",
+  "category": "ui",
+  "name": "Sand",
+  "state": "stable",
+  "knowledge": {
+    "purpose": "A warm fixture theme",
+    "useCases": [
+      "A fixture page"
+    ],
+    "composesWith": [],
+    "antiPatterns": [
+      "Anything real"
+    ]
+  },
+  "theme": {
+    "colors": {
+      "primary": "#7c2d12",
+      "background": "#fffbeb",
+      "text": "#1c1917"
+    },
+    "typography": {
+      "fontFamily": "Inter, system-ui, sans-serif"
+    }
+  }
+}

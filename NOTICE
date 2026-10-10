@@ -1,0 +1,11 @@
+PWFabric
+Copyright (c) 2026 PhiMajor Solutions
+
+This product includes software developed at PhiMajor Solutions
+(https://pwfabric.com).
+
+The packages @pwfabric/contracts, @pwfabric/authoring, @pwfabric/pack
+and @pwfabric/cli are licensed under the Apache License, Version 2.0.
+The packages @pwfabric/core, @pwfabric/runtime, @pwfabric/runner,
+@pwfabric/embed and @pwfabric/compiler are licensed under the Business
+Source License 1.1; see LICENCE.md.

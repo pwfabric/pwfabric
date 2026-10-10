@@ -1,0 +1,21 @@
+{
+  "title": "Home",
+  "blocks": [
+    {
+      "id": "page",
+      "type": "stack",
+      "props": {
+        "gap": "24px"
+      },
+      "children": [
+        {
+          "id": "hello",
+          "type": "title",
+          "props": {
+            "text": "Hello from k-app"
+          }
+        }
+      ]
+    }
+  ]
+}

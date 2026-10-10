@@ -1,0 +1,211 @@
+---
+title: defineCapability()
+description: Author a capability — a stable id, a typed input/output contract, an executor and an optional configuration schema — with the fluent CapabilityBuilder.
+---
+
+# `defineCapability()`
+
+`defineCapability()` returns a fluent `CapabilityBuilder`. You chain the
+capability's identity, its contract and its executor, then call `.build()` to
+get a `Capability` object. The function and the class live in
+`@pwfabric/contracts` and are re-exported by `@pwfabric/core` and by the
+authoring package; the contract and configuration builders are imported from `core`.
+
+```ts
+import { defineCapability } from '@pwfabric/authoring'
+import { defineContract, objectSchema } from '@pwfabric/core'
+
+export const SearchCapability = defineCapability<{ query: string }, { hits: string[] }>()
+  .id('app/search')
+  .version('1.0.0')
+  .name('Full-text search')
+  .description('Searches the indexed content for a query.')
+  .state('stable')
+  .contract(
+    defineContract()
+      .id('app/search.query')
+      .name('Search query')
+      .input(objectSchema<{ query: string }>())
+      .output(objectSchema<{ hits: string[] }>())
+      .build(),
+  )
+  .execute(async (input, ctx) => {
+    ctx.logger.info('search', { query: input.query })
+    return { hits: [] }
+  })
+  .build()
+```
+
+## Signature
+
+```ts
+function defineCapability<TInput = unknown, TOutput = unknown>(): CapabilityBuilder<TInput, TOutput>
+```
+
+`.contract()` re-types the builder from the contract's input and output, so
+the type parameters on `defineCapability` are optional.
+
+Source: `packages/contracts/src/capability/builder.ts` (`defineCapability`, `CapabilityBuilder`).
+
+## Builder methods
+
+### Required before `.build()`
+
+| Method | Purpose |
+|---|---|
+| `.id(id)` | Stable capability id, e.g. `'app/search'` |
+| `.name(name)` | Display name |
+| `.contract(contract)` | The typed input/output contract, from `defineContract()` |
+| `.execute(fn)` | `(input, ctx) => Promise<output>` — the implementation |
+
+`.build()` throws `Capability ID is required`, `Capability name is required`,
+`Capability contract is required` or `Capability executor is required` when
+one is missing; nothing else is checked at build time.
+
+### Optional metadata
+
+| Method | Default | Purpose |
+|---|---|---|
+| `.version(semver)` | `'0.1.0'` | Parsed into `{ major, minor, patch }`; an unparsable string falls back to the contracts' initial version |
+| `.description(text)` | — | Free text |
+| `.state(state)` | `'draft'` | `'draft'` · `'alpha'` · `'beta'` · `'stable'` · `'deprecated'` |
+| `.domain(domainId)` | — | Grouping domain, a `DomainId` (make one with `domainId()` from `@pwfabric/contracts`) |
+| `.tags(tags)` | — | Free-form tags |
+| `.timeout(ms)` | — | Recorded on `metadata.timeout` |
+| `.retryable(value = true)` | — | Recorded on `metadata.retryable` |
+| `.idempotent(value = true)` | — | Recorded on `metadata.idempotent` |
+
+### Wiring
+
+| Method | Purpose |
+|---|---|
+| `.dependsOn(id)` | Appends to `dependencies`; call one per dependency |
+| `.configSchema(schema)` | A `ConfigSchema` from `defineConfigSchema()` |
+
+Source: `packages/contracts/src/capability/builder.ts`,
+`packages/contracts/src/fabric/capability.ts` (`CapabilityState`, `CapabilityMetadata`).
+
+## What `.build()` returns
+
+A `Capability` with:
+
+| Member | Type |
+|---|---|
+| `id` | `CapabilityId` |
+| `version` | `SemanticVersion` — `{ major, minor, patch, prerelease? }` |
+| `contract` | `Contract<TInput, TOutput>` |
+| `dependencies` | `readonly CapabilityId[]` |
+| `metadata` | `{ name, state, description?, domain?, tags?, timeout?, retryable?, idempotent? }` |
+| `configSchema` | `ConfigSchema?` — only if you set one |
+| `execute(input, ctx)` | Calls your executor directly |
+
+The built object does not validate input or output itself: `execute` hands
+`input` to your function as-is. The contract carries `validateInput()` and
+`validateOutput()` for whoever runs the capability to call.
+
+Source: `packages/contracts/src/capability/builder.ts` (`SimpleCapability`),
+`packages/core/src/contract-builder.ts` (`SimpleContract`).
+
+## The execution context
+
+Your executor's second argument is an `ExecutionContext`:
+
+| Member | Meaning |
+|---|---|
+| `traceId`, `spanId`, `parentSpanId?` | Correlation ids |
+| `fabricId`, `manifestationId?` | Where the call runs |
+| `startedAt`, `timeout?` | Timing |
+| `data` | `Record<string, unknown>` passed through the execution |
+| `logger` | `debug` / `info` / `warn` / `error` `(message, data?)` |
+| `invoke(capabilityId, input)` | Runs a dependency, named by a `CapabilityId` (`capabilityId()` from `@pwfabric/contracts`); resolves to `{ success: true, data }` or `{ success: false, error }` |
+| `child(spanId)` | A nested context |
+
+Dependencies you declared with `.dependsOn()` are the ones you call through
+`ctx.invoke()`:
+
+```ts
+import { capabilityId } from '@pwfabric/contracts'
+
+defineCapability()
+  .id('app/checkout')
+  .name('Checkout flow')
+  .dependsOn('platform/persistence')
+  .dependsOn('app/payments')
+  .contract(/* … */)
+  .execute(async (input, ctx) => {
+    const paid = await ctx.invoke(capabilityId('app/payments'), { amount: input.total })
+    if (!paid.success) throw new Error(paid.error.message)
+    return { orderId: '…' }
+  })
+  .build()
+```
+
+Source: `packages/contracts/src/fabric/execution.ts`
+(`ExecutionContext`, `ExecutionLogger`, `ExecutionResult`).
+
+## Contracts and schemas
+
+`defineContract()` is the same kind of builder: `.id()`, `.name()`,
+`.version()`, `.description()`, `.state()`, `.tags()`, `.input(schema)`,
+`.output(schema)`, `.build()`. Build throws without an id or a name. Input and
+output default to `anySchema()`.
+
+Two schema constructors ship with `core`:
+
+| Constructor | What it checks |
+|---|---|
+| `anySchema<T>()` | Nothing; every value passes |
+| `objectSchema<T>()` | That the value is a non-null object. Fields are **not** checked; the type parameter is for inference only |
+
+Source: `packages/core/src/contract-builder.ts`
+(`ContractBuilder`, `anySchema`, `objectSchema`).
+
+## Configuration schema
+
+A capability that needs values from whoever installs it declares a
+`ConfigSchema`:
+
+```ts
+import { defineCapability } from '@pwfabric/authoring'
+import { defineConfigSchema } from '@pwfabric/core'
+
+defineCapability()
+  .id('integrations/payments')
+  .name('Payments')
+  .configSchema(
+    defineConfigSchema()
+      .field('publishableKey', (f) => f.string().required().label('Publishable key'))
+      .field('webhookSecret', (f) => f.string().required().sensitive().label('Webhook secret'))
+      .field('currency', (f) => f.select(['USD', 'EUR', 'GBP']).default('USD').label('Currency'))
+      .build(),
+  )
+  .contract(/* … */)
+  .execute(/* … */)
+  .build()
+```
+
+`FieldBuilder` methods: `string()`, `number()`, `boolean()`,
+`select(options)`, `multiSelect(options)`, `url()`, `email()`, `json()`,
+`required()`, `default(value)`, `label(text)`, `description(text)`,
+`sensitive()`, `min(n)`, `max(n)`, `pattern(source, message?)` (a regular expression as a string). Fields can be
+grouped with `.group(name, (g) => g.field(…))`.
+
+Source: `packages/core/src/config-schema-builder.ts`
+(`FieldBuilder`, `ConfigSchemaBuilder`, `defineConfigSchema`).
+
+## Shipping the capability
+
+In a pwpack source tree a capability is `capabilities/<name>/handler.ts` with
+a `manifest.json` beside it (`kind: "capability"`; the manifest's `config`
+field is derived from your `configSchema` at build). Like a block it is
+bundled to an ES module and travels by hash. See
+[How a block reaches a page](/authoring#how-a-block-reaches-a-page) for the
+manifest and bundle shapes, which are shared.
+
+Source: `packages/contracts/src/fabric/atom.ts`
+(`ATOM_KIND_META.capability.pathConvention`, `AtomFileManifest.config`).
+
+## See also
+
+- [`defineBlock()`](/authoring/define-block) — author a single block type
+- [`defineFactory()`](/authoring/define-factory) — generate a block tree from configuration

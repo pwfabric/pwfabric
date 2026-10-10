@@ -1,0 +1,16 @@
+{
+  "connections": [
+    {
+      "name": "echo",
+      "connector": "echo",
+      "config": {
+        "baseUrl": "example.test/v1",
+        "apiKey": "do-not-ship"
+      }
+    },
+    {
+      "name": "still",
+      "connector": "still"
+    }
+  ]
+}

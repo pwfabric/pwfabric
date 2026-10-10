@@ -1,0 +1,339 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# No secrets anywhere in this file: a pull request from a fork gets none, and
+# it must still be able to go green. Every @pwfabric dependency in this
+# repository is a workspace link, and everything else comes from the public
+# npm registry.
+permissions:
+  contents: read
+
+jobs:
+  # ── WHAT THIS RUN COVERS ────────────────────────────────────────────────
+  # Every pull request into `main` and every push to it run every package.
+  # The affected-only branch below stays for a long-lived integration branch
+  # (`staging`), should the repository grow one: it would build, typecheck and
+  # test only the packages a pull request changed plus their dependents, and
+  # fall back to the full run when anything outside a package changed.
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.scope.outputs.mode }}
+      packages: ${{ steps.scope.outputs.packages }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+
+      - name: Decide which packages this run covers
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          # pnpm ls → package names (or dirs), workspace root excluded.
+          projects() {
+            node -e '
+              const path = require("path"); let s = "";
+              process.stdin.on("data", (d) => (s += d)).on("end", () => {
+                const i = s.indexOf("["); if (i < 0) return;
+                const root = process.cwd();
+                for (const p of JSON.parse(s.slice(i))) {
+                  if (path.resolve(p.path) === root) continue;
+                  console.log(process.argv[1] === "dirs"
+                    ? path.relative(root, p.path).split(path.sep).join("/")
+                    : p.name);
+                }
+              })' "$1"
+          }
+
+          mode=full
+          reason="push to ${GITHUB_REF_NAME}: full run"
+          if [ "$EVENT" = pull_request ]; then
+            if [ "$BASE_REF" != staging ]; then
+              reason="pull request into ${BASE_REF}: full run"
+            else
+              base="origin/${BASE_REF}"
+              dirs=$(pnpm -r ls --depth -1 --json | projects dirs)
+              root_hits=""
+              while IFS= read -r f; do
+                [ -z "$f" ] && continue
+                inside=no
+                for d in $dirs; do case "$f" in "$d"/*) inside=yes; break ;; esac; done
+                [ "$inside" = yes ] && continue
+                case "$f" in *.md | docs/*) continue ;; esac
+                root_hits="$root_hits $f"
+              done <<< "$(git diff --name-only "$base"...HEAD)"
+              if [ -n "$root_hits" ]; then
+                reason="root-level files changed, full run:$root_hits"
+              else
+                mode=affected
+                reason="no root-level change, affected only: pnpm --filter \"...[$base]\""
+              fi
+            fi
+          fi
+
+          if [ "$mode" = full ]; then
+            packages=$(pnpm -r ls --depth -1 --json | projects names | xargs)
+          else
+            packages=$(pnpm -r --filter "...[$base]" ls --depth -1 --json | projects names | xargs)
+          fi
+
+          echo "mode: $mode ($reason)"
+          echo "packages under test: ${packages:-<none>}"
+          {
+            echo "mode=$mode"
+            echo "packages=$packages"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### CI scope: $mode"
+            echo "$reason"
+            echo
+            echo "Packages under test: \`${packages:-none}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: build + typecheck
+    needs: scope
+    runs-on: ubuntu-latest
+    env:
+      PACKAGES: ${{ needs.scope.outputs.packages }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The packages under test and everything they depend on.
+      - name: Build
+        if: env.PACKAGES != ''
+        run: |
+          filters=(); for p in $PACKAGES; do filters+=(--filter "$p..."); done
+          pnpm -r "${filters[@]}" build
+
+      - name: Typecheck
+        if: env.PACKAGES != ''
+        run: |
+          filters=(); for p in $PACKAGES; do filters+=(--filter "$p"); done
+          pnpm -r "${filters[@]}" typecheck
+
+  test:
+    name: test + coverage
+    needs: scope
+    runs-on: ubuntu-latest
+    env:
+      PACKAGES: ${{ needs.scope.outputs.packages }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Only what the packages under test import (`pkg^...` = its
+      # dependencies, not the package itself); the build job builds the rest.
+      - name: Build dependencies of the packages under test
+        if: env.PACKAGES != ''
+        run: |
+          filters=(); for p in $PACKAGES; do filters+=(--filter "$p^..."); done
+          pnpm -r "${filters[@]}" build
+
+      # Runs vitest with coverage in every package under test. Per-package
+      # vitest.config.ts files define coverage thresholds (e.g. contracts: 96%
+      # lines); vitest exits non-zero when coverage falls below threshold
+      # (at least 80%). A pull request measures the packages it touches and
+      # their dependents, each against its own unchanged threshold; pushes
+      # measure all of them.
+      - name: Test with coverage
+        if: env.PACKAGES != ''
+        run: |
+          filters=(); for p in $PACKAGES; do filters+=(--filter "$p"); done
+          pnpm -r "${filters[@]}" test:coverage
+
+  # The spec's conformance fixtures, run through the pack library. Always
+  # runs: the fixtures live in the spec repository, checked out
+  # into spec/, which no package filter can see.
+  scripts:
+    name: spec conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # After install: spec/ is not a workspace package.
+      - name: Check out the specification
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: pwfabric/spec
+          persist-credentials: false
+          path: spec
+
+      # spec-conformance.mjs loads packages/pack/dist: build it (and what it
+      # imports) first.
+      - name: Build the pack library
+        run: pnpm -r --filter "@pwfabric/pack..." build
+
+      - name: Spec conformance
+        run: node scripts/spec-conformance.mjs
+
+  # ── THE CLI ON EVERY OS ─────────────────────────────────────────────────
+  # `pwf` and its workspace dependencies built and tested on Linux, Windows
+  # and macOS, then a smoke (create → validate → pack twice → build) through
+  # the built binary. Each leg fails when its two packs differ; cli-os-hash
+  # then fails when the three operating systems produced different content
+  # hashes. Runs whenever `pwf` is under test (it depends on nearly every
+  # package, so in practice on most pull requests and every push).
+  # Windows and macOS legs run only on pull requests into `main`; every other
+  # run is Linux only.
+  cli-os:
+    name: cli on ${{ matrix.os }}
+    needs: scope
+    if: contains(format(' {0} ', needs.scope.outputs.packages), ' @pwfabric/cli ')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'pull_request' && github.base_ref == 'main' && '["ubuntu-latest","windows-latest","macos-latest"]' || '["ubuntu-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Git Bash on Windows: the package scripts use `rm -rf`, which cmd.exe
+        # only finds through the PATH Git Bash passes down.
+        shell: bash
+    outputs:
+      hash_Linux: ${{ steps.smoke.outputs.hash_Linux }}
+      hash_Windows: ${{ steps.smoke.outputs.hash_Windows }}
+      hash_macOS: ${{ steps.smoke.outputs.hash_macOS }}
+      archive_Linux: ${{ steps.smoke.outputs.archive_Linux }}
+      archive_Windows: ${{ steps.smoke.outputs.archive_Windows }}
+      archive_macOS: ${{ steps.smoke.outputs.archive_macOS }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The smoke creates its app from the spec's round-trip foundation.
+      - name: Check out the specification
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: pwfabric/spec
+          persist-credentials: false
+          path: spec
+
+      - name: Build pwf and its workspace dependencies
+        run: pnpm -r --filter "@pwfabric/cli..." build
+
+      - name: Test pwf
+        run: pnpm --filter @pwfabric/cli test
+
+      - name: Smoke (create, validate, pack twice, build)
+        id: smoke
+        run: node scripts/cli-smoke.mjs
+
+  cli-os-hash:
+    name: cli hash identical on every OS
+    needs: cli-os
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compare the content hashes
+        env:
+          FULL: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
+          LINUX: ${{ needs.cli-os.outputs.hash_Linux }}
+          WINDOWS: ${{ needs.cli-os.outputs.hash_Windows }}
+          MACOS: ${{ needs.cli-os.outputs.hash_macOS }}
+          ARCHIVE_LINUX: ${{ needs.cli-os.outputs.archive_Linux }}
+          ARCHIVE_WINDOWS: ${{ needs.cli-os.outputs.archive_Windows }}
+          ARCHIVE_MACOS: ${{ needs.cli-os.outputs.archive_macOS }}
+        run: |
+          {
+            echo "### pwf pack across operating systems"
+            echo
+            echo "| OS | content hash | archive SHA-256 (informative) |"
+            echo "|---|---|---|"
+            echo "| Linux | \`${LINUX:-missing}\` | \`${ARCHIVE_LINUX:-missing}\` |"
+            echo "| Windows | \`${WINDOWS:-missing}\` | \`${ARCHIVE_WINDOWS:-missing}\` |"
+            echo "| macOS | \`${MACOS:-missing}\` | \`${ARCHIVE_MACOS:-missing}\` |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -z "$LINUX" ]; then echo "the Linux leg reported no hash"; exit 1; fi
+          if [ "$FULL" != "true" ]; then
+            echo "Linux-only run (Windows and macOS legs run on pull requests into main)"; exit 0
+          fi
+          if [ -z "$WINDOWS" ] || [ -z "$MACOS" ]; then
+            echo "a leg reported no hash"; exit 1
+          fi
+          if [ "$LINUX" != "$WINDOWS" ] || [ "$LINUX" != "$MACOS" ]; then
+            echo "the content hash differs between operating systems"; exit 1
+          fi
+          echo "content hash identical on all three: $LINUX"
+
+  # ESLint in every package: errors fail the run, warnings do not.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm -r lint
+
+  # ── THE REQUIRED CHECK ──────────────────────────────────────────────────
+  # `ci` is the status check name branch protection requires. It stays
+  # this one job's id so the name never moves when jobs are added or split:
+  # it passes only when every job it needs succeeded or was skipped by its
+  # own `if:` (cli-os when `pwf` is not under test). A job skipped because a job before it
+  # failed is caught through that earlier job, which is listed here too.
+  ci:
+    if: always()
+    needs: [scope, build, test, lint, scripts, cli-os, cli-os-hash]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          # shellcheck disable=SC2016 # the quoted text is JavaScript
+          echo "$RESULTS" | node -e '
+            let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => {
+              const bad = Object.entries(JSON.parse(s)).filter(([, j]) => j.result !== "success" && j.result !== "skipped");
+              for (const [id, j] of Object.entries(JSON.parse(s))) console.log(`${id}: ${j.result}`);
+              if (bad.length) { console.error(`not green: ${bad.map(([id]) => id).join(", ")}`); process.exit(1); }
+            })'

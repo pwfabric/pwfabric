@@ -1,0 +1,12 @@
+node_modules/
+.next/
+dist/
+.turbo/
+*.tsbuildinfo
+coverage/
+.env
+.env.local
+.env.*.local
+
+# The specification, cloned here for spec:conformance and the CLI smoke
+spec/

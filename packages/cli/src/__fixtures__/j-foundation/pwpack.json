@@ -1,0 +1,13 @@
+{
+  "id": "@pwpack/fixture/foundation",
+  "version": "1.2.0",
+  "formatVersion": "1.0",
+  "engines": {
+    "pwfabric": ">=4.17 <5"
+  },
+  "requires": [],
+  "license": {
+    "fork": true,
+    "redistribute": true
+  }
+}

@@ -1,0 +1,96 @@
+---
+title: Developer FAQ
+description: Frequently asked technical questions about PWFabric.
+---
+
+# Developer FAQ
+
+Technical FAQ for developers integrating with PWFabric.
+
+## Getting started
+
+### What is PWFabric?
+
+PWFabric is an engine for building apps out of declarative surfaces. It
+provides the packages that render a surface, run an app built from surfaces,
+and read and write the files those apps are made of.
+
+### Do I need coding experience to use PWFabric?
+
+PWFabric is designed for developers. The authoring package requires
+TypeScript/JavaScript knowledge. Visual editors can be built on top of it —
+a surface is plain JSON — but none is part of the engine.
+
+### How do I get started?
+
+Follow the [Quickstart](/quickstart): it builds the `pwf` command line from
+source (the packages are at 1.0.0-rc.0 and not on npm yet), then runs a built
+app, writes a first block or creates an app from scratch.
+
+### Can I use PWFabric with my existing stack?
+
+PWFabric's packages are written for React 19 (the renderer also accepts
+React 18). Anything that can render React can render PWFabric surfaces; framework adapters for Vue, Svelte, or
+vanilla JS are not part of the supported surface today.
+
+## Technical questions
+
+### What is a Surface?
+
+A Surface is a composable digital interface built from blocks. Surfaces
+can be pages, dashboards, forms, or any other UI layout. They are
+defined declaratively and rendered by the PWFabric runtime.
+
+### What are Blocks?
+
+Blocks are the building units of surfaces. Each block type (heading,
+text, button, container, image, etc.) encapsulates UI and behavior.
+Blocks can be nested, configured, and composed to create complex
+interfaces.
+
+### How does an app talk to a server?
+
+Through two documented protocols, and only if it needs to: the
+[data protocol](/self-host/data) for records and the
+[session protocol](/self-host/session) for visitor sign-in. A static app makes
+no request at all. Every address comes from the app's own files, so any server
+that implements the protocols will do.
+
+### Can I create custom blocks?
+
+Yes. Custom blocks are written with `defineBlock()` from
+`@pwfabric/authoring`: a stable type, a Zod props schema,
+default values and a React component. See
+[`defineBlock()`](/authoring/define-block).
+
+### Is PWFabric open source?
+
+The engine is source-available under two licences. The interface packages
+(`@pwfabric/contracts`, `@pwfabric/authoring`) and the tooling
+(`@pwfabric/pack`, `@pwfabric/cli`) are Apache-2.0. The engine packages
+(`@pwfabric/core`, `@pwfabric/runtime`, `@pwfabric/runner`,
+`@pwfabric/embed`, `@pwfabric/compiler`) are Business Source License 1.1,
+which permits production use — including hosting apps for your own customers
+and self-hosting a `pwapp` — and reserves only offering PWFabric itself as a competing
+hosted service. Each version becomes Apache-2.0 four years after its release.
+See [Licensing](/licence) and [Self-hosting](/self-host).
+
+## Integration & deployment
+
+### Can visitors sign in with my own identity provider?
+
+Yes. An app either names an external OAuth 2.1 / OIDC issuer (the runner
+does the PKCE flow itself) or points at a session server you run. See
+[Visitor sign-in](/self-host/session).
+
+### Can I use my own database?
+
+Yes. The engine has no database of its own. An app reads and writes records
+through the [data protocol](/self-host/data), so whatever server implements it
+decides where the records live.
+
+## Still have questions?
+
+- Source: [`pwfabric/pwfabric` on GitHub](https://github.com/pwfabric/pwfabric)
+- Questions and bugs: [GitHub issues](https://github.com/pwfabric/pwfabric/issues)
+- Security disclosure: [`security@phimajor.com`](mailto:security@phimajor.com)

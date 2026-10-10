@@ -1,0 +1,87 @@
+{
+  "title": "Home",
+  "blocks": [
+    {
+      "type": "navbar"
+    }
+  ],
+  "capabilities": [
+    {
+      "capability": "platform/persistence",
+      "config": {
+        "dataSources": [
+          {
+            "id": "products",
+            "kind": "entity",
+            "entityType": "Product",
+            "query": {
+              "sort": [
+                {
+                  "field": "name",
+                  "direction": "asc"
+                }
+              ]
+            },
+            "fallback": []
+          },
+          {
+            "id": "spend",
+            "kind": "entity",
+            "entityType": "Product",
+            "aggregate": {
+              "fn": "sum",
+              "field": "price",
+              "filter": {
+                "field": "price",
+                "operator": "gt",
+                "value": 4
+              }
+            }
+          },
+          {
+            "id": "howMany",
+            "kind": "entity",
+            "entityType": "Order",
+            "aggregate": {
+              "fn": "count"
+            }
+          },
+          {
+            "id": "remote",
+            "kind": "entity",
+            "entityType": "Product",
+            "connector": "shop-api"
+          },
+          {
+            "id": "unknown",
+            "kind": "entity",
+            "entityType": "Ghost"
+          },
+          {
+            "id": "static",
+            "kind": "static",
+            "staticData": [
+              1,
+              2
+            ]
+          },
+          "not-a-source"
+        ]
+      }
+    },
+    {
+      "capability": "platform/entities",
+      "config": {
+        "formBindings": [
+          {
+            "formId": "order-form",
+            "sourceId": "orders"
+          }
+        ]
+      }
+    },
+    {
+      "capability": "persistence"
+    }
+  ]
+}

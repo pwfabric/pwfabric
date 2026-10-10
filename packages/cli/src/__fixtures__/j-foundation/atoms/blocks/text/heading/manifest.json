@@ -1,0 +1,10 @@
+{
+  "id": "text.heading",
+  "kind": "block",
+  "version": "1.0.0",
+  "category": "text",
+  "name": "heading",
+  "state": "stable",
+  "knowledge": { "purpose": "Test fixture block heading" },
+  "definition": { "props": [{ "name": "text", "type": "string" }, { "name": "level", "type": "string", "default": "h2" }], "canHaveChildren": false }
+}

@@ -1,0 +1,112 @@
+name: Release
+
+# Publishes the @pwfabric packages to npm when a GitHub Release is published.
+#
+# Cutting a release is a maintainer action: create the release (tag
+# `v<version>`, the version every package in packages/ carries) on a commit of
+# `main` whose CI is green. This workflow then waits in the `release`
+# environment until a required reviewer approves, and only that job can read
+# the npm token. A pull request — from a fork or not — never reaches it.
+#
+# Repository setup (once): an environment named `release` with required
+# reviewers and the secret NPM_TOKEN (an npm automation token with publish
+# rights on the @pwfabric scope).
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      # npm provenance: the registry records which workflow run built each
+      # tarball, from which commit.
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: The tag names the version every package carries
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          # shellcheck disable=SC2016 # the quoted text is JavaScript
+          node -e '
+            const fs = require("fs"), path = require("path")
+            const want = process.argv[1]
+            const bad = []
+            for (const dir of fs.readdirSync("packages")) {
+              const file = path.join("packages", dir, "package.json")
+              if (!fs.existsSync(file)) continue
+              const pkg = JSON.parse(fs.readFileSync(file, "utf8"))
+              if (pkg.private) continue
+              if (pkg.version !== want) bad.push(`${pkg.name}@${pkg.version}`)
+            }
+            if (bad.length) { console.error(`tag v${want} but: ${bad.join(", ")}`); process.exit(1) }
+          ' "$version"
+          # The dist-tag is the prerelease's own name: 1.0.0-rc.0 → `rc`,
+          # 1.1.0-beta.2 → `beta`; a version without one → `latest`. A user
+          # asks for a channel by name (`npm install @pwfabric/runtime@rc`), and
+          # `npm install @pwfabric/runtime` keeps resolving to the last stable.
+          case "$version" in
+            *-*) tag="${version#*-}"; tag="${tag%%.*}" ;;
+            *)   tag=latest ;;
+          esac
+          case "$tag" in
+            latest|alpha|beta|rc|next|canary) ;;
+            *) echo "unknown prerelease channel '$tag' in $version"; exit 1 ;;
+          esac
+          # The GitHub Release says the same: a prerelease version is marked
+          # Pre-release (so the repository never shows it as the latest
+          # release), and a stable one is not.
+          if [ "$tag" = latest ] && [ "$PRERELEASE" = true ]; then
+            echo "v$version is a stable version but the release is marked Pre-release"; exit 1
+          fi
+          if [ "$tag" != latest ] && [ "$PRERELEASE" != true ]; then
+            echo "v$version is a prerelease: mark the GitHub Release as Pre-release"; exit 1
+          fi
+          echo "dist_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Publishing $version to npm (dist-tag: $tag)" >> "$GITHUB_STEP_SUMMARY"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -r --filter "./packages/*" build
+
+      - name: Test
+        run: pnpm -r --filter "./packages/*" test
+
+      # pnpm publishes in dependency order, skips private packages and any
+      # version already on the registry, so a re-run after a partial failure
+      # finishes the job instead of failing on the packages that made it.
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+        run: >-
+          pnpm -r --filter "./packages/*" publish
+          --access public
+          --no-git-checks
+          --tag ${{ steps.version.outputs.dist_tag }}

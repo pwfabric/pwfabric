@@ -1,0 +1,17 @@
+{
+  "id": "platform/greeting",
+  "kind": "capability",
+  "version": "1.0.0",
+  "name": "Greeting",
+  "state": "stable",
+  "knowledge": {
+    "purpose": "Says hello",
+    "useCases": [
+      "A fixture page"
+    ],
+    "composesWith": [],
+    "antiPatterns": [
+      "Anything real"
+    ]
+  }
+}

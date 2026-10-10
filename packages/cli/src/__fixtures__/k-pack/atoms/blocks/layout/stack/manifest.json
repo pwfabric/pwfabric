@@ -1,0 +1,32 @@
+{
+  "id": "layout.stack",
+  "kind": "block",
+  "version": "1.0.0",
+  "category": "layout",
+  "name": "stack",
+  "state": "stable",
+  "knowledge": {
+    "purpose": "Stacks its children vertically",
+    "useCases": [
+      "A fixture page"
+    ],
+    "composesWith": [],
+    "antiPatterns": [
+      "Anything real"
+    ]
+  },
+  "definition": {
+    "props": [
+      {
+        "name": "gap",
+        "type": "string",
+        "required": false,
+        "default": "16px"
+      }
+    ],
+    "defaultProps": {
+      "gap": "16px"
+    },
+    "canHaveChildren": true
+  }
+}

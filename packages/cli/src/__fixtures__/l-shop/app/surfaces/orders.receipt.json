@@ -1,0 +1,29 @@
+{
+  "title": "Orders",
+  "blocks": [],
+  "capabilities": [
+    {
+      "capability": "persistence",
+      "config": {
+        "dataSources": [
+          {
+            "id": "orders",
+            "kind": "entity",
+            "entityType": "Order"
+          }
+        ]
+      }
+    },
+    {
+      "capability": "platform/entities",
+      "config": {
+        "formBindings": [
+          {
+            "formId": "order-form",
+            "sourceId": "orders"
+          }
+        ]
+      }
+    }
+  ]
+}

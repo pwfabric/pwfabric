@@ -1,0 +1,18 @@
+{
+  "name": "Still",
+  "kind": "connector",
+  "connection": "still",
+  "engine": {
+    "version": 1
+  },
+  "knowledge": {
+    "purpose": "A declared engine with nothing to compile",
+    "useCases": [
+      "A fixture page"
+    ],
+    "composesWith": [],
+    "antiPatterns": [
+      "Anything real"
+    ]
+  }
+}

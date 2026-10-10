@@ -1,0 +1,32 @@
+{
+  "id": "text.title",
+  "kind": "block",
+  "version": "1.0.0",
+  "category": "text",
+  "name": "title",
+  "state": "stable",
+  "knowledge": {
+    "purpose": "A page title",
+    "useCases": [
+      "A fixture page"
+    ],
+    "composesWith": [],
+    "antiPatterns": [
+      "Anything real"
+    ]
+  },
+  "definition": {
+    "props": [
+      {
+        "name": "text",
+        "type": "string",
+        "required": false,
+        "default": ""
+      }
+    ],
+    "defaultProps": {
+      "text": ""
+    },
+    "canHaveChildren": false
+  }
+}

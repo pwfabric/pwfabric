@@ -1,0 +1,124 @@
+import { z } from 'zod'
+import * as React from 'react'
+import type { BlockDefinition } from '@pwfabric/core'
+import type { BlockComponent } from '../../component-types.js'
+
+export const rich_text_editorPropsSchema = z.object({
+  name: z.string().optional(),
+  label: z.string().optional(),
+  placeholder: z.string().default('Start writing…'),
+  value: z.string().default(''),
+})
+
+export type RichTextEditorProps = z.infer<typeof rich_text_editorPropsSchema>
+
+export const RichTextEditorDefinition: BlockDefinition = {
+  type: 'rich-text-editor',
+  name: 'RichTextEditor',
+  category: 'form',
+  icon: 'edit',
+  schema: rich_text_editorPropsSchema,
+  defaultProps: { placeholder: 'Start writing…', value: '' },
+  canHaveChildren: false,
+}
+
+const TOOLBAR: { command: string; label: string; italic?: boolean }[] = [
+  { command: 'bold', label: 'B' },
+  { command: 'italic', label: 'I', italic: true },
+  { command: 'insertUnorderedList', label: '•' },
+]
+
+export const RichTextEditorBlock: BlockComponent = ({ props, context, block }) => {
+  const { name, label, placeholder = 'Start writing…', value = '' } = props as RichTextEditorProps
+  const editorRef = React.useRef<HTMLDivElement>(null)
+  const interactive = context.interactionMode !== 'inert'
+  const [empty, setEmpty] = React.useState(!value)
+
+  const applyCommand = (command: string) => {
+    if (!interactive) return
+    editorRef.current?.focus()
+    document.execCommand(command)
+    setEmpty(!(editorRef.current?.textContent ?? '').trim())
+  }
+
+  const handleInput = () => {
+    const html = editorRef.current?.innerHTML ?? ''
+    setEmpty(!(editorRef.current?.textContent ?? '').trim())
+    context.onEvent?.({ type: 'change', blockId: block.id, payload: { name, value: html } })
+  }
+
+  return (
+    <div className="pw-rich-text-editor" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {label && <label style={{ fontSize: 13, fontWeight: 600 }}>{label}</label>}
+      <div
+        style={{
+          display: 'flex',
+          gap: 2,
+          padding: 4,
+          border: '1px solid var(--pw-color-border, #e4e4e7)',
+          borderBottom: 'none',
+          borderRadius: '6px 6px 0 0',
+          background: 'var(--pw-color-surface, #fafafa)',
+        }}
+      >
+        {TOOLBAR.map((tool) => (
+          <button
+            key={tool.command}
+            type="button"
+            onClick={() => applyCommand(tool.command)}
+            disabled={!interactive}
+            style={{
+              width: 28,
+              height: 28,
+              border: '1px solid transparent',
+              borderRadius: 4,
+              background: 'transparent',
+              // Not the UA button black; the chain is ON-CARD: the toolbar
+              // paints the surface background, and on a dark-ambient/light-surface
+              // theme plain text would be light on light (measured 1.12:1).
+              color: 'var(--pw-color-text-on-card, var(--pw-color-text, #09090b))',
+              fontWeight: 700,
+              fontStyle: tool.italic ? 'italic' : 'normal',
+              cursor: interactive ? 'pointer' : 'default',
+            }}
+          >
+            {tool.label}
+          </button>
+        ))}
+      </div>
+      <div style={{ position: 'relative' }}>
+        {empty && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: 10,
+              left: 12,
+              color: 'var(--pw-color-text-muted, #71717a)',
+              fontSize: 14,
+              pointerEvents: 'none',
+            }}
+          >
+            {placeholder}
+          </span>
+        )}
+        <div
+          ref={editorRef}
+          contentEditable={interactive}
+          suppressContentEditableWarning
+          onInput={handleInput}
+          dangerouslySetInnerHTML={{ __html: value }}
+          style={{
+            minHeight: 120,
+            padding: '10px 12px',
+            border: '1px solid var(--pw-color-border, #e4e4e7)',
+            borderRadius: '0 0 6px 6px',
+            fontSize: 14,
+            lineHeight: 1.6,
+            outline: 'none',
+          }}
+        />
+      </div>
+    </div>
+  )
+}

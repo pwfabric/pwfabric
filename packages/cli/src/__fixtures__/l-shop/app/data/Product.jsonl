@@ -1,0 +1,4 @@
+{"id":"p1","name":"Tea","price":4}
+
+{"id":"p2","name":"Coffee","price":"6"}
+{"name":"Cocoa","price":5,"createdAt":"2026-01-01T00:00:00.000Z","updatedAt":"2026-01-01T00:00:00.000Z"}

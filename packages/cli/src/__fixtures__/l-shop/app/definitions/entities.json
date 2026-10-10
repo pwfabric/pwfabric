@@ -1,0 +1,66 @@
+{
+  "entities": [
+    {
+      "typeId": "Product",
+      "displayName": "Product",
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "price",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "typeId": "Order",
+      "displayName": "Order",
+      "fields": [
+        {
+          "name": "item",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "qty",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "typeId": "Note",
+      "fields": [
+        {
+          "name": "text",
+          "type": "text"
+        },
+        {
+          "name": "ownerId",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "typeId": "Review",
+      "fields": [
+        {
+          "name": "stars",
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "typeId": "Draft",
+      "scope": "owner",
+      "fields": [
+        {
+          "name": "title",
+          "type": "text"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,295 @@
+---
+title: Visitor sign-in
+description: The session protocol a self-hosted pwapp runs when its pages are gated — the PKCE flow, the endpoints, where the session lives, refresh, sign-out, and what a self-host must configure.
+---
+
+# Visitor sign-in and sessions
+
+When an app declares that visitors must sign in, the runner refuses to render
+until a session exists. This page is the protocol behind that, read from the
+engine source. Every section names its source; known gaps are listed under
+*Known limitations*.
+
+There are **two doors**, and the app's declaration picks one:
+
+| Topology | Who runs the login | What the runner does | Token |
+|---|---|---|---|
+| `external` | an OIDC issuer the app names | full-page PKCE redirect to the issuer | the issuer's JWT |
+| `app` | a session server at the app's own API base | posts email + password to that base, or sends the visitor to the app origin's `/_auth/start/<method>` for a provider | an opaque session token the session server minted |
+
+Source: `packages/contracts/src/fabric/project-identity.ts`,
+`packages/runner/src/app-session.ts` (module note).
+
+## The visitor is an app principal
+
+A visitor of an app is an **app principal**, which a session server stores per
+app and keys by `(app, issuer, subject)`. It is not an account of the host
+that serves the app: a principal belongs to one app, and signing into one app
+signs you into nothing else, even with the same GitHub account. A server that
+also has its own users should resolve visitors separately, so that an app
+token can never be read as any other kind of session. A password visitor and a
+Google visitor with the same email are different principals, because `issuer`
+differs.
+
+## What the app declares
+
+**`pwpack/project.json` → `identity`**, written when the app is built from its
+sign-in definition (`app/definitions/auth.json`):
+
+```json
+{ "identity": { "required": true, "topology": "app", "methods": ["password"] } }
+```
+
+`required` is the gate switch; `topology` is `app` (default) or `external`;
+`methods` (app only) is drawn from the closed set
+`password | host | google | github | microsoft`. The contract refuses
+contradiction (an issuer with `app`, or `methods` with `external`) but allows
+`required: true` with no methods. Such an app ships no `auth.json`; the
+runner still gates it and shows the wall with a disabled sign-in button and
+"This app requires sign-in, but no identity provider is configured."
+
+**`pwpack/auth.json`**, one of three shapes:
+
+```json
+// external — the build appends offline_access to the declared scopes
+{ "provider": "oauth2-pkce", "issuer": "https://…", "clientId": "…",
+  "scopes": ["openid","profile","email","offline_access"],
+  "audience": "api://…", "authorizeUrl": "…", "tokenUrl": "…" }
+// app door with a password, optionally with provider buttons
+{ "provider": "password", "loginUrl": "<base>/login", "registerUrl": "<base>/register",
+  "logoutUrl": "<base>/logout", "sessionUrl": "<base>/session",
+  "providers": [{ "method": "google" }],
+  "startUrl": "/_auth/start", "gatewaySessionUrl": "/_auth/session",
+  "gatewayLogoutUrl": "/_auth/logout", "methods": ["password","google"] }
+// app door with provider buttons only
+{ "provider": "platform", "providers": [{ "method": "github" }],
+  "startUrl": "/_auth/start", "gatewaySessionUrl": "/_auth/session",
+  "gatewayLogoutUrl": "/_auth/logout", "methods": ["github"] }
+```
+
+`<base>` is the session server's base for this app — the same `<appApiBase>`
+its record API uses. A build that knows no such base ships **no** `auth.json`
+for a password app. `authorizeUrl`/`tokenUrl` in the external shape are
+optional; absent, the runner discovers them.
+
+A provider button carries only its `method`. The client id, authorize URL and
+secret stay on the server; there is no `exchangeUrl`, no `redeem` mode and no
+provider `clientId`, `authorizeUrl` or `scopes` in the package.
+
+Source: `packages/runner/src/types.ts` (`PwappAuth`).
+
+## Door A — external issuer (PKCE)
+
+Built only when `auth.provider === 'oauth2-pkce'` with `issuer` and
+`clientId`; any other provider value logs "unsupported provider" and the app
+renders anonymously (the gate stays up if `required`).
+
+| Step | Request | Parameters |
+|---|---|---|
+| Discovery (only if an endpoint is missing) | `GET {issuer}/.well-known/openid-configuration` | reads `authorization_endpoint`, `token_endpoint`; both required |
+| Authorize | redirect to `authorizeUrl` | `response_type=code`, `client_id`, `redirect_uri`, `scope` (space-joined), `state`, `code_challenge`, `code_challenge_method=S256` |
+| Exchange | `POST tokenUrl` (form-encoded) | `grant_type=authorization_code`, `code`, `redirect_uri`, `client_id`, `code_verifier` |
+| Refresh | `POST tokenUrl` (form-encoded) | `grant_type=refresh_token`, `refresh_token`, `client_id` |
+
+Token responses are read as
+`{ access_token, refresh_token?, id_token?, expires_in, scope? }`.
+A failed discovery is not cached.
+
+```text
+runner (click)   verifier = 32 random bytes as hex; state = 32 hex chars
+                 challenge = base64url(SHA-256(verifier))
+                 sessionStorage["pwapp_pkce_pending:<k>"] = {state, verifier, redirectUri, returnTo}
+                 location.assign(authorizeUrl?…&code_challenge&state)        ──► issuer
+runner (boot)                                                                ◄── redirect_uri?code&state
+                 takePendingPkce(state)   (record removed whether or not it matches)
+                 POST tokenUrl grant_type=authorization_code                 ──► issuer
+                                                                             ◄── {access_token, refresh_token?, id_token?, expires_in}
+                 sessionStorage["pwapp_pkce_rt:<k>"] = refresh_token; history.replaceState(returnTo)
+                 gate removes itself; route() renders
+```
+
+`redirect_uri` is the **app base** — `location.origin + router.base`: the
+shell's own pathname under hash routing, the `<base href>` under path
+routing. One registered redirect URI per app; no callback route. `returnTo`
+(path + search + hash at click time) restores the starting page.
+
+**Storage and token.** `k = FNV-1a(issuer | clientId | sorted scopes)` in
+base-36, so two apps on one origin cannot share a token. Both keys live in
+`sessionStorage`; the access token is memory-only. Session shape:
+`{ id, state: 'authenticated', user?, token, provider: 'oauth2', createdAt, expiresAt }`
+with
+`token = { accessToken, refreshToken?, idToken?, expiresAt: now + expires_in*1000, scopes }`.
+`user` is decoded (not verified) from `id_token` (else `access_token`):
+`sub`, `name`, `email ?? preferred_username`, `roles`.
+
+**Refresh and expiry.** On boot, a stored refresh token triggers one
+single-flight refresh before the first route; on failure the key is removed
+and the login button returns (not an error). `getAccessToken()` returns the
+cached token while `expiresAt − 30 s > now`, else refreshes; a response with
+no new `refresh_token` keeps the old one. If `window.__pwfabric_getToken` exists
+(SPFx host) it is asked first, for the resource `https://graph.microsoft.com`;
+if it throws or yields no token, the PKCE session is used.
+`offline_access` is what makes a refresh token exist; without it neither
+refresh nor the door token works, which is why the build appends it.
+
+**Door token.** When `auth.json` has `audience`, the runner redeems the
+refresh token for the scope `<audience>/.default` on first need and sends
+that token as `Authorization: Bearer` on receipt requests, so a gateway that
+gates receipts accepts an issuer visitor. The scope is never sent on the
+authorize request.
+
+**Sign-out.** `logout()` removes `pwapp_pkce_rt:<k>` and clears the session;
+no end-session request goes to the issuer. A callback with no matching
+`state`, or a failed exchange, sets `lastError`, shown under the button.
+
+**Server side.** A server whose record and session routes accept the issuer's
+JWT takes it as `Authorization: Bearer` or `x-app-session`. It should fetch
+`jwksUri` (and cache it), allow only `RS256 | RS384 | RS512`, check
+`iss === issuer`, that `aud` contains `audience ?? clientId`, and `exp` (with
+a small clock skew); claims map through `identity.claims` (`sub`, `email`,
+`name`, optional `roles`) to the app principal. An `external` app with no
+`jwksUri` cannot be verified and is answered `503 IDENTITY_UNRESOLVED`.
+
+Source: `packages/runner/src/pkce.ts`, `…/auth.ts`,
+`…/run-app.ts`, `…/router.ts` (`base`),
+`packages/runtime/src/auth/types.ts`.
+
+## Door B — the app door
+
+Used when `auth.json` has `loginUrl` and `identity.topology !== 'external'`,
+or when it has a non-empty `providers` list.
+The runner never knows a hostname; it posts to the addresses it was handed.
+
+| Route under `<base>` | Body / headers | Response |
+|---|---|---|
+| `POST /register` | `{ email, password (≥8), displayName? }` | `201 { data: { id, principalId, projectId, expiresAt, token, principal } }`; `409 CONFLICT` |
+| `POST /login` | `{ email, password }` | `200` same shape; `401 INVALID_CREDENTIALS` for every failure |
+| `POST /logout` | `x-app-session` or bearer | `200 { data: { signedOut: true } }`; idempotent |
+| `GET /session` | `x-app-session` or bearer | `200 { data: { principal } }`; `principal: null` only on anonymous-allowed apps |
+
+The login routes first check the door — `404 PROJECT_NOT_FOUND`,
+`409 WRONG_DOOR` (the app is `external`; body carries `issuer`),
+`409 METHOD_UNAVAILABLE` (body lists `methods`) — and should be rate-limited
+(a few requests per minute per client).
+
+**Session token.** An opaque random token (at least 32 random bytes,
+base64url is a good encoding); store only its hash and ignore revoked rows.
+Its lifetime is the server's choice and is checked on every resolve; there is
+no refresh. Presented on the `x-app-session` header (or
+`Authorization: Bearer`) — a header, not a cookie, because the app is
+cross-origin and a cookie of the host must never double as a visitor
+credential. The runner stores `{ token, expiresAt, principal? }` in
+`sessionStorage` under `pwapp_session:<appId>` (`appId = project.id ??
+project.title ?? 'app'`); an expired or unparsable entry is deleted on read.
+When the stored session has no name or e-mail, the runner asks
+`GET sessionUrl` once, with `x-app-session`, and merges `data.principal`
+into the stored session; a failure leaves it as it was.
+The token rides on every receipt fetch as `x-app-session`, and on entity
+requests whose source ref equals the app's own API base as `Authorization:
+Bearer`; any other ref gets no token.
+
+**Sign-out.** The account control (and an `auth:signOut` event) posts, in
+parallel and ignoring failures, `POST logoutUrl` with `x-app-session`
+(revoking the token) and `POST <gatewayLogoutUrl>` (default `/_auth/logout`) with `credentials: same-origin`
+and `x-pwapp-request: 1` (deleting the cookie), then clears the stored
+session, the PKCE session if any, and the data caches, and re-evaluates the
+gate.
+
+```text
+password  gate form ── POST loginUrl {email,password} ──► server: verify password, mint token
+                    ◄── 200 {data:{token, expiresAt, principal}}
+          sessionStorage["pwapp_session:<appId>"] = …; gate down; route()
+          GET pwpack/surfaces/<page>.receipt.json   (x-app-session)
+          entity reads → Authorization: Bearer → <base>/records/<type>
+
+provider  click → location.assign('/_auth/start/<method>?returnTo=<path>')   ──► app origin
+          the app origin runs the provider flow with the session server
+          ◄── 302 <returnTo>   session in an HttpOnly cookie on the app origin
+              (failure: 302 <returnTo>?auth_error=<code>)
+          boot: auth_error read and removed before routing, shown on the wall
+                stored session? use it, no request
+                else GET /_auth/session  credentials: same-origin, x-pwapp-request: 1
+                ◄── 200 {data:{token, expiresAt, principal}} → stored like a password session
+                    anything else (401, an index page, a network error) = no session
+```
+
+The browser holds no provider client id, verifier or code. `returnTo` must be
+a path on the app's own origin; anything not starting with `/`, or starting
+with `//` or `/\`, is replaced by `/`. The app origin answers
+`/_auth/session` only to requests carrying `x-pwapp-request: 1`, so another
+site cannot read a session out. Which providers reach `auth.json` is decided
+when the app is built: declared methods filtered by what the host has provider
+credentials for. See session-protocol §4.2.
+
+Source: `packages/runner/src/app-session.ts`, `…/helpers.ts` (`fetchJson`),
+`…/run-app.ts` (`dataServiceConfig.getAccessToken`).
+
+## The gate
+
+`isGated()` is true when `identity.required` and neither a PKCE session nor
+an app session exists. While gated the runner fetches nothing. The gate is a
+fixed full-screen dialog over the mount point: a password door draws an
+email/password `<form>` posting to `loginUrl`; otherwise a single button calls
+`bridge.loginWithPkce()`, disabled with "This app requires sign-in, but no
+identity provider is configured." when there is no bridge; provider buttons
+appear under either, one per `providers[]` entry, and a provider-only door
+shows just the buttons. When `registerUrl` is present the password form
+offers "create an account" and posts to `registerUrl` instead. It removes itself the moment a session appears and
+re-runs the refused route. A returning visitor never sees the wall: the
+bridge callback/restore and `completeProviderSignIn` both run before the gate
+mounts. Every word the gate and the session pill draw follows the app's
+locale (`en` or `tr`, default `en`).
+
+The gate protects the *view*. A host MAY also refuse
+`pwpack/surfaces/*.receipt.json` without a session that `GET …/session`
+confirms (cache positive answers briefly, negative ones never). On a plain
+static host there is no such gateway: receipts are plain files, and the only
+server-side enforcement is the record server's refusal of records.
+
+Source: `packages/runner/src/sign-in-gate.ts`, `…/login-button.ts`,
+`…/run-app.ts`.
+
+## Self-host checklist
+
+**External issuer**
+
+1. Register a **public client** (PKCE, no secret). `clientId` goes in
+   `auth.json`; the record server expects audience `identity.issuer.audience ?? clientId`.
+2. Register **one redirect URI**: `https://<host><app base>` — the shell's
+   pathname under hash routing, the `<base href>` under path routing.
+   Legacy `redirectPath` is honoured only if a callback already lands there.
+3. The issuer's discovery document and token endpoint must answer
+   cross-origin `fetch` from your host, or state `authorizeUrl`/`tokenUrl`
+   in `auth.json` to skip discovery.
+4. Tokens must be RSA-signed (`RS256/384/512`) with `iss`, `aud`, `exp` and
+   the claims named in `identity.claims`.
+5. If the app reads data, the server serving `<base>/records/*` must know the
+   app's issuer with a `jwksUri` — see [Data and receipts](/self-host/data).
+
+**App door**
+
+1. `auth.json` must point at a reachable `<base>`; it is written when the app
+   is built — if the server moves, rewrite the file.
+2. The server must allow your origin for CORS with credentials and the
+   `X-App-Session` header; an app on an origin it does not allow is refused at
+   preflight.
+3. Provider buttons need a server that answers the app origin's
+   `/_auth/start/<method>`, `/_auth/session` and `/_auth/logout` (typically a
+   gateway in front of the static files). The provider registration lists
+   that server's callback, not the app's page; the browser never sees a client
+   id.
+4. Serve over HTTPS: `sessionStorage` holds the raw session token.
+
+Source: `packages/runner/src/auth.ts`.
+
+## Known limitations
+
+- **External issuer and the app's own records.** The runner recovers the
+  app's own API base only from `loginUrl`, which an external-issuer
+  `auth.json` does not carry. Such an app therefore sends no token on its own
+  record requests (receipts do carry the door token), and a session server
+  that gates records answers them `401 SIGN_IN_REQUIRED`. This is a known
+  limitation of format 1.0, to be resolved in a later format version; see
+  session-protocol §9.
+- **Refresh-token rotation** is the issuer's policy; the runner only keeps the
+  old refresh token when none is returned.

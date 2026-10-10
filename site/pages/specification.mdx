@@ -1,0 +1,56 @@
+---
+title: Specification
+description: The thirteen documents that specify PWFabric's file formats and wire protocols, independently of any implementation.
+---
+
+# Specification
+
+The PWFabric formats are specified on their own terms: a pack, an app or a
+host written against these documents should work with the reference engine
+without reading its source. Each format has a document and, where the format
+is data, a JSON Schema (2020-12), with valid and invalid examples and
+conformance tests beside it.
+
+**Where they live:** in their own repository,
+[`pwfabric/spec`](https://github.com/pwfabric/spec), under
+the Apache License 2.0. `<name>.md` is the document and
+`schemas/<name>.schema.json` its schema.
+
+| Document | Status | What it covers |
+|---|---|---|
+| `pwpack-format` | stable | The pwpack folder, `pwpack.json`, atom paths, and the deterministic `.pwpack` archive and its content hash. |
+| `pwapp-format` | draft | A published app: the served folder, its shell, import map and runtime files, and `publish.json`. |
+| `block-manifest` | stable | The `manifest.json` beside every block atom: identity, props and their defaults. |
+| `capability-manifest` | stable | The `manifest.json` beside every capability atom. |
+| `connector-manifest` | draft | Connector and provider atoms, and the engine declaration that serves them. |
+| `appearance` | stable | Theme tokens, the dark variant, mode policy and contrast rules. |
+| `receipt` | draft | A page: `app/surfaces/<key>.receipt.json`, its block tree, bindings and capabilities. |
+| `plan` | draft | `app/plan.json`: what the app is for, page by page. |
+| `definitions` | draft | `app/definitions/*.json`: appearance, navigation, connections, entities and sign-in. |
+| `envelope` | stable | The files a runner reads to run an app. |
+| `session-protocol` | draft | How a running app signs its visitors in and keeps the session. |
+| `data-protocol` | draft | How a running app reads and writes data: sources, record endpoints and their answers. |
+| `hosting-security` | draft | What a host must do so an app's code stays inside the app: an origin with no other privileges, the app's Content Security Policy, and where the session lives. |
+
+**stable** means the format is implemented, exercised by the reference
+engine's tests and by the examples, and changes only by a new
+`formatVersion`. **draft** means the document describes what implementations
+do today but part of it is still moving; each draft says which part and why.
+
+## Conformance
+
+Beside the documents, the specification repository carries what an
+implementation needs to check itself:
+
+- `examples/<schema>/{valid,invalid}/`: documents each schema must accept or
+  refuse.
+- `fixtures/`: byte-level pwpack fixtures, including hostile archives, with
+  the verdict, codes, content hash and atoms a conforming reader must produce.
+- `roundtrip/`: three small apps (static, with a custom block, with data and
+  sign-in) and the pack they pin, for the rule that an app survives export →
+  import → export unchanged.
+
+In the specification repository, `pnpm test` runs the schema and fixture
+tests. In the engine repository, with the specification cloned into `spec/`,
+`node scripts/spec-conformance.mjs` checks the reference implementation
+against the fixtures.

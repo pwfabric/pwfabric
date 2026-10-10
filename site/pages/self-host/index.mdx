@@ -1,0 +1,159 @@
+---
+title: Self-hosting
+description: Run a pwapp on your own static host — what the runner needs from the host, and which protocols a server must speak when the app needs data or sign-in.
+---
+
+# Self-hosting a pwapp
+
+A PWFabric app in its runnable form is a `pwapp`, and it runs on any static
+host with `@pwfabric/runner`. The runner is a browser ES
+module: it fetches the app's declaration files, mounts the renderer, and adds
+routing, navigation and visitor sign-in. No build step, no Node process.
+
+How far a self-host goes depends on what the app needs:
+
+| The app… | Runs where | What is on the wire |
+|---|---|---|
+| is static — pages, content, appearance | anywhere that serves files | nothing; the host is enough |
+| reads or writes data — lists, forms, entities | anywhere, plus an API | the data protocol — see [Data and receipts](/self-host/data) |
+| gates pages behind visitor sign-in | anywhere, plus an issuer or session server | the session protocol — see [Visitor sign-in](/self-host/session) |
+
+The first row needs only this page. The other two need a server that speaks the
+documented protocol; its address is part of the app's own files, so any
+implementation will do.
+
+## What a built app contains
+
+A built app is a complete, runnable folder: the app files, the block bundles,
+and a copy of the runner. `pwf build` writes one; any other tool that builds
+PWFabric apps writes the same layout. The app's source (a `pwpack`) has no
+engine in it and is not runnable on its own.
+
+Inside the folder, the runner reads plain JSON files and resolves blocks from a
+manifest next to them:
+
+```text
+index.html            ← the shell: import map, renderer, mount point
+_headers              ← the app's Content Security Policy, for hosts that read it
+publish.json          ← what was built: atoms, hashes, the policy
+assets/
+  runner.js           ← @pwfabric/runner, copied in
+  boot.js             ← starts the runner: calls runApp()
+  seed.js             ← seeds the shared globals the block bundles read
+  embed.js, theme.css ← renderer and theme
+shims/                ← import-map shims the bundles resolve against
+pwpack/
+  project.json        ← the app: pages, routes, surfaces (required)
+  navigation.json     ← menus (optional)
+  appearance.json     ← theme tokens (optional)
+  auth.json           ← sign-in declaration (optional)
+  connections.json    ← data connections (optional)
+blocks/
+  manifest.json       ← which block bundles exist and where
+  …                   ← the bundles themselves
+engines/
+  manifest.json       ← connector engines (optional)
+```
+
+The exact shape of each file is in [The envelope](/self-host/envelope).
+
+The runner asks for `auth.json` only when `project.json` declares an
+identity; every optional file that is missing is read as absent.
+
+Source: `packages/runner/src/load-envelope.ts` (`loadEnvelope`),
+`packages/cli/src/dev/assemble.ts` (the files `pwf build` writes).
+
+## Mounting the runner
+
+A built app already contains an `index.html` that does this; it is shown here
+so you know what to keep when you replace the shell with your own page:
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="…" />
+    <link rel="stylesheet" href="./assets/theme.css" />
+    <script type="importmap">{ "imports": { … } }</script>
+    <script src="./assets/embed.js"></script>
+    <script src="./assets/seed.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./assets/boot.js"></script>
+  </body>
+</html>
+```
+
+`assets/boot.js` is the module that starts the app:
+
+```js
+import { runApp } from './runner.js'
+
+runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', router: 'hash', locale: 'en' })
+```
+
+The import map is the only inline script, so the app's Content Security
+Policy allows it by one hash and nothing else. An inline `runApp()` call would
+be blocked; put your own start-up code in a file like `boot.js`. Keep
+`seed.js` before it: it seeds the shared globals the block bundles read.
+
+Source: `packages/cli/src/dev/shell.ts` (`buildShellHtml`, `bootScript`,
+`seedScript`).
+
+`runApp()` takes an options object. Every field has a default that matches
+the folder layout above, so `runApp()` with no arguments is equivalent when
+the files sit next to `index.html`.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `source` | `'./pwpack'` | folder path or absolute URL of the app files |
+| `blocks` | `'./blocks/'` | folder holding the block `manifest.json` |
+| `engines` | `'./engines'` | folder holding the connector-engine `manifest.json` |
+| `router` | `'hash'` | `'hash'`, `'path'` or `'auto'` — see routing |
+| `mount` | `'#root'` | selector of the element the app renders into |
+| `locale` | `'en'` | content locale of the delivered app (`'en'` or `'tr'`) |
+
+Source: `packages/runner/src/types.ts` (`RunAppOptions`).
+
+## Routing on a static host
+
+The default router is `hash`: routes live after `#` in the URL, which works on
+every static host without configuration.
+
+`path` routing gives clean URLs but needs the host to serve `index.html` for
+every path (an "SPA fallback"). `router: 'path'` uses it as asked.
+`router: 'auto'` picks `path` only when `history.pushState` works **and** the
+page declares the fallback:
+
+```html
+<meta name="pw-router" content="path" />
+```
+
+otherwise `auto` falls back to `hash`. If you enable `path` without
+the fallback, deep links return the host's 404.
+
+Source: `packages/runner/src/types.ts` (`router`),
+`packages/runner/src/router.ts`.
+
+## When the app talks to a server
+
+A static app makes no request beyond its own files. Two things do, and each has
+its own page:
+
+- **Data.** When a surface binds to an entity, the runtime sends the query to
+  the configured API base. What it sends, and what it expects back, is the
+  [data protocol](/self-host/data).
+- **Sign-in.** When a page is auth-gated, the runner opens one of two doors,
+  chosen by the app's identity topology: a PKCE flow against an external OIDC
+  issuer, or a session server's app-session endpoints. The endpoints, the
+  token, and where the session lives are in the
+  [session protocol](/self-host/session).
+
+These pages are written from source and cite it. A citation that is a file
+path points into the engine repository
+([pwfabric/pwfabric](https://github.com/pwfabric/pwfabric)). The server side is
+described by the behaviour a host must implement, not by any one
+implementation; the normative versions are the `session-protocol` and
+`data-protocol` documents of the [specification](/specification).

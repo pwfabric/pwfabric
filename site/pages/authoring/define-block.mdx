@@ -1,0 +1,209 @@
+---
+title: defineBlock()
+description: Author a custom block — a stable type, a Zod props schema, default values and a React component — and validate it with validateBlockDefinition().
+---
+
+# `defineBlock()`
+
+`defineBlock()` turns an options object into a frozen block definition. A
+block has a stable `type`, a display `name`, a Zod `schema` for its props,
+`defaultProps` that satisfy the schema, and a React `component` that renders
+it.
+
+```tsx
+import { defineBlock } from '@pwfabric/authoring'
+import { z } from 'zod'
+
+export const PricingCard = defineBlock({
+  type: 'pricing-card',
+  name: 'Pricing Card',
+  category: 'data',
+  icon: '💳',
+  schema: z.object({
+    title: z.string(),
+    price: z.number(),
+    currency: z.string().default('USD'),
+    features: z.array(z.string()),
+    highlighted: z.boolean().default(false),
+  }),
+  defaultProps: {
+    title: 'Basic',
+    price: 9.99,
+    currency: 'USD',
+    features: ['Feature 1', 'Feature 2'],
+    highlighted: false,
+  },
+  component: ({ props }) => (
+    <div className={props.highlighted ? 'border-2 border-primary' : 'border'}>
+      <h3>{props.title}</h3>
+      <p>{props.currency} {props.price}</p>
+      <ul>{props.features.map((f, i) => <li key={i}>{f}</li>)}</ul>
+    </div>
+  ),
+})
+```
+
+## Signature
+
+```ts
+function defineBlock<
+  TProps extends Record<string, unknown>,
+  TSchema extends ZodSchema<TProps, ZodTypeDef, unknown> = ZodSchema<TProps>,
+>(options: CustomBlockOptions<TProps, TSchema>): CustomBlockDefinition<TProps>
+```
+
+The result is `Object.freeze`d. Props are inferred from the schema you pass.
+
+Source: `packages/authoring/src/define-block.ts` (`defineBlock`),
+`packages/authoring/src/types.ts` (`CustomBlockOptions`, `CustomBlockDefinition`).
+
+## Options
+
+The TypeScript type requires five fields: `type`, `name`, `schema`,
+`defaultProps`, `component`. At run time only `type` is enforced by throwing;
+the other four degrade with a `console.warn` so that one malformed block
+cannot blank a page. The rejection of a bad `name` is the gate's job, see
+[Validating a definition](#validating-a-definition).
+
+| Field | Type | Run-time behaviour |
+|---|---|---|
+| `type` | `string` | **Throws** unless a string of 2–50 characters matching `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`, and not one of the reserved first-party types below |
+| `name` | `string` | Coerced to `type` with a warning unless a string of 1–100 characters |
+| `schema` | `ZodSchema` | Missing → `z.object({}).passthrough()` with a warning (props unvalidated) |
+| `defaultProps` | `TProps` | Missing → `{}` with a warning; a mismatch against `schema` is warned, never thrown |
+| `component` | `(props) => ReactNode` | Missing → a visible dashed placeholder reading `Block "<type>" has no component` |
+
+Reserved types (the first-party names `defineBlock` refuses): `container`,
+`grid`, `text`, `heading`, `button`, `image`, `form`, `input`, `link`,
+`icon`, `badge`, `code`, `divider`, `list`, `table`, `avatar`, `tooltip`,
+`accordion`, `tabs`, `dropdown`, `modal`.
+
+### Optional fields
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `category` | `BlockCategory` | `'content'` | Grouping label. The union is `layout` · `panel` · `text` · `data` · `control` · `media` · `form` · `feedback` · `overlay` · `container` · `integration`; the fallback `'content'` is not one of them, so pass a category explicitly |
+| `icon` | `string` | `'◆'` | Glyph shown in pickers and outlines |
+| `canHaveChildren` | `boolean` | `false` | Whether the block accepts nested blocks |
+| `allowedChildren` | `readonly string[]` | any | Child `type`s permitted when `canHaveChildren` is true; enforced by `validateBlock` |
+| `allowedParents` | `readonly string[]` | any | Parent `type`s this block may sit in; carried on the definition, not checked by this package |
+| `traits` | `readonly string[]` | — | Open trait vocabulary the block declares (kebab-case) |
+| `allowedChildTraits` | `readonly string[]` | — | A child passes if it carries any of these traits; containers only |
+| `maxInstances` | `number` | unlimited | Per-surface instance cap; carried on the definition |
+
+Source: `packages/authoring/src/define-block.ts`
+(`validateBlockType`, `coerceBlockName`, `warnOnSchemaMismatch`, `placeholderComponent`),
+`packages/authoring/src/types.ts` (`CustomBlockOptions`),
+`packages/core/src/blocks/types.ts` (`BlockCategory`).
+
+## The component
+
+Your component receives one object:
+
+| Prop | Type | Meaning |
+|---|---|---|
+| `props` | `TProps` | Parsed against `schema`; on a failed parse the wrapper substitutes `defaultProps` |
+| `blockId` | `string` | The instance id |
+| `children` | `ReactNode?` | Rendered nested blocks, for container blocks |
+| `context` | `CustomBlockContext?` | `theme` (`'light'` or `'dark'`), `viewport` (a breakpoint name), and an optional `onEvent` |
+
+`context` is a narrowed view of the renderer's block context: capabilities,
+the image adapter and the base path are platform internals and are not passed
+through.
+
+```tsx
+defineBlock({
+  type: 'feature-grid',
+  name: 'Feature Grid',
+  category: 'layout',
+  canHaveChildren: true,
+  allowedChildren: ['feature-card', 'text', 'heading'],
+  schema: z.object({ columns: z.number().int().min(1).max(6).default(3) }),
+  defaultProps: { columns: 3 },
+  component: ({ props, children, context }) => (
+    <div data-theme={context?.theme} style={{ display: 'grid', gridTemplateColumns: `repeat(${props.columns}, 1fr)` }}>
+      {children}
+    </div>
+  ),
+})
+```
+
+Source: `packages/authoring/src/types.ts`
+(`CustomBlockComponentProps`, `CustomBlockContext`),
+`packages/authoring/src/registry.ts` (`createBlockComponentWrapper`).
+
+## Validating a definition
+
+`validateBlockDefinition()` is the single place the field policy lives. It is
+meant for a publish or install gate (a host's gate calls it; the engine itself
+does not). It reports, it never throws.
+
+```ts
+import { validateBlockDefinition } from '@pwfabric/authoring'
+
+const issues = validateBlockDefinition({ type: 'pricing-card', name: 'Pricing Card' })
+// [] when clean
+
+for (const issue of issues) {
+  console.log(issue.severity, issue.field, issue.code, issue.message)
+}
+```
+
+| `field` | `code` | `severity` | When |
+|---|---|---|---|
+| `type` | `BLOCK_TYPE_NOT_STRING` | `error` | not a string |
+| `type` | `BLOCK_TYPE_LENGTH` | `error` | outside 2–50 characters |
+| `type` | `BLOCK_TYPE_FORMAT` | `error` | not kebab-case |
+| `name` | `BLOCK_NAME_INVALID` | `warning` | not a string of 1–100 characters; falls back to `type` |
+
+An `error` is an identity problem and a gate rejects it; a `warning` is
+cosmetic and passes. The reserved-type list is checked by `defineBlock()`
+itself (it throws), not by this function.
+
+Source: `packages/authoring/src/define-block.ts`
+(`validateBlockDefinition`, `BlockDefinitionIssue`).
+
+## Validating instances
+
+Once you have a definition, the validation helpers check blocks against it.
+
+```ts
+import { validateBlock, validateBlockTree, formatValidationErrors } from '@pwfabric/authoring'
+import { DEFAULT_BLOCK_LAYOUT } from '@pwfabric/contracts'
+
+const result = validateBlock(
+  { id: 'b1', type: 'pricing-card', props: { title: 'Pro', price: 'free', features: [] }, layout: DEFAULT_BLOCK_LAYOUT },
+  PricingCard,
+)
+// result.valid === false
+// result.errors → [{ code: 'VALIDATION_ERROR', path: 'price', message: 'Expected number, received string' }]
+console.log(formatValidationErrors(result.errors))
+```
+
+`validateBlock` returns `{ valid, block?, errors }`. On success `block` carries
+the parsed props (Zod defaults applied). Error codes: `TYPE_MISMATCH`,
+`VALIDATION_ERROR` (one per Zod issue, with `path`), `CHILDREN_NOT_ALLOWED`,
+`INVALID_CHILD_TYPE` (path `children.<childId>`). `validateBlockTree(blocks,
+registry)` walks nested children and returns a flat error list with paths
+like `blocks[0].children[2].price`; a block type the registry does not know is
+skipped, since it may be first-party.
+
+`createBlockInstance(definition, id, props?, children?)` is the constructive
+counterpart: it merges `props` over `defaultProps`, parses, and **throws** on
+invalid props or on children given to a block whose `canHaveChildren` is
+false.
+
+Source: `packages/authoring/src/validation.ts`,
+`packages/authoring/src/define-block.ts` (`createBlockInstance`).
+
+## Shipping the block
+
+A block leaves your machine as pwpack source — `atoms/blocks/<category>/<name>/component.tsx`
+with a `manifest.json` beside it — and arrives on a page as a hash-pinned ES
+module listed in the app's `blocks/manifest.json`. Both shapes are in
+[How a block reaches a page](/authoring#how-a-block-reaches-a-page).
+
+## See also
+
+- [`defineFactory()`](/authoring/define-factory) — generate a block tree from typed configuration
+- [`defineCapability()`](/authoring/define-capability) — declare a behaviour with a typed contract

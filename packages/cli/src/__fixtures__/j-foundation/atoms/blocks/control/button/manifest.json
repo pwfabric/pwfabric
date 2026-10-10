@@ -1,0 +1,10 @@
+{
+  "id": "control.button",
+  "kind": "block",
+  "version": "1.0.0",
+  "category": "control",
+  "name": "button",
+  "state": "stable",
+  "knowledge": { "purpose": "Test fixture block button" },
+  "definition": { "props": [{ "name": "label", "type": "string" }, { "name": "href", "type": "string" }], "canHaveChildren": false }
+}
