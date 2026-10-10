@@ -2,6 +2,7 @@
  * Nextra theme config — the PWFabric documentation site (pwfabric.com).
  */
 
+import { useRouter } from 'next/router'
 import { useConfig, type DocsThemeConfig } from 'nextra-theme-docs'
 
 const config: DocsThemeConfig = {
@@ -19,6 +20,11 @@ const config: DocsThemeConfig = {
   // Each page is titled "<page title> – PWFabric"; the home page is just "PWFabric".
   head: function Head() {
     const { frontMatter, title: pageTitle } = useConfig()
+    const { asPath } = useRouter()
+    // Canonical URL: the page's own path on the apex domain, without query,
+    // hash or trailing slash (the export is not trailing-slash).
+    const path = (asPath.split(/[?#]/)[0] ?? '/').replace(/\/+$/, '')
+    const canonical = `https://pwfabric.com${path === '' ? '/' : path}`
     const title = pageTitle && pageTitle !== 'PWFabric' ? `${pageTitle} – PWFabric` : 'PWFabric'
     const description =
       frontMatter.description ?? 'The engine that renders an app. Open source, and yours to run.'
@@ -26,6 +32,7 @@ const config: DocsThemeConfig = {
       <>
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>{title}</title>
+        <link rel="canonical" href={canonical} />
         <meta property="og:title" content={title} />
         <meta name="description" content={description} />
         <meta property="og:description" content={description} />
