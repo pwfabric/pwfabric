@@ -1,6 +1,6 @@
 {
   "name": "@pwfabric/runner",
-  "version": "1.0.0-rc.0",
+  "version": "1.0.0-rc.1",
   "description": "pwapp runner — browser ES module that runs a pwpack source envelope at RUNTIME (hash/path router, navigation assembly, PKCE auth bridge) on top of the @pwfabric/embed fat-mode renderer",
   "type": "module",
   "license": "BUSL-1.1",

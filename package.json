@@ -1,6 +1,6 @@
 {
   "name": "pwfabric",
-  "version": "1.0.0-rc.0",
+  "version": "1.0.0-rc.1",
   "private": true,
   "description": "PWFabric — the engine monorepo for the @pwfabric/* packages (contracts, core, runtime, embed, runner, pack, compiler, authoring, cli)",
   "type": "module",
