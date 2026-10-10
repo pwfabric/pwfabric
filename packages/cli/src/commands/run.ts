@@ -77,7 +77,7 @@ export const run: Command = {
   --port <n>     port to listen on (default ${DEFAULT_RUN_PORT}; 0 picks a free one)
   --host <name>  interface to bind (default 127.0.0.1)
 
-Page paths without a file extension are answered with index.html, so
-path-routed apps work; a missing asset is a 404.`,
+Page paths without a file extension are answered with index.html and a
+<base href="/">, so path-routed apps work at any depth; a missing asset is a 404.`,
   run: (args, io) => guard('run', io, () => runRun(args, io)),
 }

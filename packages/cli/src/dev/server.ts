@@ -22,6 +22,7 @@ import { createCompileCache } from './compile.js'
 import { formatDiagnostic, type AssembleDiagnostic } from './diagnostics.js'
 import { hostNeeds } from './needs-host.js'
 import { EVENTS_PATH, overlayHtml, RELOAD_CLIENT, RELOAD_JS, RELOAD_PATH, STATUS_PATH } from './overlay.js'
+import { withBaseHref } from './shell.js'
 import { PWF_DIR, type PackMemo } from './sources.js'
 import type { DevBuildResult, DevServer, DevServerOptions, StartDevServer } from './types.js'
 import { watchFolder, type WatchOptions, type Watcher } from './watcher.js'
@@ -237,7 +238,10 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
       send(res, 404, CONTENT_TYPES['.txt'] as string, `not found: /${rel}`, head)
       return
     }
-    send(res, 200, contentTypeOf(isPage ? 'index.html' : rel), file, head)
+    // A nested page path answered with the shell needs the app's base, or the
+    // shell's relative script addresses resolve under the page's folder.
+    const body = isPage && rel !== 'index.html' ? withBaseHref(file) : file
+    send(res, 200, contentTypeOf(isPage ? 'index.html' : rel), body, head)
   }
 
   const server = createServer((req, res) => {

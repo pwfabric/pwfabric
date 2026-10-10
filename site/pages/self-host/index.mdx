@@ -123,7 +123,12 @@ The default router is `hash`: routes live after `#` in the URL, which works on
 every static host without configuration.
 
 `path` routing gives clean URLs but needs the host to serve `index.html` for
-every path (an "SPA fallback"). `router: 'path'` uses it as asked.
+every path (an "SPA fallback") and to declare the app's base with
+`<base href="/">` in that `index.html` (`<base href="/sub/path/">` when the app
+lives under a sub-path). The shell addresses its scripts relatively
+(`./assets/boot.js`), so without a base a nested path such as `/team/ada`
+loads `/team/assets/boot.js` and misses. `pwf run` and `pwf dev` add the base
+themselves. `router: 'path'` uses it as asked.
 `router: 'auto'` picks `path` only when `history.pushState` works **and** the
 page declares the fallback:
 

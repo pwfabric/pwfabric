@@ -20,9 +20,9 @@
  * ```
  */
 
-import { z, type ZodSchema, type ZodTypeDef } from 'zod'
+import { z, type ZodSchema, type ZodTypeAny } from 'zod'
 import { createElement, type ReactNode } from 'react'
-import type { CustomBlockOptions, CustomBlockDefinition } from './types.js'
+import type { CustomBlockOptions, CustomBlockDefinition, SchemaProps } from './types.js'
 
 // ============================================================
 // VALIDATION
@@ -190,10 +190,10 @@ function placeholderComponent(type: string): () => ReactNode {
  * })
  * ```
  */
-export function defineBlock<
-  TProps extends Record<string, unknown>,
-  TSchema extends ZodSchema<TProps, ZodTypeDef, unknown> = ZodSchema<TProps>,
->(options: CustomBlockOptions<TProps, TSchema>): CustomBlockDefinition<TProps> {
+export function defineBlock<TSchema extends ZodTypeAny>(
+  options: CustomBlockOptions<TSchema>
+): CustomBlockDefinition<SchemaProps<TSchema>> {
+  type TProps = SchemaProps<TSchema>
   // the renderer DEGRADES, it never throws. `type` is the identity
   // → HARD (throws). Every other required field falls back + warns so a single
   // malformed block can't white-screen the canvas. The authoring/publish gate is

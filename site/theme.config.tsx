@@ -2,7 +2,7 @@
  * Nextra theme config — the PWFabric documentation site (pwfabric.com).
  */
 
-import type { DocsThemeConfig } from 'nextra-theme-docs'
+import { useConfig, type DocsThemeConfig } from 'nextra-theme-docs'
 
 const config: DocsThemeConfig = {
   logo: (
@@ -16,17 +16,22 @@ const config: DocsThemeConfig = {
   },
   docsRepositoryBase:
     'https://github.com/pwfabric/pwfabric/tree/main/site',
-  head: (
-    <>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>PWFabric</title>
-      <meta property="og:title" content="PWFabric" />
-      <meta
-        property="og:description"
-        content="The engine that renders an app. Open source, and yours to run."
-      />
-    </>
-  ),
+  // Each page is titled "<page title> – PWFabric"; the home page is just "PWFabric".
+  head: function Head() {
+    const { frontMatter, title: pageTitle } = useConfig()
+    const title = pageTitle && pageTitle !== 'PWFabric' ? `${pageTitle} – PWFabric` : 'PWFabric'
+    const description =
+      frontMatter.description ?? 'The engine that renders an app. Open source, and yours to run.'
+    return (
+      <>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>{title}</title>
+        <meta property="og:title" content={title} />
+        <meta name="description" content={description} />
+        <meta property="og:description" content={description} />
+      </>
+    )
+  },
   footer: {
     content: (
       <span style={{ fontSize: '0.9em', opacity: 0.75 }}>

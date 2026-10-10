@@ -39,6 +39,7 @@ export * from '@pwfabric/runtime'
 export type {
   // Custom block types
   CustomBlockOptions,
+  SchemaProps,
   CustomBlockComponentProps,
   CustomBlockComponent,
   CustomBlockContext,

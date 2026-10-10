@@ -6,7 +6,7 @@
  * @module @pwfabric/authoring/types
  */
 
-import type { ZodSchema, ZodTypeDef } from 'zod'
+import type { ZodSchema, ZodTypeAny, output as ZodOutput } from 'zod'
 import type { Block, BlockCategory } from '@pwfabric/core'
 import type { BlockComponentRegistry } from '@pwfabric/runtime'
 import type { ReactNode } from 'react'
@@ -20,9 +20,17 @@ import type { ReactNode } from 'react'
  *
  * Used with `defineBlock()` to create a type-safe custom block.
  */
+export type SchemaProps<TSchema extends ZodTypeAny> =
+  ZodOutput<TSchema> extends Record<string, unknown> ? ZodOutput<TSchema> : Record<string, unknown>
+
+/**
+ * Options for `defineBlock()`. The block's props are the schema's output
+ * (`SchemaProps<TSchema>`): they are inferred from `schema` alone, and
+ * `defaultProps` and `component` are checked against them.
+ */
 export interface CustomBlockOptions<
-  TProps extends Record<string, unknown> = Record<string, unknown>,
-  TSchema extends ZodSchema<TProps, ZodTypeDef, unknown> = ZodSchema<TProps>,
+  TSchema extends ZodTypeAny = ZodTypeAny,
+  TProps extends Record<string, unknown> = SchemaProps<TSchema>,
 > {
   /** Unique block type identifier (kebab-case) */
   readonly type: string
@@ -39,7 +47,11 @@ export interface CustomBlockOptions<
   /** Zod schema for props validation */
   readonly schema: TSchema
 
-  /** Default props for new instances */
+  /**
+   * Default props for new instances. Checked against the schema, never used to
+   * infer the props: a field the schema marks optional stays optional even when
+   * it has a default here.
+   */
   readonly defaultProps: TProps
 
   /** Whether this block can contain children */
@@ -60,7 +72,7 @@ export interface CustomBlockOptions<
   /** Maximum instances allowed in a surface */
   readonly maxInstances?: number
 
-  /** React component to render this block */
+  /** React component to render this block; its props are the schema's output. */
   readonly component: CustomBlockComponent<TProps>
 }
 

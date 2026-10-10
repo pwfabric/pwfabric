@@ -49,6 +49,30 @@ describe('static server', () => {
     }
   })
 
+  it('answers a nested page path with the shell and a base, so its relative assets resolve', async () => {
+    const dir = await builtApp()
+    await writeFile(
+      join(dir, 'index.html'),
+      '<!doctype html><html><head><title>t</title><script src="./assets/runner.js"></script></head><body><div id="root"></div></body></html>'
+    )
+    const server = await startStaticServer({ source: { dir }, port: 0 })
+    try {
+      const pageUrl = new URL('team/members/ada', server.url)
+      const html = await (await fetch(pageUrl)).text()
+      expect(html).toContain('<base href="/" />')
+      // Resolve the script the way a browser does: against <base>, else the page.
+      const base = /<base href="([^"]+)"/.exec(html)?.[1]
+      const scriptSrc = /<script src="([^"]+)"/.exec(html)?.[1] ?? ''
+      const scriptUrl = new URL(scriptSrc, new URL(base ?? '.', pageUrl))
+      expect(scriptUrl.pathname).toBe('/assets/runner.js')
+      expect((await fetch(scriptUrl)).status).toBe(200)
+      // The root keeps the shell as built: no base where none is needed.
+      expect(await (await fetch(server.url)).text()).not.toContain('<base')
+    } finally {
+      await server.close()
+    }
+  })
+
   it('adds the headers a built app declares in _headers, and does not serve the file', async () => {
     const dir = await builtApp()
     await writeFile(
