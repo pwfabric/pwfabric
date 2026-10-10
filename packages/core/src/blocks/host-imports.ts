@@ -38,18 +38,13 @@
  * values. Two instances of these is not "slightly wasteful", it is broken —
  * `useSurfaceEvents` reading a second context makes `emit()` a silent no-op.
  *
- * `inline` — HAS NO MEMBERS. `zod` in particular is NOT inline: on the publish
- * path it is external like everything else here, so blocks share the host's
- * single zod instance. Zod has its own identity stake — introspection keeps it
- * real so `instanceof` works while walking a schema. (A local authoring-tool
- * bundler may inline zod; that is a separate system.)
- *
- * Every specifier on THIS list is resolved by the host through a shim reading a
- * global; a specifier that is genuinely inlined is simply not external, and so
- * never reaches this list. The variant is kept only so the published type does
- * not change under consumers, and should go at the next major.
+ * It is the only kind: every specifier on this list is resolved by the host
+ * through a shim reading a global. `zod` included — blocks share the host's
+ * single zod instance, because introspection needs the real zod for
+ * `instanceof` while walking a schema. A specifier a bundler inlines is simply
+ * not external, and so never reaches this list.
  */
-export type HostImportKind = 'global' | 'inline'
+export type HostImportKind = 'global'
 
 /**
  * WHICH hosts seed a `global` entry. There are two of them and they are not
@@ -209,11 +204,8 @@ export const BLOCK_HOST_IMPORTS: readonly HostImport[] = [
 /**
  * The specifiers esbuild must leave bare when bundling an atom.
  *
- * A bundling service's externals list is exactly this. Note that `inline` kinds
- * are external TOO: the bundler leaves the specifier alone either way, and it is
- * the HOST that decides whether the name reaches a shared instance or a private
- * copy. Marking zod external here while the shim hands back a private module is
- * not a contradiction — it is the same distinction `kind` records.
+ * A bundling service's externals list is exactly this: the bundler leaves each
+ * specifier bare, and the host's import map resolves it to the shared instance.
  */
 export function blockBundleExternals(): readonly string[] {
   return BLOCK_HOST_IMPORTS.map((i) => i.specifier)

@@ -5,7 +5,7 @@
  *
  * Exports:
  * - Types: DataSourceDefinition, DataFetchResult, DataBinding, LiveDataBinding, etc.
- * - Service: DataService (renamed from DefaultDataCapability)
+ * - Service: DataService
  * - Provider: DataCapabilityProvider, useDataService
  * - Factory functions: createDataService
  *
@@ -29,15 +29,10 @@ export type {
   DataBindingListener,
   DataServiceConfig,
   DataServiceInterface,
-  // Backward-compatible alias
-  DataCapability,
 } from './types.js'
 
 // Service implementation
 export { DataService, createDataService } from './manager.js'
-
-// Backward-compatible aliases
-export { DefaultDataCapability, createDataCapability } from './manager.js'
 
 // React context provider and hook
 export {

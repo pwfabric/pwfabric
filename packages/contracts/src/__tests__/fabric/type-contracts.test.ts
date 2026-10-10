@@ -58,7 +58,6 @@ import type {
   ArtifactScope,
   ArtifactStatus,
   ValidationSeverity,
-  PublisherStatus,
   ManifestValidationIssue,
   PackageValidationResult,
 } from '../../fabric/artifact.js'
@@ -81,11 +80,6 @@ describe('Artifact contract types', () => {
     const warning: ValidationSeverity = 'warning'
     expect(error).toBe('error')
     expect(warning).toBe('warning')
-  })
-
-  it('should describe PublisherStatus lifecycle values', () => {
-    const statuses: PublisherStatus[] = ['pending', 'approved', 'rejected', 'suspended']
-    expect(statuses).toHaveLength(4)
   })
 
   it('should describe ManifestValidationIssue shape', () => {
@@ -152,7 +146,6 @@ import type {
   DynamicBlockDescriptor,
   DynamicStarterDescriptor,
   BundleCascadeResult,
-  SerializedEntitlementsV2,
 } from '../../fabric/dynamic-artifact.js'
 
 describe('DynamicArtifact contract types', () => {
@@ -191,17 +184,6 @@ describe('DynamicArtifact contract types', () => {
     expect(result.installed).toHaveLength(1)
     expect(result.skipped).toHaveLength(1)
     expect(result.failed).toHaveLength(0)
-  })
-
-  it('should describe SerializedEntitlementsV2 shape', () => {
-    const entitlements: SerializedEntitlementsV2 = {
-      blocks: ['hero-block', 'text-block'],
-      capabilities: ['platform/persistence'],
-      dynamicBlocks: [],
-      dynamicStarters: [],
-    }
-    expect(entitlements.blocks).toHaveLength(2)
-    expect(entitlements.dynamicBlocks).toHaveLength(0)
   })
 })
 
@@ -265,7 +247,6 @@ describe('Entitlement contract types', () => {
 // MARKETPLACE
 // ============================================================
 
-import type { ListingId } from '../../core/ids.js'
 import type {
   ArtifactType,
   ListingStatus,
@@ -314,10 +295,10 @@ describe('Marketplace contract types', () => {
   })
 
   it('should describe InstallError discriminated union shapes', () => {
-    const notFound: InstallError = { type: 'not_found', listingId: 'lst-1' as ListingId }
+    const notFound: InstallError = { type: 'not_found', listingId: 'lst-1' }
     const alreadyInstalled: InstallError = {
       type: 'already_installed',
-      listingId: 'lst-1' as ListingId,
+      listingId: 'lst-1',
     }
     const missingDeps: InstallError = {
       type: 'missing_dependencies',

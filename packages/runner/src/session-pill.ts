@@ -173,13 +173,3 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
     },
   }
 }
-
-/**
- * @deprecated The pill serves both doors; use `mountSessionPill`.
- * Kept so the runner's public surface only grows in a patch release. Behaves
- * as the old floating login button did: a bridge-only pill with no sign-out
- * callback into the host.
- */
-export function mountLoginButton(bridge: AuthBridge): void {
-  mountSessionPill({ bridge, getAppSession: () => null, onSignedOut: () => {} })
-}

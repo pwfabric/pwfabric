@@ -255,7 +255,3 @@ export interface DataServiceInterface {
   clear(): void
 }
 
-/**
- * @deprecated Use DataServiceInterface instead
- */
-export type DataCapability = DataServiceInterface

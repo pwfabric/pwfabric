@@ -53,11 +53,6 @@ export interface EntityFacade {
   readonly entityLifecycle: EntityLifecycleEngine
 
   /**
-   * @deprecated Use entityLifecycle instead (de-behaviorization). Will be removed in next minor version.
-   */
-  readonly behaviors: EntityLifecycleEngine
-
-  /**
    * Convenience method to register an entity definition and bind it to a connector
    */
   registerEntity(definition: EntityDefinition, connectorName: string): void
@@ -89,11 +84,6 @@ export class DefaultEntityFacade implements EntityFacade {
   readonly store: EntityStore
   readonly connectors: ConnectorRegistry
   readonly entityLifecycle: EntityLifecycleEngine
-
-  /** @deprecated Use entityLifecycle instead */
-  get behaviors(): EntityLifecycleEngine {
-    return this.entityLifecycle
-  }
 
   constructor(
     registry: EntityRegistry,
@@ -145,27 +135,12 @@ export function createEntityFacade(options?: {
   connectors?: ConnectorRegistry
   /** Primary option — entity lifecycle engine for hook registration */
   entityLifecycle?: EntityLifecycleEngine
-  /** @deprecated Use entityLifecycle instead */
-  behaviors?: EntityLifecycleEngine
 }): EntityFacade {
   const registry = options?.registry ?? createEntityRegistry()
   const connectors = options?.connectors ?? createConnectorRegistry()
   const entityLifecycle =
-    options?.entityLifecycle ?? options?.behaviors ?? createEntityLifecycleEngine()
+    options?.entityLifecycle ?? createEntityLifecycleEngine()
   const store = createEntityStore(registry, connectors)
 
   return new DefaultEntityFacade(registry, store, connectors, entityLifecycle)
 }
-
-// ============================================================
-// DEPRECATION RE-EXPORTS
-// ============================================================
-
-/** @deprecated Use EntityFacade instead */
-export type EntityCapability = EntityFacade
-
-/** @deprecated Use DefaultEntityFacade instead */
-export const DefaultEntityCapability = DefaultEntityFacade
-
-/** @deprecated Use createEntityFacade() instead */
-export const createEntityCapability = createEntityFacade

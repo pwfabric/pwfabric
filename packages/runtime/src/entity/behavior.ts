@@ -4,9 +4,6 @@
  * Event-driven logic on entity lifecycle transitions
  * using a trigger-guard-action pattern with priority-based execution.
  *
- * de-behaviorization: `EntityBehavior` renamed to `EntityLifecycleHook`
- * (primary name). `EntityBehavior` kept as deprecated alias for one minor version.
- *
  * @module @pwfabric/runtime/entity/behavior
  */
 
@@ -56,21 +53,15 @@ export interface EntityLifecycleHook {
   readonly priority?: number
 }
 
-/**
- * @deprecated Use EntityLifecycleHook instead (de-behaviorization). Will be removed in next minor version.
- */
-export type EntityBehavior = EntityLifecycleHook
-
 // ============================================================
-// BEHAVIOR ENGINE INTERFACE
+// LIFECYCLE ENGINE INTERFACE
 // ============================================================
 
 /**
- * @deprecated Use EntityLifecycleEngine instead. Will be removed in next minor version.
- *
- * Engine for registering and executing entity lifecycle hooks
+ * Entity lifecycle hook engine — registers and executes the
+ * onCreate/onUpdate/onDelete/onRead hooks.
  */
-export interface BehaviorEngine {
+export interface EntityLifecycleEngine {
   /**
    * Register a lifecycle hook
    * @throws Error if a hook with the same id is already registered
@@ -112,12 +103,10 @@ export interface BehaviorEngine {
 // ============================================================
 
 /**
- * @deprecated Use DefaultEntityLifecycleEngine instead. Will be removed in next minor version.
- *
- * Default implementation of BehaviorEngine.
+ * Default EntityLifecycleEngine implementation.
  * Stores hooks in a Map, executes in priority order.
  */
-export class DefaultBehaviorEngine implements BehaviorEngine {
+export class DefaultEntityLifecycleEngine implements EntityLifecycleEngine {
   private readonly hooks = new Map<string, EntityLifecycleHook>()
 
   register(hook: EntityLifecycleHook): void {
@@ -199,28 +188,8 @@ export class DefaultBehaviorEngine implements BehaviorEngine {
 }
 
 // ============================================================
-// FACTORY FUNCTION
+// LIFECYCLE TRANSITIONS AND FACTORY
 // ============================================================
-
-/**
- * @deprecated Use createEntityLifecycleEngine instead. Will be removed in next minor version.
- *
- * Create a behavior engine
- */
-export function createBehaviorEngine(): BehaviorEngine {
-  return new DefaultBehaviorEngine()
-}
-
-// ============================================================
-// PRIMARY NAMES — EntityLifecycleEngine
-// ============================================================
-
-/**
- * Entity lifecycle hook engine — manages onCreate/onUpdate/onDelete/onRead hooks.
- * Primary name. Use this instead of BehaviorEngine.
- * @see BehaviorEngine (deprecated alias)
- */
-export type EntityLifecycleEngine = BehaviorEngine
 
 /**
  * Entity lifecycle transition type. Use instead of EntityLifecycleEvent
@@ -229,14 +198,7 @@ export type EntityLifecycleEngine = BehaviorEngine
 export type EntityLifecycleTransition = EntityLifecycleEvent
 
 /**
- * Default EntityLifecycleEngine implementation.
- * Primary name.
- */
-export class DefaultEntityLifecycleEngine extends DefaultBehaviorEngine {}
-
-/**
- * Factory function for EntityLifecycleEngine.
- * Primary name.
+ * Create an entity lifecycle engine.
  */
 export function createEntityLifecycleEngine(): EntityLifecycleEngine {
   return new DefaultEntityLifecycleEngine()

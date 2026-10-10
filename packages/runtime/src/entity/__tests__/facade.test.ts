@@ -1,7 +1,7 @@
 /**
  * EntityFacade Tests
  *
- * Facade combining Registry, Store, ConnectorRegistry, BehaviorEngine.
+ * Facade combining Registry, Store, ConnectorRegistry, EntityLifecycleEngine.
  *
  * @module @pwfabric/runtime/entity/__tests__/facade
  */
@@ -11,13 +11,11 @@ import { z } from 'zod'
 import {
   DefaultEntityFacade,
   createEntityFacade,
-  DefaultEntityCapability,
-  createEntityCapability,
 } from '../facade.js'
 import type { EntityTypeId } from '../types.js'
 import { createEntityRegistry } from '../registry.js'
 import { createConnectorRegistry } from '../connector.js'
-import { createEntityLifecycleEngine, createBehaviorEngine } from '../behavior.js'
+import { createEntityLifecycleEngine } from '../behavior.js'
 import { createEntityStore } from '../store.js'
 import { StaticConnector } from '../connectors/static.js'
 
@@ -56,9 +54,6 @@ describe('createEntityFacade()', () => {
     expect(facade.store).toBeDefined()
     expect(facade.connectors).toBeDefined()
     expect(facade.entityLifecycle).toBeDefined()
-    // backward compat: deprecated .behaviors accessor
-    expect(facade.behaviors).toBeDefined()
-    expect(facade.behaviors).toBe(facade.entityLifecycle)
   })
 
   it('accepts custom registry', () => {
@@ -77,14 +72,6 @@ describe('createEntityFacade()', () => {
     const customLifecycle = createEntityLifecycleEngine()
     const facade = createEntityFacade({ entityLifecycle: customLifecycle })
     expect(facade.entityLifecycle).toBe(customLifecycle)
-    expect(facade.behaviors).toBe(customLifecycle)
-  })
-
-  it('accepts deprecated behaviors option (backward compat)', () => {
-    const customBehaviors = createBehaviorEngine()
-    const facade = createEntityFacade({ behaviors: customBehaviors })
-    expect(facade.entityLifecycle).toBe(customBehaviors)
-    expect(facade.behaviors).toBe(customBehaviors)
   })
 })
 
@@ -93,9 +80,9 @@ describe('DefaultEntityFacade', () => {
   function createTestFacade() {
     const registry = createEntityRegistry()
     const connectors = createConnectorRegistry()
-    const behaviors = createBehaviorEngine()
+    const entityLifecycle = createEntityLifecycleEngine()
     const store = createEntityStore(registry, connectors)
-    return new DefaultEntityFacade(registry, store, connectors, behaviors)
+    return new DefaultEntityFacade(registry, store, connectors, entityLifecycle)
   }
 
   it('exposes all subsystems as properties', () => {
@@ -104,8 +91,6 @@ describe('DefaultEntityFacade', () => {
     expect(facade.store).toBeDefined()
     expect(facade.connectors).toBeDefined()
     expect(facade.entityLifecycle).toBeDefined()
-    // backward compat: deprecated .behaviors getter returns same instance
-    expect(facade.behaviors).toBe(facade.entityLifecycle)
   })
 
   // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
@@ -114,9 +99,9 @@ describe('DefaultEntityFacade', () => {
     const connector = new StaticConnector('static', {})
     connectors.register(connector)
     const registry = createEntityRegistry()
-    const behaviors = createBehaviorEngine()
+    const entityLifecycle = createEntityLifecycleEngine()
     const store = createEntityStore(registry, connectors)
-    return new DefaultEntityFacade(registry, store, connectors, behaviors)
+    return new DefaultEntityFacade(registry, store, connectors, entityLifecycle)
   }
 
   describe('registerEntity()', () => {
@@ -151,15 +136,5 @@ describe('DefaultEntityFacade', () => {
       const result = await facade.resolveBinding(USER_TYPE, { filters: [] })
       expect(result).toBeDefined()
     })
-  })
-})
-
-describe('Deprecation re-exports', () => {
-  it('DefaultEntityCapability is an alias for DefaultEntityFacade', () => {
-    expect(DefaultEntityCapability).toBe(DefaultEntityFacade)
-  })
-
-  it('createEntityCapability is an alias for createEntityFacade', () => {
-    expect(createEntityCapability).toBe(createEntityFacade)
   })
 })
