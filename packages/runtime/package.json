@@ -3,47 +3,71 @@
   "version": "1.0.0-rc.0",
   "description": "PWFabric runtime and execution engine",
   "type": "module",
+  "license": "BUSL-1.1",
+  "author": "PhiMajor Solutions",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pwfabric/pwfabric.git",
+    "directory": "packages/runtime"
+  },
+  "homepage": "https://github.com/pwfabric/pwfabric#readme",
+  "bugs": {
+    "url": "https://github.com/pwfabric/pwfabric/issues"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./adapters": {
       "types": "./dist/adapters/index.d.ts",
-      "import": "./dist/adapters/index.js"
+      "import": "./dist/adapters/index.js",
+      "default": "./dist/adapters/index.js"
     },
     "./capability": {
       "types": "./dist/capability/index.d.ts",
-      "import": "./dist/capability/index.js"
+      "import": "./dist/capability/index.js",
+      "default": "./dist/capability/index.js"
     },
     "./blocks": {
       "types": "./dist/blocks/index.d.ts",
-      "import": "./dist/blocks/index.js"
+      "import": "./dist/blocks/index.js",
+      "default": "./dist/blocks/index.js"
     },
     "./auth": {
       "types": "./dist/auth/index.d.ts",
-      "import": "./dist/auth/index.js"
+      "import": "./dist/auth/index.js",
+      "default": "./dist/auth/index.js"
     },
     "./data": {
       "types": "./dist/data/index.d.ts",
-      "import": "./dist/data/index.js"
+      "import": "./dist/data/index.js",
+      "default": "./dist/data/index.js"
     },
     "./blocks/*": {
       "types": "./dist/blocks/*.d.ts",
-      "import": "./dist/blocks/*.js"
+      "import": "./dist/blocks/*.js",
+      "default": "./dist/blocks/*.js"
     },
     "./render/*": {
       "types": "./dist/render/*.d.ts",
-      "import": "./dist/render/*.js"
+      "import": "./dist/render/*.js",
+      "default": "./dist/render/*.js"
     }
   },
   "files": [
     "dist",
+    "!dist/**/__tests__",
+    "!dist/**/__test-fixtures__",
     "LICENSE",
     "README.md"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "rm -rf dist tsconfig.tsbuildinfo && tsc",
     "dev": "tsc --watch",
@@ -57,33 +81,17 @@
   },
   "dependencies": {
     "@pwfabric/contracts": "workspace:*",
-    "@pwfabric/core": "workspace:*",
-    "zod": "^3.23.0"
+    "@pwfabric/core": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
-    "react-dom": "^18.0.0 || ^19.0.0",
-    "next": "^14.0.0 || ^15.0.0 || ^16.0.0"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    },
-    "react-dom": {
-      "optional": true
-    },
-    "next": {
-      "optional": true
-    }
-  },
-  "publishConfig": {
-    "access": "public"
+    "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
     "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitest/coverage-v8": "^2.1.9",
@@ -92,17 +100,10 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0",
+    "zod": "^3.25.76"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/pwfabric/pwfabric",
-    "directory": "packages/runtime"
-  },
-  "homepage": "https://github.com/pwfabric/pwfabric#readme",
-  "bugs": {
-    "url": "https://github.com/pwfabric/pwfabric/issues"
-  },
-  "license": "BUSL-1.1",
-  "author": "PhiMajor Solutions"
+  "publishConfig": {
+    "access": "public"
+  }
 }

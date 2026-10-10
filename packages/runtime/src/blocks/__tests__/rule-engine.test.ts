@@ -18,8 +18,8 @@ import {
   getCompositionRuleEngine,
   compositionRuleEngine,
   blockRegistry,
-  populateTestBlocks,
 } from '../index.js'
+import { populateTestBlocks } from '../__test-fixtures__/block-fixtures.js'
 import { MAX_NESTING_DEPTH, DEFAULT_BLOCK_LAYOUT, type BlockLayout } from '@pwfabric/core'
 import type { Block } from '@pwfabric/core'
 

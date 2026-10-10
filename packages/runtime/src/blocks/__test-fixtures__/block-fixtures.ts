@@ -18,9 +18,8 @@
  * first-party catalog because composer-prompt + introspection tests
  * verify parity against that catalog.
  *
- * Usage in tests:
- *   import { populateTestBlocks } from
- *     '@pwfabric/runtime/blocks/__test-fixtures__/block-fixtures'
+ * Usage in this package's tests (the folder is not published):
+ *   import { populateTestBlocks } from '../__test-fixtures__/block-fixtures.js'
  *   populateTestBlocks()
  *
  * @module @pwfabric/runtime/blocks/__test-fixtures__/block-fixtures

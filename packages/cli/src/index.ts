@@ -6,6 +6,7 @@
  * there is no login, publish or deploy here.
  */
 
+import { readFileSync } from 'node:fs'
 import { parseArgs } from './args.js'
 import { COMMANDS, findCommand } from './commands/registry.js'
 import type { CommandIO } from './commands/types.js'
@@ -22,11 +23,21 @@ function help(io: CommandIO): void {
   io.out('')
   for (const c of COMMANDS) io.out(`  ${c.name.padEnd(10)} ${c.summary}`)
   io.out('')
-  io.out('Run `pwf <command> --help` for the options of one command.')
+  io.out('Run `pwf <command> --help` for the options of one command; `pwf --version` prints the version.')
+}
+
+/** This package's own version, from its package.json one level above dist/. */
+export function cliVersion(): string {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: unknown }
+  return typeof pkg.version === 'string' ? pkg.version : 'unknown'
 }
 
 /** Runs one invocation and resolves to its exit code. */
 export async function main(argv: readonly string[], io: CommandIO): Promise<number> {
+  if (argv[0] === '--version' || argv[0] === '-v' || argv[0] === 'version') {
+    io.out(cliVersion())
+    return 0
+  }
   const { command, args } = parseArgs(argv)
   if (command === undefined || command === 'help') {
     help(io)

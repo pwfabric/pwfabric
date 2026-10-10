@@ -3,10 +3,23 @@
   "version": "1.0.0-rc.0",
   "description": "pwapp runner — browser ES module that runs a pwpack source envelope at RUNTIME (hash/path router, navigation assembly, PKCE auth bridge) on top of the @pwfabric/embed fat-mode renderer",
   "type": "module",
-  "private": false,
+  "license": "BUSL-1.1",
+  "author": "PhiMajor Solutions",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pwfabric/pwfabric.git",
+    "directory": "packages/runner"
+  },
+  "homepage": "https://github.com/pwfabric/pwfabric#readme",
+  "bugs": {
+    "url": "https://github.com/pwfabric/pwfabric/issues"
+  },
   "main": "./dist/runner.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/runner.js",
       "default": "./dist/runner.js"
     }
   },
@@ -15,8 +28,11 @@
     "LICENSE",
     "README.md"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "build": "rm -rf dist && vite build",
+    "build": "rm -rf dist && vite build && tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -27,7 +43,9 @@
   },
   "dependencies": {
     "@pwfabric/contracts": "workspace:*",
-    "@pwfabric/runtime": "workspace:*",
+    "@pwfabric/runtime": "workspace:*"
+  },
+  "peerDependencies": {
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -35,20 +53,11 @@
     "@vitest/coverage-v8": "^2.1.9",
     "typescript": "^5.4.0",
     "vite": "^6.0.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0",
+    "zod": "^3.25.76"
   },
   "publishConfig": {
     "access": "public"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/pwfabric/pwfabric",
-    "directory": "packages/runner"
-  },
-  "homepage": "https://github.com/pwfabric/pwfabric#readme",
-  "bugs": {
-    "url": "https://github.com/pwfabric/pwfabric/issues"
-  },
-  "license": "BUSL-1.1",
-  "author": "PhiMajor Solutions"
+  "private": false
 }
