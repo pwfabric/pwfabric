@@ -1,6 +1,6 @@
 {
   "name": "@pwfabric/core",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "description": "PWFabric core functionality and utilities",
   "type": "module",
   "license": "BUSL-1.1",
