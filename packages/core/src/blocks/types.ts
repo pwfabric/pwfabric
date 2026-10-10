@@ -76,10 +76,9 @@ export interface BlockDefinition {
   readonly canHaveChildren: boolean
 
   /**
-   * Optional: Restrict which block types can be children
-   * @deprecated — composition is expressed via traits
-   * (`allowedChildTraits`); type-name child lists are no longer consumed
-   * by the validation pipeline.
+   * Optional: which child block types this block accepts. The runtime's
+   * composition rules enforce it. `allowedChildTraits` is the trait-based
+   * alternative, for a block that accepts any child with a given trait.
    */
   readonly allowedChildren?: readonly string[]
 

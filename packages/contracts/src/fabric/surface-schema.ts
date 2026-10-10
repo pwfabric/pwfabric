@@ -122,7 +122,15 @@ export const blockSnapshotSchema: z.ZodType<any> = z.lazy(() =>
  */
 export const surfaceThemeSchema = z
   .object({
-    colors: z.record(z.string()).optional(),
+    // `card` is the container colour's one name; the old `surface` key is
+    // refused rather than ignored, so a theme written for it fails loudly.
+    colors: z
+      .record(z.string())
+      .refine((c) => !('surface' in c), {
+        message: 'colors.surface is not a theme colour — use colors.card',
+        path: ['surface'],
+      })
+      .optional(),
     border: z
       .object({
         radius: z.string().optional(),

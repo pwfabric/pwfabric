@@ -137,14 +137,10 @@ describe('surfaceThemeToCSS', () => {
     expect(vars['--pw-color-accent']).toBe('#333333')
   })
 
-  it('aliases card and surface to each other', () => {
+  it('emits the card colour as --pw-color-card only', () => {
     const fromCard = surfaceThemeToCSS({ colors: { card: '#f8fafc' } } as SurfaceTheme)
     expect(fromCard['--pw-color-card']).toBe('#f8fafc')
-    expect(fromCard['--pw-color-surface']).toBe('#f8fafc')
-
-    const fromSurface = surfaceThemeToCSS({ colors: { surface: '#eeeeee' } } as SurfaceTheme)
-    expect(fromSurface['--pw-color-surface']).toBe('#eeeeee')
-    expect(fromSurface['--pw-color-card']).toBe('#eeeeee')
+    expect(fromCard['--pw-color-surface']).toBeUndefined()
   })
 
   it('emits derived roles as color-mix() so a rebrand tracks automatically', () => {

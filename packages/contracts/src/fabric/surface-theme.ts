@@ -33,12 +33,7 @@ export interface SurfaceThemeColors {
   accent?: string
   /** Surface background color (replaces styleVariables['surface-bg']) */
   background?: string
-  /**
-   * Card / container background color.
-   * @deprecated Use `colors.card` instead.
-   */
-  surface?: string
-  /** Card / container background color. Use this instead of `surface`. */
+  /** Card / container background color. */
   card?: string
   /** Primary text color */
   text?: string

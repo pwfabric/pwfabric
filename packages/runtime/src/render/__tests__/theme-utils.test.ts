@@ -2,7 +2,7 @@
  * Theme Utils Unit Tests
  *
  * surfaceThemeToCSS — all 16 token mappings
- * colors.surface → colors.card alias
+ * colors.card → --pw-color-card (the one name for the container colour)
  *
  * @module @pwfabric/runtime/render/__tests__/theme-utils
  */
@@ -40,24 +40,10 @@ describe('surfaceThemeToCSS', () => {
     expect(result['--pw-color-background']).toBe('#0f172a')
   })
 
-  it('maps colors.surface → --pw-color-surface (deprecated)', () => {
-    const result = surfaceThemeToCSS({ colors: { surface: '#1e293b' } })
-    expect(result['--pw-color-surface']).toBe('#1e293b')
-    // colors.surface also emits --pw-color-card as backward-compat alias
-    expect(result['--pw-color-card']).toBe('#1e293b')
-  })
-
-  it('maps colors.card → --pw-color-card', () => {
+  it('maps colors.card → --pw-color-card, and nothing else', () => {
     const result = surfaceThemeToCSS({ colors: { card: '#e0f2fe' } })
     expect(result['--pw-color-card']).toBe('#e0f2fe')
-    // colors.card also emits --pw-color-surface as alias for old CSS
-    expect(result['--pw-color-surface']).toBe('#e0f2fe')
-  })
-
-  it('when both colors.card and colors.surface are set — each wins its own var, no alias override', () => {
-    const result = surfaceThemeToCSS({ colors: { surface: '#f8fafc', card: '#e0f2fe' } })
-    expect(result['--pw-color-surface']).toBe('#f8fafc')
-    expect(result['--pw-color-card']).toBe('#e0f2fe')
+    expect(result['--pw-color-surface']).toBeUndefined()
   })
 
   it('maps colors.text → --pw-color-text', () => {
@@ -135,14 +121,14 @@ describe('surfaceThemeToCSS', () => {
     expect(result['--pw-spacing-base']).toBe('1.5rem')
   })
 
-  it('maps all 17 tokens in a full theme without headingFontFamily (surface emits card alias)', () => {
+  it('maps all 16 tokens in a full theme without headingFontFamily', () => {
     const theme: SurfaceTheme = {
       colors: {
         primary: '#6366f1',
         secondary: '#64748b',
         accent: '#f59e0b',
         background: '#ffffff',
-        surface: '#f8fafc',
+        card: '#f8fafc',
         text: '#1e293b',
         textMuted: '#64748b',
         border: '#e2e8f0',
@@ -163,26 +149,24 @@ describe('surfaceThemeToCSS', () => {
       },
     }
     const result = surfaceThemeToCSS(theme)
-    // surface emits --pw-color-surface + --pw-color-card alias = 17 token vars,
-    // + 4 derived color roles (Batch-1) = 21, + 3 on-card ink tokens
-    // emitted whenever a card/surface colour is present) = 24
-    // + on-<status> and <status>-ink for error and success (4), the
-    // control edge (1), the inverse set (5) and the h1-h5 scale (5) = +15
-    expect(Object.keys(result)).toHaveLength(40)
+    // The token vars, the derived colour roles, the on-card ink tokens (a card
+    // colour is present), on-<status> and <status>-ink for error and success,
+    // the control edge, the inverse set and the h1-h5 scale
+    expect(Object.keys(result)).toHaveLength(39)
     expect(result['--pw-color-primary']).toBe('#6366f1')
     expect(result['--pw-border-radius']).toBe('0.375rem')
     expect(result['--pw-font-family']).toBe('Inter, sans-serif')
     expect(result['--pw-spacing-base']).toBe('1rem')
   })
 
-  it('generates exactly 18 CSS vars when all fields including headingFontFamily are set', () => {
+  it('generates exactly 17 token vars when all fields including headingFontFamily are set', () => {
     const theme: SurfaceTheme = {
       colors: {
         primary: '#6366f1',
         secondary: '#64748b',
         accent: '#f59e0b',
         background: '#ffffff',
-        surface: '#f8fafc',
+        card: '#f8fafc',
         text: '#1e293b',
         textMuted: '#64748b',
         border: '#e2e8f0',
@@ -204,11 +188,8 @@ describe('surfaceThemeToCSS', () => {
       },
     }
     const result = surfaceThemeToCSS(theme)
-    // surface emits --pw-color-surface + --pw-color-card alias = 18 token vars,
-    // + 4 derived color roles (Batch-1) = 22, + 3 on-card ink tokens = 25
-    // + on-<status> and <status>-ink for error and success (4), the
-    // control edge (1), the inverse set (5) and the h1-h5 scale (5) = +15
-    expect(Object.keys(result)).toHaveLength(41)
+    // The same set plus the heading font family
+    expect(Object.keys(result)).toHaveLength(40)
     expect(result['--pw-font-family-heading']).toBe('Georgia, serif')
   })
 

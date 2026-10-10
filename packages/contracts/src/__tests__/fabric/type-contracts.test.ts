@@ -572,11 +572,11 @@ describe('SurfaceTheme contract types', () => {
     expect(theme.layout?.containerMaxWidth).toBe('1280px')
   })
 
-  it('should describe deprecated surface color token', () => {
+  it('names the container colour card', () => {
     const theme: SurfaceTheme = {
-      colors: { surface: '#1e293b' },
+      colors: { card: '#1e293b' },
     }
-    expect(theme.colors?.surface).toBe('#1e293b')
+    expect(theme.colors?.card).toBe('#1e293b')
   })
 })
 

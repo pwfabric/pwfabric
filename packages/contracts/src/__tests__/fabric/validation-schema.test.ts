@@ -53,8 +53,8 @@ describe('validationIssueSchema', () => {
         severity: 'warning',
         code: 'DEPRECATED_FIELD',
         message: 'This field is deprecated',
-        path: 'colors.surface',
-        suggestion: 'Use colors.card instead',
+        path: 'props.size',
+        suggestion: 'Use props.scale instead',
       })
       expect(result.success).toBe(true)
     })
@@ -136,7 +136,7 @@ describe('fabricValidationResultSchema', () => {
             severity: 'warning',
             code: 'DEPRECATED',
             message: 'Use newer API',
-            path: 'colors.surface',
+            path: 'props.size',
           },
         ],
       })
