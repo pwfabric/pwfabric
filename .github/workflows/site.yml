@@ -1,0 +1,67 @@
+name: Site
+
+# Builds the documentation site (`site/`, Next.js + Nextra static export) and
+# publishes `site/out` to GitHub Pages, served at https://pwfabric.com.
+#
+# Based on GitHub's starter workflow pages/nextjs.yml, with one deliberate
+# difference: configure-pages is NOT given `static_site_generator: next`, so it
+# does not inject a basePath. The site lives at the root of its custom domain,
+# and `site/public/CNAME` keeps that domain attached across deployments.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; a queued run waits instead of cancelling a
+# deployment that is already in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+
+      - name: Build the site
+        run: pnpm --filter pwfabric-site build
+
+      - name: The custom domain ships with the build
+        run: test "$(cat site/out/CNAME)" = "pwfabric.com"
+
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: site/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
