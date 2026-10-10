@@ -3,7 +3,7 @@
  *
  * Wraps EntityStore.query() as a minimal DataSource-compatible
  * adapter so the surface expression system can resolve entity data via the
- * existing {{data.sourceName.field}} binding path.
+ * existing binding path: the records bind under the source id, {{<id>}}.
  *
  * @module @pwfabric/runtime/entity/entity-datasource
  */
@@ -31,7 +31,9 @@ export interface EntityDataSourceConfig {
 /**
  * Minimal DataSource-compatible adapter for entity queries.
  * fetch() delegates to EntityFacade.resolveBinding() and returns EntityQueryResult.
- * Results are accessible via {{data.sourceName.items}} / {{data.sourceName.total}}.
+ * A surface binds a source's records as a list under its id — {{<id>}}, the
+ * `items` of this result (`{{data.<id>}}` names the same value). The result's
+ * `total` does not reach the binding context.
  */
 export interface EntityDataSource {
   readonly id: string

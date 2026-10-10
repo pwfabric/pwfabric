@@ -195,8 +195,10 @@ export const dataSourceSchema = z.object({
   staticData: z.unknown().optional(),
   refreshInterval: z.number().optional(),
   // 'entity' kind: list records of `entityType` via the platform/entities facade.
-  // Results bind as {{data.<id>.items}} / {{data.<id>.total}} and refresh on
-  // refreshAll (e.g. after a form→entity create). Backs the read half of the
+  // The records bind as a list under the source id — {{<id>}} (the items
+  // array; `{{data.<id>}}` is the same value) — and refresh on refreshAll
+  // (e.g. after a form→entity create). An `aggregate` source binds one
+  // object instead: {{<id>.value}}. Backs the read half of the
   // entities CRUD capability (EntityDataSource).
   entityType: z.string().optional(),
   query: z.record(z.unknown()).optional(),
