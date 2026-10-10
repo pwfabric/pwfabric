@@ -466,24 +466,24 @@ describe('the gate’s social buttons', () => {
   const SOCIAL = {
     provider: 'password',
     loginUrl: 'https://api.example/login',
-    providers: [{ method: 'github' }, { method: 'google' }, { method: 'host' }, { method: 'microsoft' }],
+    providers: [{ method: 'github' }, { method: 'google' }, { method: 'phiwebs' }, { method: 'microsoft' }],
   } as PwappAuth
 
   function buttons(): HTMLButtonElement[] {
     return Array.from(container.querySelectorAll<HTMLButtonElement>('[data-gate-provider]'))
   }
 
-  it('orders them host account, Microsoft, Google, GitHub whatever order they were shipped in', () => {
+  it('orders them PhiWebs account, Microsoft, Google, GitHub whatever order they were shipped in', () => {
     mountSignInGate(container, GATED, null, { auth: SOCIAL, onProviderSignIn: vi.fn() })
     expect(buttons().map((b) => b.getAttribute('data-gate-provider'))).toEqual([
-      'host',
+      'phiwebs',
       'microsoft',
       'google',
       'github',
     ])
   })
 
-  it('labels them in English and Turkish, host account included', () => {
+  it('labels them in English and Turkish, PhiWebs account included', () => {
     mountSignInGate(container, GATED, null, { auth: SOCIAL, onProviderSignIn: vi.fn() })
     expect(buttons().map((b) => b.textContent)).toEqual([
       'Continue with your account',
@@ -505,7 +505,7 @@ describe('the gate’s social buttons', () => {
     const onProviderSignIn = vi.fn()
     mountSignInGate(container, GATED, null, { auth: SOCIAL, onProviderSignIn })
     buttons()[0]?.click()
-    expect(onProviderSignIn).toHaveBeenCalledWith('host')
+    expect(onProviderSignIn).toHaveBeenCalledWith('phiwebs')
   })
 
   it('keeps an unknown method at the end, under its own name', () => {

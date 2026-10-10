@@ -21,8 +21,8 @@
  *
  *  - `app` — the app keeps its own accounts, and the host brokers the sign-in.
  *    `methods` is the list of login buttons the visitor sees: an email and a
- *    password, an account on the platform hosting the app (`host`,
- *    platform membership), or a social provider.
+ *    password, a PhiWebs account (`phiwebs`, membership on the PhiWebs
+ *    platform), or a social provider.
  *    The code exchange always happens on the server; the browser never spends
  *    a code. Each social method may name a `connection` — the host's shared
  *    registration (the default) or the project's own OAuth client, whose
@@ -69,7 +69,7 @@ export const IdentityTopologySchema = z.enum(IDENTITY_TOPOLOGIES)
  * inline in three places; a project declaring `methods` and the route
  * validating a callback now read one list.
  */
-export const IDENTITY_METHODS = ['password', 'host', 'google', 'github', 'microsoft'] as const
+export const IDENTITY_METHODS = ['password', 'phiwebs', 'google', 'github', 'microsoft'] as const
 
 export type IdentityMethod = (typeof IDENTITY_METHODS)[number]
 
@@ -77,7 +77,7 @@ export const IdentityMethodSchema = z.enum(IDENTITY_METHODS)
 
 /**
  * The methods that run at a third-party provider — the ones a CONNECTION can
- * be declared for. `password` has no provider and `host` is the host's own
+ * be declared for. `password` has no provider and `phiwebs` is PhiWebs' own
  * authorization server, so neither ever takes one.
  */
 export const SOCIAL_METHODS = ['google', 'github', 'microsoft'] as const
@@ -227,7 +227,7 @@ export const ProjectIdentitySchema = z
     required: z.boolean().default(false),
     topology: IdentityTopologySchema.default('app'),
     methods: z.array(IdentityMethodSchema).default([]),
-    // Keyed by SOCIAL method: a `host` or `password` key fails here.
+    // Keyed by SOCIAL method: a `phiwebs` or `password` key fails here.
     connections: z.record(SocialMethodSchema, IdentityConnectionSchema).default({}),
     issuer: ProjectIdentityIssuerSchema.optional(),
     claims: ProjectIdentityClaimsSchema.default({ subject: 'sub', email: 'email', name: 'name' }),

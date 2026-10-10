@@ -36,7 +36,7 @@ export const AUTH_ERROR_CODES = [
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number]
 
 /** The labels a sign-in button can carry. */
-export type ProviderLabelKey = 'password' | 'host' | 'microsoft' | 'google' | 'github'
+export type ProviderLabelKey = 'password' | 'phiwebs' | 'microsoft' | 'google' | 'github'
 
 export interface RunnerCopy {
   readonly gate: {
@@ -104,7 +104,7 @@ const EN: RunnerCopy = {
     noProvider: 'This app requires sign-in, but no identity provider is configured.',
     providers: {
       password: 'Email and password',
-      host: 'Continue with your account',
+      phiwebs: 'Continue with your account',
       microsoft: 'Continue with Microsoft',
       google: 'Continue with Google',
       github: 'Continue with GitHub',
@@ -164,7 +164,7 @@ const TR: RunnerCopy = {
     noProvider: 'Bu uygulama oturum açma gerektiriyor ama bir kimlik sağlayıcı tanımlanmamış.',
     providers: {
       password: 'E-posta ve parola',
-      host: 'Hesabınızla devam edin',
+      phiwebs: 'Hesabınızla devam edin',
       microsoft: 'Microsoft ile devam et',
       google: 'Google ile devam et',
       github: 'GitHub ile devam et',

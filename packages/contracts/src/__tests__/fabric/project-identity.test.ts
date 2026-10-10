@@ -19,6 +19,7 @@ import {
   IDENTITY_TOPOLOGIES,
   SOCIAL_METHODS,
   IdentityConnectionSchema,
+  IdentityMethodSchema,
   discoveryUrlOf,
 } from '../../fabric/project-identity.js'
 
@@ -97,7 +98,7 @@ describe('ProjectIdentitySchema', () => {
     // The set is closed because the platform's own door implements exactly
     // these; an unknown one would render a button that authenticates nobody.
     expect(ProjectIdentitySchema.safeParse({ methods: ['okta'] }).success).toBe(false)
-    expect(IDENTITY_METHODS).toEqual(['password', 'host', 'google', 'github', 'microsoft'])
+    expect(IDENTITY_METHODS).toEqual(['password', 'phiwebs', 'google', 'github', 'microsoft'])
   })
 
   it('names the two topologies app and external — platform is gone', () => {
@@ -106,10 +107,15 @@ describe('ProjectIdentitySchema', () => {
     expect(ProjectIdentitySchema.safeParse({ topology: 'platform' }).success).toBe(false)
   })
 
-  it('accepts the host-platform account as a login method', () => {
-    const parsed = ProjectIdentitySchema.parse({ required: true, methods: ['host', 'password'] })
-    expect(parsed.methods).toEqual(['host', 'password'])
+  it('accepts the PhiWebs account as a login method', () => {
+    const parsed = ProjectIdentitySchema.parse({ required: true, methods: ['phiwebs', 'password'] })
+    expect(parsed.methods).toEqual(['phiwebs', 'password'])
     expect(parsed.connections).toEqual({})
+  })
+
+  it('refuses `host`, the pre-1.0 name of the PhiWebs account method', () => {
+    expect(ProjectIdentitySchema.safeParse({ methods: ['host'] }).success).toBe(false)
+    expect(IdentityMethodSchema.safeParse('host').success).toBe(false)
   })
 })
 
@@ -182,10 +188,10 @@ describe('ProjectIdentitySchema — connections', () => {
     )
   })
 
-  it('refuses a connection for the host-platform account — that door is the host’s', () => {
+  it('refuses a connection for the PhiWebs account — that door is PhiWebs’', () => {
     const r = ProjectIdentitySchema.safeParse({
-      methods: ['host'],
-      connections: { host: { owner: 'own', clientId: 'x' } },
+      methods: ['phiwebs'],
+      connections: { phiwebs: { owner: 'own', clientId: 'x' } },
     })
     expect(r.success).toBe(false)
   })

@@ -1,5 +1,9 @@
 # @pwfabric/cli
 
+## Unreleased
+
+- Changed (breaking): the local host offers the PhiWebs-account method as `phiwebs` (was `host`).
+
 ## 1.0.0-rc.1
 
 - `pwf --version` (and `-v`, `version`) prints the version.

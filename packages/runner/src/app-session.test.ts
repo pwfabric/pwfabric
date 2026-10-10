@@ -221,8 +221,8 @@ describe('startSocialSignIn', () => {
 
   it('uses the declared start address, without doubling a trailing slash', () => {
     const assign = stubLocation()
-    startSocialSignIn({ startUrl: '/base/_auth/start/' }, 'host', '/')
-    expect(assign).toHaveBeenCalledWith('/base/_auth/start/host?returnTo=%2F')
+    startSocialSignIn({ startUrl: '/base/_auth/start/' }, 'phiwebs', '/')
+    expect(assign).toHaveBeenCalledWith('/base/_auth/start/phiwebs?returnTo=%2F')
   })
 
   it('works with no auth declaration at all, on the default address', () => {

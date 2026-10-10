@@ -1,5 +1,9 @@
 # @pwfabric/runner
 
+## Unreleased
+
+- Changed (breaking): the provider button for a PhiWebs account is `{ method: 'phiwebs' }` (was `host`): `PwappProviderButton.method`, `ProviderLabelKey` and `RunnerCopy.gate.providers.phiwebs` follow. It still stands first and still reads "Continue with your account".
+
 ## 1.0.0-rc.1
 
 - Removed: `mountLoginButton` (deprecated; use `mountSessionPill`).

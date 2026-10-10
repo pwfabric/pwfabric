@@ -204,9 +204,9 @@ export interface PwappAuth {
   readonly gatewayLogoutUrl?: string
 }
 
-/** One social sign-in button: `host` (an account on the platform hosting the app) or a provider. */
+/** One social sign-in button: `phiwebs` (a PhiWebs account) or a provider. */
 export interface PwappProviderButton {
-  readonly method: 'host' | SocialMethod
+  readonly method: 'phiwebs' | SocialMethod
 }
 
 /** One configured connection inside `connections.json`. */
