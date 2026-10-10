@@ -8,8 +8,6 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
-  DefaultBehaviorEngine,
-  createBehaviorEngine,
   DefaultEntityLifecycleEngine,
   createEntityLifecycleEngine,
 } from '../behavior.js'
@@ -51,11 +49,11 @@ function createBehavior(overrides?: Partial<EntityLifecycleHook>): EntityLifecyc
 // TESTS
 // ============================================================
 
-describe('DefaultBehaviorEngine', () => {
-  let engine: DefaultBehaviorEngine
+describe('DefaultEntityLifecycleEngine', () => {
+  let engine: DefaultEntityLifecycleEngine
 
   beforeEach(() => {
-    engine = new DefaultBehaviorEngine()
+    engine = new DefaultEntityLifecycleEngine()
   })
 
   describe('register', () => {
@@ -308,14 +306,6 @@ describe('DefaultBehaviorEngine', () => {
   })
 })
 
-describe('createBehaviorEngine', () => {
-  it('should create a DefaultBehaviorEngine instance', () => {
-    const engine = createBehaviorEngine()
-
-    expect(engine).toBeInstanceOf(DefaultBehaviorEngine)
-  })
-})
-
 // ============================================================
 // EntityLifecycleEngine primary name tests
 // ============================================================
@@ -326,12 +316,6 @@ describe('EntityLifecycleEngine (primary name)', () => {
       const engine = createEntityLifecycleEngine()
 
       expect(engine).toBeInstanceOf(DefaultEntityLifecycleEngine)
-    })
-
-    it('should also be an instance of DefaultBehaviorEngine (inheritance)', () => {
-      const engine = createEntityLifecycleEngine()
-
-      expect(engine).toBeInstanceOf(DefaultBehaviorEngine)
     })
   })
 

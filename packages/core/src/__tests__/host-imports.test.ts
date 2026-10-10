@@ -33,14 +33,6 @@ describe('BLOCK_HOST_IMPORTS', () => {
     }
   })
 
-  it('classifies nothing as inline, because nothing on this list is', () => {
-    // Regression lock. A local authoring-tool bundler may inline zod, but on
-    // the publish path zod is external and shared: `zod.mjs` re-exports the
-    // host instance. A specifier that is really inlined is not external, and
-    // so never reaches this list at all.
-    expect(BLOCK_HOST_IMPORTS.filter((i) => i.kind === 'inline')).toHaveLength(0)
-  })
-
   it('shares one zod instance rather than a copy per block', () => {
     // Not a preference: introspection walks a prop schema with `instanceof`,
     // which a second zod would break.

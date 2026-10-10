@@ -119,6 +119,13 @@ describe('surfaceThemeSchema', () => {
     expect(result.success).toBe(true)
   })
 
+  it('refuses colors.surface: the container colour is colors.card', () => {
+    const bad = surfaceThemeSchema.safeParse({ colors: { primary: '#6366f1', surface: '#f8fafc' } })
+    expect(bad.success).toBe(false)
+    expect(bad.success ? '' : bad.error.issues[0]?.message).toContain('colors.card')
+    expect(surfaceThemeSchema.safeParse({ colors: { primary: '#6366f1', card: '#f8fafc' } }).success).toBe(true)
+  })
+
   it('should accept a theme with colors', () => {
     const result = surfaceThemeSchema.safeParse({
       colors: { primary: '#6366f1', background: '#0f172a' },

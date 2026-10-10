@@ -60,20 +60,6 @@ export type DomainId = Brand<string, 'DomainId'>
 export type OwnerId = Brand<string, 'OwnerId'>
 
 /**
- * Unique identifier for a Marketplace Listing
- *
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export type ListingId = Brand<string, 'ListingId'>
-
-/**
- * Unique identifier for a Publisher
- *
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export type PublisherId = Brand<string, 'PublisherId'>
-
-/**
  * Unique identifier for an Artifact
  */
 export type ArtifactId = Brand<string, 'ArtifactId'>
@@ -83,46 +69,9 @@ export type ArtifactId = Brand<string, 'ArtifactId'>
 // ============================================================
 
 /**
- * World identifier — primary identity for a world aggregate.
- * 1:1 with `worlds.id`. Canonical brand for the world-scoped World.
- *
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export type WorldId = Brand<string, 'WorldId'>
-
-/**
  * User identifier — auth principal. A single user may belong to many Worlds.
  */
 export type UserId = Brand<string, 'UserId'>
-
-/**
- * Team identifier — group within a World.
- *
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export type TeamId = Brand<string, 'TeamId'>
-
-/**
- * Organization identifier — top-of-hierarchy grouping for enterprise worlds.
- *
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export type OrganizationId = Brand<string, 'OrganizationId'>
-
-/**
- * WorldBlueprint identifier — provisioning recipe.
- * (Distinct from WorldId; a Blueprint is a TEMPLATE, not an instance.)
- *
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export type WorldBlueprintId = Brand<string, 'WorldBlueprintId'>
-
-/**
- * Plan code — short string identifier referencing PlanDefinition (`plans.code`).
- *
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export type PlanCode = Brand<string, 'PlanCode'>
 
 /**
  * ISO 8601 datetime string. Branded for documentation; runtime is plain string.
@@ -185,24 +134,6 @@ export function ownerId(id: string): OwnerId {
 }
 
 /**
- * Create a ListingId from a string
- *
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export function listingId(id: string): ListingId {
-  return id as ListingId
-}
-
-/**
- * Create a PublisherId from a string
- *
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export function publisherId(id: string): PublisherId {
-  return id as PublisherId
-}
-
-/**
  * Create an ArtifactId from a string
  */
 export function artifactId(id: string): ArtifactId {
@@ -213,45 +144,8 @@ export function artifactId(id: string): ArtifactId {
 // WORLD LAYER ID CONSTRUCTORS
 // ============================================================
 
-/**
- * Construct a WorldId from a UUID string (1:1 with `worlds.id`).
- *
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export function worldId(id: string): WorldId {
-  return id as WorldId
-}
-
 export function userId(id: string): UserId {
   return id as UserId
-}
-
-/**
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export function teamId(id: string): TeamId {
-  return id as TeamId
-}
-
-/**
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export function organizationId(id: string): OrganizationId {
-  return id as OrganizationId
-}
-
-/**
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export function worldBlueprintId(id: string): WorldBlueprintId {
-  return id as WorldBlueprintId
-}
-
-/**
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export function planCode(id: string): PlanCode {
-  return id as PlanCode
 }
 
 export function isoDateTime(s: string): ISODateTime {

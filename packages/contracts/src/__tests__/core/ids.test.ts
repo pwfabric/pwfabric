@@ -15,8 +15,6 @@ import {
   manifestationId,
   domainId,
   ownerId,
-  listingId,
-  publisherId,
   artifactId,
   isValidId,
   parseId,
@@ -28,8 +26,6 @@ import {
   type ManifestationId,
   type DomainId,
   type OwnerId,
-  type ListingId,
-  type PublisherId,
   type ArtifactId,
 } from '../../core/ids.js'
 
@@ -114,30 +110,6 @@ describe('ID Constructors', () => {
 
     it('should preserve the branded type', () => {
       const id: OwnerId = ownerId('test/owner')
-      expect(typeof id).toBe('string')
-    })
-  })
-
-  describe('listingId', () => {
-    it('should create a ListingId from string', () => {
-      const id = listingId('marketplace/hero-block')
-      expect(id).toBe('marketplace/hero-block')
-    })
-
-    it('should preserve the branded type', () => {
-      const id: ListingId = listingId('test/listing')
-      expect(typeof id).toBe('string')
-    })
-  })
-
-  describe('publisherId', () => {
-    it('should create a PublisherId from string', () => {
-      const id = publisherId('publishers/acme')
-      expect(id).toBe('publishers/acme')
-    })
-
-    it('should preserve the branded type', () => {
-      const id: PublisherId = publisherId('test/publisher')
       expect(typeof id).toBe('string')
     })
   })

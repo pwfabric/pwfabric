@@ -140,8 +140,7 @@ function isLightColor(hex: string): boolean | null {
  * - colors.secondary      → --pw-color-secondary
  * - colors.accent         → --pw-color-accent
  * - colors.background     → --pw-color-background
- * - colors.card           → --pw-color-card (+ --pw-color-surface alias)
- * - colors.surface        → --pw-color-surface (+ --pw-color-card alias) [@deprecated]
+ * - colors.card           → --pw-color-card
  * - colors.text           → --pw-color-text
  * - colors.textMuted      → --pw-color-text-muted
  * - colors.border         → --pw-color-border
@@ -201,16 +200,7 @@ export function surfaceThemeToCSS(
   if (colors?.secondary) vars['--pw-color-secondary'] = colors.secondary
   if (colors?.accent) vars['--pw-color-accent'] = colors.accent
   if (colors?.background) vars['--pw-color-background'] = colors.background
-  // colors.card → --pw-color-card (primary) + --pw-color-surface (alias for backward compat)
-  if (colors?.card) {
-    vars['--pw-color-card'] = colors.card
-    if (!colors?.surface) vars['--pw-color-surface'] = colors.card
-  }
-  // colors.surface (@deprecated) → --pw-color-surface (primary) + --pw-color-card (alias)
-  if (colors?.surface) {
-    vars['--pw-color-surface'] = colors.surface
-    if (!colors?.card) vars['--pw-color-card'] = colors.surface
-  }
+  if (colors?.card) vars['--pw-color-card'] = colors.card
   if (colors?.text) vars['--pw-color-text'] = colors.text
   if (colors?.textMuted) vars['--pw-color-text-muted'] = colors.textMuted
   if (colors?.border) vars['--pw-color-border'] = colors.border
@@ -249,7 +239,7 @@ export function surfaceThemeToCSS(
   // error fill (often 2.6-3.9:1), and typical status colours read as text under
   // AA. The fill is never moved, the ink is: same rule as on-accent.
   {
-    const statusGrounds = [colors?.background, colors?.card ?? colors?.surface].filter(
+    const statusGrounds = [colors?.background, colors?.card].filter(
       (g): g is string => typeof g === 'string'
     )
     for (const status of THEME_STATUS_TOKENS) {
@@ -300,7 +290,7 @@ export function surfaceThemeToCSS(
   //  - Card on the OPPOSITE side (white card on a dark page, or vice-versa) →
   //    a contrasting ink derived from the card's luminance, so the card stays
   //    readable.
-  const cardColor = colors?.card ?? colors?.surface
+  const cardColor = colors?.card
   if (cardColor) {
     const cardLight = isLightColor(cardColor)
     const bgLight = colors?.background ? isLightColor(colors.background) : cardLight
@@ -333,7 +323,7 @@ export function surfaceThemeToCSS(
   // for one value is what we are removing.
   //
   // Emitted OUTSIDE the card block on purpose. `link-on-card` lived inside
-  // `if (cardColor)`, so a theme that declares no card/surface never got it and
+  // `if (cardColor)`, so a theme that declares no card never got it and
   // every call site silently fell back to its literal. Ink belongs to `primary`,
   // not to the card; the card only decides what it is measured AGAINST.
   if (colors?.primary) {
@@ -737,7 +727,7 @@ export function deriveDarkTheme(light: SurfaceTheme): SurfaceTheme {
   const bgDark = retargetLightness(bgHex, 0.06, 0.16)
   const bgL = lightnessOf(bgDark, 0.1)
 
-  // Card/surface sit one elevation step ABOVE the background (lighter in dark).
+  // Card sits one elevation step ABOVE the background (lighter in dark).
   const cardStepL = clamp(bgL + 0.05, 0, 1)
   const borderL = clamp(bgL + 0.14, 0, 1)
 
@@ -754,7 +744,7 @@ export function deriveDarkTheme(light: SurfaceTheme): SurfaceTheme {
   // Text is measured against BOTH dark grounds. The lightness bands below were
   // tuned on light palettes; re-deriving an already-dark theme (midnight) put
   // textMuted at 4.02:1 on its card. Only a value under 4.5 moves.
-  const cardSource = c.card ?? c.surface
+  const cardSource = c.card
   const darkGrounds = [bgDark, ...(cardSource !== undefined ? [withLightness(cardSource, cardStepL)] : [])]
 
   const colors: SurfaceThemeColors = {
@@ -764,7 +754,6 @@ export function deriveDarkTheme(light: SurfaceTheme): SurfaceTheme {
     ...(accentDark !== undefined ? { accent: accentDark } : {}),
     ...(textOnPrimaryDark !== undefined ? { textOnPrimary: textOnPrimaryDark } : {}),
     ...(c.card !== undefined ? { card: withLightness(c.card, cardStepL) } : {}),
-    ...(c.surface !== undefined ? { surface: withLightness(c.surface, cardStepL) } : {}),
     ...(c.text !== undefined
       ? { text: ensureAgainst(retargetLightness(c.text, 0.86, 0.96), darkGrounds, 4.5) }
       : {}),
@@ -917,7 +906,7 @@ export function themeContrastFindings(
   options: ThemeContrastOptions = {}
 ): ThemeContrastFinding[] {
   const c = theme.colors ?? {}
-  const card = c.card ?? c.surface
+  const card = c.card
   const lines = themeContrastLines(options.contrast)
   const findings: ThemeContrastFinding[] = []
   const check = (

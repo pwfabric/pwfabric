@@ -268,20 +268,19 @@ describe('surfaceThemeToCSS — motion tokens', () => {
 })
 
 // ---------------------------------------------------------------------------
-// FULL THEME — 29-token count assertion (surface emits card alias)
+// FULL THEME — 28-token count assertion
 // ---------------------------------------------------------------------------
 
 describe('surfaceThemeToCSS — full 28-token theme', () => {
-  it('should generate exactly 29 CSS vars when all tokens including headingFontFamily are set', () => {
+  it('should generate exactly 28 token vars when all tokens including headingFontFamily are set', () => {
     // Arrange — all 28 tokens set (17 existing + 11 new)
-    // colors.surface also emits --pw-color-card alias → +1 = 29
     const theme: SurfaceTheme = {
       colors: {
         primary: '#6366f1',
         secondary: '#64748b',
         accent: '#f59e0b',
         background: '#ffffff',
-        surface: '#f8fafc',
+        card: '#f8fafc',
         text: '#1e293b',
         textMuted: '#64748b',
         border: '#e2e8f0',
@@ -325,23 +324,21 @@ describe('surfaceThemeToCSS — full 28-token theme', () => {
     // Act
     const result = surfaceThemeToCSS(theme)
 
-    // Assert — 29 token vars + 4 derived color roles (Batch-1) + 3 on-card ink
-    // tokens (emitted when a card/surface colour is present) = 36
-    // + on-<status> and <status>-ink for the four statuses (8), the
-    // control edge (1), the inverse set (5) and the h1-h5 scale (5) = +19
-    expect(Object.keys(result)).toHaveLength(56)
+    // Assert — the token vars, the derived colour roles, the on-card ink tokens
+    // (a card colour is present), on-<status> and <status>-ink for the four
+    // statuses, the control edge, the inverse set and the h1-h5 scale
+    expect(Object.keys(result)).toHaveLength(55)
   })
 
-  it('should generate exactly 28 CSS vars when all tokens are set but headingFontFamily is omitted', () => {
-    // Arrange — 28 tokens (29 minus headingFontFamily)
-    // colors.surface also emits --pw-color-card alias → +1
+  it('should generate exactly 27 token vars when all tokens are set but headingFontFamily is omitted', () => {
+    // Arrange — 27 tokens (28 minus headingFontFamily)
     const theme: SurfaceTheme = {
       colors: {
         primary: '#6366f1',
         secondary: '#64748b',
         accent: '#f59e0b',
         background: '#ffffff',
-        surface: '#f8fafc',
+        card: '#f8fafc',
         text: '#1e293b',
         textMuted: '#64748b',
         border: '#e2e8f0',
@@ -380,10 +377,7 @@ describe('surfaceThemeToCSS — full 28-token theme', () => {
     // Act
     const result = surfaceThemeToCSS(theme)
 
-    // Assert — 28 token vars + 4 derived color roles (Batch-1) + 3 on-card ink
-    // tokens = 35
-    // + on-<status> and <status>-ink for the four statuses (8), the
-    // control edge (1), the inverse set (5) and the h1-h5 scale (5) = +19
-    expect(Object.keys(result)).toHaveLength(55)
+    // Assert — the same set, one token var fewer (no headingFontFamily)
+    expect(Object.keys(result)).toHaveLength(54)
   })
 })

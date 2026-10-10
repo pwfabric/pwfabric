@@ -9,8 +9,8 @@
  * - Registry: EntityRegistry, InMemoryEntityRegistry, createEntityRegistry
  * - Store: EntityStore, DefaultEntityStore, createEntityStore
  * - Connectors: EntityConnector, ConnectorRegistry, StaticConnector
- * - Behaviors: EntityLifecycleEngine (primary), BehaviorEngine (deprecated), EntityBehavior, createEntityLifecycleEngine
- * - Capability: EntityCapability, createEntityCapability
+ * - Lifecycle: EntityLifecycleEngine, EntityLifecycleHook, createEntityLifecycleEngine
+ * - Facade: EntityFacade, createEntityFacade
  *
  * @module @pwfabric/runtime/entity
  */
@@ -73,7 +73,7 @@ export type {
 } from './postgres-connector.js'
 export { PostgresEntityConnector, createPostgresConnector } from './postgres-connector.js'
 
-// Behaviors (primary names)
+// Lifecycle
 export type {
   EntityLifecycleEngine,
   EntityLifecycleTransition,
@@ -81,25 +81,16 @@ export type {
 } from './behavior.js'
 export { DefaultEntityLifecycleEngine, createEntityLifecycleEngine } from './behavior.js'
 
-// Behaviors (deprecated re-exports — backward compatibility, remove in next minor)
 export type {
   EntityLifecycleEvent,
   EntityBehaviorContext,
   EntityGuard,
   EntityAction,
-  EntityBehavior,
-  BehaviorEngine,
 } from './behavior.js'
-export { DefaultBehaviorEngine, createBehaviorEngine } from './behavior.js'
 
-// Facade (renamed from Capability)
-export type { EntityFacade, EntityCapability } from './facade.js'
-export {
-  DefaultEntityFacade,
-  createEntityFacade,
-  DefaultEntityCapability,
-  createEntityCapability,
-} from './facade.js'
+// Facade
+export type { EntityFacade } from './facade.js'
+export { DefaultEntityFacade, createEntityFacade } from './facade.js'
 
 // EntityDataSource adapter for surface expression binding
 export type { EntityDataSourceConfig, EntityDataSource } from './entity-datasource.js'

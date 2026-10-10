@@ -511,15 +511,6 @@ class DefaultLiveDataBinding<T> implements LiveDataBinding<T> {
 }
 
 // ============================================================
-// BACKWARD COMPATIBILITY
-// ============================================================
-
-/**
- * @deprecated Use DataService instead
- */
-export const DefaultDataCapability = DataService
-
-// ============================================================
 // FACTORY FUNCTIONS
 // ============================================================
 
@@ -530,9 +521,3 @@ export function createDataService(config?: DataServiceConfig): DataServiceInterf
   return new DataService(config)
 }
 
-/**
- * @deprecated Use createDataService instead
- */
-export function createDataCapability(): DataServiceInterface {
-  return new DataService()
-}

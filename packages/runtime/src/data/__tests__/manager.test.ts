@@ -9,9 +9,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import {
   DataService,
-  DefaultDataCapability,
   createDataService,
-  createDataCapability,
 } from '../manager.js'
 import type { DataSourceDefinition, DataBinding, DataServiceConfig } from '../types.js'
 
@@ -808,21 +806,6 @@ describe('DataService', () => {
   })
 })
 
-// ============================================================
-// BACKWARD COMPATIBILITY
-// ============================================================
-
-describe('DefaultDataCapability (backward compat)', () => {
-  it('should be the same as DataService', () => {
-    expect(DefaultDataCapability).toBe(DataService)
-  })
-
-  it('should be instantiable', () => {
-    const instance = new DefaultDataCapability()
-    expect(instance).toBeInstanceOf(DataService)
-  })
-})
-
 describe('createDataService', () => {
   it('should create a DataService instance', () => {
     const service = createDataService()
@@ -832,13 +815,6 @@ describe('createDataService', () => {
   it('should create a DataService with config', () => {
     const service = createDataService({ defaultCacheTtl: 60, maxRetries: 2 })
     expect(service).toBeInstanceOf(DataService)
-  })
-})
-
-describe('createDataCapability (backward compat)', () => {
-  it('should create a DataService instance', () => {
-    const instance = createDataCapability()
-    expect(instance).toBeInstanceOf(DataService)
   })
 })
 

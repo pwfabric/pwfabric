@@ -116,19 +116,3 @@ export interface BundleCascadeResult {
     readonly error: string
   }[]
 }
-
-// ============================================================
-// ENTITLEMENTS V2
-// ============================================================
-
-/**
- * Extended entitlements response with dynamic artifact descriptors.
- *
- * @deprecated Platform concept; leaves the open contract surface at the next major. Hosts should model it in their own types.
- */
-export interface SerializedEntitlementsV2 {
-  readonly blocks: readonly string[]
-  readonly capabilities: readonly string[]
-  readonly dynamicBlocks: readonly DynamicBlockDescriptor[]
-  readonly dynamicStarters: readonly DynamicStarterDescriptor[]
-}

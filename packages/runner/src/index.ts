@@ -105,7 +105,6 @@ export { mountSignInGate, isGated } from './sign-in-gate.js'
 export type { SignInGateOptions } from './sign-in-gate.js'
 export {
   mountSessionPill,
-  mountLoginButton,
   sessionLabel,
   type SessionPill,
   type SessionPillOptions,
