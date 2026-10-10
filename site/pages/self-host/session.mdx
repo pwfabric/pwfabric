@@ -42,7 +42,7 @@ sign-in definition (`app/definitions/auth.json`):
 
 `required` is the gate switch; `topology` is `app` (default) or `external`;
 `methods` (app only) is drawn from the closed set
-`password | host | google | github | microsoft`. The contract refuses
+`password | phiwebs | google | github | microsoft`. The contract refuses
 contradiction (an issuer with `app`, or `methods` with `external`) but allows
 `required: true` with no methods. Such an app ships no `auth.json`; the
 runner still gates it and shows the wall with a disabled sign-in button and

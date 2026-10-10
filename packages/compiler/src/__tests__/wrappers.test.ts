@@ -87,3 +87,40 @@ describe('wrapper names — compileAtom refuses, never throws, never emits', () 
     })
   }
 })
+
+describe('block wrapper — which export is the component', () => {
+  /** Runs the generated block wrapper against `atom` as the entry module's namespace. */
+  async function resolve(atom: Record<string, unknown>): Promise<{ Component: unknown; definition: unknown }> {
+    const source = buildWrapperSource('block', { sourceBase: 'component' }).replace(
+      'import * as _atom from "./component.js"',
+      'const _atom = globalThis.__pwfabric_wrapper_atom'
+    )
+    const g = globalThis as Record<string, unknown>
+    g['__pwfabric_wrapper_atom'] = atom
+    try {
+      const url = `data:text/javascript;base64,${Buffer.from(source).toString('base64')}#${Math.random()}`
+      return (await import(/* @vite-ignore */ url)) as { Component: unknown; definition: unknown }
+    } finally {
+      delete g['__pwfabric_wrapper_atom']
+    }
+  }
+
+  it('takes the component from a defineBlock() definition when the module exports only that', async () => {
+    const component = (): null => null
+    const definition = Object.freeze({ type: 'quote-card', schema: {}, component })
+    const m = await resolve({ QuoteCard: definition })
+    expect(m.Component).toBe(component)
+    expect(m.definition).toBe(definition)
+  })
+
+  it('still prefers a default-exported component', async () => {
+    const own = (): null => null
+    const m = await resolve({ default: own, QuoteCard: { type: 'q', schema: {}, component: (): null => null } })
+    expect(m.Component).toBe(own)
+  })
+
+  it('still finds a plain named component with no definition', async () => {
+    const GreetingBlock = (): null => null
+    expect((await resolve({ GreetingBlock })).Component).toBe(GreetingBlock)
+  })
+})

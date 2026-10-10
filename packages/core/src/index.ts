@@ -159,6 +159,8 @@ export {
   blockHostGlobals,
   unseededHostGlobals,
   specifiersForShim,
+  isExportableName,
+  shimSource,
   type HostImport,
   type HostImportKind,
   type HostSeeding,

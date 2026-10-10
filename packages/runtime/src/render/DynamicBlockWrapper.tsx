@@ -156,6 +156,9 @@ export function DynamicBlockWrapper({
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'Unknown error'
+        // The placeholder says it on the page; the console says it to whoever
+        // is debugging a block that "just does not render".
+        console.error(`[pwfabric] block "${descriptor.blockType}" failed to load: ${msg}`)
         setErrorMessage(msg)
         setState('error')
       })

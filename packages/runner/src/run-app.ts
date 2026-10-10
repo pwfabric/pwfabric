@@ -22,7 +22,7 @@ import {
   type SurfaceConnectionsValue,
 } from '@pwfabric/runtime'
 import type { RunAppOptions, SurfaceReceipt } from './types.js'
-import { assembleFooter, assembleNav, composeTitle, doorHeaders, fetchJson, queryStateSeed, receiptFilesOf, rewriteHrefs, seedStateFromQuery } from './helpers.js'
+import { assembleFooter, assembleNav, composeTitle, doorHeaders, fetchJson, queryStateSeed, receiptFilesOf, rewriteHrefs, seedStateFromQuery, withVersion } from './helpers.js'
 import { createRouter, resolveRouterMode, type RouteChange } from './router.js'
 import { createAuthBridge, type AuthBridge } from './auth.js'
 import { accountUserFrom, applyAccountControl } from './apply-auth.js'
@@ -123,7 +123,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   // `auth.json` is asked for only when `project.json` declares an identity
   // (see load-envelope.ts); every other file in parallel, as before.
   const { project, navigation, appearance, auth, connections, blockManifest, engineManifest } = await loadEnvelope(
-    { source, blocksBase, enginesBase },
+    { source, blocksBase, enginesBase, version: opts.version },
     fetchJson
   )
 
@@ -437,7 +437,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // (see AuthBridge.getDoorToken) — never the data token, whose audience
     // is the data provider and which the door rightly refuses.
     const receipt = await fetchJson<SurfaceReceipt>(
-      `${source}/${file}`,
+      withVersion(`${source}/${file}`, opts.version),
       doorHeaders({ appSession: appSession?.token, doorToken: await bridge?.getDoorToken() })
     )
     if (seq !== routeSeq) return

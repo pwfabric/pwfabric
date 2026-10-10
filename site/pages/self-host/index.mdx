@@ -114,6 +114,7 @@ the files sit next to `index.html`.
 | `router` | `'hash'` | `'hash'`, `'path'` or `'auto'` — see routing |
 | `mount` | `'#root'` | selector of the element the app renders into |
 | `locale` | `'en'` | content locale of the delivered app (`'en'` or `'tr'`) |
+| `version` | none | the publish this page belongs to; every file read under `source` (envelope JSON, receipts) is asked for as `?v=<version>`, so a cache never mixes two publishes |
 
 Source: `packages/runner/src/types.ts` (`RunAppOptions`).
 

@@ -122,11 +122,11 @@ describe('envelopeEntries', () => {
     expect(entries).toEqual({
       'auth.json': {
         provider: 'platform',
-        providers: [{ method: 'github' }, { method: 'host' }],
+        providers: [{ method: 'github' }, { method: 'phiwebs' }],
         startUrl: 'http://x/h/_auth/start',
         gatewaySessionUrl: 'http://x/h/_auth/session',
         gatewayLogoutUrl: 'http://x/h/_auth/logout',
-        methods: ['github', 'host'],
+        methods: ['github', 'phiwebs'],
       },
     })
   })

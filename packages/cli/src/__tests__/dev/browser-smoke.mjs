@@ -1,7 +1,11 @@
 // Browser smoke: boots an assembled pwapp's real module graph in a jsdom
 // document and prints what rendered as one JSON line.
 //
-//   node browser-smoke.mjs <app url>
+//   node browser-smoke.mjs <app url> [--no-seed] [--expect <selector>]
+//
+// --no-seed leaves out the shell's `assets/seed.js`, so the page is what a
+// host that runs only the renderer and the runner gives a block (a published
+// PhiWebs app is one). --expect waits for one more element and reports its text.
 //
 // Runs as a plain Node process (the test runner's module sandbox has no
 // dynamic import for evaluated code). jsdom has no import maps and Node cannot
@@ -13,6 +17,9 @@
 import { JSDOM } from 'jsdom'
 
 const base = process.argv[2]
+const flags = process.argv.slice(3)
+const noSeed = flags.includes('--no-seed')
+const expectSelector = flags.includes('--expect') ? flags[flags.indexOf('--expect') + 1] : null
 const nodeFetch = globalThis.fetch
 const get = async (p) => (await nodeFetch(new URL(p, base))).text()
 const dataUrl = (code) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
@@ -67,7 +74,7 @@ console.info = () => undefined
 
 // The shell, in order: renderer, the seeding file, then the runner (boot.js calls runApp as below).
 ;(0, eval)(await get('/assets/embed.js'))
-;(0, eval)(await get('/assets/seed.js'))
+if (!noSeed) (0, eval)(await get('/assets/seed.js'))
 dom.window.PWFabric = globalThis.PWFabric
 const seeded = [
   '__pwfabric_react',
@@ -92,7 +99,8 @@ await runner.runApp({
   router: 'hash',
 })
 const deadline = Date.now() + 20_000
-while (Date.now() < deadline && !document.querySelector('[data-k="title"]')) await new Promise((r) => setTimeout(r, 100))
+const rendered = () => document.querySelector('[data-k="title"]') && (!expectSelector || document.querySelector(expectSelector))
+while (Date.now() < deadline && !rendered()) await new Promise((r) => setTimeout(r, 100))
 process.stdout.write(
   JSON.stringify({
     seeded,
@@ -101,6 +109,7 @@ process.stdout.write(
     title: document.title,
     heading: document.querySelector('[data-k="title"]')?.textContent ?? null,
     stack: Boolean(document.querySelector('[data-k="stack"]')),
+    expected: expectSelector ? (document.querySelector(expectSelector)?.textContent ?? null) : undefined,
     primary: document.querySelector('[data-k="title"]')?.getAttribute('style') ?? null,
     errors,
   }) + '\n'

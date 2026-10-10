@@ -1,5 +1,9 @@
 # @pwfabric/embed
 
+## Unreleased
+
+- Fixed: `embed.js` seeds `globalThis.__pwfabric_sdk` with the authoring kit it already carries. A block written the documented way (`defineBlock` from `@pwfabric/authoring`) rendered nowhere a page ran only the renderer and the runner — every published app.
+
 ## 1.0.0-rc.1
 
 - `zod` is a peer dependency (`^3.23.0`).

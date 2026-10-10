@@ -93,10 +93,10 @@ function providerLabel(copy: RunnerCopy, method: string): string {
 
 /**
  * The order the buttons stand in, whatever order the export wrote them.
- * The host's own account first, then the providers most visitors hold. Unknown
+ * The PhiWebs account first, then the providers most visitors hold. Unknown
  * methods keep their relative order at the end.
  */
-const PROVIDER_ORDER: readonly string[] = ['host', 'microsoft', 'google', 'github']
+const PROVIDER_ORDER: readonly string[] = ['phiwebs', 'microsoft', 'google', 'github']
 
 function byProviderOrder<T extends { readonly method: string }>(providers: readonly T[]): T[] {
   const rank = (m: string): number => {

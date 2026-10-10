@@ -1,7 +1,7 @@
 // End-to-end: the round-trip apps of the spec, through the built `pwf`
 // binary, rendered in a real headless Chrome driven over CDP.
 //
-//   node test/e2e/run-e2e.mjs [--only l1,l2,l3,l3-dev,l3-loop,csp-probe,foundation] [--foundation <dir>]
+//   node test/e2e/run-e2e.mjs [--only l1,l2,l3,l3-dev,l3-loop,csp-probe,sdk-block,foundation] [--foundation <dir>]
 //
 // For each round-trip app (spec/roundtrip/<app>/input, copied to a temp dir):
 //   pwf add <the fixture foundation>  (the pin must equal the spec's)
@@ -36,7 +36,7 @@ const flag = (name) => {
   return i >= 0 ? argv[i + 1] : undefined
 }
 const foundationDir = flag('foundation') ?? process.env.PWF_E2E_FOUNDATION
-const only = new Set((flag('only') ?? `l1,l2,l3,l3-dev,l3-loop,csp-probe${foundationDir ? ',foundation' : ''}`).split(','))
+const only = new Set((flag('only') ?? `l1,l2,l3,l3-dev,l3-loop,csp-probe,sdk-block${foundationDir ? ',foundation' : ''}`).split(','))
 const log = (line) => process.stdout.write(`${line}\n`)
 const finish = (summary, code = 0) => {
   process.stdout.write(`${JSON.stringify(summary)}\n`)
@@ -588,6 +588,57 @@ async function cspProbe(browser, s) {
   return
 }
 
+// L2 with one more app block written the documented way: `defineBlock` from
+// `@pwfabric/authoring`, exporting only the definition. The built shell's
+// `seed.js` is emptied, so the page is what a host running only the renderer
+// and the runner gives a block — a published app is one.
+const SDK_BLOCK = `import { defineBlock } from '@pwfabric/authoring'
+import { z } from 'zod'
+
+export const QuoteCard = defineBlock({
+  type: 'quote-card',
+  name: 'Quote card',
+  category: 'text',
+  schema: z.object({ quote: z.string() }),
+  defaultProps: { quote: 'A great product to work with.' },
+  component: ({ props, block }) => (
+    <blockquote data-block-id={block?.id ?? 'quote'} data-block-type="quote-card">{props.quote}</blockquote>
+  ),
+})
+`
+
+async function sdkBlock(browser, s) {
+  s.rename('sdk block: defineBlock() renders under the renderer and the runner alone (pwf run)')
+  const app = await prepare(s, 'l2-custom-block')
+  try {
+    const receiptPath = join(app.root, 'app', 'surfaces', 'home.receipt.json')
+    const receipt = JSON.parse(await readFile(receiptPath, 'utf8'))
+    receipt.blocks[0].children.push({ id: 'quote', type: 'quote-card', props: { quote: 'It just rendered.' } })
+    await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`)
+    const dir = join(app.root, 'atoms', 'blocks', 'custom', 'quote-card')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'component.tsx'), SDK_BLOCK)
+    await writeFile(
+      join(dir, 'manifest.json'),
+      `${JSON.stringify({ id: 'custom.quote-card', kind: 'block', version: '1.0.0', category: 'custom', name: 'quote-card', state: 'stable', knowledge: { purpose: 'Quotes a customer', useCases: [], composesWith: [], antiPatterns: [] }, definition: { props: [{ name: 'quote', type: 'string', required: false, default: 'A great product to work with.', bindable: true }], defaultProps: { quote: 'A great product to work with.' }, canHaveChildren: false, traits: [] } }, null, 2)}\n`
+    )
+    if (!(await validateAndBuild(s, app.root))) return
+    await writeFile(join(app.root, '.pwf', 'out', 'assets', 'seed.js'), '// emptied by the e2e: no shell seeding\n')
+    const { server, page } = await openBuilt(s, browser, app.root, textOf('[data-block-type="quote-card"]'))
+    try {
+      s.check('the defineBlock() block renders', (await page.evaluate(textOf('[data-block-type="quote-card"]'))) === 'It just rendered.')
+      s.check('the renderer seeded the authoring kit', (await page.evaluate('typeof globalThis.__pwfabric_sdk?.defineBlock')) === 'function')
+      s.check('the greeting still renders', (await page.evaluate(textOf('[data-block-id="greeting"]'))) === 'Hello, visitor!')
+      await checkClean(s, page, 'home')
+    } finally {
+      await server.stop()
+    }
+  } finally {
+    await app.cleanup()
+  }
+  return
+}
+
 async function realFoundation(browser, s) {
   s.rename(`real foundation (pwf create + pwf dev): ${foundationDir}`)
   const dir = await mkdtemp(join(tmpdir(), 'pwf-e2e-foundation-'))
@@ -650,7 +701,7 @@ async function describePage(page) {
 
 // ── main ─────────────────────────────────────────────────────────────
 
-const SCENARIOS = { l1, l2, l3, 'l3-dev': l3Dev, 'l3-loop': l3Loop, 'csp-probe': cspProbe, foundation: realFoundation }
+const SCENARIOS = { l1, l2, l3, 'l3-dev': l3Dev, 'l3-loop': l3Loop, 'csp-probe': cspProbe, 'sdk-block': sdkBlock, foundation: realFoundation }
 const browser = await launchChrome({ chrome: chromePath })
 log(`chrome: ${browser.version} (${chromePath})`)
 const results = []

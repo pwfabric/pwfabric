@@ -11,7 +11,7 @@
 export { runApp } from './run-app.js'
 
 // Pure envelope helpers
-export { pageKeyOf, rewriteHrefs, assembleNav, assembleFooter, FOOTER_BAND_ID, receiptFilesOf, composeTitle, fetchJson, doorHeaders } from './helpers.js'
+export { pageKeyOf, rewriteHrefs, assembleNav, assembleFooter, FOOTER_BAND_ID, receiptFilesOf, composeTitle, fetchJson, doorHeaders, withVersion } from './helpers.js'
 export type { ToHref } from './helpers.js'
 
 // Router

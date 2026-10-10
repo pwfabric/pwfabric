@@ -1,5 +1,10 @@
 # @pwfabric/cli
 
+## Unreleased
+
+- Changed (breaking): the local host offers the PhiWebs-account method as `phiwebs` (was `host`).
+- `shimSource` and `isExportableName` moved to `@pwfabric/core`; `seed.js` no longer seeds `__pwfabric_sdk` (the renderer does).
+
 ## 1.0.0-rc.1
 
 - `pwf --version` (and `-v`, `version`) prints the version.

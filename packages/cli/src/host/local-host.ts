@@ -69,7 +69,7 @@ const SESSION_TTL_MS = 8 * 3600_000
 const TRANSACTION_TTL_MS = 5 * 60_000
 
 /** The provider buttons a session server can name (envelope `auth.json` `providers[].method`). */
-const PROVIDER_METHODS = new Set(['host', 'google', 'github', 'microsoft'])
+const PROVIDER_METHODS = new Set(['phiwebs', 'google', 'github', 'microsoft'])
 
 function normalisePrefix(prefix: string): string {
   const trimmed = prefix.replace(/^\/+|\/+$/g, '')

@@ -38,8 +38,8 @@ describe('RUNNER_COPY', () => {
   })
 
   it('labels the host-account door in both languages', () => {
-    expect(RUNNER_COPY.en.gate.providers.host).toBe('Continue with your account')
-    expect(RUNNER_COPY.tr.gate.providers.host).toBe('Hesabınızla devam edin')
+    expect(RUNNER_COPY.en.gate.providers.phiwebs).toBe('Continue with your account')
+    expect(RUNNER_COPY.tr.gate.providers.phiwebs).toBe('Hesabınızla devam edin')
   })
 
   it('answers every declared auth_error code in both languages', () => {

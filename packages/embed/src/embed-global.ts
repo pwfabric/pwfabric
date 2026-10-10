@@ -75,11 +75,10 @@ if (typeof globalThis !== 'undefined') {
     'react-dom/client': ReactDomClient,
     '@pwfabric/runtime': Runtime,
     '@pwfabric/contracts': Contracts,
-    // `@pwfabric/core` and the authoring kit (the `sdk@v1` shim's package, see
-    // `BLOCK_HOST_IMPORTS` in @pwfabric/core) are here so a host shell can seed
-    // `__pwfabric_core` / `__pwfabric_sdk` from THIS bundle's instances — the
-    // pwf CLI's standalone shell does. The runtime already bundles core, so
-    // core costs little; this file does not seed those two globals itself.
+    // `@pwfabric/core` is here so a host shell can seed `__pwfabric_core`
+    // from THIS bundle's instance — the pwf CLI's standalone shell does. The
+    // runtime already bundles core, so it costs little. The authoring kit (the
+    // `sdk@v1` shim's package) is also seeded below as `__pwfabric_sdk`.
     '@pwfabric/core': Core,
     '@pwfabric/authoring': Authoring,
   }
@@ -108,12 +107,13 @@ if (typeof globalThis !== 'undefined') {
   const g = globalThis as Record<string, unknown>
   g.__pwfabric_react = React
   g.__pwfabric_jsx_runtime = ReactJsxRuntime
-  // __pwfabric_sdk is deliberately NOT seeded here: the authoring kit
-  // (defineBlock/defineFactory/etc. for block authors) is a development-time
-  // tool and does not belong in a shipped app export. A block whose compiled
-  // bundle calls defineBlock() at module-load time works in a live host
-  // (whose providers module seeds this global); a host shell that needs it in
-  // a standalone export seeds it from `__PW_VENDOR__` above.
+  // The authoring kit: a block written the documented way imports
+  // `defineBlock` from `@pwfabric/authoring` and calls it when its bundle
+  // loads, so a page that renders shipped blocks must seed it — every
+  // published app and every `pwf build` export is such a page, and this
+  // bundle is the only thing on it that can. It is already in this bundle
+  // (the vendor table above carries it), so seeding it costs nothing.
+  g.__pwfabric_sdk = Authoring
   g.__pwfabric_zod = Zod
   // Mirrors a host's providers module: @pwfabric/runtime re-exports the public
   // contracts surface, so the SAME module namespace backs both globals.
