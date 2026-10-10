@@ -16,6 +16,8 @@ import {
   blockHostGlobals,
   unseededHostGlobals,
   specifiersForShim,
+  isExportableName,
+  shimSource,
 } from '../blocks/host-imports.js'
 
 describe('BLOCK_HOST_IMPORTS', () => {
@@ -117,14 +119,13 @@ describe('derivations', () => {
     expect(globals).toContain('__pwfabric_runtime')
   })
 
-  it('asks the standalone export for less than the app host', () => {
-    // Not a smaller version of the same thing: the standalone export omits the
-    // sdk global by design, so handing it the app host's
-    // list would make a gate demand something nobody intends to provide.
+  it('asks the standalone export for no less than the app host', () => {
+    // The sdk global used to be app-host only; a shipped app then rendered no
+    // block written with defineBlock(). Every host seeds it now, so the two
+    // lists agree — the app host's may only ever be the larger.
     const appHost = blockHostGlobals('app-host')
     const standalone = blockHostGlobals('standalone')
-    expect(appHost).toContain('__pwfabric_sdk')
-    expect(standalone).not.toContain('__pwfabric_sdk')
+    expect(standalone).toContain('__pwfabric_sdk')
     for (const g of standalone) expect(appHost).toContain(g)
   })
 
@@ -188,5 +189,66 @@ describe('runtime subpaths', () => {
       expect(sub.seeding, sub.specifier).toBe(root?.seeding)
       expect(imports[sub.specifier]).toBe('/_pwfabric/shims/runtime.mjs')
     }
+  })
+})
+
+describe('shim sources', () => {
+  /** Evaluates a shim's source against `seed` as globalThis and returns its exports. */
+  async function load(source: string, seed: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const key = '__pwfabric_shim_test'
+    const g = globalThis as Record<string, unknown>
+    const previous = Object.fromEntries(Object.keys(seed).map((k) => [k, g[k]]))
+    Object.assign(g, seed)
+    try {
+      const url = `data:text/javascript;base64,${Buffer.from(source).toString('base64')}#${key}${Math.random()}`
+      return (await import(/* @vite-ignore */ url)) as Record<string, unknown>
+    } finally {
+      for (const [k, v] of Object.entries(previous)) {
+        if (v === undefined) delete g[k]
+        else g[k] = v
+      }
+    }
+  }
+
+  it('binds only names that can be bindings: no reserved words, no undefined / NaN / Infinity', () => {
+    expect(isExportableName('useState')).toBe(true)
+    expect(isExportableName('$x_1')).toBe(true)
+    for (const name of ['default', 'delete', 'a-b', '1a', 'undefined', 'NaN', 'Infinity']) {
+      expect(isExportableName(name), name).toBe(false)
+    }
+    const src = shimSource('zod.mjs', '__pwfabric_zod', ['z', 'undefined', 'NaN', 'Infinity', 'z', 'ZodString'])
+    expect(src).toContain('export const {\n  ZodString,\n  z,\n} = m')
+    expect(src).not.toMatch(/\bundefined,|\bNaN,|\bInfinity,/)
+  })
+
+  it('names every specifier the shim serves', () => {
+    const src = shimSource('runtime.mjs', '__pwfabric_runtime', ['a'])
+    for (const s of specifiersForShim('runtime.mjs')) expect(src).toContain(`'${s}'`)
+  })
+
+  it('re-exports the seeded instance', async () => {
+    const defineBlock = (): void => undefined
+    const mod = await load(shimSource('sdk@v1.mjs', '__pwfabric_sdk', ['defineBlock']), {
+      __pwfabric_sdk: { defineBlock },
+    })
+    expect(mod['defineBlock']).toBe(defineBlock)
+    expect((mod['default'] as { defineBlock: unknown }).defineBlock).toBe(defineBlock)
+  })
+
+  it('throws a readable error when a global every host must seed is missing', async () => {
+    await expect(load(shimSource('sdk@v1.mjs', '__pwfabric_sdk', ['defineBlock']), {})).rejects.toThrow(
+      /globalThis\.__pwfabric_sdk is not seeded, so @pwfabric\/authoring cannot be imported by a block/
+    )
+  })
+
+  it('degrades to undefined exports for a global nothing seeds yet', async () => {
+    const mod = await load(shimSource('core.mjs', '__pwfabric_core', ['BREAKPOINTS']), {})
+    expect(mod['BREAKPOINTS']).toBeUndefined()
+  })
+
+  it('seeds the authoring kit on every host: a documented block calls defineBlock() when it loads', () => {
+    const sdk = BLOCK_HOST_IMPORTS.find((i) => i.specifier === '@pwfabric/authoring')
+    expect(sdk?.seeding).toBe('every-host')
+    expect(blockHostGlobals('standalone')).toContain('__pwfabric_sdk')
   })
 })

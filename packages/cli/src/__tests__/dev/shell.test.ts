@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.setConfig({ testTimeout: 60_000 })
-import { BLOCK_HOST_IMPORTS, blockShimFiles } from '@pwfabric/core'
+import { BLOCK_HOST_IMPORTS, blockShimFiles, isExportableName, shimSource } from '@pwfabric/core'
 import {
   bootScript,
   buildShellHtml,
@@ -11,13 +11,11 @@ import {
   escapeHtml,
   htmlLangOf,
   importMap,
-  isExportableName,
   loadRuntimeAssets,
   runnerLocaleOf,
   scriptJson,
   seededGlobals,
   shimGlobal,
-  shimSource,
   shimsFor,
 } from '../../dev/shell.js'
 
@@ -74,9 +72,9 @@ describe('shims', () => {
     }
   })
 
-  it('reads core and sdk names off the vendor table when the renderer carries them', async () => {
+  it('reads core names off the vendor table and sdk names off the global the renderer seeds', async () => {
     const shims = await buildShims(
-      "globalThis.__PW_VENDOR__ = { '@pwfabric/core': { BREAKPOINTS: 1 }, '@pwfabric/authoring': { defineBlock() {}, defineFactory() {} } }"
+      "globalThis.__PW_VENDOR__ = { '@pwfabric/core': { BREAKPOINTS: 1 } }; globalThis.__pwfabric_sdk = { defineBlock() {}, defineFactory() {} }"
     )
     expect(exportsOf(shims.get('core.mjs') as string)).toEqual(['BREAKPOINTS'])
     expect(exportsOf(shims.get('sdk@v1.mjs') as string)).toEqual(['defineBlock', 'defineFactory'])
@@ -99,6 +97,8 @@ describe('shims', () => {
     const src = shimSource('zod.mjs', '__pwfabric_zod', ['z', 'z', 'default', 'ZodString'])
     expect(exportsOf(src)).toEqual(['ZodString', 'z'])
     expect(shimSource('zod.mjs', '__pwfabric_zod', [])).not.toContain('export const')
+    // zod exports `undefined`; a binding of it (or of NaN / Infinity) breaks lint and some parsers.
+    expect(exportsOf(shimSource('zod.mjs', '__pwfabric_zod', ['z', 'undefined', 'NaN', 'Infinity']))).toEqual(['z'])
     expect(shimGlobal('unknown file.mjs')).toBe('__pwfabric_unknown_file_mjs')
   })
 })
@@ -133,11 +133,12 @@ describe('shell', () => {
     expect(meta).toBeLessThan(plain.indexOf('<link'))
     expect(meta).toBeLessThan(plain.indexOf('<script'))
   })
-  it('seeds core, sdk and react-dom from the vendor table in seed.js, and boots with the locale', () => {
+  it('seeds core and react-dom from the vendor table in seed.js, and boots with the locale', () => {
     const seed = seedScript()
     expect(seed).toContain('g.__pwfabric_react_dom = g.__pwfabric_react_dom || v["react-dom"];')
     expect(seed).toContain('g.__pwfabric_core = g.__pwfabric_core || v["@pwfabric/core"];')
-    expect(seed).toContain('g.__pwfabric_sdk = g.__pwfabric_sdk || v["@pwfabric/authoring"];')
+    // The renderer seeds the authoring kit itself.
+    expect(seed).not.toContain('__pwfabric_sdk')
     expect(bootScript('tr')).toContain("import { runApp } from './runner.js'")
     expect(bootScript('tr')).toContain("locale: 'tr'")
     expect(bootScript()).toContain("locale: 'en'")

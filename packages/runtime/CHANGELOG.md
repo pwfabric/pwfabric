@@ -1,5 +1,9 @@
 # @pwfabric/runtime
 
+## Unreleased
+
+- Fixed: a dynamic block that fails to load says so on the console (`[pwfabric] block "<type>" failed to load: <reason>`), not only in its on-page placeholder.
+
 ## 1.0.0-rc.1
 
 - Removed: `DataCapability`, `DefaultDataCapability`, `createDataCapability` (use `DataServiceInterface`, `DataService`, `createDataService`); `EntityCapability`, `DefaultEntityCapability`, `createEntityCapability` (use `EntityFacade`, `DefaultEntityFacade`, `createEntityFacade`); `EntityBehavior`, `BehaviorEngine`, `DefaultBehaviorEngine`, `createBehaviorEngine` and the facade's `behaviors` accessor and option (use `EntityLifecycleHook`, `EntityLifecycleEngine`, `DefaultEntityLifecycleEngine`, `createEntityLifecycleEngine`, `entityLifecycle`) (deprecated).

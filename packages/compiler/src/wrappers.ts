@@ -86,6 +86,10 @@ const _resolveDefinition = (m) => {
 
 const _resolveComponent = (m) => {
   if (typeof m.default === 'function') return m.default
+  // A block written with defineBlock() exports only its definition, and the
+  // definition carries the component.
+  const d = _resolveDefinition(m)
+  if (d && typeof d.component === 'function') return d.component
   for (const k of Object.keys(m)) {
     const v = m[k]
     if (typeof v === 'function') return v

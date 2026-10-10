@@ -40,7 +40,7 @@ describe('compileAtom — golden output', () => {
     expect(a.hash).toBe(b.hash)
     expect(a.hash).toMatch(/^sha256:[a-f0-9]{64}$/)
     expect(a.size).toBe(Buffer.byteLength(a.code))
-    expect(a.hash).toMatchInlineSnapshot(`"sha256:d12f666fe2f6ba3f9d1f71b7406ff81c7e9f073f29b324d26aa2ac33be5ad717"`)
+    expect(a.hash).toMatchInlineSnapshot(`"sha256:10debece7ea08f19ed2bea244850801ae21ed853e5c5f6264d8c155cd1efb0fd"`)
   })
 
   it('plain block: the wrapper re-exports Component + definition under stable names', async () => {
@@ -59,7 +59,7 @@ describe('compileAtom — golden output', () => {
     expect(a.code).toBe(b.code)
     expect(a.code).not.toContain('notPartOfThisAtom')
     expect(a.code).not.toContain('42')
-    expect(a.hash).toMatchInlineSnapshot(`"sha256:96cfda00575a1248ec0992ff50b1596f7a6972ce084ebd2fbd29b786998c1abc"`)
+    expect(a.hash).toMatchInlineSnapshot(`"sha256:73bb18277d95c378fc5edf4978c24f237a2d6cc5bd435ec251bc3a11885f3a77"`)
     const mod = await load(a.code)
     expect((mod.Component as (p: { name: string }) => string)({ name: 'you' })).toBe('HELLO, YOU!')
   })
@@ -76,7 +76,7 @@ describe('compileAtom — golden output', () => {
     // The type-only relative import is erased; core (type-only) never appears.
     expect(a.code).not.toContain('component-types')
     expect(a.code).not.toContain('@pwfabric/core')
-    expect(a.hash).toMatchInlineSnapshot(`"sha256:ebd100e680af1e173bb4afb6af0e2e9be10801981b4a7d719a08379620cfb558"`)
+    expect(a.hash).toMatchInlineSnapshot(`"sha256:a0e4726912bf4c66849d19d66663d1ecce6af7747a15f8b3068add651ebede99"`)
   })
 
   it('records the compiler and esbuild versions', async () => {
