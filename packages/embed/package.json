@@ -1,6 +1,6 @@
 {
   "name": "@pwfabric/embed",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "description": "Portable embed runtime — renders a PWFabric CanonicalSurface anywhere (thin or fully-offline fat mode) using the real SurfaceRenderer",
   "type": "module",
   "license": "BUSL-1.1",

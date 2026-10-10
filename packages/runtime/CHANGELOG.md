@@ -1,6 +1,6 @@
 # @pwfabric/runtime
 
-## Unreleased
+## 1.0.0-rc.2
 
 - Fixed: a dynamic block that fails to load says so on the console (`[pwfabric] block "<type>" failed to load: <reason>`), not only in its on-page placeholder.
 - Docs: an `entity` data source binds its records as a list under its id, `{{<id>}}` (comments said `{{data.<id>.items}}` / `.total`).

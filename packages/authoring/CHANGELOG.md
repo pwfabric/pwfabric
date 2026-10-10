@@ -1,5 +1,9 @@
 # @pwfabric/authoring
 
+## 1.0.0-rc.2
+
+- No changes; version aligned with the family.
+
 ## 1.0.0-rc.1
 
 - `zod` is a peer dependency (`^3.23.0`); `react` accepts 18 and 19 like the other packages.

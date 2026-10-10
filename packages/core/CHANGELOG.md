@@ -1,6 +1,6 @@
 # @pwfabric/core
 
-## Unreleased
+## 1.0.0-rc.2
 
 - Added: `shimSource(shim, global, names)` and `isExportableName(name)` — the shim module source every host serving block bundles writes, so a host no longer copies it out of the CLI.
 - Fixed: a shim never binds `undefined`, `NaN` or `Infinity` (zod exports `undefined`; `export const { undefined }` broke lint and some parsers).
