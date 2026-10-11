@@ -7,7 +7,7 @@ in the engine depends on this package; it depends only on `zod`.
 ## Install
 
 ```bash
-pnpm add @pwfabric/contracts@rc zod@3
+pnpm add @pwfabric/contracts zod@3
 ```
 
 ESM only: import it from an ES module (`"type": "module"` or `.mjs`). Node 22+. Peer: TypeScript 5.4+.

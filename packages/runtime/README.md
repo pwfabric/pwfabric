@@ -7,7 +7,7 @@ re-exports `@pwfabric/contracts`.
 ## Install
 
 ```bash
-pnpm add @pwfabric/runtime@rc zod@3 react react-dom
+pnpm add @pwfabric/runtime zod@3 react react-dom
 ```
 
 ESM only: import it from an ES module (`"type": "module"` or `.mjs`). Node 22+. Peers: `react` and `react-dom` 18 or 19; `next` 14–16 only if you use the

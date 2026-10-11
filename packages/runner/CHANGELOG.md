@@ -1,5 +1,9 @@
 # @pwfabric/runner
 
+## 1.0.0
+
+- First stable release. Same code as 1.0.0-rc.2.
+
 ## 1.0.0-rc.2
 
 - Added: `runApp({ version })` — every file read under `source` (the envelope JSON and the receipts) is asked for as `?v=<version>` (`&v=` after an existing query), so a page never mixes two publishes' files out of a cache. `withVersion(url, version)` is exported. Without `version`, nothing changes.

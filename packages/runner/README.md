@@ -8,7 +8,7 @@ copies it into every app's `assets/runner.js`; you rarely import it yourself.
 ## Install
 
 ```bash
-pnpm add @pwfabric/runner@rc
+pnpm add @pwfabric/runner
 ```
 
 ESM only: import it from an ES module (`"type": "module"` or `.mjs`). Node 22+. It runs in the browser, not in Node.

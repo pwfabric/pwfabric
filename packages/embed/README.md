@@ -8,7 +8,7 @@ backend. A `data-pw-surface` auto-loader is wired on load.
 ## Install
 
 ```bash
-pnpm add @pwfabric/embed@rc react react-dom
+pnpm add @pwfabric/embed react react-dom
 ```
 
 ESM only: import it from an ES module (`"type": "module"` or `.mjs`). Node 22+. Peers: `react` and `react-dom` 18 or 19.

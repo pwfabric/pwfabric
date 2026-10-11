@@ -1,5 +1,9 @@
 # @pwfabric/contracts
 
+## 1.0.0
+
+- First stable release. Same code as 1.0.0-rc.2.
+
 ## 1.0.0-rc.2
 
 - Changed (breaking): the login method for an account on the PhiWebs platform is `phiwebs`, not `host` — `IDENTITY_METHODS` is `['password', 'phiwebs', 'google', 'github', 'microsoft']`, and its auth-provider atom is `auth.phiwebs` (`auth/phiwebs.knowledge.json`). A declaration naming `host` no longer parses. PWFabric is PhiWebs Fabric: the method names the platform on purpose.

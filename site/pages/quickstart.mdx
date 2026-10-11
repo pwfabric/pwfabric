@@ -16,12 +16,11 @@ Three things bring people here. Pick the one that is yours.
 Tracks A and C use `pwf`, the PWFabric command line. It needs Node 22:
 
 ```bash
-npm install -g @pwfabric/cli@rc   # puts `pwf` on your PATH
+npm install -g @pwfabric/cli   # puts `pwf` on your PATH
 pwf --version
 ```
 
-The packages are at the release candidate `1.0.0-rc`, published under the
-`rc` dist-tag. They are ES modules only: a project that imports them sets
+The packages are at `1.0.0` on npm. They are ES modules only: a project that imports them sets
 `"type": "module"` in its `package.json`. Every command lists its options with
 `pwf <command> --help`; all of them are on the [CLI](/cli) page. (To work on
 PWFabric itself, clone [pwfabric/pwfabric](https://github.com/pwfabric/pwfabric),
@@ -117,7 +116,7 @@ needs `"type": "module"`.
 **1. Install the authoring package.**
 
 ```bash
-pnpm add @pwfabric/authoring@rc @pwfabric/runtime@rc @pwfabric/contracts@rc zod@3 react react-dom
+pnpm add @pwfabric/authoring @pwfabric/runtime @pwfabric/contracts zod@3 react react-dom
 pnpm add -D typescript @types/react tsx
 ```
 
