@@ -1,5 +1,9 @@
 # @pwfabric/compiler
 
+## 1.0.0
+
+- First stable release. Same code as 1.0.0-rc.2.
+
 ## 1.0.0-rc.2
 
 - Fixed: a block module that exports only a `defineBlock()` definition resolves its component from `definition.component`; before, the loader found no component and the block did not render.

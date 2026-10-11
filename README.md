@@ -38,7 +38,7 @@ and [licensing@phimajor.com](mailto:licensing@phimajor.com) for anything else.
 The shortest way to an app is the command line. It needs Node 22.
 
 ```bash
-npm install -g @pwfabric/cli@rc
+npm install -g @pwfabric/cli
 pwf create my-app --foundation /path/to/foundation.pwpack
 cd my-app
 pwf dev          # serves the app and reloads on every change
@@ -66,8 +66,8 @@ export const priceTag = defineBlock({
 })
 ```
 
-These packages are at the release candidate **1.0.0-rc**, published on npm
-under the `rc` dist-tag (`npm install @pwfabric/authoring@rc`). They are ES
+These packages are at **1.0.0**, published on npm
+(`npm install @pwfabric/authoring`). They are ES
 modules only: a project that imports them sets `"type": "module"`. Blocks
 take `zod@3`.
 

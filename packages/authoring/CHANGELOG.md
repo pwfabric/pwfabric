@@ -1,5 +1,9 @@
 # @pwfabric/authoring
 
+## 1.0.0
+
+- First stable release. Same code as 1.0.0-rc.2.
+
 ## 1.0.0-rc.2
 
 - No changes; version aligned with the family.

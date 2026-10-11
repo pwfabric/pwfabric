@@ -7,7 +7,7 @@ props are inferred from its zod schema. It re-exports `@pwfabric/runtime`.
 ## Install
 
 ```bash
-pnpm add @pwfabric/authoring@rc @pwfabric/runtime@rc @pwfabric/contracts@rc zod@3 react react-dom
+pnpm add @pwfabric/authoring @pwfabric/runtime @pwfabric/contracts zod@3 react react-dom
 pnpm add -D typescript @types/react
 ```
 

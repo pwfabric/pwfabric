@@ -1,5 +1,9 @@
 # @pwfabric/cli
 
+## 1.0.0
+
+- First stable release. Same code as 1.0.0-rc.2.
+
 ## 1.0.0-rc.2
 
 - Changed (breaking): the local host offers the PhiWebs-account method as `phiwebs` (was `host`).

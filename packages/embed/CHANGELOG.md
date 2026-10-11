@@ -1,5 +1,9 @@
 # @pwfabric/embed
 
+## 1.0.0
+
+- First stable release. Same code as 1.0.0-rc.2.
+
 ## 1.0.0-rc.2
 
 - Fixed: `embed.js` seeds `globalThis.__pwfabric_sdk` with the authoring kit it already carries. A block written the documented way (`defineBlock` from `@pwfabric/authoring`) rendered nowhere a page ran only the renderer and the runner — every published app.

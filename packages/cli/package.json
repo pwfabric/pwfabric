@@ -1,6 +1,6 @@
 {
   "name": "@pwfabric/cli",
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0",
   "description": "The PWFabric command line: create, develop, validate, pack and run PWFabric applications without any hosted service",
   "type": "module",
   "license": "Apache-2.0",

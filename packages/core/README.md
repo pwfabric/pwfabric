@@ -7,7 +7,7 @@ tracing, contract and capability builders, retry and id helpers. It re-exports
 ## Install
 
 ```bash
-pnpm add @pwfabric/core@rc zod@3
+pnpm add @pwfabric/core zod@3
 ```
 
 ESM only: import it from an ES module (`"type": "module"` or `.mjs`). Node 22+.
