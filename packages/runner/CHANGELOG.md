@@ -1,5 +1,9 @@
 # @pwfabric/runner
 
+## 1.1.0
+
+- A form binding's `successRedirect` and a `navigate` action's `url` are rewritten like hrefs, so a hash-routed app stays inside the app.
+
 ## 1.0.0
 
 - First stable release. Same code as 1.0.0-rc.2.

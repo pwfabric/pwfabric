@@ -1,5 +1,9 @@
 # @pwfabric/contracts
 
+## 1.1.0
+
+- No changes; released with the other packages at 1.1.0.
+
 ## 1.0.0
 
 - First stable release. Same code as 1.0.0-rc.2.

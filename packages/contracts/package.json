@@ -1,6 +1,6 @@
 {
   "name": "@pwfabric/contracts",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "PWFabric contract definitions and interfaces",
   "type": "module",
   "license": "Apache-2.0",
