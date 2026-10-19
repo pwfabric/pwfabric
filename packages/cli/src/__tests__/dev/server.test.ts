@@ -164,9 +164,10 @@ describe('dev server', () => {
     const server = track(await createDevServer({ root, port: 0, localHost: host }, { watch: false }))
     expect(await (await fetch(new URL('/_host/session', server.url))).json()).toEqual({ host: true })
     const auth = (await (await fetch(new URL('/pwpack/auth.json', server.url))).json()) as { loginUrl: string }
-    expect(auth.loginUrl).toBe(`${server.url}_host/login`)
+    expect(auth.loginUrl).toBe('/_host/login')
     expect(seen).toContain('/_host/session')
   })
+
 
   it('creates a host when the app declares one and a factory is given, and notes when none is', async () => {
     const root = await app()
@@ -192,6 +193,45 @@ describe('dev server', () => {
     expect(made).toEqual([{ root, prefix: '/_host' }])
     const project = (await (await fetch(new URL('/pwpack/project.json', server.url))).json()) as { identity: unknown }
     expect(project.identity).toEqual({ required: true, topology: 'app', methods: ['password'] })
+  })
+
+  it('mounts the host on a later build when the app gains its first entity while running', async () => {
+    const root = await app()
+    const made: string[] = []
+    const lines: string[] = []
+    const server = track(
+      await createDevServer(
+        { root, port: 0, log: (l) => lines.push(l) },
+        {
+          watch: false,
+          createHost: (o) => {
+            made.push(o.prefix)
+            return {
+              envelopeEntries: () => ({}),
+              handle: async (req, res) => {
+                if (!req.url?.startsWith('/_host/')) return false
+                res.writeHead(200, { 'content-type': 'application/json' })
+                res.end('{"host":true}')
+                return true
+              },
+              reset: () => undefined,
+            }
+          },
+        }
+      )
+    )
+    // A bare page needs no host.
+    expect(made).toEqual([])
+    // No host: the path falls through to the page (SPA fallback), not a records answer.
+    expect((await fetch(new URL('/_host/records/Note', server.url))).headers.get('content-type')).toContain('text/html')
+
+    await writeFile(join(root, 'app/definitions/entities.json'), JSON.stringify({ entities: [{ typeId: 'Note', fields: [] }] }))
+    await server.rebuild()
+    expect(made).toEqual(['/_host'])
+    expect(await (await fetch(new URL('/_host/records/Note', server.url))).json()).toEqual({ host: true })
+    expect(lines.some((l) => l.startsWith('local host mounted at'))).toBe(true)
+    await server.rebuild()
+    expect(made).toEqual(['/_host'])
   })
 
   it('refuses a port that is taken', async () => {

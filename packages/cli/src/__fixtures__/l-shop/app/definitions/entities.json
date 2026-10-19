@@ -54,10 +54,23 @@
     },
     {
       "typeId": "Draft",
-      "scope": "owner",
       "fields": [
         {
           "name": "title",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "typeId": "Booking",
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "phone",
           "type": "text"
         }
       ]

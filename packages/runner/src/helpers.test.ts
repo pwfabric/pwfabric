@@ -464,3 +464,36 @@ describe('withVersion', () => {
     expect(withVersion('a.json', 0)).toBe('a.json?v=0')
   })
 })
+
+describe('rewriteHrefs — redirects and navigate actions stay inside the app', () => {
+  it("rewrites a form binding's successRedirect and a navigate action's url", () => {
+    const capabilities = [
+      { capability: 'platform/entities', config: { formBindings: [{ formId: 'f', sourceId: 'Order', successRedirect: '/thanks/?from=order' }] } },
+      { capability: 'platform/persistence', config: { behaviors: [{ id: 'b', event: 'block:click', actions: [{ type: 'navigate', url: '/menu' }] }] } },
+    ]
+    const out = rewriteHrefs(capabilities, 'home', (k) => `#/${k}`)
+    expect(out[0]?.config.formBindings[0]?.successRedirect).toBe('#/thanks?from=order')
+    expect(out[1]?.config.behaviors[0]?.actions[0]).toEqual({ type: 'navigate', url: '#/menu' })
+  })
+
+  it("rewrites a block's navigate action and leaves other urls and external targets alone", () => {
+    const out = rewriteHrefs(
+      {
+        props: {
+          action: { type: 'navigate', url: '/cart' },
+          other: { type: 'setState', url: '/not-a-link' },
+          away: { type: 'navigate', url: 'https://example.com/x' },
+          url: '/plain-url-prop',
+        },
+      },
+      'home',
+      (k) => `#/${k}`
+    )
+    expect(out.props).toEqual({
+      action: { type: 'navigate', url: '#/cart' },
+      other: { type: 'setState', url: '/not-a-link' },
+      away: { type: 'navigate', url: 'https://example.com/x' },
+      url: '/plain-url-prop',
+    })
+  })
+})

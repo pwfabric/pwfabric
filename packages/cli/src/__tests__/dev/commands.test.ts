@@ -151,7 +151,7 @@ describe('pwf dev', () => {
         const origin = base.replace(/\/$/, '')
         expect(c.out.some((l) => l.startsWith(`local host mounted at ${origin}/_host`))).toBe(true)
         const auth = (await (await fetch(`${base}pwpack/auth.json`)).json()) as Record<string, unknown>
-        expect(auth).toMatchObject({ provider: 'password', loginUrl: `${origin}/_host/login`, methods: ['password'] })
+        expect(auth).toMatchObject({ provider: 'password', loginUrl: '/_host/login', methods: ['password'] })
         const project = (await (await fetch(`${base}pwpack/project.json`)).json()) as Record<string, unknown>
         expect(project['identity']).toEqual({ required: false, topology: 'app', methods: ['password'] })
         const receipt = (await (await fetch(`${base}pwpack/surfaces/home.receipt.json`)).json()) as {
@@ -160,8 +160,9 @@ describe('pwf dev', () => {
         expect(receipt.capabilities[0]?.config.dataSources[0]).toMatchObject({
           id: 'notes',
           kind: 'rest',
-          endpoint: `${origin}/_host/records/Note`,
-          authProviderRef: `${origin}/_host`,
+          // Relative: the page writes to the address it was opened on.
+          endpoint: '/_host/records/Note',
+          authProviderRef: '/_host',
         })
         const rows = (await (await fetch(`${base}_host/records/Note`)).json()) as { data: unknown[] }
         expect(rows.data).toEqual([])

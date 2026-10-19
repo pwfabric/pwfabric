@@ -72,6 +72,17 @@ export function strayPageKeyOf(href: string, pages: readonly string[]): string |
   return key !== null && pages.includes(key) ? key : null
 }
 
+/**
+ * Links that are not `…Href` props but go to a page all the same: a form
+ * binding's `successRedirect` and a `navigate` action's `url` (in a block's
+ * `action` or a behavior). The runtime follows them with `location.assign`,
+ * so left as written `/thanks` walked off a hash-routed app to
+ * `<origin>/thanks`.
+ */
+function isLinkMember(key: string, owner: Record<string, unknown>): boolean {
+  return isHrefKey(key) || key === 'successRedirect' || (key === 'url' && owner['type'] === 'navigate')
+}
+
 export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref): T {
   if (Array.isArray(node)) {
     return node.map((n) => rewriteHrefs(n, entry, toHref)) as unknown as T
@@ -83,7 +94,7 @@ export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref): T {
       // `strayPageKeyOf` excludes it too (`href.startsWith('//')`); otherwise
       // `//cdn.example.com/x` would be reduced to a page key, turned into an
       // in-app route, and the external link would land on not-found.
-      if (isHrefKey(k) && typeof v === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(v) && !v.startsWith('#') && !v.startsWith('//')) {
+      if (isLinkMember(k, node as Record<string, unknown>) && typeof v === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(v) && !v.startsWith('#') && !v.startsWith('//')) {
         // THE PAGE IS THE ADDRESS; the query and fragment ride along. Keying
         // the whole href would make `/api-reference#authentication` into the
         // page key `api-reference#authentication`, which names no page — so in

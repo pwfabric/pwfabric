@@ -458,7 +458,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       return
     }
     shown = { key, seed: seedSig }
-    const seededCapabilities = seedStateFromQuery(receipt, params).capabilities
+    // A capability's config carries links too (a form's successRedirect, a
+    // behavior's navigate url): rewritten like the blocks' hrefs.
+    const seededCapabilities = rewriteHrefs(seedStateFromQuery(receipt, params).capabilities, entry, router.toHref)
 
     const blocks = pageBlocks(receipt.blocks, key)
     const session = bridge?.session
@@ -614,7 +616,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
         return {
           blocks: pageBlocks(receipt.blocks, router.current() ?? entry),
           ...(pushed.appearance !== undefined ? { appearance: pushed.appearance } : {}),
-          capabilities: seeded.capabilities ?? [],
+          capabilities: rewriteHrefs(seeded.capabilities ?? [], entry, router.toHref),
         }
       },
       // THE TOKEN PATH. The pushed theme is resolved exactly as

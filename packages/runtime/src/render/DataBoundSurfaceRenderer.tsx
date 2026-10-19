@@ -231,6 +231,11 @@ function mapSurfaceSourceToDefinition(
         id: source.id,
         kind: 'static',
         staticData: source.staticData,
+        // A static source's query was dropped here, so its rows were bound
+        // unsorted and unfiltered. Resolved like a rest source's.
+        ...(source.query
+          ? { query: resolveQueryState(source.query, currentState) as EntityQuery }
+          : {}),
       }
     case 'state':
       // State sources read from React state, not managed by DataService
@@ -351,6 +356,9 @@ function requestKeyOf(source: SurfaceDataSourceDefinition, state: Readonly<Recor
     }
     case 'state':
       return `${def}|${safeJson(state[source.id])}`
+    case 'static':
+      // A query reading `{{state.x}}` re-applies when x changes.
+      return source.query ? `${def}|${safeJson(resolveQueryState(source.query, state))}` : def
     default:
       return def
   }

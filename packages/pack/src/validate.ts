@@ -66,10 +66,20 @@ export interface PackValidation {
 
 const APP_SURFACES = 'app/surfaces/'
 const RECEIPT_SUFFIX = '.receipt.json'
+const APP_CONTENT = 'app/content/'
+const ENTITIES_FILE = 'app/definitions/entities.json'
+const AUTH_FILE = 'app/definitions/auth.json'
+const ACCESS_VERBS = new Set(['create', 'list', 'view', 'update', 'delete', 'count', 'read', 'write'])
+const normName = (s: string): string => s.toLowerCase().replace(/[\s_-]/g, '')
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** A Markdown file at depth `depth` (segments), e.g. `atoms/README.md` at 2. */
 function isDocFile(parts: readonly string[], depth: number): boolean {
   return parts.length === depth && (parts[depth - 1] as string).toLowerCase().endsWith('.md')
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
 function parseJson(bytes: Uint8Array): { ok: true; value: unknown } | { ok: false; error: string } {
@@ -92,13 +102,20 @@ function parseJson(bytes: Uint8Array): { ok: true; value: unknown } | { ok: fals
  * `media/provenance.json` or one naming a file the pack does not carry;
  * a file under `app/assets/` (`LEGACY_ASSETS_FOLDER`); a media declaration
  * that breaks its schema, names a `file` missing from `media/`, or whose file
- * has no provenance entry (see `mediaDeclarations`).
+ * has no provenance entry (see `mediaDeclarations`); an `app/content/<typeId>.json`
+ * for an undeclared entity, not shaped
+ * `{ data: [...] }`, or with a record whose `id` is missing, not a UUID or
+ * repeated.
  *
  * Warnings: two paths that collide on a case-insensitive file system;
  * unknown top-level entries; unknown families under `atoms/`; the
  * rootless or mixed layout; `pwpack.json` declaring a newer format; an app
  * entry not in its surface order or a key listed twice; files under
- * `app/surfaces/` that are not receipts; media files without provenance, or
+ * `app/surfaces/` that are not receipts; a receipt whose key is not in
+ * `app.surfaceOrder` (the app never serves it); an `access.rules` entry naming
+ * an undeclared entity, an unknown subject or a word that is not a verb
+ * (`APP_ACCESS_RULE`); content for a collection only `own` readers reach
+ * (`APP_CONTENT_UNREADABLE`); media files without provenance, or
  * whose hash disagrees with it (not reported when the provenance record is
  * itself invalid); other JSON files that do not parse; a file under
  * `app/media/` that is not a `<key>.json` declaration.
@@ -240,6 +257,97 @@ export function validatePack(pack: PackFolder): PackValidation {
     const rest = path.slice(APP_SURFACES.length)
     if (rest.includes('/') || !rest.endsWith(RECEIPT_SUFFIX)) {
       add('warning', 'APP_UNEXPECTED_FILE', `${path} is not an app/surfaces/<key>.receipt.json`, path)
+      continue
+    }
+    // The pages an app serves are app.surfaceOrder. A receipt written without
+    // its key there is a page nobody can reach — every link to it lands on
+    // not-found — and the pack still validated clean.
+    const key = rest.slice(0, -RECEIPT_SUFFIX.length)
+    if (identity?.app && !identity.app.surfaceOrder.includes(key) && identity.app.entry !== key) {
+      add('warning', 'APP_SURFACE_NOT_SERVED', `${path} is not in pwpack.json app.surfaceOrder, so the app does not serve it — add "${key}" there`, path)
+    }
+  }
+
+  // ---- app access: who may do what with the app's records (definitions, `access`) ----
+  // Each rule names an entity, a subject (`public`, `member`, or a declared
+  // role) and verbs. A server ignores what it does not know, so a misspelt
+  // rule silently grants nothing: report it.
+  const entityNames = new Map<string, string>() // normalised typeId/displayName -> typeId
+  const entitiesFile = pack.files.get(ENTITIES_FILE)
+  const entitiesDoc = entitiesFile ? parseJson(entitiesFile) : undefined
+  if (entitiesDoc?.ok && isRecord(entitiesDoc.value) && Array.isArray(entitiesDoc.value['entities'])) {
+    for (const e of entitiesDoc.value['entities']) {
+      if (!isRecord(e) || typeof e['typeId'] !== 'string') continue
+      entityNames.set(normName(e['typeId']), e['typeId'])
+      if (typeof e['displayName'] === 'string') entityNames.set(normName(e['displayName']), e['typeId'])
+    }
+  }
+  /** typeId -> whether some rule lets a subject list it whole (not only `own`). */
+  const ruled = new Map<string, boolean>()
+  const authFile = pack.files.get(AUTH_FILE)
+  const authDoc = authFile ? parseJson(authFile) : undefined
+  const access = authDoc?.ok && isRecord(authDoc.value) && isRecord(authDoc.value['access']) ? authDoc.value['access'] : undefined
+  if (access && Array.isArray(access['rules'])) {
+    const roles = new Set(Array.isArray(access['roles']) ? access['roles'].filter((r): r is string => typeof r === 'string') : [])
+    access['rules'].forEach((r: unknown, i: number) => {
+      if (!isRecord(r)) return
+      const at = `${AUTH_FILE} access.rules[${i}]`
+      const model = typeof r['model'] === 'string' ? r['model'] : ''
+      const subject = typeof r['subject'] === 'string' ? r['subject'].trim() : ''
+      const words = (typeof r['rule'] === 'string' ? r['rule'] : '').toLowerCase().split(/[\s,]+/).filter(Boolean)
+      const typeId = entityNames.get(normName(model))
+      if (!typeId) add('warning', 'APP_ACCESS_RULE', `${at} names "${model}", which ${ENTITIES_FILE} does not declare`, AUTH_FILE)
+      if (subject !== 'public' && subject !== 'member' && !roles.has(subject)) {
+        add('warning', 'APP_ACCESS_RULE', `${at} is for "${subject}": write public, member, or a role listed in access.roles`, AUTH_FILE)
+      }
+      const unknown = words.filter((w) => w !== 'own' && !ACCESS_VERBS.has(w))
+      if (unknown.length > 0) add('warning', 'APP_ACCESS_RULE', `${at} has words that are not verbs (${unknown.join(', ')}); a server ignores them. Verbs: ${[...ACCESS_VERBS].join(', ')}, and own`, AUTH_FILE)
+      if (!words.some((w) => ACCESS_VERBS.has(w))) add('warning', 'APP_ACCESS_RULE', `${at} has no verb, so it grants nothing`, AUTH_FILE)
+      if (typeId) {
+        const listsWhole = !words.includes('own') && words.some((w) => w === 'list' || w === 'read')
+        ruled.set(typeId, (ruled.get(typeId) ?? false) || listsWhole)
+      }
+    })
+  }
+
+  // ---- app content: the records an app ships for every visitor ----
+  // app/content/<typeId>.json is published into the record store once per
+  // record (insert when the id is absent, never overwrite). Its ids must be
+  // stable and server-grade. A content record has no creator, so a collection
+  // the rules let visitors read only `own` records of shows it to nobody.
+  const contentPaths = paths.filter((p) => p.startsWith(APP_CONTENT))
+  if (contentPaths.length > 0) {
+    const declared = new Set(entityNames.values())
+    for (const path of contentPaths) {
+      const rest = path.slice(APP_CONTENT.length)
+      if (rest.includes('/') || !rest.endsWith('.json')) {
+        add('warning', 'APP_UNEXPECTED_FILE', `${path} is not an app/content/<typeId>.json`, path)
+        continue
+      }
+      const typeId = rest.slice(0, -'.json'.length)
+      const parsed = parseJson(pack.files.get(path) as Uint8Array)
+      if (!parsed.ok) continue // JSON_INVALID below
+      if (!declared.has(typeId)) {
+        add('error', 'APP_CONTENT_UNDECLARED', `${path} fills "${typeId}", which ${ENTITIES_FILE} does not declare`, path)
+        continue
+      }
+      if (ruled.get(typeId) === false) {
+        add('warning', 'APP_CONTENT_UNREADABLE', `${path} fills "${typeId}", but the access rules let nobody read it except their own records; no visitor sees this content`, path)
+      }
+      const doc = parsed.value
+      if (!isRecord(doc) || !Array.isArray(doc['data'])) {
+        add('error', 'APP_CONTENT_INVALID', `${path} must be { "data": [ ...records ] }`, path)
+        continue
+      }
+      const seen = new Set<string>()
+      doc['data'].forEach((row: unknown, i: number) => {
+        const id = isRecord(row) ? row['id'] : undefined
+        if (typeof id !== 'string' || !UUID.test(id)) {
+          add('error', 'APP_CONTENT_ID', `${path} data[${i}] needs an "id" that is a UUID: it stays the record's id once published, and relations point at it`, path)
+        } else if (seen.has(id.toLowerCase())) {
+          add('error', 'APP_CONTENT_ID', `${path} data[${i}] repeats id ${id}`, path)
+        } else seen.add(id.toLowerCase())
+      })
     }
   }
 
