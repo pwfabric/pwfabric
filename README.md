@@ -66,7 +66,7 @@ export const priceTag = defineBlock({
 })
 ```
 
-These packages are at **1.0.0**, published on npm
+These packages are at **1.1.0**, published on npm
 (`npm install @pwfabric/authoring`). They are ES
 modules only: a project that imports them sets `"type": "module"`. Blocks
 take `zod@3`.
