@@ -22,8 +22,8 @@ const json = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 })
 
-async function signIn(base: string): Promise<string> {
-  const res = await fetch(`${base}/login`, json({ email: 'a@b.c', password: 'x' }))
+async function signIn(base: string, email = 'dev@localhost'): Promise<string> {
+  const res = await fetch(`${base}/login`, json({ email, password: 'x' }))
   expect(res.status).toBe(200)
   return ((await res.json()) as { data: { token: string } }).data.token
 }
@@ -171,7 +171,7 @@ describe('the app door', () => {
     const anon = await fetch(`${s.base}/session`)
     expect(await anon.json()).toEqual({ data: { principal: null } })
 
-    const login = await fetch(`${s.base}/login`, json({ email: 'whoever@example.com', password: 'anything' }))
+    const login = await fetch(`${s.base}/login`, json({ email: 'Ada@Example.com', password: 'anything' }))
     expect(login.status).toBe(200)
     const door = (await login.json()) as { data: { token: string; expiresAt: string; principal: unknown } }
     expect(door.data.token).toMatch(/^[A-Za-z0-9_-]{43}$/)
@@ -192,12 +192,21 @@ describe('the app door', () => {
     expect(((await stale.json()) as { error: { code: string } }).error.code).toBe('SIGN_IN_REQUIRED')
   })
 
-  it('registers with 201 and the default development user', async () => {
+  it('registers with 201; the development e-mail (or none) is the development user', async () => {
     const s = await start('l-shop')
-    const res = await fetch(`${s.base}/register`, json({ email: 'n@e.w', password: 'longenough', displayName: 'N' }))
-    expect(res.status).toBe(201)
+    for (const email of ['dev@localhost', undefined]) {
+      const res = await fetch(`${s.base}/register`, json({ email, password: 'longenough' }))
+      expect(res.status).toBe(201)
+      const body = (await res.json()) as { data: { principal: unknown } }
+      expect(body.data.principal).toEqual({ id: 'dev-user', email: 'dev@localhost', displayName: 'Developer' })
+    }
+  })
+
+  it('signs any other e-mail in as a plain member', async () => {
+    const s = await start('l-shop')
+    const res = await fetch(`${s.base}/login`, json({ email: ' N@E.w ', password: 'x' }))
     const body = (await res.json()) as { data: { principal: unknown } }
-    expect(body.data.principal).toEqual({ id: 'dev-user', email: 'dev@localhost', displayName: 'Developer' })
+    expect(body.data.principal).toEqual({ id: 'dev-n@e.w', email: 'n@e.w', displayName: 'n@e.w' })
   })
 
   it('refuses a password sign-in the app does not declare', async () => {
@@ -423,9 +432,9 @@ describe('records', () => {
     expect((await fetch(`${s.base}/records/Product/p1`, { method: 'POST' })).status).toBe(405)
   })
 
-  it('keeps an owner-scoped collection per visitor', async () => {
+  it('keeps an `own` collection per visitor', async () => {
     const s = await start('l-shop')
-    // Rule-scoped (an access rule names Order), field-scoped (Note has ownerId), declared (Draft).
+    // Each is granted to members only, `own`.
     for (const type of ['Order', 'Note', 'Draft']) {
       const anon = await fetch(`${s.base}/records/${type}`)
       expect(anon.status).toBe(401)
@@ -446,8 +455,65 @@ describe('records', () => {
     const count = await fetch(`${s.base}/records/Note/count`, withSession(token))
     expect(((await count.json()) as { data: { value: number } }).data.value).toBe(2)
 
-    // A public read grant keeps Review shared.
+    // A public read grant keeps Review readable by anyone, and only readable.
     expect((await fetch(`${s.base}/records/Review`)).status).toBe(200)
+    expect((await fetch(`${s.base}/records/Review`, json({ stars: 5 }))).status).toBe(401)
+  })
+
+  it('applies the access rules by who calls (definitions, `access`)', async () => {
+    const s = await start('l-shop')
+    const code = async (res: Response): Promise<string | undefined> =>
+      ((await res.json()) as { error?: { code: string } }).error?.code
+    // Booking: public create + count, staff read and update.
+    const anonCreate = await fetch(`${s.base}/records/Booking`, json({ name: 'Ada', phone: '555' }))
+    expect(anonCreate.status).toBe(201)
+    const id = ((await anonCreate.json()) as { data: { id: string } }).data.id
+    const anonList = await fetch(`${s.base}/records/Booking`)
+    expect([anonList.status, await code(anonList)]).toEqual([401, 'SIGN_IN_REQUIRED'])
+    expect((await fetch(`${s.base}/records/Booking/${id}`)).status).toBe(401)
+    // Counting is not showing.
+    const counted = await fetch(`${s.base}/records/Booking/count`)
+    expect(((await counted.json()) as { data: { value: number } }).data.value).toBe(1)
+
+    const member = await signIn(s.base, 'someone@example.com')
+    const memberList = await fetch(`${s.base}/records/Booking`, withSession(member))
+    expect([memberList.status, await code(memberList)]).toEqual([403, 'FORBIDDEN'])
+    expect((await fetch(`${s.base}/records/Booking/${id}`, withSession(member, { ...json({ phone: '1' }), method: 'PATCH' }))).status).toBe(403)
+    expect((await fetch(`${s.base}/records/Booking/${id}`, withSession(member, { method: 'DELETE' }))).status).toBe(403)
+
+    // The development user carries the declared role `staff`.
+    const staff = await signIn(s.base)
+    const staffList = (await (await fetch(`${s.base}/records/Booking`, withSession(staff))).json()) as {
+      data: { name: string }[]
+      meta: { scope: string }
+    }
+    expect(staffList.data.map((b) => b.name)).toEqual(['Ada'])
+    expect(staffList.meta.scope).toBe('project')
+    expect((await fetch(`${s.base}/records/Booking/${id}`, withSession(staff, { ...json({ phone: '1' }), method: 'PATCH' }))).status).toBe(200)
+    // No rule grants delete.
+    expect((await fetch(`${s.base}/records/Booking/${id}`, withSession(staff, { method: 'DELETE' }))).status).toBe(403)
+  })
+
+  it('keeps one member out of another member’s `own` records', async () => {
+    const s = await start('l-shop')
+    const a = await signIn(s.base, 'a@example.com')
+    const b = await signIn(s.base, 'b@example.com')
+    const made = await fetch(`${s.base}/records/Order`, withSession(a, json({ item: 'Cake' })))
+    const id = ((await made.json()) as { data: { id: string } }).data.id
+    const listA = (await (await fetch(`${s.base}/records/Order`, withSession(a))).json()) as { data: { item: string }[]; meta: { scope: string } }
+    expect([listA.data.map((o) => o.item), listA.meta.scope]).toEqual([['Cake'], 'owner'])
+    const listB = (await (await fetch(`${s.base}/records/Order`, withSession(b))).json()) as { data: unknown[] }
+    expect(listB.data).toEqual([])
+    expect((await fetch(`${s.base}/records/Order/${id}`, withSession(b))).status).toBe(404)
+    expect((await fetch(`${s.base}/records/Order/${id}`, withSession(b, { ...json({ qty: 9 }), method: 'PATCH' }))).status).toBe(404)
+  })
+
+  it('leaves a model no rule names open to everyone', async () => {
+    const s = await start('l-shop')
+    const made = await fetch(`${s.base}/records/Product`, json({ name: 'Bread' }))
+    expect(made.status).toBe(201)
+    const id = ((await made.json()) as { data: { id: string } }).data.id
+    expect((await fetch(`${s.base}/records/Product/${id}`, { method: 'DELETE' })).status).toBe(200)
   })
 
   it('needs a session for every record when sign-in is required', async () => {

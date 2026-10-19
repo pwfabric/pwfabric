@@ -2,24 +2,22 @@
  * The app's own records, in memory (data-protocol §5).
  *
  * One collection per entity type declared in `app/definitions/entities.json`,
- * seeded on first use from `app/data/` (see `readSeed`). A record is
- * `{ …fields, id, entityType, createdAt, updatedAt }`, fields spread at the
- * top level like the reference server's.
+ * seeded on first use from `app/content/` then `app/data/` (see `readSeed`). A
+ * record is `{ …fields, id, entityType, createdAt, updatedAt }`, fields spread
+ * at the top level like the reference server's.
  *
- * ACCESS, read off the declarations — a deliberately small version of what a
- * hosted session server decides:
+ * ACCESS is the app's `auth.json` `access.rules` (definitions, `access`):
  *
- *  - `auth.json` `required: true`: every data request needs a session
- *    (`401 SIGN_IN_REQUIRED`).
- *  - A collection is OWNER-SCOPED when an `access.rules[]` entry names it and
- *    is not a public read grant (subject `public`/`anyone`/`visitors`/…, a
- *    rule that grants reading and does not say "own"), when the entity
- *    declares an owner field (`owner`, `ownerId`, `userId`, `createdBy`, …),
- *    or when the entity carries `"scope": "owner"`. An owner-scoped collection
- *    needs a session, lists only the caller's rows, and answers another
- *    visitor's row as `404`.
- *  - Every other collection is shared by the whole app: anyone may read and
- *    write it.
+ *  - `required: true`: every data request needs a session (`401`).
+ *  - A model no rule names is open to every visitor.
+ *  - A model some rule names is closed: a request passes when a rule whose
+ *    subject matches the caller (`public`, `member`, or one of the caller's
+ *    roles) grants its verb. `own` limits the grant to the caller's records.
+ *  - Refused: `401 SIGN_IN_REQUIRED` without a session, `403 FORBIDDEN` with
+ *    one; a record outside an `own` grant is `404`.
+ *
+ * The development user carries every role `access.roles` declares, so the
+ * author can try the app as staff; any other e-mail signs in as a plain member.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -30,22 +28,25 @@ import type { Principal } from './tokens.js'
 
 export type Scope = 'project' | 'owner'
 
-const PUBLIC_SUBJECTS = new Set([
-  'public',
-  'anyone',
-  'anybody',
-  'everyone',
-  'everybody',
-  'all',
-  'visitor',
-  'visitors',
-  'guest',
-  'guests',
-  'anonymous',
-  '*',
-])
-const READ_VERB = /\b(read|reads|see|sees|view|views|list|lists|browse|browses)\b/i
-const OWN_WORD = /\b(own|their|his|her|only)\b/i
+type Verb = 'create' | 'list' | 'view' | 'update' | 'delete' | 'count'
+/** What one verb allows the caller: nothing, their own records, or every record. */
+type Reach = 'none' | 'own' | 'all'
+export type Access = Readonly<Record<Verb, Reach>>
+
+const VERBS: Readonly<Record<string, readonly Verb[]>> = {
+  create: ['create'],
+  list: ['list'],
+  view: ['view'],
+  update: ['update'],
+  delete: ['delete'],
+  count: ['count'],
+  read: ['list', 'view'],
+  write: ['create', 'update', 'delete'],
+}
+const OPEN: Access = { create: 'all', list: 'all', view: 'all', update: 'all', delete: 'all', count: 'all' }
+const RANK: Readonly<Record<Reach, number>> = { none: 0, own: 1, all: 2 }
+
+/** Fields a record names its owner in; a create fills the first one when blank. */
 const OWNER_FIELDS = new Set([
   'owner',
   'ownerid',
@@ -65,15 +66,42 @@ function ownerFieldOf(entity: EntityDeclaration): string | undefined {
   return entity.fields.find((f) => OWNER_FIELDS.has(norm(f.name)))?.name
 }
 
-export function scopeOf(entity: EntityDeclaration, auth: AuthDeclaration | undefined): Scope {
+/** The words of a rule: verbs and `own`; anything else is ignored. */
+export function parseRule(rule: string): { verbs: Verb[]; own: boolean; unknown: string[] } {
+  const verbs = new Set<Verb>()
+  const unknown: string[] = []
+  let own = false
+  for (const word of rule.toLowerCase().split(/[\s,]+/).filter(Boolean)) {
+    if (word === 'own') own = true
+    else if (VERBS[word]) for (const v of VERBS[word]) verbs.add(v)
+    else unknown.push(word)
+  }
+  return { verbs: [...verbs], own, unknown }
+}
+
+/** What `caller` (with `roles`) may do with `entity` under the app's rules. */
+export function accessOf(
+  entity: EntityDeclaration,
+  auth: AuthDeclaration | undefined,
+  caller: { readonly principal: Principal | undefined; readonly roles: readonly string[] }
+): Access {
   const names = new Set([norm(entity.typeId), ...(entity.displayName ? [norm(entity.displayName)] : [])])
   const rules = (auth?.access.rules ?? []).filter((r) => names.has(norm(r.model)))
-  const publicGrant = rules.some(
-    (r) => PUBLIC_SUBJECTS.has(r.subject.trim().toLowerCase()) && READ_VERB.test(r.rule) && !OWN_WORD.test(r.rule)
-  )
-  if (publicGrant) return 'project'
-  if (rules.length > 0 || ownerFieldOf(entity) !== undefined || entity.scope === 'owner') return 'owner'
-  return 'project'
+  if (rules.length === 0) return OPEN
+  const access: Record<Verb, Reach> = { create: 'none', list: 'none', view: 'none', update: 'none', delete: 'none', count: 'none' }
+  for (const r of rules) {
+    const subject = r.subject.trim()
+    const applies =
+      subject === 'public' || (caller.principal !== undefined && (subject === 'member' || caller.roles.includes(subject)))
+    if (!applies) continue
+    const { verbs, own } = parseRule(r.rule)
+    for (const verb of verbs) {
+      // A visitor who is not signed in owns no record; `own` never limits create.
+      const reach: Reach = !own || verb === 'create' ? 'all' : caller.principal ? 'own' : 'none'
+      if (RANK[reach] > RANK[access[verb]]) access[verb] = reach
+    }
+  }
+  return access
 }
 
 interface Stored {
@@ -145,21 +173,26 @@ export class RecordStore {
     return rows
   }
 
-  /** Refuses a caller the declarations do not let in; answers the collection's scope. */
-  private guard({ entity, auth, caller }: Target): Scope {
+  /** What the caller may do here; refuses a caller the app does not let in at all. */
+  private access({ entity, auth, caller }: Target): Access {
     if (auth?.required && !caller.principal) {
       throw new HostError(401, 'SIGN_IN_REQUIRED', 'Sign in to use this app.')
     }
-    const scope = scopeOf(entity, auth)
-    if (scope === 'owner' && !caller.principal) {
-      throw new HostError(401, 'SIGN_IN_REQUIRED', `Sign in to see your ${entity.displayName ?? entity.typeId} records.`)
-    }
-    return scope
+    const roles = caller.principal?.id === this.devUser.id ? (auth?.access.roles ?? []) : []
+    return accessOf(entity, auth, { principal: caller.principal, roles })
   }
 
-  /** The rows this caller may see, newest change first, after `filter`. */
-  private visible(target: Target, params: URLSearchParams): { scope: Scope; rows: Row[] } {
-    const scope = this.guard(target)
+  /** The reach of `verb`, refusing when it is none. */
+  private allow(target: Target, verb: Verb, access = this.access(target)): Reach {
+    const reach = access[verb]
+    if (reach !== 'none') return reach
+    const name = target.entity.displayName ?? target.entity.typeId
+    if (!target.caller.principal) throw new HostError(401, 'SIGN_IN_REQUIRED', `Sign in to use ${name} records.`)
+    throw new HostError(403, 'FORBIDDEN', `You may not ${verb} ${name} records.`)
+  }
+
+  /** The rows within `reach`, newest change first, after `filter`. */
+  private rows(target: Target, reach: Reach, params: URLSearchParams): Row[] {
     let filter: Filter | undefined
     try {
       filter = parseFilter(params.get('filter'))
@@ -167,14 +200,15 @@ export class RecordStore {
       throw new HostError(400, 'INVALID_QUERY', 'filter must be a JSON filter object.')
     }
     const rows = [...this.collection(target.entity).values()]
-      .filter((s) => scope === 'project' || s.owner === target.caller.principal?.id)
+      .filter((s) => reach === 'all' || s.owner === target.caller.principal?.id)
       .sort((a, b) => b.touched - a.touched)
       .map((s) => s.record)
-    return { scope, rows: filter ? rows.filter((r) => matches(r, filter)) : rows }
+    return filter ? rows.filter((r) => matches(r, filter)) : rows
   }
 
   list(target: Target, params: URLSearchParams): ListAnswer {
-    const { scope, rows } = this.visible(target, params)
+    const reach = this.allow(target, 'list')
+    const rows = this.rows(target, reach, params)
     const sort = parseSort(params.get('sort'))
     const ordered = sort.length > 0 ? sortRows(rows, sort) : rows
     const limitRaw = Number(params.get('limit') ?? '100')
@@ -183,11 +217,11 @@ export class RecordStore {
     const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.trunc(offsetRaw)) : 0
     return {
       data: ordered.slice(offset, offset + limit),
-      meta: { total: ordered.length, scope, timestamp: new Date().toISOString() },
+      meta: { total: ordered.length, scope: reach === 'own' ? 'owner' : 'project', timestamp: new Date().toISOString() },
     }
   }
 
-  /** `/count` (`plainCount`) or `/aggregate?fn&field`. */
+  /** `/count` (`plainCount`) or `/aggregate?fn&field`: over every row with `count`, else over the rows `list` reaches. */
   aggregate(target: Target, params: URLSearchParams, plainCount: boolean): AggregateAnswer {
     const fn = plainCount ? 'count' : params.get('fn')
     if (fn !== 'count' && fn !== 'sum' && fn !== 'avg') {
@@ -195,29 +229,34 @@ export class RecordStore {
     }
     const field = plainCount ? undefined : (params.get('field') ?? undefined)
     if (fn !== 'count' && !field) throw new HostError(400, 'INVALID_QUERY', `${fn} needs a field.`)
-    const { scope, rows } = this.visible(target, params)
-    return { data: aggregate(rows, fn, field), meta: { scope, timestamp: new Date().toISOString() } }
+    const access = this.access(target)
+    const reach = access.count === 'all' ? 'all' : this.allow(target, 'list', access)
+    const rows = this.rows(target, reach, params)
+    return {
+      data: aggregate(rows, fn, field),
+      meta: { scope: reach === 'own' ? 'owner' : 'project', timestamp: new Date().toISOString() },
+    }
   }
 
-  private find(target: Target, id: string): Stored {
-    const scope = this.guard(target)
+  private find(target: Target, verb: Verb, id: string): Stored {
+    const reach = this.allow(target, verb)
     const stored = this.collection(target.entity).get(id)
-    if (!stored || (scope === 'owner' && stored.owner !== target.caller.principal?.id)) {
+    if (!stored || (reach === 'own' && stored.owner !== target.caller.principal?.id)) {
       throw new HostError(404, 'NOT_FOUND', `No ${target.entity.typeId} record "${id}".`)
     }
     return stored
   }
 
   read(target: Target, id: string): Row {
-    return this.find(target, id).record
+    return this.find(target, 'view', id).record
   }
 
   create(target: Target, body: Record<string, unknown>): Row {
     const { entity, caller } = target
-    const scope = this.guard(target)
+    this.allow(target, 'create')
     const fields = writable(body)
     const ownerField = ownerFieldOf(entity)
-    if (scope === 'owner' && ownerField && isEmpty(fields[ownerField]) && caller.principal) {
+    if (ownerField && isEmpty(fields[ownerField]) && caller.principal) {
       fields[ownerField] = caller.principal.id
     }
     const missing = entity.fields.filter((f) => f.required && isEmpty(fields[f.name])).map((f) => f.name)
@@ -232,7 +271,7 @@ export class RecordStore {
   }
 
   update(target: Target, id: string, body: Record<string, unknown>): Row {
-    const stored = this.find(target, id)
+    const stored = this.find(target, 'update', id)
     const fields = writable(body)
     const cleared = target.entity.fields
       .filter((f) => f.required && f.name in fields && isEmpty(fields[f.name]))
@@ -252,7 +291,7 @@ export class RecordStore {
   }
 
   remove(target: Target, id: string): void {
-    this.find(target, id)
+    this.find(target, 'delete', id)
     this.collection(target.entity).delete(id)
   }
 }

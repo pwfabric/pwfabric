@@ -6,8 +6,8 @@ one checks something the Node contract test
 (`src/__tests__/host/runner-contract.test.ts`) cannot check: the DOM, the
 redirects a browser follows, cookies, and `sessionStorage` across reloads.
 
-Fixtures: `src/__fixtures__/l-shop` (password and provider door, owner-scoped
-`Order`), `l-members` (sign-in required), `l-social` (providers only),
+Fixtures: `src/__fixtures__/l-shop` (password and provider door; access rules:
+members' own `Order`, public-create `Booking` read by `staff`), `l-members` (sign-in required), `l-social` (providers only),
 `l-issuer` (external issuer with an audience).
 
 ## App door (password)
@@ -49,11 +49,11 @@ Fixtures: `src/__fixtures__/l-shop` (password and provider door, owner-scoped
 10. **Cross-site read is refused.** From another origin, `fetch` with
     credentials to `<base>/_auth/session` without `x-pwapp-request: 1`: `403`.
 
-## Owner-scoped data
+## Access rules
 
-11. **Per-visitor rows.** On `l-shop`, sign in, create an order, and see it
-    listed. Restart `pwf dev` with a different `user.id`, sign in again: the
-    order list is empty and the order's address answers `404`.
+11. **Per-visitor rows.** On `l-shop`, sign in as `a@example.com`, create an
+    order, and see it listed. Sign out, sign in as `b@example.com`: the order
+    list is empty and the order's address answers `404`.
 12. **Shared collections stay open.** Signed out, the product list and the
     spend total render; the order list shows its fallback or error state, not
     someone else's rows.

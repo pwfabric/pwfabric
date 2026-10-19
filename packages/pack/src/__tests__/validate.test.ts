@@ -81,6 +81,82 @@ describe('validatePack — app', () => {
     expect(codes(app('home', ['home', 'home'], ['home']))).toEqual(['APP_SURFACE_DUPLICATE'])
   })
 
+  it('warns on a receipt the app does not serve (its key is not in the order)', () => {
+    const v = app('home', ['home'], ['home', 'menu'])
+    expect(v.ok).toBe(true)
+    expect(codes(v)).toEqual(['APP_SURFACE_NOT_SERVED'])
+    expect(v.issues[0]?.path).toBe('app/surfaces/menu.receipt.json')
+    // The entry is served even when the order forgot it (that has its own warning).
+    expect(codes(app('home', ['about'], ['home', 'about']))).toEqual(['APP_ENTRY_NOT_IN_ORDER'])
+  })
+
+  it('accepts app/content for a shared entity with UUID ids', () => {
+    const v = withIdentity({ id: 'x', version: '1' }, {
+      'app/definitions/entities.json': JSON.stringify({ entities: [{ typeId: 'Product', fields: [] }] }),
+      'app/content/Product.json': JSON.stringify({ data: [{ id: '0b7d1c56-3f7e-4a52-9a0c-1f2e3d4c5b6a', name: 'Tea' }] }),
+    })
+    expect(v.issues).toEqual([])
+  })
+
+  it('refuses app/content that is undeclared, misshaped, or without stable ids', () => {
+    const entities = JSON.stringify({ entities: [{ typeId: 'Product', fields: [] }, { typeId: 'Order', fields: [] }] })
+    const id = '0b7d1c56-3f7e-4a52-9a0c-1f2e3d4c5b6a'
+    const v = withIdentity({ id: 'x', version: '1' }, {
+      'app/definitions/entities.json': entities,
+      'app/content/Ghost.json': JSON.stringify({ data: [] }),
+      'app/content/Product.json': JSON.stringify({ data: [{ id: 'p1' }, { name: 'no id' }, { id }, { id: id.toUpperCase() }] }),
+      'app/content/notes.md': 'x',
+    })
+    expect(v.issues.map((i) => `${i.severity}:${i.code}:${i.path}`)).toEqual([
+      'error:APP_CONTENT_UNDECLARED:app/content/Ghost.json',
+      'error:APP_CONTENT_ID:app/content/Product.json',
+      'error:APP_CONTENT_ID:app/content/Product.json',
+      'error:APP_CONTENT_ID:app/content/Product.json',
+      'warning:APP_UNEXPECTED_FILE:app/content/notes.md',
+    ])
+    expect(withIdentity({ id: 'x', version: '1' }, {
+      'app/definitions/entities.json': entities,
+      'app/content/Product.json': JSON.stringify([{ id }]),
+    }).issues.map((i) => i.code)).toEqual(['APP_CONTENT_INVALID'])
+  })
+
+  it('checks access rules: entity, subject and verbs (definitions, `access`)', () => {
+    const entities = JSON.stringify({ entities: [{ typeId: 'Booking', displayName: 'Booking request', fields: [] }, { typeId: 'Product', fields: [] }] })
+    const auth = (rules: unknown[]): string => JSON.stringify({ topology: 'app', methods: ['password'], access: { roles: ['staff'], rules } })
+    const codes = (rules: unknown[]): string[] =>
+      withIdentity({ id: 'x', version: '1' }, { 'app/definitions/entities.json': entities, 'app/definitions/auth.json': auth(rules) })
+        .issues.map((i) => i.message)
+    expect(codes([
+      { subject: 'public', model: 'Booking', rule: 'create, count' },
+      { subject: 'member', model: 'booking request', rule: 'read own' },
+      { subject: 'staff', model: 'Booking', rule: 'read update' },
+    ])).toEqual([])
+    const bad = codes([
+      { subject: 'customer', model: 'Order', rule: 'sees their own orders' },
+      { subject: 'anyone', model: 'Product', rule: 'read' },
+    ])
+    expect(bad).toEqual([
+      expect.stringContaining('names "Order"'),
+      expect.stringContaining('is for "customer"'),
+      expect.stringContaining('not verbs (sees, their, orders)'),
+      expect.stringContaining('has no verb'),
+      expect.stringContaining('is for "anyone"'),
+    ])
+  })
+
+  it('warns when content fills a collection only `own` readers reach', () => {
+    const id = '0b7d1c56-3f7e-4a52-9a0c-1f2e3d4c5b6a'
+    const files = (rules: unknown[]): Record<string, string> => ({
+      'app/definitions/entities.json': JSON.stringify({ entities: [{ typeId: 'Note', fields: [] }] }),
+      'app/definitions/auth.json': JSON.stringify({ topology: 'app', methods: ['password'], access: { rules } }),
+      'app/content/Note.json': JSON.stringify({ data: [{ id }] }),
+    })
+    const issues = (rules: unknown[]): string[] => withIdentity({ id: 'x', version: '1' }, files(rules)).issues.map((i) => `${i.severity}:${i.code}`)
+    expect(issues([{ subject: 'member', model: 'Note', rule: 'read own' }])).toEqual(['warning:APP_CONTENT_UNREADABLE'])
+    expect(issues([{ subject: 'member', model: 'Note', rule: 'read own' }, { subject: 'public', model: 'Note', rule: 'list' }])).toEqual([])
+    expect(issues([])).toEqual([])
+  })
+
   it('warns on files under app/surfaces that are not receipts', () => {
     const v = withIdentity({ id: 'x', version: '1' }, { 'app/surfaces/notes.md': 'x', 'app/surfaces/a/b.receipt.json': '{}' })
     expect(codes(v)).toEqual(['APP_UNEXPECTED_FILE', 'APP_UNEXPECTED_FILE'])

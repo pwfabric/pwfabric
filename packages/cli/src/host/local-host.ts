@@ -2,8 +2,9 @@
  * The local host — the session protocol and the data protocol, in process,
  * for development.
  *
- * NOT A PRODUCTION SERVER. Records live in memory and vanish on restart; the
- * one development user signs in without a password; the issuer stand-in mints
+ * NOT A PRODUCTION SERVER. Records live in memory and vanish on restart; no
+ * password is checked (the development e-mail is the development user, any
+ * other e-mail a plain member); the issuer stand-in mints
  * unsigned ID tokens; there is no rate limit, no CORS, no TLS. It exists so an
  * app that declares data and sign-in runs on a laptop with no hosted service,
  * and so the runner's sign-in wall, account control, gate and data paths are
@@ -169,10 +170,17 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
 
   const principalOf = (req: IncomingMessage): Principal | undefined => bearer.get(credentialOf(req))?.principal
 
-  function startSession(): { token: string; expiresAt: string; principal: Principal } {
+  function startSession(principal: Principal = user): { token: string; expiresAt: string; principal: Principal } {
     const expiresAt = Date.now() + SESSION_TTL_MS
-    const token = bearer.issue({ principal: user, kind: 'session', expiresAt })
-    return { token, expiresAt: new Date(expiresAt).toISOString(), principal: user }
+    const token = bearer.issue({ principal, kind: 'session', expiresAt })
+    return { token, expiresAt: new Date(expiresAt).toISOString(), principal }
+  }
+
+  /** The password door signs in whoever it is told: the development user, or a plain member for any other e-mail. */
+  function principalNamed(email: unknown): Principal {
+    if (typeof email !== 'string' || !email.trim() || email.trim().toLowerCase() === user.email.toLowerCase()) return user
+    const address = email.trim().toLowerCase()
+    return { id: `dev-${address}`, email: address, displayName: address }
   }
 
   const sessionCookie = (token: string, maxAgeS: number): string =>
@@ -208,13 +216,13 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
       sendJson(res, 200, { data: { signedOut: true } })
       return
     }
-    // login / register: the credentials are read (and must be JSON) but not
-    // checked — the development user has no password.
-    await readJsonObject(req)
+    // login / register: the password is not checked. The e-mail picks who
+    // signs in (see principalNamed), so access rules can be tried as a member.
+    const credentials = await readJsonObject(req)
     if (!auth || auth.topology !== 'app' || !auth.methods.includes('password')) {
       throw new HostError(404, 'NO_PASSWORD_DOOR', 'This app declares no password sign-in.')
     }
-    sendJson(res, action === 'register' ? 201 : 200, { data: startSession() })
+    sendJson(res, action === 'register' ? 201 : 200, { data: startSession(principalNamed(credentials.email)) })
   }
 
   function gateway(req: IncomingMessage, res: ServerResponse, url: URL, parts: string[]): void {

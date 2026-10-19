@@ -115,7 +115,8 @@ export const devCommand: Command = {
   --no-host      do not mount the local host, even when the app declares sign-in or records
 
 The local host (under ${HOST_PREFIX}) is for development only: records live in
-memory and are seeded from app/data/, the one development user signs in
-with any password, and nothing survives a restart.`,
+memory and are seeded from app/content/ then app/data/, no password is checked, and nothing
+survives a restart. The access rules of auth.json apply: dev@localhost signs in with every
+declared role, any other e-mail as a plain member.`,
   run: (args, io) => runDev(args, io),
 }

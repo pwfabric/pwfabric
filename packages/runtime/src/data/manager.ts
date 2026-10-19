@@ -259,7 +259,12 @@ export class DataService implements DataServiceInterface {
   ): Promise<unknown> {
     switch (source.kind) {
       case 'static':
-        return source.staticData
+        // The query is applied to static rows like to fetched ones: a static
+        // list declared `sort: name asc` or `filter: featured eq true` is
+        // bound sorted and filtered (data-protocol §3).
+        return source.query && Array.isArray(source.staticData)
+          ? applyEntityQuery(source.staticData as Record<string, unknown>[], source.query).items
+          : source.staticData
 
       case 'state': {
         const context: DataResolveContext = {

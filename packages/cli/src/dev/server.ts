@@ -115,15 +115,24 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
   )
 
   // ── the local host ───────────────────────────────────────────────
-  let host: LocalHost | null = null
-  if (isLocalHost(options.localHost)) {
-    host = options.localHost
-  } else if (options.localHost !== false) {
+  let origin = ''
+  let host: LocalHost | null = isLocalHost(options.localHost) ? options.localHost : null
+  let hostNoted = false
+  /**
+   * Mounts the host the first time the app needs one. Asked again on every
+   * build, not only at start: an app that starts as a bare page and gains its
+   * first entity or sign-in while the server runs needs the host from that
+   * build on, or its pages bind no data and its forms send nothing.
+   */
+  const ensureHost = async (): Promise<void> => {
+    if (host || options.localHost === false) return
     const needs = await hostNeeds(root)
     const wanted = options.localHost === true || needs.length > 0
     if (wanted && internals.createHost) {
       host = internals.createHost({ root, prefix: HOST_PREFIX })
-    } else if (wanted) {
+      if (origin) log(`local host mounted at ${origin}${HOST_PREFIX} — development only: records in memory, no password checked`)
+    } else if (wanted && !hostNoted) {
+      hostNoted = true
       log(
         `note: this app declares ${needs.join(' and ') || 'a host'}, but no local host is mounted — pages render, ${
           needs.includes('sign-in') ? 'sign-in cannot complete and ' : ''
@@ -131,12 +140,12 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
       )
     }
   }
+  await ensureHost()
 
   // ── state ────────────────────────────────────────────────────────
   let state: AssembleResult | null = null
   const packMemo: PackMemo = new Map()
   const clients = new Set<ServerResponse>()
-  let origin = ''
 
   const broadcast = (event: string, data: unknown): void => {
     const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
@@ -145,13 +154,17 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
 
   const build = async (): Promise<DevBuildResult> => {
     let result: AssembleResult
+    await ensureHost()
     try {
       result = await assemblePwapp(root, {
         ...internals.assemble,
         cache,
         packMemo,
         shellExtra: RELOAD_CLIENT,
-        ...(host ? { envelopeEntries: host.envelopeEntries(origin) } : {}),
+        // Host addresses go out relative ('/_host/…'), so a page reaches its host at whatever
+        // address it was opened on — localhost, 127.0.0.1, a LAN name, a preview proxy. An
+        // origin fixed at start-up made every other address a cross-origin write the browser blocks.
+        ...(host ? { envelopeEntries: host.envelopeEntries('') } : {}),
       })
     } catch (e) {
       const diagnostics: AssembleDiagnostic[] = [
@@ -261,7 +274,7 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
   const url = urlFor(hostname, port)
   origin = url.replace(/\/$/, '')
   if (host) {
-    log(`local host mounted at ${origin}${HOST_PREFIX} — development only: records in memory, one user, any password`)
+    log(`local host mounted at ${origin}${HOST_PREFIX} — development only: records in memory, no password checked`)
   }
 
   await rebuild()

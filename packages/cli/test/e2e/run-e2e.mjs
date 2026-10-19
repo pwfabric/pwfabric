@@ -341,7 +341,7 @@ async function l3Dev(browser, s) {
     try {
       s.check('the local host is mounted', /local host mounted at /.test(server.output()), server.output())
       const auth = await (await fetch(`${server.url}pwpack/auth.json`)).json()
-      s.check('envelope auth.json points at the host', auth.loginUrl === `${server.url}_host/login`, auth)
+      s.check('envelope auth.json points at the host (relative, on the page origin)', auth.loginUrl === '/_host/login', auth)
       const project = await (await fetch(`${server.url}pwpack/project.json`)).json()
       s.check('project.json carries the declared identity', JSON.stringify(project.identity) === '{"required":false,"topology":"app","methods":["password"]}', project.identity)
       const seeded = await (await fetch(`${server.url}_host/records/Product`)).json()

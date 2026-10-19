@@ -4,7 +4,8 @@
  *   app/definitions/auth.json      who may enter (definitions.md, `auth.json`)
  *   app/definitions/entities.json  the collections the host keeps
  *   app/surfaces/<key>.receipt.json  the pages it serves
- *   app/data/<typeId>.jsonl | .json  seed rows (a convention of this host)
+ *   app/content/<typeId>.json      the app's shipped records (data-protocol §6)
+ *   app/data/<typeId>.jsonl | .json  development records, never published
  *
  * Read on every call, never cached: `pwf dev` edits these files while the
  * host runs, and a definition change must apply without a restart. An absent
@@ -26,6 +27,7 @@ export interface AuthDeclaration {
     readonly audience?: string
   }
   readonly access: {
+    readonly roles: readonly string[]
     readonly rules: readonly { readonly subject: string; readonly model: string; readonly rule: string }[]
   }
 }
@@ -40,8 +42,6 @@ export interface EntityDeclaration {
   readonly typeId: string
   readonly displayName?: string
   readonly fields: readonly EntityField[]
-  /** Carried member (not in the spec yet): `"owner"` makes the collection per-visitor. */
-  readonly scope?: string
 }
 
 function readJson(path: string): unknown {
@@ -81,7 +81,7 @@ export function readAuth(root: string): AuthDeclaration | undefined {
           },
         }
       : {}),
-    access: { rules },
+    access: { roles: strings(access.roles), rules },
   }
 }
 
@@ -100,7 +100,6 @@ export function readEntities(root: string): EntityDeclaration[] {
         typeId: e.typeId,
         ...(typeof e.displayName === 'string' ? { displayName: e.displayName } : {}),
         fields,
-        ...(typeof e.scope === 'string' ? { scope: e.scope } : {}),
       },
     ]
   })
@@ -126,18 +125,34 @@ export function readReceipt(root: string, key: string): Record<string, unknown> 
 }
 
 /**
- * Seed rows for one collection.
+ * Seed rows for one collection: the app's content, then its development data.
  *
- * THE CONVENTION (proposed for the spec): `app/data/<typeId>.json` holding
- * `{ "data": [ …records ] }` — the same `data` envelope a record list answer
- * uses. A record may carry its own `id`; `createdAt`/`updatedAt` are filled
- * when absent. Also accepted, for hand-written seed files only:
- * `app/data/<typeId>.jsonl`, one JSON object per line (blank lines skipped),
- * read when no `.json` file exists.
+ * Two folders, one shape (data-protocol §6):
+ *  - `app/content/<typeId>.json` — records the app ships for every visitor; a
+ *    publisher inserts each one the record store does not hold yet.
+ *  - `app/data/<typeId>.json` — development and test records; never published.
+ * A data row with the id of a content row replaces it here, so a developer can
+ * try a variant without editing the content.
  */
 export function readSeed(root: string, typeId: string): Record<string, unknown>[] {
   if (!PAGE_KEY.test(typeId)) return []
-  const dir = join(root, 'app', 'data')
+  const rows = new Map<string, Record<string, unknown>>()
+  let anonymous = 0
+  for (const row of [...readRecordsFile(join(root, 'app', 'content'), typeId), ...readRecordsFile(join(root, 'app', 'data'), typeId)]) {
+    const id = typeof row.id === 'string' || typeof row.id === 'number' ? String(row.id) : `\0${anonymous++}`
+    rows.set(id, row)
+  }
+  return [...rows.values()]
+}
+
+/**
+ * `<dir>/<typeId>.json` holding `{ "data": [ …records ] }` — the same `data`
+ * envelope a record list answer uses. A record may carry its own `id`;
+ * `createdAt`/`updatedAt` are filled when absent. Also accepted, for
+ * hand-written files only: `<dir>/<typeId>.jsonl`, one JSON object per line
+ * (blank lines skipped), read when no `.json` file exists.
+ */
+function readRecordsFile(dir: string, typeId: string): Record<string, unknown>[] {
   const jsonPath = join(dir, `${typeId}.json`)
   const json = readJson(jsonPath)
   if (json !== undefined) {

@@ -170,7 +170,7 @@ describe('the app door, end to end', () => {
     const auth = s.host.envelopeEntries(s.origin)['auth.json'] as PwappAuth
     const ownApiBase = ownApiBaseOf(auth)
     expect(ownApiBase).toBe(s.base)
-    const login = await signIn(auth.loginUrl!, { email: 'a', password: 'b' })
+    const login = await signIn(auth.loginUrl!, { email: 'dev@localhost', password: 'b' })
     let appSession: AppSession | null = (login as { ok: true; session: AppSession }).session
 
     // run-app.ts `dataServiceConfig.getAccessToken`, as written there.

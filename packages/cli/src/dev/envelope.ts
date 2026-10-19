@@ -44,11 +44,15 @@ export function deriveNavigation(pages: readonly Page[], entry: string): { navba
   }
 }
 
-/** What the app declares about who may enter (`app/definitions/auth.json`), as `project.json` carries it. */
+/**
+ * What the app declares about who may enter (`app/definitions/auth.json`), as `project.json` carries it.
+ * A file that says nothing about entry (only `access`) is no identity: the app has no door and no wall.
+ */
 export function identityOf(auth: unknown): { required: boolean; topology: 'app' | 'external'; methods?: string[] } | undefined {
   if (!isRecord(auth)) return undefined
   const topology = auth['topology'] === 'external' ? 'external' : 'app'
   const methods = Array.isArray(auth['methods']) ? auth['methods'].filter((m): m is string => typeof m === 'string') : []
+  if (topology === 'app' && methods.length === 0 && auth['required'] !== true) return undefined
   return {
     required: auth['required'] === true,
     topology,

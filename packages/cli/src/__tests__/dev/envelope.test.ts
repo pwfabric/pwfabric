@@ -66,6 +66,9 @@ describe('navigation and project.json', () => {
     })
     expect(identityOf({ topology: 'external', issuer: {} })).toEqual({ required: false, topology: 'external' })
     expect(identityOf('nope')).toBeUndefined()
+    // only who may read and write: no door, no wall, so no identity (and no `auth.json` to ask for)
+    expect(identityOf({ access: { rules: [{ subject: 'public', model: 'Booking', rule: 'create' }] } })).toBeUndefined()
+    expect(identityOf({ required: true })).toEqual({ required: true, topology: 'app', methods: [] })
   })
 })
 

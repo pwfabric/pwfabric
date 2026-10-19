@@ -94,8 +94,10 @@ endpoints of the data protocol, with records in memory seeded from
 its receipts — entity sources rewritten to `rest` sources against
 `/_host/records/<Entity>` — replace the folder's copies. `--local-host` mounts
 it for an app that declares neither; `--no-host` serves the pages alone. The
-local host is for development only: one user, any password, nothing survives
-a restart.
+local host is for development only: no password is checked, nothing survives
+a restart. It enforces the app's access rules (`auth.json` `access`): the
+development e-mail `dev@localhost` signs in with every declared role, any
+other e-mail as a plain member, so each visitor can be tried.
 
 ### `pwf build [dir] [--out <dir>]`
 
