@@ -8,7 +8,7 @@
  * local host (../host) that implements the session and data protocols.
  */
 
-import type { LocalHost } from '../host/types.js'
+import type { LocalHost } from '../host/index.js'
 
 export interface DevServerOptions {
   /** Absolute path of the pwpack folder to serve. */

@@ -16,7 +16,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { extname, join, resolve } from 'node:path'
-import type { CreateLocalHost, LocalHost } from '../host/types.js'
+import type { CreateLocalHost, LocalHost } from '../host/index.js'
 import { assemblePwapp, type AssembleOptions, type AssembleResult } from './assemble.js'
 import { createCompileCache } from './compile.js'
 import { formatDiagnostic, type AssembleDiagnostic } from './diagnostics.js'

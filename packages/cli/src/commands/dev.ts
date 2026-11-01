@@ -10,7 +10,7 @@
  */
 import { resolve } from 'node:path'
 import { createDevServer, DEFAULT_HOSTNAME, DEFAULT_PORT, HOST_PREFIX, type DevServerInternals } from '../dev/server.js'
-import { createLocalHost } from '../host/local-host.js'
+import { createLocalHost } from '../host/index.js'
 import type { Command, CommandIO, ParsedArgs } from './types.js'
 
 /** Resolves when the process is asked to stop (Ctrl+C or a termination signal). */
