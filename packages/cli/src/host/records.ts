@@ -9,7 +9,9 @@
  * ACCESS is the app's `auth.json` `access.rules` (definitions, `access`):
  *
  *  - `required: true`: every data request needs a session (`401`).
- *  - A model no rule names is open to every visitor.
+ *  - With no rule at all, every model is open to every visitor; once the app
+ *    declares a rule, a model no rule names is closed.
+ *  - A `count` grant answers the plain, unfiltered `/count` only.
  *  - A model some rule names is closed: a request passes when a rule whose
  *    subject matches the caller (`public`, `member`, or one of the caller's
  *    roles) grants its verb. `own` limits the grant to the caller's records.
@@ -28,9 +30,12 @@ import type { Principal } from './tokens.js'
 
 export type Scope = 'project' | 'owner'
 
-type Verb = 'create' | 'list' | 'view' | 'update' | 'delete' | 'count'
+/** The verbs a rule grants (`read` and `write` expand to these). */
+export type AccessVerb = 'create' | 'list' | 'view' | 'update' | 'delete' | 'count'
 /** What one verb allows the caller: nothing, their own records, or every record. */
-type Reach = 'none' | 'own' | 'all'
+export type AccessReach = 'none' | 'own' | 'all'
+type Verb = AccessVerb
+type Reach = AccessReach
 export type Access = Readonly<Record<Verb, Reach>>
 
 const VERBS: Readonly<Record<string, readonly Verb[]>> = {
@@ -44,6 +49,7 @@ const VERBS: Readonly<Record<string, readonly Verb[]>> = {
   write: ['create', 'update', 'delete'],
 }
 const OPEN: Access = { create: 'all', list: 'all', view: 'all', update: 'all', delete: 'all', count: 'all' }
+const CLOSED: Access = { create: 'none', list: 'none', view: 'none', update: 'none', delete: 'none', count: 'none' }
 const RANK: Readonly<Record<Reach, number>> = { none: 0, own: 1, all: 2 }
 
 /** Fields a record names its owner in; a create fills the first one when blank. */
@@ -79,15 +85,23 @@ export function parseRule(rule: string): { verbs: Verb[]; own: boolean; unknown:
   return { verbs: [...verbs], own, unknown }
 }
 
-/** What `caller` (with `roles`) may do with `entity` under the app's rules. */
+/**
+ * What `caller` (with `roles`) may do with `entity` under the app's rules.
+ *
+ * An app that declares no access rule at all leaves every model open. Once it
+ * declares one, a model no rule names is closed: nobody listed it, so nobody
+ * was granted it (a collection only a receipt reads must be named to be read).
+ */
 export function accessOf(
   entity: EntityDeclaration,
   auth: AuthDeclaration | undefined,
   caller: { readonly principal: Principal | undefined; readonly roles: readonly string[] }
 ): Access {
   const names = new Set([norm(entity.typeId), ...(entity.displayName ? [norm(entity.displayName)] : [])])
-  const rules = (auth?.access.rules ?? []).filter((r) => names.has(norm(r.model)))
-  if (rules.length === 0) return OPEN
+  const declared = auth?.access.rules ?? []
+  if (declared.length === 0) return OPEN
+  const rules = declared.filter((r) => names.has(norm(r.model)))
+  if (rules.length === 0) return CLOSED
   const access: Record<Verb, Reach> = { create: 'none', list: 'none', view: 'none', update: 'none', delete: 'none', count: 'none' }
   for (const r of rules) {
     const subject = r.subject.trim()
@@ -221,7 +235,12 @@ export class RecordStore {
     }
   }
 
-  /** `/count` (`plainCount`) or `/aggregate?fn&field`: over every row with `count`, else over the rows `list` reaches. */
+  /**
+   * `/count` (`plainCount`) or `/aggregate?fn&field`, over the rows `list`
+   * reaches. A caller whose only grant is `count` gets the plain, unfiltered
+   * count over every row and nothing more: a filter or a sum would read field
+   * values out of rows they may not list, one number at a time.
+   */
   aggregate(target: Target, params: URLSearchParams, plainCount: boolean): AggregateAnswer {
     const fn = plainCount ? 'count' : params.get('fn')
     if (fn !== 'count' && fn !== 'sum' && fn !== 'avg') {
@@ -230,7 +249,8 @@ export class RecordStore {
     const field = plainCount ? undefined : (params.get('field') ?? undefined)
     if (fn !== 'count' && !field) throw new HostError(400, 'INVALID_QUERY', `${fn} needs a field.`)
     const access = this.access(target)
-    const reach = access.count === 'all' ? 'all' : this.allow(target, 'list', access)
+    const bare = plainCount && params.get('filter') === null
+    const reach = bare && access.count === 'all' ? 'all' : this.allow(target, 'list', access)
     const rows = this.rows(target, reach, params)
     return {
       data: aggregate(rows, fn, field),
