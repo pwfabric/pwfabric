@@ -86,16 +86,33 @@ bundle when the app is built and recovered from it at runtime:
 2. The build rewrites every `kind: 'entity'` source with no `connector`
    into `{ kind: 'rest', endpoint: '<appApiBase>/records/<entityType>', method: 'GET', authProviderRef: '<appApiBase>', returns: 'data' }`,
    and adds one such source per type the plan says the page reads.
-3. `auth.json` writes the app door as addresses: `loginUrl = <appApiBase>/login`, `registerUrl`, `logoutUrl`, `sessionUrl`. An external-issuer `auth.json` has no `loginUrl`, so the steps below find no own base for it (see [What your host must provide](#what-your-host-must-provide)).
-4. The runner derives `ownApiBase` by stripping `/login` off `auth.json.loginUrl`.
-   `getAccessToken(ref)` answers **only** when `ref === ownApiBase`, with the
-   app session token, else the PKCE bridge token, else `null` — a ref that is
-   not the app's own door gets nothing, so a token never reaches a third party.
+3. `auth.json` writes the app door as addresses — `loginUrl = <appApiBase>/login`,
+   `registerUrl`, `logoutUrl`, `sessionUrl` for a password door; `startUrl`,
+   `gatewaySessionUrl`, `gatewayLogoutUrl` for a provider door — and MAY state
+   the base itself as `apiBase`. `pwf dev` always states it.
+4. The runner derives `ownApiBase` the same way for every sign-in method:
+   `apiBase` when present, else the first door address that ends in its route
+   with that route removed (`loginUrl` − `/login`, `registerUrl` − `/register`,
+   `sessionUrl` − `/session`, `logoutUrl` − `/logout`, `startUrl` −
+   `/_auth/start`, `gatewaySessionUrl` − `/_auth/session`, `gatewayLogoutUrl` −
+   `/_auth/logout`). A gateway on the app's own origin (`/_auth/start`) leaves
+   no base to read, so such a host states `apiBase`.
+5. `getAccessToken(ref)` answers **only** when `ref` names `ownApiBase` (equal
+   as written, or once both are resolved against the page), with the app
+   session token — whichever door it came from, password or provider — else
+   the PKCE bridge token, else `null`. A ref that is not the app's own door
+   gets nothing, so a token never reaches a third party.
+
+**Host API contract: whenever the runner holds a session, every data request
+to the app's own API carries `Authorization: Bearer <token>`.** A host whose
+records are gated must therefore make the receipts' `authProviderRef` equal
+the base `auth.json` names (state `apiBase` when its door addresses do not end
+in the base).
 
 Consequence for a self-host: the addresses are in `pwpack/surfaces/*.receipt.json`
-(`endpoint`, `authProviderRef`) and `pwpack/auth.json`. To point the app at a
-different API you edit those strings; the two must stay equal or no token is
-attached. An app with **no** `auth.json` has no `ownApiBase` and every request
+(`endpoint`, `authProviderRef`) and `pwpack/auth.json` (`apiBase` and the door
+addresses). To point the app at a different API you edit those strings; they
+must stay equal or no token is attached. An app with **no** `auth.json` has no `ownApiBase` and every request
 goes out anonymous.
 
 Requests carry `Content-Type: application/json`, the source's `headers`, and
@@ -104,7 +121,8 @@ only if `DataServiceConfig.platformApiOrigin` matches the URL's origin; the
 runner never sets that field, so a pwapp sends `credentials: 'omit'` —
 cookies are never used on this path.
 
-Source: `packages/runner/src/run-app.ts` (`ownApiBase`, `dataServiceConfig.getAccessToken`),
+Source: `packages/runner/src/api-base.ts` (`ownApiBaseOf`, `isOwnApiRef`),
+`packages/runner/src/run-app.ts` (`dataServiceConfig.getAccessToken`),
 `packages/runtime/src/data/manager.ts` (`fetchRest`, `isPlatformOrigin`).
 
 ## The endpoint table
@@ -129,6 +147,22 @@ app's identity says `required: true`, in which case the answer is
 | POST | `/register` | none (5/min) | `{ email, password, displayName? }` | `201`, same shape |
 | POST | `/logout` | `x-app-session` | — | `{ data: { signedOut: true } }` |
 | GET | `/session` | visitor | — | `{ data: { principal: AppPrincipal \| null } }` |
+
+Who may call each route is the app's access rules (`auth.json` `access`). As
+`pwf dev`'s host and `@pwfabric/cli/host` enforce them:
+
+- An app that declares no rule leaves every model open. Once it declares any
+  rule, a model **no rule names is closed** — nobody was granted it, so a
+  collection that only a receipt reads must be named to be read.
+- A caller whose only grant on a model is **`count`** gets the plain,
+  unfiltered `GET /records/:type/count` over every row. A filtered count or
+  any `/aggregate` needs `list` and runs over the rows `list` reaches: a filter
+  or a sum would otherwise read field values out of rows the caller may not
+  see, one number at a time.
+
+Both are stricter than format 1.0 of the definitions spec requires (there, a
+model no rule names is open and `count` covers `count`/`aggregate` over every
+row); a server MAY be stricter than the rules, never more open.
 
 `Record` is `{ id, entityType, …fields, createdAt, updatedAt }` — the stored
 fields are spread to the top level. `limit` is clamped to 1–500 (default 100);
@@ -269,7 +303,17 @@ seeds each collection from `app/data/<Entity>.json`, shaped
 a published app does not carry them as its records. An entity declared with
 `"scope": "owner"` (draft) is kept per visitor.
 
-**External issuer** — an app whose visitors sign in at an external issuer
-sends no token on its own record requests in format 1.0 (session-protocol §9).
-Serve those records without a gate, or read them through a connection whose
-engine uses the issuer's token.
+**External issuer** — an external-issuer `auth.json` carries no door address
+to read a base from. State `apiBase` in it (`pwf dev` does) and the runner sends
+the issuer's token on the app's own record requests; without it, those
+requests go out anonymous (session-protocol §9), so serve those records without
+a gate or read them through a connection whose engine uses the issuer's token.
+
+**Building blocks** — the pieces `pwf dev`'s host is made of are a public
+entry, `@pwfabric/cli/host` (Node): `accessOf` and `parseRule` (the access
+evaluator), `RecordStore` (in-memory records that enforce the rules and throw
+`HostError { status, code }`), `rewriteEntitySources` (a receipt's entity
+sources rewritten to `<base>/records/…` with `authProviderRef: <base>`),
+`authAddresses` (the envelope `auth.json` for a declaration, pointed at
+`<base>`, `apiBase` included), `readAuth`, `readEntities`, `readSeed`, and
+`createLocalHost` itself, with their types. `pwf dev` imports the same entry.

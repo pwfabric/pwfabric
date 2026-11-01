@@ -1,5 +1,10 @@
 # @pwfabric/runner
 
+## Unreleased
+
+- Fixed: a session from a provider sign-in (`startUrl` + `gatewaySessionUrl`, e.g. method `phiwebs`) is sent as `Authorization: Bearer` on the app's own record requests, as a password session always was. The app's API base is derived the same way for every sign-in method: `auth.json` `apiBase` when stated, else the first door address with its route removed (`loginUrl` − `/login`, … `startUrl` − `/_auth/start`, `gatewaySessionUrl` − `/_auth/session`). A ref that is not that base still gets no token.
+- Added: optional `PwappAuth.apiBase`; `ownApiBaseOf(auth)` and `isOwnApiRef(ref, base)` are exported.
+
 ## 1.1.0
 
 - A form binding's `successRedirect` and a `navigate` action's `url` are rewritten like hrefs, so a hash-routed app stays inside the app.

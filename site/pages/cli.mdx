@@ -82,6 +82,10 @@ e-mail and password; nothing survives a restart. It answers the
 [data](/self-host/data) and [session](/self-host/session) protocols, so the
 whole loop runs on your machine.
 
+The same pieces are a public entry for hosts of your own:
+`import { accessOf, RecordStore, rewriteEntitySources, authAddresses } from '@pwfabric/cli/host'`
+(see [Data and receipts](/self-host/data#what-your-host-must-provide)).
+
 Builds the app, serves it, watches the folder and rebuilds and reloads the
 page on every change. Runs until Ctrl+C. When a build fails, the page shows
 the errors instead of the app until the next good build. If the port is taken,
