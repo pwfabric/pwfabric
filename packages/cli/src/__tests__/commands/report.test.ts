@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { checkEntities, checkSeeds } from '../../commands/lib/report.js'
+import { checkAccess, checkEntities, checkSeeds } from '../../commands/lib/report.js'
 import { tempDir } from './helpers.js'
 
 async function project(files: Record<string, unknown>): Promise<string> {
@@ -78,5 +78,57 @@ describe('checkEntities', () => {
     ])
     const none = await project({ 'app/surfaces/home.receipt.json': receipt('Booking') })
     expect(codes(checkEntities(none))).toEqual(['ENTITY_UNDECLARED'])
+  })
+})
+
+describe('checkAccess', () => {
+  const entities = { entities: [{ typeId: 'Product', fields: [] }, { typeId: 'Order', displayName: 'Customer order', fields: [] }] }
+
+  it('passes an app without models, and one whose every model a rule names', async () => {
+    expect(checkAccess(await project({}))).toEqual([])
+    const root = await project({
+      'app/definitions/entities.json': entities,
+      'app/definitions/auth.json': {
+        required: false,
+        topology: 'app',
+        methods: ['password'],
+        access: {
+          roles: [],
+          rules: [
+            { subject: 'public', model: 'product', rule: 'read' },
+            { subject: 'member', model: 'Customer order', rule: 'create, read own' },
+          ],
+        },
+      },
+    })
+    expect(checkAccess(root)).toEqual([])
+  })
+
+  it('is an error for every model no rule names, saying how to add one', async () => {
+    const root = await project({
+      'app/definitions/entities.json': entities,
+      'app/definitions/auth.json': {
+        required: false,
+        topology: 'app',
+        methods: ['password'],
+        access: { roles: [], rules: [{ subject: 'member', model: 'Order', rule: 'read own' }] },
+      },
+    })
+    const issues = checkAccess(root)
+    expect(codes(issues)).toEqual(['ACCESS_RULE_MISSING'])
+    expect(issues[0]).toMatchObject({ severity: 'error', path: 'app/definitions/auth.json' })
+    expect(issues[0]!.message).toContain('"Product"')
+    expect(issues[0]!.message).toContain('{ "subject": "public", "model": "Product", "rule": "read" }')
+  })
+
+  it('is an error for every model when there is no access block or no auth.json at all', async () => {
+    const noAccess = await project({
+      'app/definitions/entities.json': entities,
+      'app/definitions/auth.json': { required: false, topology: 'app', methods: ['password'] },
+    })
+    expect(codes(checkAccess(noAccess))).toEqual(['ACCESS_RULE_MISSING', 'ACCESS_RULE_MISSING'])
+    expect(checkAccess(noAccess)[0]!.message).toContain('has no access rules')
+    const noAuth = await project({ 'app/definitions/entities.json': entities })
+    expect(checkAccess(noAuth).map((i) => i.message.match(/model "(\w+)"/)?.[1])).toEqual(['Product', 'Order'])
   })
 })

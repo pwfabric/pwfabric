@@ -164,6 +164,20 @@ Both are stricter than format 1.0 of the definitions spec requires (there, a
 model no rule names is open and `count` covers `count`/`aggregate` over every
 row); a server MAY be stricter than the rules, never more open.
 
+**Name every model.** A host that publishes apps can be stricter still: an
+app with no `access` block serves its pages and no records, and a model no
+rule names is closed. `pwf dev` keeps an app with no rule at all open, so
+`pwf validate` (and `pwf pack`) report every declared model that no rule names
+as an error, `ACCESS_RULE_MISSING` — with no `access` block, that is every
+model. Public data needs an explicit rule:
+
+```json
+"access": { "roles": [], "rules": [
+  { "subject": "public", "model": "Product", "rule": "read" },
+  { "subject": "member", "model": "Order",   "rule": "create, read own" }
+] }
+```
+
 `Record` is `{ id, entityType, …fields, createdAt, updatedAt }` — the stored
 fields are spread to the top level. `limit` is clamped to 1–500 (default 100);
 `offset` ≥ 0; ordering is `updatedAt` descending unless `sort` says otherwise.

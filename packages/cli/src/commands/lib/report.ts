@@ -8,7 +8,7 @@ import { hashPack, validatePack, type PackFolder, type PackIssue, type PackValid
 import type { CommandIO } from '../types.js'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { pinsOf } from './identity.js'
-import { readEntities, readReceipt, readSeed, surfaceKeys } from '../../host/definitions.js'
+import { readAuth, readEntities, readReceipt, readSeed, surfaceKeys, type AuthDeclaration } from '../../host/definitions.js'
 
 /**
  * Checks every `packs[]` pin against `.pwf/packs/<id>@<version>/`.
@@ -129,11 +129,52 @@ export function checkEntities(root: string): PackIssue[] {
   return issues
 }
 
-/** `validatePack` plus {@link checkPins}, {@link checkSeeds} and {@link checkEntities}, as one result. */
+const normName = (s: string): string => s.toLowerCase().replace(/[\s_-]/g, '')
+
+/**
+ * Every model the app declares must be named by an `access` rule
+ * (`ACCESS_RULE_MISSING`, an error).
+ *
+ * A host that publishes an app serves only what the rules grant: a model no
+ * rule names is closed, and an app with no `access` block serves its pages and
+ * no records. `pwf dev` is more forgiving (an app with no rule at all stays
+ * open there), so without this check an author would find out only after
+ * publishing. Public data needs an explicit `public` rule.
+ */
+export function checkAccess(root: string): PackIssue[] {
+  const entities = readEntities(root)
+  if (entities.length === 0) return []
+  const path = 'app/definitions/auth.json'
+  let auth: AuthDeclaration | undefined
+  try {
+    auth = readAuth(root)
+  } catch {
+    return [] // not valid JSON: reported by the pack validation
+  }
+  const rules = auth?.access.rules ?? []
+  const named = new Set(rules.map((r) => normName(r.model)))
+  const issues: PackIssue[] = []
+  for (const e of entities) {
+    if (named.has(normName(e.typeId)) || (e.displayName && named.has(normName(e.displayName)))) continue
+    const where = rules.length === 0 ? `${path} has no access rules` : `no rule in ${path} access.rules names it`
+    issues.push({
+      severity: 'error',
+      code: 'ACCESS_RULE_MISSING',
+      path,
+      message:
+        `model "${e.typeId}" has no access rule (${where}), so a published app serves its records to nobody. ` +
+        `Add one to access.rules, e.g. { "subject": "public", "model": "${e.typeId}", "rule": "read" } for public data, ` +
+        `or { "subject": "member", "model": "${e.typeId}", "rule": "create, read own" } for each visitor's own records`,
+    })
+  }
+  return issues
+}
+
+/** `validatePack` plus {@link checkPins}, {@link checkSeeds}, {@link checkEntities} and {@link checkAccess}, as one result. */
 export async function validateProject(root: string, pack: PackFolder): Promise<PackValidation> {
   const result = validatePack(pack)
   const pinIssues = await checkPins(root, result.identity)
-  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root)]
+  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root)]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 

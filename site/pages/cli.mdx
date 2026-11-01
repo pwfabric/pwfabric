@@ -136,6 +136,19 @@ with the path each is about. Every `packs[]` pin is looked up in
 whose content hash differs from the pin is an error. Exit `1` when there is
 any error, `0` otherwise.
 
+Beyond the pack validator's own findings, `validate` (and `pack`) check the
+app folder the way the local host reads it:
+
+| Code | Severity | Meaning |
+|---|---|---|
+| `PIN_NOT_CACHED` | warning | A pinned build is not in `.pwf/packs/`; `pwf add` it. |
+| `PIN_HASH_MISMATCH` | error | The cached build's content hash differs from the pin. |
+| `PIN_INVALID` | error | A `packs[]` pin cannot name a cache folder. |
+| `SEED_INVALID` | error | An `app/data/<typeId>.json(l)` file the local host would reject. |
+| `ENTITY_INVALID` | error | `app/definitions/entities.json` is not JSON, or an entry has no `typeId` or a field no `name`. |
+| `ENTITY_UNDECLARED` | error | A page binds an entity type `entities.json` does not declare. |
+| `ACCESS_RULE_MISSING` | error | A model `entities.json` declares is named by no `access` rule in `app/definitions/auth.json` (or there is no `access` block). A host that publishes the app serves such a model's records to nobody; add a rule, e.g. `{ "subject": "public", "model": "Product", "rule": "read" }` for public data. |
+
 ## `pwf pack`
 
 ```text
