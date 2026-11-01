@@ -260,7 +260,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   // The same dialog, opened by the app's own account control. Mounted on the
   // body so a route re-render (which replaces the container) cannot drop it.
   let closeOnDemandGate: (() => void) | null = null
-  const openGate = (): void => {
+  const showDialog = (message?: string): void => {
     closeOnDemandGate?.()
     closeOnDemandGate = mountSignInGate(document.body, project, bridge, {
       auth,
@@ -269,11 +269,18 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       onProviderSignIn: startProvider,
       themeVars,
       onDemand: true,
+      ...(message ? { initialError: message } : {}),
       onDismiss: () => {
         closeOnDemandGate = null
       },
     })
   }
+  const openGate = (): void => showDialog()
+  // An app that does not require sign-in has no wall to carry a refused
+  // arrival (Cancel on the platform screen, a provider error). Open the
+  // dialog with the message instead, so the visitor learns why they are
+  // still signed out and can try again or close it.
+  if (initialError && !appSession && !isGated(project, bridge, false)) showDialog(initialError)
   let pill: ReturnType<typeof mountSessionPill> | null = null
 
   // graph-lists connector instance survives route changes per login session

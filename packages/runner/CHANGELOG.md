@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Fixed: a session from a provider sign-in (`startUrl` + `gatewaySessionUrl`, e.g. method `phiwebs`) is sent as `Authorization: Bearer` on the app's own record requests, as a password session always was. The app's API base is derived the same way for every sign-in method: `auth.json` `apiBase` when stated, else the first door address with its route removed (`loginUrl` − `/login`, … `startUrl` − `/_auth/start`, `gatewaySessionUrl` − `/_auth/session`). A ref that is not that base still gets no token.
+- Fixed: a sign-in that comes back refused (`?auth_error=`, e.g. Cancel on the platform screen) is shown on an app that does not require sign-in too: the sign-in dialog opens with the message. It was shown only on a required app's wall.
 - Added: optional `PwappAuth.apiBase`; `ownApiBaseOf(auth)` and `isOwnApiRef(ref, base)` are exported.
 
 ## 1.1.0
