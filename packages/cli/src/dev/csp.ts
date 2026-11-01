@@ -170,7 +170,7 @@ function restEndpointsOf(receipt: unknown): string[] {
   return out
 }
 
-const AUTH_ADDRESS_KEYS = ['loginUrl', 'registerUrl', 'logoutUrl', 'sessionUrl', 'tokenUrl', 'issuer', 'startUrl', 'gatewaySessionUrl', 'gatewayLogoutUrl']
+const AUTH_ADDRESS_KEYS = ['loginUrl', 'registerUrl', 'logoutUrl', 'sessionUrl', 'tokenUrl', 'issuer', 'startUrl', 'gatewaySessionUrl', 'gatewayLogoutUrl', 'apiBase']
 
 /** Writes the directives as a policy string. */
 export function serializeCsp(directives: CspDirectives, options: { meta?: boolean } = {}): string {

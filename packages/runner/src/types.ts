@@ -202,6 +202,17 @@ export interface PwappAuth {
   readonly startUrl?: string
   readonly gatewaySessionUrl?: string
   readonly gatewayLogoutUrl?: string
+  /**
+   * THE APP'S OWN API BASE — where its records live (`<apiBase>/records/…`).
+   *
+   * Optional: absent, the runner reads it back out of the door addresses
+   * (`loginUrl` without `/login`, `startUrl` without `/_auth/start`, …; see
+   * api-base.ts). A host states it when nothing else names the base, e.g. a
+   * provider-only door whose gateway listens on the app's own origin. Data
+   * sources whose `authProviderRef` equals it carry the visitor's session as
+   * `Authorization: Bearer`.
+   */
+  readonly apiBase?: string
 }
 
 /** One social sign-in button: `phiwebs` (a PhiWebs account) or a provider. */

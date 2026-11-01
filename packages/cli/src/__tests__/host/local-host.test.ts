@@ -83,6 +83,7 @@ describe('envelopeEntries', () => {
       gatewaySessionUrl: `${base}/_auth/session`,
       gatewayLogoutUrl: `${base}/_auth/logout`,
       methods: ['password', 'google'],
+      apiBase: base,
     })
     expect(Object.keys(entries).sort()).toEqual(['auth.json', 'surfaces/home.receipt.json', 'surfaces/orders.receipt.json'])
     const home = entries['surfaces/home.receipt.json'] as { capabilities: { config?: { dataSources?: unknown[] } }[] }
@@ -127,6 +128,7 @@ describe('envelopeEntries', () => {
         gatewaySessionUrl: 'http://x/h/_auth/session',
         gatewayLogoutUrl: 'http://x/h/_auth/logout',
         methods: ['github', 'phiwebs'],
+        apiBase: 'http://x/h',
       },
     })
   })
@@ -146,6 +148,7 @@ describe('envelopeEntries', () => {
     const entries = createLocalHost({ root: fixture('l-issuer'), prefix: '/h' }).envelopeEntries('http://x')
     expect(entries['auth.json']).toEqual({
       provider: 'oauth2-pkce',
+      apiBase: 'http://x/h',
       issuer: 'http://x/h/oidc',
       clientId: 'client-1',
       scopes: ['openid', 'profile', 'email', 'offline_access'],

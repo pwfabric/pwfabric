@@ -11,8 +11,8 @@
  * `history`, `window`) — no DOM is needed for any of them.
  *
  * What `run-app.ts` does between these calls (it is browser orchestration and
- * cannot run in Node) is restated in one place: `ownApiBase` and the
- * `dataServiceConfig.getAccessToken` matcher, copied as written there.
+ * cannot run in Node) is restated in one place: `dataServiceConfig.getAccessToken`,
+ * built from the runner's own `ownApiBaseOf` and `isOwnApiRef`.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -27,6 +27,7 @@ import {
   type AppSession,
 } from '../../../../runner/src/app-session.js'
 import { bootSession } from '../../../../runner/src/boot-session.js'
+import { isOwnApiRef, ownApiBaseOf } from '../../../../runner/src/api-base.js'
 import { createAuthBridge } from '../../../../runner/src/auth.js'
 import { clearDiscoveryCache } from '../../../../runner/src/pkce.js'
 import { doorHeaders, fetchJson } from '../../../../runner/src/helpers.js'
@@ -44,11 +45,10 @@ afterEach(async () => {
   served = undefined
 })
 
-/** `run-app.ts`: the app's own API base, read back out of `loginUrl`. */
-function ownApiBaseOf(auth: PwappAuth | null): string | null {
-  const login = auth?.loginUrl
-  if (typeof login !== 'string' || !login.endsWith('/login')) return null
-  return login.slice(0, -'/login'.length)
+/** `run-app.ts` `dataServiceConfig.getAccessToken`, as written there (app door only). */
+function tokenFor(auth: PwappAuth | null, session: () => AppSession | null): (ref?: string) => Promise<string | null> {
+  const ownApiBase = ownApiBaseOf(auth)
+  return async (ref) => (isOwnApiRef(ref, ownApiBase) ? (session()?.token ?? null) : null)
 }
 
 const noHistory = { replaceState: () => undefined }
@@ -173,11 +173,7 @@ describe('the app door, end to end', () => {
     const login = await signIn(auth.loginUrl!, { email: 'dev@localhost', password: 'b' })
     let appSession: AppSession | null = (login as { ok: true; session: AppSession }).session
 
-    // run-app.ts `dataServiceConfig.getAccessToken`, as written there.
-    const getAccessToken = async (ref?: string): Promise<string | null> => {
-      if (!ref || !ownApiBase || ref.replace(/[/]+$/, '') !== ownApiBase) return null
-      return appSession?.token ?? null
-    }
+    const getAccessToken = tokenFor(auth, () => appSession)
     const service = new DataService({ getAccessToken })
     const receipt = await fetchJson<SurfaceReceipt>(`${s.base}/surfaces/home.receipt.json`, doorHeaders({ appSession: appSession.token, doorToken: undefined }))
     const orders = await fetchJson<SurfaceReceipt>(`${s.base}/surfaces/orders.receipt.json`, doorHeaders({ appSession: appSession.token, doorToken: undefined }))
@@ -253,6 +249,54 @@ describe('the app door, end to end', () => {
     })
     expect(failed.authError).toBe('provider_unavailable')
     expect(replaced).toEqual(['/'])
+  })
+})
+
+describe('a provider-only door reaches the records', () => {
+  it('sends the session from a gateway sign-in as a bearer on record requests', async () => {
+    served = await serve('l-social')
+    const s = served
+    const auth = s.host.envelopeEntries(s.origin)['auth.json'] as PwappAuth
+    // No password door: nothing to read a base from but the gateway and apiBase.
+    expect(auth.loginUrl).toBeUndefined()
+    expect(ownApiBaseOf(auth)).toBe(s.base)
+    // …and the gateway addresses alone give the same base, for a host that states no apiBase.
+    expect(ownApiBaseOf({ ...auth, apiBase: undefined })).toBe(s.base)
+
+    // The provider round trip, then boot reads the session off the gateway.
+    const start = await fetch(`${auth.startUrl}/github?returnTo=${encodeURIComponent('/#/home')}`, { redirect: 'manual' })
+    const back = await fetch(s.origin + start.headers.get('location')!, { redirect: 'manual' })
+    const cookie = back.headers.get('set-cookie')!.split(';')[0]!
+    const nativeFetch = globalThis.fetch
+    const withCookie: typeof fetch = (input, init) => nativeFetch(input, { ...init, headers: { ...(init?.headers as Record<string, string>), cookie } })
+    const project = projectOf(auth as unknown as Record<string, unknown>, false, 'app')
+    const boot = await bootSession({ project, auth, storage: memoryStorage(), appId: 'social', fetchImpl: withCookie, location: nowhere, history: noHistory })
+    const session = boot.session!
+    expect(session.token).toBeTruthy()
+
+    // Every request the data path makes, as the host sees it.
+    const sent: { url: string; authorization: string | null }[] = []
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push({ url: String(input), authorization: new Headers(init?.headers).get('authorization') })
+      return nativeFetch(input, init)
+    }) as typeof fetch)
+    const service = new DataService({ getAccessToken: tokenFor(auth, () => session) })
+    const source = { kind: 'rest', method: 'GET', endpoint: `${s.base}/records/Note`, authProviderRef: s.base, returns: 'data' }
+    service.registerSource({ id: 'notes', ...source } as never)
+    service.registerSource({ id: 'elsewhere', ...source, authProviderRef: 'https://third-party.example' } as never)
+
+    const write = await service.fetchData('notes', { method: 'POST', body: { text: 'mine' } })
+    expect(write.success).toBe(true)
+    const list = await service.fetchData<{ text: string }[]>('notes', { skipCache: true })
+    expect(list.success && list.data.map((n) => n.text)).toEqual(['mine'])
+    expect(sent.length).toBeGreaterThanOrEqual(2)
+    for (const r of sent) expect(r.authorization).toBe(`Bearer ${session.token}`)
+
+    // A ref that is not the app's own API gets no token, and the host refuses it.
+    sent.length = 0
+    const anon = await service.fetchData('elsewhere', { skipCache: true })
+    expect(anon.success).toBe(false)
+    expect(sent.map((r) => r.authorization)).toEqual([null])
   })
 })
 
