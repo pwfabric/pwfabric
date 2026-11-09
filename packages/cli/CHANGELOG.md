@@ -1,6 +1,6 @@
 # @pwfabric/cli
 
-## Unreleased
+## 1.2.0
 
 - Added: `@pwfabric/cli/host`, a public entry for hosts other than `pwf dev`: `accessOf`, `parseRule`, `RecordStore`, `rewriteEntitySources`, `authAddresses`, `createLocalHost`, `readAuth`, `readEntities`, `readSeed`, `HostError`, `DEFAULT_DEV_USER`, `SESSION_COOKIE`, with their types (`Access`, `AccessVerb`, `AccessReach`, `Target`, `Caller`, `ListAnswer`, `AggregateAnswer`, `Scope`, `AuthDeclaration`, `EntityDeclaration`, `EntityField`, `Principal`, `LocalHost`, `LocalHostOptions`, `CreateLocalHost`). `pwf dev` imports the same entry.
 - The envelope `auth.json` the local host writes states `apiBase` (every door, the external issuer included).

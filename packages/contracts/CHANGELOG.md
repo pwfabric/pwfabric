@@ -1,5 +1,9 @@
 # @pwfabric/contracts
 
+## 1.2.0
+
+- No changes; released with the other packages at 1.2.0.
+
 ## 1.1.0
 
 - No changes; released with the other packages at 1.1.0.

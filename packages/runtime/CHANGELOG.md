@@ -1,5 +1,9 @@
 # @pwfabric/runtime
 
+## 1.2.0
+
+- No changes; released with the other packages at 1.2.0.
+
 ## 1.1.0
 
 - A static source's `query` (sort, filter) is applied, and re-applied when the page state it reads changes.

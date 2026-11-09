@@ -1,5 +1,9 @@
 # @pwfabric/pack
 
+## 1.2.0
+
+- No changes; released with the other packages at 1.2.0.
+
 ## 1.1.0
 
 - `validatePack` reports app content (`APP_CONTENT_UNDECLARED`, `APP_CONTENT_INVALID`, `APP_CONTENT_ID`, `APP_CONTENT_UNREADABLE`), access rules (`APP_ACCESS_RULE`) and receipts the app does not serve (`APP_SURFACE_NOT_SERVED`).
