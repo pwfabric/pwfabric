@@ -1,0 +1,14 @@
+{
+  "entities": [
+    {
+      "typeId": "Note",
+      "fields": [
+        {
+          "name": "text",
+          "type": "text",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

@@ -372,7 +372,17 @@ async function l3Dev(browser, s) {
 // an app block with a form bound to the products source through
 // `platform/entities`. The source and the repeater are the spec app's own.
 const L3_LOOP = {
-  'app/definitions/auth.json': { required: true, topology: 'app', methods: ['password'] },
+  'app/definitions/auth.json': {
+    required: true,
+    topology: 'app',
+    methods: ['password'],
+    access: {
+      rules: [
+        { subject: 'public', model: 'Product', rule: 'read' },
+        { subject: 'member', model: 'Product', rule: 'create' },
+      ],
+    },
+  },
   'app/surfaces/products.receipt.json': {
     title: 'Products',
     blocks: [

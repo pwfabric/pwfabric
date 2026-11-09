@@ -93,6 +93,8 @@ function providersOf(auth: AuthDeclaration): string[] {
  *  - `app`: the password door when `password` is declared; the provider
  *    buttons and the start address for every declared provider method; the
  *    gateway's session and logout addresses for either; `methods` as declared.
+ *  - Either: `apiBase`, the base itself — where the app's records live, and
+ *    the only address the runner sends the visitor's session to.
  */
 export function authAddresses(auth: AuthDeclaration | undefined, base: string): Record<string, unknown> | undefined {
   if (!auth) return undefined
@@ -103,6 +105,7 @@ export function authAddresses(auth: AuthDeclaration | undefined, base: string): 
       : [...auth.issuer.scopes, 'offline_access']
     return {
       provider: 'oauth2-pkce',
+      apiBase: base,
       issuer: `${base}/oidc`,
       clientId: auth.issuer.clientId,
       scopes,
@@ -133,6 +136,9 @@ export function authAddresses(auth: AuthDeclaration | undefined, base: string): 
   door.gatewaySessionUrl ??= `${base}/_auth/session`
   door.gatewayLogoutUrl ??= `${base}/_auth/logout`
   door.methods = [...auth.methods]
+  // Stated, not left for the runner to infer: every door reaches the same
+  // records, and the runner sends the visitor's session to this base only.
+  door.apiBase = base
   return door
 }
 

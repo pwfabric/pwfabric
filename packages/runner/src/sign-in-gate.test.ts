@@ -405,6 +405,12 @@ describe('the gate on demand — an account control asked for sign-in', () => {
     expect(onDismiss).toHaveBeenCalledTimes(2)
   })
 
+  it('carries a refused arrival on an app that does not require sign-in', () => {
+    mountSignInGate(container, OPEN, fakeBridge(), { onDemand: true, initialError: 'Sign-in was cancelled.' })
+    expect(container.querySelector('#pwapp-sign-in-gate')).toBeTruthy()
+    expect(container.querySelector('[data-gate-error]')?.textContent).toBe('Sign-in was cancelled.')
+  })
+
   it('does not open for a visitor who is already signed in', () => {
     mountSignInGate(container, OPEN, fakeBridge({ session: { state: 'authenticated' } as never }), {
       onDemand: true,

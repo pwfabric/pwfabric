@@ -15,8 +15,9 @@ export { parseArgs } from './args.js'
 export { COMMANDS, findCommand } from './commands/registry.js'
 export type { Command, CommandIO, ParsedArgs } from './commands/types.js'
 export type { DevServer, DevServerOptions, DevBuildResult, StartDevServer } from './dev/types.js'
-export type { LocalHost, LocalHostOptions, CreateLocalHost } from './host/types.js'
-export { createLocalHost } from './host/local-host.js'
+// The host building blocks have their own entry, `@pwfabric/cli/host`.
+export type { LocalHost, LocalHostOptions, CreateLocalHost } from './host/index.js'
+export { createLocalHost } from './host/index.js'
 
 function help(io: CommandIO): void {
   io.out('Usage: pwf <command> [options]')

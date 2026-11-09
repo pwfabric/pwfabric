@@ -83,6 +83,7 @@ describe('envelopeEntries', () => {
       gatewaySessionUrl: `${base}/_auth/session`,
       gatewayLogoutUrl: `${base}/_auth/logout`,
       methods: ['password', 'google'],
+      apiBase: base,
     })
     expect(Object.keys(entries).sort()).toEqual(['auth.json', 'surfaces/home.receipt.json', 'surfaces/orders.receipt.json'])
     const home = entries['surfaces/home.receipt.json'] as { capabilities: { config?: { dataSources?: unknown[] } }[] }
@@ -127,6 +128,7 @@ describe('envelopeEntries', () => {
         gatewaySessionUrl: 'http://x/h/_auth/session',
         gatewayLogoutUrl: 'http://x/h/_auth/logout',
         methods: ['github', 'phiwebs'],
+        apiBase: 'http://x/h',
       },
     })
   })
@@ -146,6 +148,7 @@ describe('envelopeEntries', () => {
     const entries = createLocalHost({ root: fixture('l-issuer'), prefix: '/h' }).envelopeEntries('http://x')
     expect(entries['auth.json']).toEqual({
       provider: 'oauth2-pkce',
+      apiBase: 'http://x/h',
       issuer: 'http://x/h/oidc',
       clientId: 'client-1',
       scopes: ['openid', 'profile', 'email', 'offline_access'],
@@ -474,10 +477,19 @@ describe('records', () => {
     // Counting is not showing.
     const counted = await fetch(`${s.base}/records/Booking/count`)
     expect(((await counted.json()) as { data: { value: number } }).data.value).toBe(1)
+    // A count grant is the plain count only: a filter or a sum would read field values out one number at a time.
+    const byPhone = encodeURIComponent(JSON.stringify({ field: 'phone', operator: 'eq', value: '555' }))
+    const filtered = await fetch(`${s.base}/records/Booking/count?filter=${byPhone}`)
+    expect([filtered.status, await code(filtered)]).toEqual([401, 'SIGN_IN_REQUIRED'])
+    expect((await fetch(`${s.base}/records/Booking/aggregate?fn=count`)).status).toBe(401)
+    expect((await fetch(`${s.base}/records/Booking/aggregate?fn=sum&field=phone`)).status).toBe(401)
 
     const member = await signIn(s.base, 'someone@example.com')
     const memberList = await fetch(`${s.base}/records/Booking`, withSession(member))
     expect([memberList.status, await code(memberList)]).toEqual([403, 'FORBIDDEN'])
+    expect((await fetch(`${s.base}/records/Booking/count?filter=${byPhone}`, withSession(member))).status).toBe(403)
+    const memberCount = await fetch(`${s.base}/records/Booking/count`, withSession(member))
+    expect(((await memberCount.json()) as { data: { value: number } }).data.value).toBe(1)
     expect((await fetch(`${s.base}/records/Booking/${id}`, withSession(member, { ...json({ phone: '1' }), method: 'PATCH' }))).status).toBe(403)
     expect((await fetch(`${s.base}/records/Booking/${id}`, withSession(member, { method: 'DELETE' }))).status).toBe(403)
 
@@ -508,12 +520,24 @@ describe('records', () => {
     expect((await fetch(`${s.base}/records/Order/${id}`, withSession(b, { ...json({ qty: 9 }), method: 'PATCH' }))).status).toBe(404)
   })
 
-  it('leaves a model no rule names open to everyone', async () => {
+  it('closes a model no rule names once the app declares any rule', async () => {
     const s = await start('l-shop')
-    const made = await fetch(`${s.base}/records/Product`, json({ name: 'Bread' }))
+    expect((await fetch(`${s.base}/records/Stock`)).status).toBe(401)
+    expect((await fetch(`${s.base}/records/Stock/count`)).status).toBe(401)
+    expect((await fetch(`${s.base}/records/Stock`, json({ sku: 'a' }))).status).toBe(401)
+    // Signed in — even with every declared role — nobody was granted it.
+    const staff = await signIn(s.base)
+    expect((await fetch(`${s.base}/records/Stock`, withSession(staff))).status).toBe(403)
+    expect((await fetch(`${s.base}/records/Stock`, withSession(staff, json({ sku: 'a' })))).status).toBe(403)
+  })
+
+  it('leaves every model open when the app declares no rule at all', async () => {
+    const s = await start('l-members')
+    const token = await signIn(s.base, 'someone@example.com')
+    const made = await fetch(`${s.base}/records/Task`, withSession(token, json({ title: 'Bread' })))
     expect(made.status).toBe(201)
     const id = ((await made.json()) as { data: { id: string } }).data.id
-    expect((await fetch(`${s.base}/records/Product/${id}`, { method: 'DELETE' })).status).toBe(200)
+    expect((await fetch(`${s.base}/records/Task/${id}`, withSession(token, { method: 'DELETE' }))).status).toBe(200)
   })
 
   it('needs a session for every record when sign-in is required', async () => {

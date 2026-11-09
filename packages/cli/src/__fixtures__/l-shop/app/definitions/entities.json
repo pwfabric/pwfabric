@@ -74,6 +74,17 @@
           "type": "text"
         }
       ]
+    },
+    {
+      "typeId": "Stock",
+      "displayName": "Stock",
+      "fields": [
+        {
+          "name": "sku",
+          "type": "text",
+          "required": false
+        }
+      ]
     }
   ]
 }

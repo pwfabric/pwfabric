@@ -50,6 +50,7 @@ import { bootSession } from './boot-session.js'
 import { loadEnvelope } from './load-envelope.js'
 import { authErrorMessage } from './copy.js'
 import { renderNotFound } from './not-found.js'
+import { isOwnApiRef, ownApiBaseOf } from './api-base.js'
 import { receiptSurfaceId, startPreviewSession, type PreviewPage, type PreviewSession } from './preview-session.js'
 import type { PreviewSurface } from './preview-bridge.js'
 
@@ -146,19 +147,11 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   const initialError = boot.authError ? authErrorMessage(locale, boot.authError) : undefined
 
   /**
-   * This app's own API base, read back out of the door it was published with.
-   *
-   * `auth.json` writes the host's door as plain addresses — `loginUrl` is
-   * `<base>/login` — precisely so a published app carries no host name in its
-   * code. The same property makes the base recoverable here, which is
-   * what lets a data source say "my credential comes from this address"
-   * without either end hardcoding one.
+   * This app's own API base, read back out of the door it was published with
+   * (see api-base.ts) — the same way for a password door and a provider door,
+   * so a session from either reaches the app's records.
    */
-  const ownApiBase = ((): string | null => {
-    const login = (auth as { loginUrl?: string } | null)?.loginUrl
-    if (typeof login !== 'string' || !login.endsWith('/login')) return null
-    return login.slice(0, -'/login'.length)
-  })()
+  const ownApiBase = ownApiBaseOf(auth)
 
   const pages = project.surfaceOrder
   const entry = project.entrySurfaceId
@@ -267,7 +260,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   // The same dialog, opened by the app's own account control. Mounted on the
   // body so a route re-render (which replaces the container) cannot drop it.
   let closeOnDemandGate: (() => void) | null = null
-  const openGate = (): void => {
+  const showDialog = (message?: string): void => {
     closeOnDemandGate?.()
     closeOnDemandGate = mountSignInGate(document.body, project, bridge, {
       auth,
@@ -276,11 +269,18 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       onProviderSignIn: startProvider,
       themeVars,
       onDemand: true,
+      ...(message ? { initialError: message } : {}),
       onDismiss: () => {
         closeOnDemandGate = null
       },
     })
   }
+  const openGate = (): void => showDialog()
+  // An app that does not require sign-in has no wall to carry a refused
+  // arrival (Cancel on the platform screen, a provider error). Open the
+  // dialog with the message instead, so the visitor learns why they are
+  // still signed out and can try again or close it.
+  if (initialError && !appSession && !isGated(project, bridge, false)) showDialog(initialError)
   let pill: ReturnType<typeof mountSessionPill> | null = null
 
   // graph-lists connector instance survives route changes per login session
@@ -572,7 +572,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
          * yields a bridge token, and the API accepts a bearer of either.
          */
         getAccessToken: async (ref?: string): Promise<string | null> => {
-          if (!ref || !ownApiBase || ref.replace(/[/]+$/, '') !== ownApiBase) return null
+          if (!isOwnApiRef(ref, ownApiBase)) return null
           if (appSession?.token) return appSession.token
           return (await bridge?.getAccessToken()) ?? null
         },

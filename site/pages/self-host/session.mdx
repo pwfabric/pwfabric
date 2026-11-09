@@ -61,10 +61,12 @@ runner still gates it and shows the wall with a disabled sign-in button and
   "providers": [{ "method": "google" }],
   "startUrl": "/_auth/start", "gatewaySessionUrl": "/_auth/session",
   "gatewayLogoutUrl": "/_auth/logout", "methods": ["password","google"] }
-// app door with provider buttons only
+// app door with provider buttons only — the gateway on the app's origin,
+// so `apiBase` names where the records live
 { "provider": "platform", "providers": [{ "method": "github" }],
   "startUrl": "/_auth/start", "gatewaySessionUrl": "/_auth/session",
-  "gatewayLogoutUrl": "/_auth/logout", "methods": ["github"] }
+  "gatewayLogoutUrl": "/_auth/logout", "methods": ["github"],
+  "apiBase": "<base>" }
 ```
 
 `<base>` is the session server's base for this app — the same `<appApiBase>`
@@ -75,6 +77,10 @@ optional; absent, the runner discovers them.
 A provider button carries only its `method`. The client id, authorize URL and
 secret stay on the server; there is no `exchangeUrl`, no `redeem` mode and no
 provider `clientId`, `authorizeUrl` or `scopes` in the package.
+
+`apiBase` is optional in every shape: the app's own API base, where its
+records live. The runner reads it before any door address (see
+[Data and receipts](/self-host/data#where-the-base-url-comes-from)).
 
 Source: `packages/runner/src/types.ts` (`PwappAuth`).
 
@@ -186,7 +192,12 @@ When the stored session has no name or e-mail, the runner asks
 into the stored session; a failure leaves it as it was.
 The token rides on every receipt fetch as `x-app-session`, and on entity
 requests whose source ref equals the app's own API base as `Authorization:
-Bearer`; any other ref gets no token.
+Bearer`; any other ref gets no token. This holds for a session from **either**
+half of the door: a provider sign-in that boots from `/_auth/session` sends
+its token exactly as a password sign-in does. The base is `auth.json`
+`apiBase` when stated, else read off the door addresses (`loginUrl` without
+`/login`, …, `startUrl` without `/_auth/start`); see
+[Data and receipts](/self-host/data#where-the-base-url-comes-from).
 
 **Sign-out.** The account control (and an `auth:signOut` event) posts, in
 parallel and ignoring failures, `POST logoutUrl` with `x-app-session`
@@ -284,12 +295,11 @@ Source: `packages/runner/src/auth.ts`.
 
 ## Known limitations
 
-- **External issuer and the app's own records.** The runner recovers the
-  app's own API base only from `loginUrl`, which an external-issuer
-  `auth.json` does not carry. Such an app therefore sends no token on its own
-  record requests (receipts do carry the door token), and a session server
-  that gates records answers them `401 SIGN_IN_REQUIRED`. This is a known
-  limitation of format 1.0, to be resolved in a later format version; see
-  session-protocol §9.
+- **External issuer and the app's own records.** An external-issuer
+  `auth.json` carries no door address to read the app's API base from. Unless
+  it states `apiBase` (an optional member the runner reads; `pwf dev` writes
+  it), such an app sends no token on its own record requests (receipts do
+  carry the door token), and a session server that gates records answers them
+  `401 SIGN_IN_REQUIRED`; see session-protocol §9.
 - **Refresh-token rotation** is the issuer's policy; the runner only keeps the
   old refresh token when none is returned.
