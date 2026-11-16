@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev --port 3008",
-    "build": "next build && node scripts/sitemap.mjs",
+    "build": "next build && pagefind --site .next/server/app --output-path out/_pagefind && node scripts/sitemap.mjs",
     "start": "next start",
     "lint": "eslint .",
     "check:sitemap": "node scripts/check-sitemap.mjs",
@@ -16,10 +16,10 @@
   },
   "dependencies": {
     "next": "15.5.29",
-    "nextra": "3.3.1",
-    "nextra-theme-docs": "3.3.1",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "nextra": "4.6.1",
+    "nextra-theme-docs": "4.6.1",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
   },
   "devDependencies": {
     "@eslint/eslintrc": "3.3.5",
@@ -28,6 +28,7 @@
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
     "eslint-config-next": "15.5.29",
+    "pagefind": "1.6.0",
     "typescript": "^5.4.0"
   }
 }
