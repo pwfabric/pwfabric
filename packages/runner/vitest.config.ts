@@ -13,16 +13,16 @@ export default mergeConfig(
       coverage: {
         // @pwfabric/runner — a MISSING floor is not a PASSING floor.
         //
-        // lines/statements sit BELOW the project's ≥80% floor; the gap is
-        // concentrated in entity-facade.ts and router.ts. The floors sit a
-        // few points under the measured value — enough to catch a real
-        // regression without pretending the package clears a floor it does
-        // not. Raising them follows coverage work on those two modules.
+        // The floors sit a few points under the measured value — enough to
+        // catch a real regression without pretending the package clears a
+        // floor it does not. Measured with Vitest 4 after router.dom.test.ts
+        // covered the router's browser half: lines 97.3, statements 95.6,
+        // functions 96.1, branches 90.1.
         thresholds: {
-          lines: 65,
-          branches: 85,
-          functions: 70,
-          statements: 65,
+          lines: 92,
+          branches: 87,
+          functions: 92,
+          statements: 92,
         },
         exclude: [
           'vite.config.ts',

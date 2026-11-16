@@ -3,9 +3,9 @@ import { createRouter } from './router.js'
 
 /**
  * `createRouter` reads `location` once at construction (base derivation) and
- * on `current()`. Node env has no location — stub the minimal shape. `start()`
- * (window listeners) stays untested here per the package's law: browser
- * orchestration is proven by the pwapp export self-test.
+ * on `current()`. Node env has no location — stub the minimal shape. The
+ * browser half (`start()` listeners, anchor scrolling, mode resolution) runs
+ * under jsdom in `router.dom.test.ts`.
  */
 const realLocation = (globalThis as { location?: Location }).location
 
