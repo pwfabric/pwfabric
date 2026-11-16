@@ -98,7 +98,7 @@ export function validateBlockProps(
   return {
     valid: false,
     errors: result.error.issues.map(
-      (i: { path: (string | number)[]; message: string }) => `${i.path.join('.')}: ${i.message}`
+      (i) => `${i.path.map(String).join('.')}: ${i.message}`
     ),
   }
 }

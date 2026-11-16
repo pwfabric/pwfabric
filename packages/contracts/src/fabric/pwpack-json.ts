@@ -116,9 +116,9 @@ export const PwpackEnginesSchema = z.object({
   pwfabric: z
     .string()
     .min(1)
-    .refine(isValidSemverRange, (range) => ({
-      message: `engines.pwfabric "${range}" is not a semver range`,
-    }))
+    .refine(isValidSemverRange, {
+      error: (issue) => `engines.pwfabric "${String(issue.input)}" is not a semver range`,
+    })
     .optional(),
 })
 
@@ -157,6 +157,6 @@ export function safeParsePwpackIdentity(input: unknown): PwpackIdentityValidatio
   if (parsed.success) return { ok: true, value: parsed.data as PwpackIdentity }
   return {
     ok: false,
-    issues: parsed.error.issues.map((i) => (i.path.length ? `${i.path.join('.')}: ${i.message}` : i.message)),
+    issues: parsed.error.issues.map((i) => (i.path.length ? `${i.path.map(String).join('.')}: ${i.message}` : i.message)),
   }
 }

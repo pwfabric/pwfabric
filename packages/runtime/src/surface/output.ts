@@ -96,7 +96,7 @@ export function createWebOutput(options: {
   if (!dataResult.success) {
     return {
       success: false,
-      errors: dataResult.error.issues.map((i) => `data.${i.path.join('.')}: ${i.message}`),
+      errors: dataResult.error.issues.map((i) => `data.${i.path.map(String).join('.')}: ${i.message}`),
     }
   }
 
@@ -132,7 +132,7 @@ export function createApiOutput(options: {
   if (!dataResult.success) {
     return {
       success: false,
-      errors: dataResult.error.issues.map((i) => `data.${i.path.join('.')}: ${i.message}`),
+      errors: dataResult.error.issues.map((i) => `data.${i.path.map(String).join('.')}: ${i.message}`),
     }
   }
 
@@ -168,7 +168,7 @@ export function createCliOutput(options: {
   if (!dataResult.success) {
     return {
       success: false,
-      errors: dataResult.error.issues.map((i) => `data.${i.path.join('.')}: ${i.message}`),
+      errors: dataResult.error.issues.map((i) => `data.${i.path.map(String).join('.')}: ${i.message}`),
     }
   }
 

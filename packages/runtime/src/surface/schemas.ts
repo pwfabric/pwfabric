@@ -48,8 +48,8 @@ export const bindingJsonSchema = z.object({
   alias: z.string().optional(),
   transform: z
     .object({
-      input: z.record(z.unknown()).optional(),
-      output: z.record(z.unknown()).optional(),
+      input: z.record(z.string(), z.unknown()).optional(),
+      output: z.record(z.string(), z.unknown()).optional(),
     })
     .optional(),
 })
@@ -75,7 +75,7 @@ export const bindingJsonSchema = z.object({
 export const layoutJsonSchema: z.ZodType = z.lazy(() =>
   z.object({
     type: z.string().min(1, 'Layout must have a type'),
-    props: z.record(z.unknown()).optional(),
+    props: z.record(z.string(), z.unknown()).optional(),
     children: z.array(layoutJsonSchema).optional(),
     slot: z.string().optional(),
     if: z.string().optional(),

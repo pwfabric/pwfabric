@@ -33,7 +33,7 @@ export const blockSnapshotSchema: z.ZodType<any> = z.lazy(() =>
   z.object({
     id: z.string().min(1).optional(),
     type: z.string().min(1),
-    props: z.record(z.unknown()).optional(),
+    props: z.record(z.string(), z.unknown()).optional(),
     // Visual style overrides. Each prop value is EITHER a flat CSS
     // string OR a per-breakpoint ResponsiveValue map. The runtime renders the
     // base (xs) value inline and emits scoped media-query CSS for the larger
@@ -41,7 +41,7 @@ export const blockSnapshotSchema: z.ZodType<any> = z.lazy(() =>
     // (strip) any responsive object value on persist.
     style: z
       .record(
-        z.union([
+        z.string(), z.union([
           z.string(),
           z
             .object({
@@ -61,9 +61,9 @@ export const blockSnapshotSchema: z.ZodType<any> = z.lazy(() =>
     // these records. Without them here z.object would strip them on persist.
     states: z
       .object({
-        hover: z.record(z.string()).optional(),
-        active: z.record(z.string()).optional(),
-        focus: z.record(z.string()).optional(),
+        hover: z.record(z.string(), z.string()).optional(),
+        active: z.record(z.string(), z.string()).optional(),
+        focus: z.record(z.string(), z.string()).optional(),
       })
       .optional(),
     // Conditional-state styling (aria/data/disabled/checked/:has variants). Each
@@ -71,7 +71,7 @@ export const blockSnapshotSchema: z.ZodType<any> = z.lazy(() =>
     // `[data-block-id]<selector>{…}` rules. Without this here z.object would
     // strip it on persist.
     conditionalStates: z
-      .array(z.object({ selector: z.string(), style: z.record(z.string()) }))
+      .array(z.object({ selector: z.string(), style: z.record(z.string(), z.string()) }))
       .optional(),
     // Group-hover styling (Tailwind `group` + `group-hover:`). `groupRoot` marks
     // a hover-source ancestor; `groupStates.hover` are decls applied to a
@@ -81,10 +81,10 @@ export const blockSnapshotSchema: z.ZodType<any> = z.lazy(() =>
     groupRoot: z.boolean().optional(),
     groupStates: z
       .object({
-        hover: z.record(z.string()).optional(),
+        hover: z.record(z.string(), z.string()).optional(),
       })
       .optional(),
-    layout: z.record(z.unknown()).optional(),
+    layout: z.record(z.string(), z.unknown()).optional(),
     // Conditional visibility (resolve-expressions): the renderer hides a block
     // whose `visibleWhen` / `if` expression (e.g. "{{state.formOpen}}") is falsy.
     // Without these here, z.object stripped them on persist — so create_surface/
@@ -125,7 +125,7 @@ export const surfaceThemeSchema = z
     // `card` is the container colour's one name; the old `surface` key is
     // refused rather than ignored, so a theme written for it fails loudly.
     colors: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .refine((c) => !('surface' in c), {
         message: 'colors.surface is not a theme colour — use colors.card',
         path: ['surface'],
@@ -201,7 +201,7 @@ export const dataSourceSchema = z.object({
   // object instead: {{<id>.value}}. Backs the read half of the
   // entities CRUD capability (EntityDataSource).
   entityType: z.string().optional(),
-  query: z.record(z.unknown()).optional(),
+  query: z.record(z.string(), z.unknown()).optional(),
   /**
    * The response property holding the list — `data`, `products`, or absent
    * when the body IS the array. Without it, a `rest` source hands the binding
@@ -238,7 +238,7 @@ export const dataSourceSchema = z.object({
     .object({
       fn: z.enum(['count', 'sum', 'avg']),
       field: z.string().optional(),
-      filter: z.record(z.unknown()).optional(),
+      filter: z.record(z.string(), z.unknown()).optional(),
     })
     .optional(),
 })
@@ -291,7 +291,7 @@ export type SurfaceBehaviorDecl = z.infer<typeof surfaceBehaviorSchema>
 export const capabilityBindingSchema = z.object({
   capability: z.string(),
   required: z.boolean(),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
 })
 
 // ============================================================

@@ -41,10 +41,10 @@ export function validateProps<TProps extends Record<string, unknown>>(
     }
   }
 
-  const errors: BlockValidationError[] = result.error.errors.map((e) => ({
+  const errors: BlockValidationError[] = result.error.issues.map((e) => ({
     code: 'VALIDATION_ERROR',
     message: e.message,
-    path: e.path.join('.'),
+    path: e.path.map(String).join('.'),
   }))
 
   return {

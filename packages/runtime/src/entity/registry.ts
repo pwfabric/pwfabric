@@ -129,7 +129,7 @@ export class InMemoryEntityRegistry implements EntityRegistry {
     }
 
     const errors: EntityValidationError[] = result.error.issues.map((issue) => ({
-      field: issue.path.join('.') || '_root',
+      field: issue.path.map(String).join('.') || '_root',
       message: issue.message,
       code: issue.code,
     }))

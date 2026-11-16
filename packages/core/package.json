@@ -46,14 +46,14 @@
     "@pwfabric/contracts": "workspace:*"
   },
   "peerDependencies": {
-    "zod": "^3.23.0"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.12",
     "typescript": "^5.4.0",
     "vitest": "^4.1.12",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "publishConfig": {
     "access": "public"

@@ -326,9 +326,9 @@ export const PwpackPackRequirementSchema = z
     range: z
       .string()
       .min(1, 'requires.packs[].range is required')
-      .refine(isValidSemverRange, (range) => ({
-        message: `requires.packs[].range "${range}" is not a semver range`,
-      })),
+      .refine(isValidSemverRange, {
+        error: (issue) => `requires.packs[].range "${String(issue.input)}" is not a semver range`,
+      }),
   })
   .strict()
 
@@ -372,7 +372,7 @@ export function validatePwpackRequirements(packId: string, requires: unknown): P
   const parsed = PwpackRequirementsSchema.safeParse(requires)
   const issues: string[] = parsed.success
     ? []
-    : parsed.error.issues.map((i) => (i.path.length ? `${i.path.join('.')}: ${i.message}` : i.message))
+    : parsed.error.issues.map((i) => (i.path.length ? `${i.path.map(String).join('.')}: ${i.message}` : i.message))
   if (parsed.success) {
     const self = packRefKey(packId)
     parsed.data.packs?.forEach((p, i) => {

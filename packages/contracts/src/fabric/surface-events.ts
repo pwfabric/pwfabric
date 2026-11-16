@@ -114,7 +114,7 @@ export type SurfaceEventNamespace = keyof typeof SURFACE_EVENT_NAMESPACE_REGISTR
  */
 export const SURFACE_EVENT_PAYLOAD_SCHEMAS = {
   'form:submit': z.object({
-    values: z.record(z.any()),
+    values: z.record(z.string(), z.any()),
     formId: z.string(),
     timestamp: z.number(),
   }),
@@ -136,14 +136,14 @@ export const SURFACE_EVENT_PAYLOAD_SCHEMAS = {
   'entity:created': z.object({
     entityType: z.string(),
     instanceId: z.string(),
-    data: z.record(z.any()),
+    data: z.record(z.string(), z.any()),
     timestamp: z.number(),
   }),
   'entity:updated': z.object({
     entityType: z.string(),
     instanceId: z.string(),
-    data: z.record(z.any()),
-    changeset: z.record(z.any()).optional(),
+    data: z.record(z.string(), z.any()),
+    changeset: z.record(z.string(), z.any()).optional(),
     timestamp: z.number(),
   }),
   'entity:deleted': z.object({

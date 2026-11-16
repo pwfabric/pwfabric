@@ -156,11 +156,11 @@ export const AppearanceBrandSchema = z
 
 export const AppearanceConfigSchema = z
   .object({
-    theme: z.record(z.unknown()).optional(),
-    darkTheme: z.record(z.unknown()).optional(),
-    styleVariables: z.record(z.string()).optional(),
-    keyframes: z.record(z.string()).optional(),
-    extensions: z.record(z.unknown()).optional(),
+    theme: z.record(z.string(), z.unknown()).optional(),
+    darkTheme: z.record(z.string(), z.unknown()).optional(),
+    styleVariables: z.record(z.string(), z.string()).optional(),
+    keyframes: z.record(z.string(), z.string()).optional(),
+    extensions: z.record(z.string(), z.unknown()).optional(),
     mode: AppearanceModeSchema.optional(),
     brand: AppearanceBrandSchema.optional(),
   })

@@ -89,7 +89,7 @@ const blockNodeSchema: z.ZodType<SurfaceBlockNode> = z.lazy(() =>
     .object({
       id: z.string().min(1).optional(),
       type: z.string().min(1).max(256),
-      props: z.record(z.unknown()).optional(),
+      props: z.record(z.string(), z.unknown()).optional(),
       children: z.array(blockNodeSchema).optional(),
     })
     .passthrough()
@@ -98,11 +98,11 @@ const blockNodeSchema: z.ZodType<SurfaceBlockNode> = z.lazy(() =>
 /** Mirrors `AppearanceConfigSchema`: token groups are data, variables and keyframes are strings. */
 const appearanceConfigSchema = z
   .object({
-    theme: z.record(z.unknown()).optional(),
-    darkTheme: z.record(z.unknown()).optional(),
-    styleVariables: z.record(z.string()).optional(),
-    keyframes: z.record(z.string()).optional(),
-    extensions: z.record(z.unknown()).optional(),
+    theme: z.record(z.string(), z.unknown()).optional(),
+    darkTheme: z.record(z.string(), z.unknown()).optional(),
+    styleVariables: z.record(z.string(), z.string()).optional(),
+    keyframes: z.record(z.string(), z.string()).optional(),
+    extensions: z.record(z.string(), z.unknown()).optional(),
     mode: z
       .object({
         policy: z.enum(['light', 'dark', 'system']).optional(),
@@ -128,7 +128,7 @@ const capabilityBindingSchema = z
   .object({
     capability: z.string().min(1),
     required: z.boolean().optional(),
-    config: z.record(z.unknown()).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough()
 

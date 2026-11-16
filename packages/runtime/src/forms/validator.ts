@@ -213,7 +213,7 @@ function formatZodErrors(error: ZodError): Record<string, string[]> {
   const errors: Record<string, string[]> = {}
 
   for (const issue of error.issues) {
-    const path = issue.path.join('.')
+    const path = issue.path.map(String).join('.')
     if (!errors[path]) {
       errors[path] = []
     }

@@ -113,7 +113,7 @@ function warnOnSchemaMismatch(
 ): void {
   const result = schema.safeParse(defaultProps)
   if (!result.success) {
-    const errors = result.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
+    const errors = result.error.issues.map((e) => `${e.path.map(String).join('.')}: ${e.message}`).join(', ')
     console.warn(`[pwfabric] block "${type}": defaultProps do not match schema (${errors}). Fix at authoring.`)
   }
 }
@@ -337,7 +337,7 @@ export function createBlockInstance<TProps extends Record<string, unknown>>(
   // Validate merged props
   const result = definition.schema.safeParse(mergedProps)
   if (!result.success) {
-    const errors = result.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')
+    const errors = result.error.issues.map((e) => `${e.path.map(String).join('.')}: ${e.message}`).join(', ')
     throw new Error(`Invalid block props: ${errors}`)
   }
 
