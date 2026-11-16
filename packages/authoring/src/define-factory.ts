@@ -106,8 +106,8 @@ function validateConfig<TConfig extends FactoryConfig>(
     }
   }
 
-  const errors: FactoryValidationError[] = result.error.errors.map((e) => ({
-    path: e.path.join('.'),
+  const errors: FactoryValidationError[] = result.error.issues.map((e) => ({
+    path: e.path.map(String).join('.'),
     message: e.message,
   }))
 

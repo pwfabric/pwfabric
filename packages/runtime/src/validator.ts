@@ -159,7 +159,7 @@ export function isValidationFailure<T>(
 export function formatValidationErrors(errors: ValidationError[]): string {
   return errors
     .map((e) => {
-      const path = e.path.length > 0 ? `${e.path.join('.')}: ` : ''
+      const path = e.path.length > 0 ? `${e.path.map(String).join('.')}: ` : ''
       return `${path}${e.message} (${e.code})`
     })
     .join('\n')

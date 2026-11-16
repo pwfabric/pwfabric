@@ -416,7 +416,7 @@ export class HttpEntityConnector implements EntityConnector {
         }
 
         const jsonData = await response.json()
-        const data = z.record(z.unknown()).parse(jsonData)
+        const data = z.record(z.string(), z.unknown()).parse(jsonData)
         return { success: true, data }
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err)

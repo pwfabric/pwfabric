@@ -38,7 +38,7 @@ export const persistenceCapabilityConfigSchema = z
   .object({
     // Declarative seed payload (moved off surface root)
     dataSources: z.array(dataSourceSchema).optional(),
-    initialState: z.record(z.unknown()).optional(),
+    initialState: z.record(z.string(), z.unknown()).optional(),
     // Declared event→action behaviors (see surfaceBehaviorSchema). Merged
     // with host-provided (world DB) behaviors by DataBoundSurfaceRenderer.
     behaviors: z.array(surfaceBehaviorSchema).optional(),

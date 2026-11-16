@@ -907,8 +907,8 @@ const traitNameSchema = z.string().regex(/^[a-z][a-z0-9-]*$/, 'trait names must 
 
 export const AtomBlockDefinitionMetadataSchema = z
   .object({
-    props: z.array(z.record(z.unknown())),
-    defaultProps: z.record(z.unknown()),
+    props: z.array(z.record(z.string(), z.unknown())),
+    defaultProps: z.record(z.string(), z.unknown()),
     canHaveChildren: z.boolean(),
     allowedParents: z.array(z.string().min(1)).optional(),
     icon: z.string().optional(),
@@ -1067,7 +1067,7 @@ export const engineDeclarationSchema = z
     /** Path template — `{entityType}` plus any binding named by `resolve.as`. */
     path: z.string().min(1),
     /** Fixed query parameters the API requires (e.g. `expand=fields`). */
-    params: z.record(z.string()).optional(),
+    params: z.record(z.string(), z.string()).optional(),
     auth: z.object({ type: z.enum(['bearer', 'api-key', 'basic', 'none']) }).strict(),
     read: z
       .object({

@@ -74,7 +74,7 @@ const stringProp = z.string().optional()
 const numberProp = z.number().optional()
 const booleanProp = z.boolean().optional()
 const anyArrayProp = z.array(z.unknown()).optional()
-const styleProp = z.record(z.unknown()).optional()
+const styleProp = z.record(z.string(), z.unknown()).optional()
 
 // Helper for blocks whose schema would otherwise be empty — keeps tests
 // that walk `Object.keys(schema.shape)` from observing zero props.

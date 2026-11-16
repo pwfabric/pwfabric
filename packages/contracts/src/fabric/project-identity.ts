@@ -228,7 +228,9 @@ export const ProjectIdentitySchema = z
     topology: IdentityTopologySchema.default('app'),
     methods: z.array(IdentityMethodSchema).default([]),
     // Keyed by SOCIAL method: a `phiwebs` or `password` key fails here.
-    connections: z.record(SocialMethodSchema, IdentityConnectionSchema).default({}),
+    // Partial: a project connects only the methods it uses (zod 4's
+    // z.record with an enum key would require every one).
+    connections: z.partialRecord(SocialMethodSchema, IdentityConnectionSchema).default({}),
     issuer: ProjectIdentityIssuerSchema.optional(),
     claims: ProjectIdentityClaimsSchema.default({ subject: 'sub', email: 'email', name: 'name' }),
   })

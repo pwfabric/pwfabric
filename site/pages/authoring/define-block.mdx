@@ -179,7 +179,7 @@ const result = validateBlock(
   PricingCard,
 )
 // result.valid === false
-// result.errors → [{ code: 'VALIDATION_ERROR', path: 'price', message: 'Expected number, received string' }]
+// result.errors → [{ code: 'VALIDATION_ERROR', path: 'price', message: 'Invalid input: expected number, received string' }]
 console.log(formatValidationErrors(result.errors))
 ```
 

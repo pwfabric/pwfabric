@@ -87,7 +87,7 @@ export const omitTransformConfigSchema = z.object({
 
 export const customTransformConfigSchema = z.object({
   handler: z.string().min(1),
-  params: z.record(z.unknown()).optional(),
+  params: z.record(z.string(), z.unknown()).optional(),
 })
 
 /**
@@ -135,7 +135,7 @@ export function validateTransformConfig(
 
   return {
     valid: false,
-    errors: result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
+    errors: result.error.issues.map((i) => `${i.path.map(String).join('.')}: ${i.message}`),
   }
 }
 

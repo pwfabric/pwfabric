@@ -113,6 +113,6 @@ export function safeParseMediaProvenance(input: unknown): MediaProvenanceValidat
   if (parsed.success) return { ok: true, value: parsed.data as MediaProvenance }
   return {
     ok: false,
-    issues: parsed.error.issues.map((i) => (i.path.length ? `${i.path.join('.')}: ${i.message}` : i.message)),
+    issues: parsed.error.issues.map((i) => (i.path.length ? `${i.path.map(String).join('.')}: ${i.message}` : i.message)),
   }
 }
