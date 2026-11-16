@@ -1005,6 +1005,11 @@ export interface AtomFileManifest {
    */
   readonly scopes?: readonly AtomScopeDeclaration[]
   /**
+   * The entities this connector/provider serves and their row fields — see
+   * {@link ConnectorEntityDeclaration}. Absent: the row fields are unknown.
+   */
+  readonly entities?: readonly ConnectorEntityDeclaration[]
+  /**
    * Where a forked atom came from. ABSENT MEANS
    * AN ORIGINAL ATOM. Present, it names the upstream pack id and version, the
    * upstream atom id, and the upstream source hash at fork time — what the
@@ -1091,6 +1096,99 @@ export const engineDeclarationSchema = z
 
 export type EngineDeclaration = z.infer<typeof engineDeclarationSchema>
 
+// ============================================================
+// CONNECTOR / PROVIDER ENTITY DECLARATION
+// ============================================================
+
+/**
+ * The field types a connector entity declares — the five an app's own
+ * entities use (`app/definitions/entities.json`), so a composer reads a
+ * connector's rows and an app's records the same way.
+ */
+export const CONNECTOR_ENTITY_FIELD_TYPES = ['text', 'number', 'boolean', 'date', 'relation'] as const
+export type ConnectorEntityFieldType = (typeof CONNECTOR_ENTITY_FIELD_TYPES)[number]
+
+/**
+ * One field of the rows a connector entity serves.
+ *
+ * WHY. Every data source binds row objects and a page reads a row field by
+ * name (`{{item.title}}`, a block's `*Field`/`*Key` prop). For an app's own
+ * entities the names are declared; for a connector they lived only in prose
+ * and in the engine's row mapper, so a composer had to guess them and a
+ * validator could not tell a misspelt field from a real one. Declared here,
+ * they are the known field set of that entity.
+ *
+ * The shape is an app entity field's: `name`, `type`, `label?`, `required?`,
+ * and `targetTypeId` on a `relation` (naming another entity the same atom
+ * declares) and on no other type. `required` means every row carries a
+ * value. `id` is not declared: every row carries it.
+ */
+export interface ConnectorEntityField {
+  readonly name: string
+  readonly type: ConnectorEntityFieldType
+  readonly label?: string
+  readonly required?: boolean
+  readonly targetTypeId?: string
+}
+
+const connectorEntityFieldBase = {
+  name: z.string().min(1),
+  label: z.string().optional(),
+  required: z.boolean().optional(),
+}
+
+export const ConnectorEntityFieldSchema = z.union([
+  z.object({ ...connectorEntityFieldBase, type: z.enum(['text', 'number', 'boolean', 'date']) }).strict(),
+  z
+    .object({ ...connectorEntityFieldBase, type: z.literal('relation'), targetTypeId: z.string().min(1).optional() })
+    .strict(),
+])
+
+/**
+ * One entity a connector or provider serves: the `entityType` a data source
+ * names, and the fields of its rows.
+ *
+ * A DECLARATION FOR HOSTS, NOT A FILTER. A composer binds the declared fields
+ * and a validator checks reads against them; the engine does not read it. A
+ * row MAY carry fields beyond the declared ones; the declared ones are the
+ * contract. A connector whose entity types are not fixed (a SharePoint list
+ * the user names) declares none.
+ */
+export interface ConnectorEntityDeclaration {
+  readonly entityType: string
+  readonly displayName?: string
+  readonly fields: readonly ConnectorEntityField[]
+}
+
+export const ConnectorEntityDeclarationSchema = z
+  .object({
+    entityType: z.string().min(1),
+    displayName: z.string().optional(),
+    fields: z.array(ConnectorEntityFieldSchema),
+  })
+  .strict()
+
+/**
+ * The known row fields of each entity a connector or provider manifest
+ * declares: `entityType` → `id`, then the declared field names in order. An
+ * entity the manifest does not declare is absent — its row fields are
+ * unknown, which is not the same as "none".
+ *
+ * Reads `entities` only, so a host can pass a knowledge file that does not
+ * parse as a whole manifest.
+ */
+export function connectorEntityFields(manifest: {
+  readonly entities?: readonly ConnectorEntityDeclaration[]
+}): Map<string, string[]> {
+  const out = new Map<string, string[]>()
+  for (const entity of manifest.entities ?? []) {
+    const names = new Set(out.get(entity.entityType) ?? ['id'])
+    for (const field of entity.fields) names.add(field.name)
+    out.set(entity.entityType, [...names])
+  }
+  return out
+}
+
 export const AtomFileManifestSchema = z
   .object({
     id: z.string().min(1),
@@ -1113,6 +1211,8 @@ export const AtomFileManifestSchema = z
     // a connector atom may state its engine rather than
     // compile one. Absent, the atom behaves exactly as before.
     engine: engineDeclarationSchema.optional(),
+    // the entities a connector serves and the fields of their rows.
+    entities: z.array(ConnectorEntityDeclarationSchema).optional(),
     // Fork origin: absent = an original atom.
     forkedFrom: atomForkOriginSchema.optional(),
   })
