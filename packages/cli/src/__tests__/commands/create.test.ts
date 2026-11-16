@@ -21,7 +21,7 @@ describe('pwf create', () => {
     expect(identity).toMatchObject({
       id: '@pwpack/local/my-shop',
       version: '0.1.0',
-      formatVersion: '1.0',
+      formatVersion: '1.1',
       requires: [{ id: '@pwpack/fixture/foundation', range: '^1.0.0' }],
       license: { fork: true, redistribute: true },
       app: { entry: 'home', surfaceOrder: ['home'] },

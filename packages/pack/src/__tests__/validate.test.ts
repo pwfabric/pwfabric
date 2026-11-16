@@ -55,6 +55,25 @@ describe('validatePack — identity', () => {
     expect(codes(withIdentity({ id: 'x', version: '1', formatVersion: '1.7' }))).toEqual([])
   })
 
+  it('accepts the listing members and tokens (format 1.1), under 1.1 and 1.0 alike', () => {
+    const listed = { name: 'Shop', description: 'Blocks for a shop.', category: 'ecommerce', tokens: ['--pw-color-primary-ink'] }
+    for (const formatVersion of ['1.1', '1.0']) {
+      const v = withIdentity({ id: 'x', version: '1', formatVersion, ...listed })
+      expect(v.issues, formatVersion).toEqual([])
+      expect(v.identity).toMatchObject(listed)
+    }
+  })
+
+  it('reports a malformed listing member or token as IDENTITY_INVALID, naming the member', () => {
+    const v = withIdentity({ id: 'x', version: '1', name: '', category: 'E-Commerce', tokens: ['pw-color'] })
+    expect(codes(v, 'error')).toEqual(['IDENTITY_INVALID', 'IDENTITY_INVALID', 'IDENTITY_INVALID'])
+    expect(v.issues.map((i) => i.message)).toEqual([
+      'pwpack.json name: name must be a non-empty string',
+      'pwpack.json category: category must be a lowercase slug, e.g. "ui-design"',
+      'pwpack.json tokens.0: each token must be a CSS custom property name, e.g. "--pw-color-primary-ink"',
+    ])
+  })
+
   it('notes a legacy package.json', () => {
     const v = withIdentity({ id: 'x', version: '1' }, { 'package.json': '{}' })
     expect(v.ok).toBe(true)

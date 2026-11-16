@@ -1,5 +1,10 @@
 # @pwfabric/pack
 
+## Unreleased
+
+- Added (minor): `validatePack` checks the `pwpack.json` format 1.1 members `name`, `description`, `category` and `tokens`; a malformed one is an `IDENTITY_INVALID` error whose message names the member. They are accepted without a warning under `formatVersion` 1.0 too.
+- Added: `deriveManifest` carries `description` into `PwpackManifest.description` and `tokens` into `PwpackManifest.requires.tokens`. `name` and `category` have no place in `PwpackManifest` and are not carried.
+
 ## 2.0.0
 
 - No changes; released with the other packages at 2.0.0.
