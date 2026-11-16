@@ -116,11 +116,11 @@ needs `"type": "module"`.
 **1. Install the authoring package.**
 
 ```bash
-pnpm add @pwfabric/authoring @pwfabric/runtime @pwfabric/contracts zod@3 react react-dom
+pnpm add @pwfabric/authoring @pwfabric/runtime @pwfabric/contracts zod@4 react react-dom
 pnpm add -D typescript @types/react tsx
 ```
 
-PWFabric uses zod 3: `zod@3` matters, because a bare `zod` installs zod 4.
+PWFabric uses zod 4 (`^4.6.6`). A project still on zod 3 stays on the 1.x packages.
 `typescript` and `@types/react` type-check the block; `tsx` runs the
 TypeScript examples below (`npx tsx check.ts`).
 

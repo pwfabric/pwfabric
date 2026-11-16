@@ -69,7 +69,7 @@ export const priceTag = defineBlock({
 These packages are at **1.2.0**, published on npm
 (`npm install @pwfabric/authoring`). They are ES
 modules only: a project that imports them sets `"type": "module"`. Blocks
-take `zod@3`.
+take `zod@4`.
 
 Full documentation is at [pwfabric.com](https://pwfabric.com).
 
