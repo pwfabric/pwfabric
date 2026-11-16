@@ -8,8 +8,10 @@
  *    connector:'graph-lists'}` routes through a `ConnectorEngineRegistry`:
  *    when a loaded engine is registered under that connection name the read
  *    goes through it (constructed with the world connection's config);
- *    absent engine/config keeps today's behavior (default facade or honest
- *    empty + `__errors` context), never a crash.
+ *    absent engine/config keeps today's behavior (the host's entity facade
+ *    or honest empty / `fallback` + `__errors` context), never a crash. A
+ *    source with no `connector` is the app's own records; no connection is
+ *    implied for it.
  * 2. engine-bridge path — pack blocks get their connections/config from the
  *    runtime-provided connections context (`SurfaceConnectionsContext`).
  *    On the platform the value comes from the project's connections doc +

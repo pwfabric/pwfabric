@@ -1,12 +1,12 @@
 /**
  * Pages, pointed at the local host's records.
  *
- * A receipt declares its data as `entity` sources; with no `connector` the
- * runner would look for a connection named `graph-lists` that a local app does
- * not have. A publisher that hosts the app's records MAY rewrite such a
- * source into a `rest` source against its record endpoints (data-protocol
- * §2.2), and that is what this does for every source whose `entityType` the
- * app declares:
+ * A receipt declares its data as `entity` sources; one with no `connector` is
+ * the app's own records of its `entityType` (data-protocol §2.2). A publisher
+ * that hosts the app's records MAY rewrite such a source into a `rest` source
+ * against its record endpoints, and that is what this does for every source
+ * whose `entityType` the app declares — so a page reads its records here
+ * whether or not the app has a door to state an `apiBase` in `auth.json`:
  *
  *   list       → { kind: "rest", method: "GET", endpoint: "<base>/records/<T>",
  *                  authProviderRef: "<base>", returns: "data", query? }
@@ -18,6 +18,11 @@
  * `authProviderRef` equal to the base is what makes the runner attach the
  * visitor's session as a bearer token (session-protocol §7). Sources that name
  * a connector, or a type the app does not declare, are left as written.
+ *
+ * The runner applies the same rewrite itself when it knows the app's API base
+ * (`@pwfabric/runner` `ownRecordsReceipt`). The two are not one module because
+ * runner.js ships as a single browser file this Node host must not load; the
+ * runner's `own-records.test.ts` pins both to the same output.
  */
 
 type Json = Record<string, unknown>

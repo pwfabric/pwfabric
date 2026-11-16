@@ -52,8 +52,9 @@ export interface SurfaceDataSource {
   readonly query?: Record<string, unknown>
 
   /**
-   * Which data-plane engine serves this source (e.g. 'graph-lists').
-   * Absent = platform default facade. (dialect unification
+   * Which connection serves this source (e.g. 'graph-lists'). Absent =
+   * the app's own records of `entityType` (data-protocol §2.2); no
+   * connection is ever implied. (dialect unification
    * the runner already read this field; the contract now declares it).
    */
   readonly connector?: string

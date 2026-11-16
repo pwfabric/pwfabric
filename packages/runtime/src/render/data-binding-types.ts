@@ -55,8 +55,10 @@ export interface SurfaceDataSourceDefinition {
    * Contract parity with `dataSourceSchema.connector`: which
    * data-plane engine serves this entity source (e.g. 'graph-lists').
    * Routed through the host-provided `ConnectorEngineRegistry` when the
-   * connection is registered there; absent/unregistered = the default
-   * entity facade path (today's behavior).
+   * connection is registered there; absent/unregistered = the host's
+   * entity facade, when it provides one. Absent means the app's own records
+   * of `entityType` (data-protocol §2.2) — the reference runner serves those
+   * from the app's record endpoints, never from a default connection.
    */
   readonly connector?: string
   /**

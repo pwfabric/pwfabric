@@ -1,5 +1,13 @@
 # @pwfabric/runner
 
+## Unreleased
+
+- Changed (behaviour, changes the documented default): an `entity` data source with no `connector` reads the app's own records of its `entityType` (data-protocol §2.2). Until now the runner bound it to a connection named `graph-lists` (Microsoft SharePoint lists), contradicting the spec's examples and `pwf dev`. Now:
+  - with the app's own API base known (`ownApiBaseOf(auth)`), the source is served from the record endpoints exactly as `pwf dev` serves it: `{ kind: "rest", method: "GET", endpoint: "<base>/records/<T>", authProviderRef: "<base>", returns: "data" }`, an aggregate at `/records/<T>/count` or `/records/<T>/aggregate?fn=&field=&filter=`;
+  - without one, no facade is built for it and it draws its `fallback`.
+  A connection — `graph-lists` included — serves a source only when the source (or its form binding) names it. An app that relied on the implicit `graph-lists` default must name `connector: "graph-lists"`.
+- Added: `ownRecordsSource`, `ownRecordsCapabilities`, `ownRecordsReceipt` (the pure rewrite) are exported.
+
 ## 2.0.0
 
 - Changed (breaking): `zod` is a peer dependency at `^4.6.6` (was `^3.23.0`). zod 3 has no fix for GHSA “Zod can exhaust memory while validating oversized constrained collections”. A project on zod 3 stays on 1.x.

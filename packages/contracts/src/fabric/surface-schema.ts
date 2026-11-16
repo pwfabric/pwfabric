@@ -209,8 +209,8 @@ export const dataSourceSchema = z.object({
    * a block bound to a list cannot take both.
    */
   returns: z.string().optional(),
-  // which data-plane engine serves this source (e.g. 'graph-lists');
-  // absent = platform default facade.
+  // which connection serves this source (e.g. 'graph-lists'); absent =
+  // the app's own records of `entityType` (data-protocol §2.2).
   connector: z.string().optional(),
   // reference to the world connection/auth binding BY NAME;
   // never carries credential values (auth law).

@@ -163,8 +163,8 @@ export interface AddDataSourceMutation {
   /** `kind:'entity'` — optional filter/sort/pagination passed to the facade. */
   readonly query?: Record<string, unknown>
   /**
-   * which data-plane engine serves this source (e.g.
-   * 'graph-lists'); absent = platform default facade.
+   * which connection serves this source (e.g. 'graph-lists'); absent =
+   * the app's own records of `entityType` (data-protocol §2.2).
    */
   readonly connector?: string
   /**
@@ -193,8 +193,8 @@ export interface UpdateDataSourceMutation {
   /** `kind:'entity'` — optional filter/sort/pagination passed to the facade. */
   readonly query?: Record<string, unknown>
   /**
-   * which data-plane engine serves this source (e.g.
-   * 'graph-lists'); absent = platform default facade.
+   * which connection serves this source (e.g. 'graph-lists'); absent =
+   * the app's own records of `entityType` (data-protocol §2.2).
    */
   readonly connector?: string
   /**
