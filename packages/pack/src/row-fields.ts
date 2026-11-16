@@ -75,15 +75,25 @@ export type RowFieldSets = ReadonlyMap<string, readonly string[]>
  * envelope is added here). A source missing from the result has no known set.
  */
 export function rowFieldSets(receipt: unknown, entities: RowFieldSets): Map<string, string[]> {
-  const out = new Map<string, string[]>()
+  return new Map([...knownSources(receipt, entities)].map(([id, k]) => [id, k.fields]))
+}
+
+interface KnownSource {
+  readonly fields: string[]
+  /** Where the fields come from, for the message: `the entity "T"`, `its staticData`, `its fallback rows`. */
+  readonly basis: string
+}
+
+function knownSources(receipt: unknown, entities: RowFieldSets): Map<string, KnownSource> {
+  const out = new Map<string, KnownSource>()
   for (const source of dataSourcesOf(receipt)) {
     const id = source['id']
     if (typeof id !== 'string' || !id || source['aggregate'] !== undefined) continue
     const fields = new Set<string>()
-    let known = false
-    const addRows = (rows: unknown): void => {
+    const basis: string[] = []
+    const addRows = (rows: unknown, from: string): void => {
       if (!Array.isArray(rows) || rows.length === 0 || !rows.every(isRecord)) return
-      known = true
+      basis.push(from)
       for (const row of rows) for (const k of Object.keys(row)) fields.add(k)
     }
     const kind = source['kind']
@@ -91,14 +101,14 @@ export function rowFieldSets(receipt: unknown, entities: RowFieldSets): Map<stri
     if (kind === 'entity' && typeof entityType === 'string' && source['connector'] === undefined) {
       const declared = entities.get(entityType)
       if (declared) {
-        known = true
+        basis.push(`the entity "${entityType}"`)
         for (const f of declared) fields.add(f)
         for (const f of RECORD_ENVELOPE_FIELDS) fields.add(f)
       }
     }
-    if (kind === 'static') addRows(source['staticData'])
-    addRows(source['fallback'])
-    if (known) out.set(id, [...fields])
+    if (kind === 'static') addRows(source['staticData'], 'its staticData')
+    addRows(source['fallback'], 'its fallback rows')
+    if (basis.length > 0) out.set(id, { fields: [...fields], basis: basis.join(' and ') })
   }
   return out
 }
@@ -223,23 +233,24 @@ function fieldPropReads(props: Record<string, unknown>, sources: RowFieldSets): 
  * message; `path` is the issue's path.
  */
 export function checkReceiptRowFields(receipt: unknown, entities: RowFieldSets, path: string, surface: string): PackIssue[] {
-  const sources = rowFieldSets(receipt, entities)
+  const known = knownSources(receipt, entities)
+  const sources: RowFieldSets = new Map([...known].map(([id, k]) => [id, k.fields]))
   if (sources.size === 0 || !isRecord(receipt) || !Array.isArray(receipt['blocks'])) return []
   const issues: PackIssue[] = []
   const seen = new Set<string>()
   const report = (blockId: string, read: Read): void => {
-    const known = sources.get(read.source) as string[]
-    if (known.includes(read.field)) return
+    const { fields, basis } = known.get(read.source) as KnownSource
+    if (fields.includes(read.field)) return
     const key = `${blockId}\0${read.source}\0${read.field}`
     if (seen.has(key)) return
     seen.add(key)
-    const listed = known.slice(0, LISTED_FIELDS).join(', ')
-    const more = known.length > LISTED_FIELDS ? `, … and ${known.length - LISTED_FIELDS} more` : ''
+    const listed = fields.slice(0, LISTED_FIELDS).join(', ')
+    const more = fields.length > LISTED_FIELDS ? `, … and ${fields.length - LISTED_FIELDS} more` : ''
     issues.push({
       severity: 'warning',
       code: 'FIELD_UNKNOWN',
       path,
-      message: `surface "${surface}", block "${blockId}" reads field "${read.field}" of source "${read.source}", whose rows have no such field (known: ${listed}${more}); it renders empty`,
+      message: `surface "${surface}", block "${blockId}" reads field "${read.field}" of source "${read.source}", whose rows have no such field (known from ${basis}: ${listed}${more}); it renders empty`,
     })
   }
   const walk = (node: unknown, scope: string | undefined, where: string): void => {

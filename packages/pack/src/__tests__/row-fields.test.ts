@@ -61,7 +61,7 @@ describe('checkReceiptRowFields — repeat templates', () => {
         code: 'FIELD_UNKNOWN',
         path: 'app/surfaces/home.receipt.json',
         message:
-          'surface "home", block "name" reads field "title" of source "products", whose rows have no such field (known: name, price, tags, id, entityType, createdAt, updatedAt); it renders empty',
+          'surface "home", block "name" reads field "title" of source "products", whose rows have no such field (known from the entity "Product": name, price, tags, id, entityType, createdAt, updatedAt); it renders empty',
       },
     ])
   })
@@ -118,6 +118,14 @@ describe('checkReceiptRowFields — repeat templates', () => {
     const issues = check(page([repeater([{ type: 'text', props: { a: '{{item.x}}', b: '{{item.x}}' } }])]))
     expect(issues).toHaveLength(1)
     expect(issues[0]?.message).toContain('block "text at blocks[0].children[0]"')
+  })
+
+  it('says where the known fields come from', () => {
+    const news = { id: 'news', kind: 'entity', entityType: 'Product', fallback: [{ Title: 'x' }] }
+    const steps = { id: 'steps', kind: 'static', staticData: [{ label: 'x' }], fallback: [{ label: 'y' }] }
+    const messages = check(page([repeater([text('a', '{{item.nope}}')], '{{news}}'), repeater([text('b', '{{item.nope}}')], '{{steps}}')], [news, steps])).map((i) => i.message)
+    expect(messages[0]).toContain('(known from the entity "Product" and its fallback rows: name,')
+    expect(messages[1]).toContain('(known from its staticData and its fallback rows: label)')
   })
 
   it('caps the list of known fields', () => {
