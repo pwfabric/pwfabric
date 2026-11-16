@@ -1,5 +1,9 @@
 # @pwfabric/pack
 
+## 2.0.0
+
+- No changes; released with the other packages at 2.0.0.
+
 ## 1.2.0
 
 - No changes; released with the other packages at 1.2.0.

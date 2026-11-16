@@ -1,5 +1,9 @@
 # @pwfabric/core
 
+## 2.0.0
+
+- Changed (breaking): `zod` is a peer dependency at `^4.6.6` (was `^3.23.0`). zod 3 has no fix for GHSA “Zod can exhaust memory while validating oversized constrained collections”. A project on zod 3 stays on 1.x.
+
 ## 1.2.0
 
 - No changes; released with the other packages at 1.2.0.
