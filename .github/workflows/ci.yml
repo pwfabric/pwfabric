@@ -204,6 +204,10 @@ jobs:
       - name: Spec conformance
         run: node scripts/spec-conformance.mjs
 
+      # Each BSL package's LICENSE names the version it ships with.
+      - name: Licences name their versions
+        run: node scripts/check-licences.mjs
+
   # ── THE CLI ON EVERY OS ─────────────────────────────────────────────────
   # `pwf` and its workspace dependencies built and tested on Linux, Windows
   # and macOS, then a smoke (create → validate → pack twice → build) through

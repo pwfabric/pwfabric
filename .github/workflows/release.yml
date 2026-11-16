@@ -37,6 +37,10 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
+      # The BSL Change Date is four years after this release (LICENCE.md).
+      - name: Licences name this version and its Change Date
+        run: node scripts/check-licences.mjs --release "$(date -u +%F)"
+
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
