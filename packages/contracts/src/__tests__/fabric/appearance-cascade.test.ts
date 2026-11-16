@@ -223,7 +223,9 @@ describe('deriveDarkTheme', () => {
 
   it('keeps brand and semantic hues so the theme stays recognisable', () => {
     const dark = deriveDarkTheme(light)
-    expect(dark.colors?.primary).toBe('#4f46e5')
+    // Indigo #4f46e5 is 3.05:1 on the dark page but 2.74:1 on the derived card,
+    // so it moves ONE lightness step (still indigo) and no further.
+    expect(dark.colors?.primary).toBe('#645ce8')
     expect(dark.colors?.error).toBe(light.colors?.error)
     expect(dark.colors?.success).toBe(light.colors?.success)
   })
@@ -329,6 +331,42 @@ describe('deriveDarkTheme', () => {
     expect(deriveDarkTheme(light)).toEqual(deriveDarkTheme(light))
   })
 
+  // ------------------------------------------------------------------
+  // Control visibility on the CARD, not only the page
+  // ------------------------------------------------------------------
+  //
+  // The card is one elevation step lighter than the dark page, so a primary
+  // lifted just past 3:1 on the page can fall under it on the card. Measured on
+  // a first-party theme (light primary #18181b): the derived primary #60606c was
+  // 3.09:1 on the page and 2.75:1 on the card its buttons sit on.
+
+  it('lifts a neutral primary until it clears 3:1 on the derived card too', () => {
+    const zinc: SurfaceTheme = {
+      ...DEFAULT_APPEARANCE_THEME,
+      colors: { ...DEFAULT_APPEARANCE_THEME.colors, primary: '#18181b' },
+    }
+    const dark = deriveDarkTheme(zinc).colors!
+    expect(dark.card).toBeDefined()
+    expect(contrast(dark.primary!, dark.background!)).toBeGreaterThanOrEqual(3)
+    expect(contrast(dark.primary!, dark.card!)).toBeGreaterThanOrEqual(3)
+  })
+
+  it('keeps every derived primary and accent at 3:1 on page and card across hues', () => {
+    for (const hue of [0, 30, 60, 120, 180, 220, 270, 320]) {
+      for (const lightness of [0.1, 0.2, 0.3]) {
+        const colour = hslToHexForTest(hue, 0.6, lightness)
+        const dark = deriveDarkTheme({
+          ...DEFAULT_APPEARANCE_THEME,
+          colors: { ...DEFAULT_APPEARANCE_THEME.colors, primary: colour, accent: colour },
+        }).colors!
+        for (const key of ['primary', 'accent'] as const) {
+          expect(contrast(dark[key]!, dark.background!), `${key} ${colour} on page`).toBeGreaterThanOrEqual(3)
+          expect(contrast(dark[key]!, dark.card!), `${key} ${colour} on card`).toBeGreaterThanOrEqual(3)
+        }
+      }
+    }
+  })
+
   it('covers every hue sector of the HSL conversion', () => {
     // hslToHex branches on the 60-degree sector; drive all six so none rots.
     const hues = ['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff']
@@ -414,3 +452,11 @@ describe('primary-ink is not tied to the card', () => {
     expect(vars['--pw-color-primary-ink']).toBeDefined()
   })
 })
+
+function hslToHexForTest(h: number, s: number, l: number): string {
+  const k = (n: number) => (n + h / 30) % 12
+  const a = s * Math.min(l, 1 - l)
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
+  const hex = (x: number) => Math.round(x * 255).toString(16).padStart(2, '0')
+  return `#${hex(f(0))}${hex(f(8))}${hex(f(4))}`
+}
