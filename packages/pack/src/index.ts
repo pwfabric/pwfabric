@@ -16,6 +16,7 @@
  *   deriveManifest(...)  PackFolder      → PwpackManifest
  *   mediaDeclarations()  PackFolder      → media declarations + bytes + provenance
  *   checkBlockProps(...) PackFolder      → receipt props that do not fit the block manifests (warnings)
+ *   checkRowFields(pack) PackFolder      → row fields receipts read that their sources lack
  *
  * @module @pwfabric/pack
  */
@@ -80,3 +81,11 @@ export {
   type BlockPropsEntry,
   type BlockSource,
 } from './block-props.js'
+export {
+  checkReceiptRowFields,
+  checkRowFields,
+  entityFieldSets,
+  RECORD_ENVELOPE_FIELDS,
+  rowFieldSets,
+  type RowFieldSets,
+} from './row-fields.js'

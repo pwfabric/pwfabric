@@ -130,6 +130,38 @@ describe('pwf validate', () => {
     expect(JSON.parse(c.out.join('\n')).issues[0]).toMatchObject({ code: 'PIN_INVALID', severity: 'error' })
   })
 
+  it('warns about a row field the bound source does not have, and keeps the exit code', async () => {
+    const { root } = await created()
+    await mkdir(join(root, 'app', 'definitions'), { recursive: true })
+    await writeFile(
+      join(root, 'app', 'definitions', 'entities.json'),
+      JSON.stringify({ entities: [{ typeId: 'Product', fields: [{ name: 'name', type: 'text' }] }] })
+    )
+    await writeFile(
+      join(root, 'app', 'definitions', 'auth.json'),
+      JSON.stringify({ access: { rules: [{ subject: 'public', model: 'Product', rule: 'read' }] } })
+    )
+    const home = JSON.parse(await readFile(join(root, 'app', 'surfaces', 'home.receipt.json'), 'utf8'))
+    const receipt = (field: string) => ({
+      ...home,
+      blocks: [
+        ...home.blocks,
+        { id: 'list', type: 'repeater', repeat: '{{products}}', children: [{ id: 'n', type: 'text', props: { content: `{{item.${field}}}` } }] },
+      ],
+      capabilities: [{ capability: 'platform/persistence', config: { dataSources: [{ id: 'products', kind: 'entity', entityType: 'Product' }] } }],
+    })
+    await writeFile(join(root, 'app', 'surfaces', 'home.receipt.json'), JSON.stringify(receipt('title')))
+    const c = capture(root)
+    expect(await main(['validate'], c.io)).toBe(0)
+    expect(c.out.filter((l) => l.includes('FIELD_UNKNOWN'))).toEqual([
+      expect.stringContaining('FIELD_UNKNOWN app/surfaces/home.receipt.json: surface "home", block "n" reads field "title" of source "products"'),
+    ])
+    await writeFile(join(root, 'app', 'surfaces', 'home.receipt.json'), JSON.stringify(receipt('name')))
+    const d = capture(root)
+    expect(await main(['validate'], d.io)).toBe(0)
+    expect(d.out.join('\n')).not.toContain('FIELD_UNKNOWN')
+  })
+
   it('names the folder when there is no identity, and fails on a missing folder', async () => {
     const cwd = await tempDir()
     const c = capture(cwd)
