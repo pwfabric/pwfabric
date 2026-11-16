@@ -49,6 +49,79 @@ describe('pwf validate', () => {
     expect(c.err.at(-1)).toContain('@pwpack/a/b@1.0.0: invalid (1 error, 1 warning; layout rootless; 1 atoms)')
   })
 
+  it('warns about block props that do not fit the manifests of the app and its packs', async () => {
+    const { root } = await created()
+    const pill = join(root, 'atoms', 'blocks', 'custom', 'pill')
+    await mkdir(pill, { recursive: true })
+    await writeFile(join(pill, 'component.tsx'), 'export default function Pill() { return null }')
+    await writeFile(
+      join(pill, 'manifest.json'),
+      JSON.stringify({
+        id: 'custom.pill',
+        kind: 'block',
+        version: '1.0.0',
+        name: 'pill',
+        state: 'stable',
+        knowledge: { purpose: 'p', useCases: ['u'], composesWith: [], antiPatterns: ['a'] },
+        definition: {
+          props: [
+            { name: 'size', jsonSchema: { type: 'string', enum: ['small', 'medium', 'large'] } },
+            { name: 'count', jsonSchema: { type: 'number' } },
+          ],
+          defaultProps: {},
+          canHaveChildren: false,
+        },
+      })
+    )
+    const receiptPath = join(root, 'app', 'surfaces', 'home.receipt.json')
+    const receipt = JSON.parse(await readFile(receiptPath, 'utf8'))
+    receipt.blocks.push(
+      { id: 'p1', type: 'pill', props: { size: 'sm', count: '3' } },
+      { id: 'p2', type: 'pill', props: { size: '{{state.size}}', count: 'n: {{state.n}}' } },
+      { id: 'b1', type: 'button', props: { label: 'Go', size: 'sm' } }
+    )
+    await writeFile(receiptPath, JSON.stringify(receipt))
+
+    const c = capture(root)
+    expect(await main(['validate'], c.io)).toBe(0)
+    expect(c.out[0]).toBe('Warnings (3):')
+    expect(c.out.slice(1, 4)).toEqual([
+      expect.stringContaining('BLOCK_PROP_ENUM app/surfaces/home.receipt.json: blocks['),
+      expect.stringContaining('BLOCK_PROP_TYPE app/surfaces/home.receipt.json'),
+      expect.stringContaining('BLOCK_PROP_UNKNOWN app/surfaces/home.receipt.json'),
+    ])
+    expect(c.out[1]).toContain('(pill "p1") sets size = "sm", which custom.pill does not accept (allowed: "small", "medium", "large")')
+    expect(c.out[3]).toContain('(button "b1") sets "size", which control.button does not declare (its props: label, href)')
+
+    const j = capture(root)
+    expect(await main(['validate', '--json'], j.io)).toBe(0)
+    const result = JSON.parse(j.out.join('\n'))
+    expect(result.ok).toBe(true)
+    expect(result.issues.filter((i: { code: string }) => i.code.startsWith('BLOCK_PROP_')).map((i: { severity: string }) => i.severity)).toEqual([
+      'warning',
+      'warning',
+      'warning',
+    ])
+  })
+
+  it('checks the receipts of a pack that is not an app, and nothing without an identity', async () => {
+    const cwd = await tempDir()
+    const receipt = JSON.stringify({ blocks: [{ type: 'pill', props: { nope: 1 } }] })
+    await mkdir(join(cwd, 'app', 'surfaces'), { recursive: true })
+    await mkdir(join(cwd, 'atoms', 'blocks', 'custom', 'pill'), { recursive: true })
+    await writeFile(join(cwd, 'atoms', 'blocks', 'custom', 'pill', 'component.tsx'), '')
+    await writeFile(join(cwd, 'atoms', 'blocks', 'custom', 'pill', 'manifest.json'), JSON.stringify({ definition: { props: [] } }))
+    await writeFile(join(cwd, 'app', 'surfaces', 'x.receipt.json'), receipt)
+    const blockCodes = async (): Promise<string[]> => {
+      const c = capture(cwd)
+      await main(['validate', '--json'], c.io)
+      return JSON.parse(c.out.join('\n')).issues.map((i: { code: string }) => i.code).filter((code: string) => code.startsWith('BLOCK_PROP_'))
+    }
+    expect(await blockCodes()).toEqual([])
+    await writeFile(join(cwd, 'pwpack.json'), JSON.stringify({ id: '@pwpack/a/b', version: '1.0.0' }))
+    expect(await blockCodes()).toEqual(['BLOCK_PROP_UNKNOWN'])
+  })
+
   it('reports an unusable pin id as an error', async () => {
     const cwd = await tempDir()
     await writeFile(join(cwd, 'pwpack.json'), JSON.stringify({ id: '@pwpack/a/b', version: '1.0.0', packs: [{ id: '../x', version: '1.0.0', hash: 'h' }] }))

@@ -15,6 +15,7 @@
  *   hashPack(pack)       PackFolder      → content hash of the pack content (framing-independent)
  *   deriveManifest(...)  PackFolder      → PwpackManifest
  *   mediaDeclarations()  PackFolder      → media declarations + bytes + provenance
+ *   checkBlockProps(...) PackFolder      → receipt props that do not fit the block manifests (warnings)
  *
  * @module @pwfabric/pack
  */
@@ -63,3 +64,19 @@ export {
   type PackLayout,
   type PackValidation,
 } from './validate.js'
+export {
+  atomManifestPath,
+  BLOCK_PROP_ENUM,
+  BLOCK_PROP_TYPE,
+  BLOCK_PROP_UNKNOWN,
+  blockPropDescriptors,
+  blockPropsCatalog,
+  blockTypeNames,
+  checkBlockProps,
+  checkReceiptBlockProps,
+  isBinding,
+  type BlockPropDescriptor,
+  type BlockPropsCatalog,
+  type BlockPropsEntry,
+  type BlockSource,
+} from './block-props.js'

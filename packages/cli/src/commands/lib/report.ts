@@ -4,10 +4,11 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { hashPack, validatePack, type PackFolder, type PackIssue, type PackValidation } from '@pwfabric/pack'
+import { blockPropsCatalog, checkBlockProps, hashPack, validatePack, type PackFolder, type PackIssue, type PackValidation } from '@pwfabric/pack'
 import type { CommandIO } from '../types.js'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { pinsOf } from './identity.js'
+import { loadSources } from '../../dev/sources.js'
 import { readAuth, readEntities, readReceipt, readSeed, surfaceKeys, type AuthDeclaration } from '../../host/definitions.js'
 
 /**
@@ -170,11 +171,27 @@ export function checkAccess(root: string): PackIssue[] {
   return issues
 }
 
-/** `validatePack` plus {@link checkPins}, {@link checkSeeds}, {@link checkEntities} and {@link checkAccess}, as one result. */
+/**
+ * Block props in the folder's receipts (`app/surfaces/*.receipt.json`) that do not fit the blocks' manifests
+ * (`BLOCK_PROP_UNKNOWN`, `BLOCK_PROP_ENUM`, `BLOCK_PROP_TYPE`; warnings, as the
+ * runtime renders them anyway). Block types resolve as `pwf dev` resolves them:
+ * the app's own blocks first, then its pinned packs from `.pwf/packs/` in pin
+ * order. A pack that is not cached contributes nothing (its pin is reported).
+ */
+export async function checkProps(root: string, identity: PackValidation['identity']): Promise<PackIssue[]> {
+  if (!identity) return []
+  const sources = await loadSources(root)
+  if (!sources.app) return []
+  const catalog = blockPropsCatalog([sources.app, ...sources.packs].map((s) => ({ folder: s.folder, atoms: s.validation.atoms })))
+  return checkBlockProps(sources.app.folder, catalog)
+}
+
+/** `validatePack` plus {@link checkPins}, {@link checkSeeds}, {@link checkEntities}, {@link checkAccess} and {@link checkProps}, as one result. */
 export async function validateProject(root: string, pack: PackFolder): Promise<PackValidation> {
   const result = validatePack(pack)
   const pinIssues = await checkPins(root, result.identity)
-  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root)]
+  const propIssues = await checkProps(root, result.identity)
+  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...propIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 
