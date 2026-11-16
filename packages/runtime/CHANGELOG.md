@@ -1,5 +1,10 @@
 # @pwfabric/runtime
 
+## 2.0.0
+
+- Changed (breaking): `zod` is a peer dependency at `^4.6.6` (was `^3.23.0`). zod 3 has no fix for GHSA “Zod can exhaust memory while validating oversized constrained collections”. A project on zod 3 stays on 1.x.
+- Form and surface validation report zod 4's messages (`Invalid input: expected number, received string`); a field path is joined from its keys as strings.
+
 ## 1.2.0
 
 - No changes; released with the other packages at 1.2.0.
