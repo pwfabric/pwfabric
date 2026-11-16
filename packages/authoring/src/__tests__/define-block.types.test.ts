@@ -42,7 +42,9 @@ function diagnostics(source: string): string[] {
   }
 }
 
-describe('defineBlock() infers props from the schema', () => {
+// Each test runs the TypeScript compiler over a fixture; under a parallel
+// coverage run that takes longer than the 5 s default.
+describe('defineBlock() infers props from the schema', { timeout: 30_000 }, () => {
   it('accepts the quick-start block: an optional field with a default value', () => {
     const errors = diagnostics(`
       import { defineBlock } from '${SRC}'

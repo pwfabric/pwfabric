@@ -6,7 +6,14 @@ export default mergeConfig(
   defineConfig({
     test: {
       coverage: {
-        exclude: ['vitest.config.ts', 'vitest.setup.ts', 'src/__tests__/**'],
+        exclude: [
+          'vitest.config.ts',
+          'vitest.setup.ts',
+          'src/__tests__/**',
+          // Browser-only: PerformanceObserver and the Performance timeline do not
+          // exist under Node (same exclusion as @pwfabric/runtime's web-vitals.ts).
+          'src/monitoring/web-vitals.ts',
+        ],
         thresholds: {
           // 80% floor on every metric.
           lines: 80,

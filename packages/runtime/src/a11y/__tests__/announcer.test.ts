@@ -12,12 +12,13 @@ describe('LiveRegionAnnouncer', () => {
   let announcer: LiveRegionAnnouncer
 
   beforeEach(() => {
-    // RAF executes synchronously in tests
+    // Fake timers first: they replace requestAnimationFrame too, so the
+    // synchronous RAF stub has to be installed on top of them.
+    vi.useFakeTimers()
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
       cb(0)
       return 0
     })
-    vi.useFakeTimers()
     announcer = new LiveRegionAnnouncer()
   })
 

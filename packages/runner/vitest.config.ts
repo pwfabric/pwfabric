@@ -18,9 +18,13 @@ export default mergeConfig(
         // few points under the measured value — enough to catch a real
         // regression without pretending the package clears a floor it does
         // not. Raising them follows coverage work on those two modules.
+        //
+        // branches 85 → 82 with Vitest 4: its AST-aware v8 remapping counts
+        // the router's untested `start()` listeners as real branches (84.7%
+        // measured on the same code and tests that read 89.8% under Vitest 2).
         thresholds: {
           lines: 65,
-          branches: 85,
+          branches: 82,
           functions: 70,
           statements: 65,
         },
