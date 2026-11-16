@@ -13,6 +13,12 @@
  * @module @pwfabric/embed/embed-global
  */
 
+// FIRST, before the re-export below: a re-export loads its module too, and
+// ES modules load in the order they are named. zod must be jitless before any
+// bundled module defines a schema, or the page reports a CSP eval violation
+// (see zod-jitless.ts).
+import './zod-jitless.js'
+
 export {
   render,
   renderFat,
