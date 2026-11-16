@@ -120,11 +120,11 @@ export const SURFACE_EVENT_PAYLOAD_SCHEMAS = {
   }),
   'form:change': z.object({
     field: z.string(),
-    value: z.any(),
+    value: z.any().optional(),
     formId: z.string(),
   }),
   'input:change': z.object({
-    value: z.any(),
+    value: z.any().optional(),
     inputId: z.string(),
     validationResult: z
       .object({

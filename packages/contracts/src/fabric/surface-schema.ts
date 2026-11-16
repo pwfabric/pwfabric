@@ -252,7 +252,7 @@ export const dataSourceSchema = z.object({
  * union one-to-one; `navigate` URLs are guarded at dispatch (http(s)/relative).
  */
 export const surfaceActionSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('setState'), key: z.string().min(1), value: z.unknown() }),
+  z.object({ type: z.literal('setState'), key: z.string().min(1), value: z.unknown().optional() }),
   z.object({ type: z.literal('refresh'), sourceId: z.string().min(1) }),
   z.object({ type: z.literal('refreshAll') }),
   z.object({ type: z.literal('showBlock'), blockId: z.string().min(1) }),

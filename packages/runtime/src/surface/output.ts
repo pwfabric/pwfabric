@@ -57,7 +57,7 @@ const webOutputDataSchema = z.object({
 })
 
 const apiOutputDataSchema = z.object({
-  json: z.unknown(),
+  json: z.unknown().optional(),
   status: z.number().int().min(100).max(599),
 })
 

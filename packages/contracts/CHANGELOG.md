@@ -1,5 +1,9 @@
 # @pwfabric/contracts
 
+## Unreleased
+
+- Fixed: a `setState` action without `value` (`{ "type": "setState", "key": "k" }`) parses again, as in 1.x, and so do `form:change` / `input:change` event payloads without `value`. zod 3 treated an object member typed `z.unknown()` / `z.any()` as optional; zod 4 makes it required, which 2.0.0 did not account for. Those members are now `.optional()`; the inferred types are back to `value?: unknown`.
+
 ## 2.0.0
 
 - Changed (breaking): `zod` is a peer dependency at `^4.6.6` (was `^3.23.0`). zod 3 has no fix for GHSA “Zod can exhaust memory while validating oversized constrained collections”. A project on zod 3 stays on 1.x.
