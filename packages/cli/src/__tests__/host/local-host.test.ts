@@ -343,15 +343,16 @@ describe('provider sign-in through the gateway', () => {
 })
 
 describe('records', () => {
-  it('lists seeded rows newest first, with filter, sort, limit and offset', async () => {
+  it('lists seeded rows in file order, with filter, sort, limit and offset', async () => {
     const s = await start('l-shop')
     const all = (await (await fetch(`${s.base}/records/Product`)).json()) as {
       data: { id: string; name: string; entityType: string; createdAt: string }[]
       meta: { total: number; scope: string; timestamp: string }
     }
-    expect(all.data.map((r) => r.name)).toEqual(['Cocoa', 'Coffee', 'Tea'])
-    expect(all.data[2]).toMatchObject({ id: 'p1', entityType: 'Product', price: 4 })
-    expect(all.data[0]!.createdAt).toBe('2026-01-01T00:00:00.000Z')
+    // The seed's order — not newest-touched first, which reversed every list.
+    expect(all.data.map((r) => r.name)).toEqual(['Tea', 'Coffee', 'Cocoa'])
+    expect(all.data[0]).toMatchObject({ id: 'p1', entityType: 'Product', price: 4 })
+    expect(all.data[2]!.createdAt).toBe('2026-01-01T00:00:00.000Z')
     expect(all.meta).toMatchObject({ total: 3, scope: 'project' })
 
     const q = new URLSearchParams({
@@ -388,8 +389,12 @@ describe('records', () => {
     const patched = await fetch(`${s.base}/records/Product/${c.id}`, { ...json({ data: { price: 7 } }), method: 'PATCH' })
     const p = (await patched.json()) as { data: { name: string; price: number; createdAt: string } }
     expect(p.data).toMatchObject({ name: 'Mate', price: 7, createdAt: c.data.createdAt })
+    // A created record comes after the seed; an update keeps it where it is.
     const list = (await (await fetch(`${s.base}/records/Product`)).json()) as { data: { id: string }[] }
-    expect(list.data[0]!.id).toBe(c.id)
+    expect(list.data.map((r) => r.id)).toEqual(['p1', 'p2', list.data[2]!.id, c.id])
+    await fetch(`${s.base}/records/Product/p1`, { ...json({ data: { price: 9 } }), method: 'PATCH' })
+    const after = (await (await fetch(`${s.base}/records/Product`)).json()) as { data: { id: string }[] }
+    expect(after.data.map((r) => r.id)).toEqual(list.data.map((r) => r.id))
 
     const del = await fetch(`${s.base}/records/Product/${c.id}`, { method: 'DELETE' })
     expect(await del.json()).toEqual({ data: { id: c.id, deleted: true } })
