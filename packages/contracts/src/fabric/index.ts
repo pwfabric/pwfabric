@@ -76,6 +76,10 @@ export * from './surface-mutation.js'
 // Surface document Zod schemas (moved to contracts)
 export * from './surface-schema.js'
 
+// The record write contract: server-owned fields, declared types, undeclared
+// fields refused — one function for every server that hosts an app's records.
+export * from './record-write.js'
+
 // Validation types
 export * from './validation.js'
 

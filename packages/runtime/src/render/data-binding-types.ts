@@ -107,6 +107,28 @@ export type SurfaceAction =
   | { readonly type: 'showBlock'; readonly blockId: string }
   | { readonly type: 'hideBlock'; readonly blockId: string }
   | { readonly type: 'navigate'; readonly url: string }
+  | WriteAction
+
+/**
+ * Write one record of a source (data-protocol §1.3): create, update or delete.
+ * `id` names the record of an update or a delete; `values` are the fields.
+ * After a successful write every source is fetched again. `statusKeys`
+ * drives page state as a form binding's does (§4.2).
+ */
+export interface WriteAction {
+  readonly type: 'write'
+  readonly sourceId: string
+  readonly op: 'create' | 'update' | 'delete'
+  readonly id?: string | number
+  readonly values?: Readonly<Record<string, unknown>>
+  readonly statusKeys?: {
+    readonly loading?: string
+    readonly success?: string
+    readonly error?: string
+    readonly message?: string
+    readonly detail?: string
+  }
+}
 
 /**
  * What a block's `action` prop may hold: one action, or a list run in order
@@ -154,6 +176,12 @@ export interface DataBoundSurface {
   readonly appearance?: RenderableSurface['appearance']
   /** capability list — `platform/persistence` carries dataSources + initialState in its config. */
   readonly capabilities?: RenderableSurface['capabilities']
+  /**
+   * The page title (receipt `title`). It may carry expressions —
+   * `{{dish.0.name}}` — resolved like a block prop against the page scope;
+   * the renderer reports the result through `onTitle`.
+   */
+  readonly title?: string
 }
 
 // ============================================================
@@ -169,6 +197,14 @@ export interface DataBoundSurfaceRendererProps extends Omit<SurfaceRendererProps
   readonly surface: DataBoundSurface
   /** Stored behaviors to execute when their trigger event fires on the bus */
   readonly behaviors?: readonly RuntimeBehavior[]
+  /**
+   * Told the page title whenever it resolves to something new: the surface's
+   * `title` with its expressions filled in (`Granola` once the dish has
+   * loaded). `undefined` while it resolves to nothing — the record is not
+   * loaded, or there is no title — so the host shows its own. The host
+   * decides what to do with it (a runner sets `document.title`).
+   */
+  readonly onTitle?: (title: string | undefined) => void
   /**
    * Intercept a `navigate` action before the default `window.location.assign`
    * fallback runs. Return `true` to signal the host handled it (e.g. swapped
@@ -206,6 +242,12 @@ export interface DataBoundSurfaceRendererProps extends Omit<SurfaceRendererProps
    * renderer passes its resolved value through this. See render/links.ts.
    */
   readonly linkHref?: LinkHref
+  /**
+   * The app's locale (BCP 47, `en-GB` — `app/plan.json` `locale`, carried as
+   * `project.json` `locale`). `date()`, `currency()`, `number()` and
+   * `n.toLocaleString()` write in it; absent, in the visitor's.
+   */
+  readonly locale?: string
 
   /**
    * Configuration for the DataService this renderer creates.

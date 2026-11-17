@@ -84,27 +84,25 @@ describe('form-entity-bridge status lifecycle (API-bound)', () => {
   })
 })
 
-describe('form-entity-bridge — statusKeys.message carries the writer message', () => {
-  const keys = { ...statusKeys, message: 'saveMessage' }
+describe('form-entity-bridge — statusKeys.message is a sentence, statusKeys.detail the writer words', () => {
+  const keys = { ...statusKeys, message: 'saveMessage', detail: 'saveDetail' }
 
-  it('failure → message set to the error message the writer returned', async () => {
+  it('failure → message a visitor sentence, detail the error the writer returned', async () => {
     const bus = createSurfaceEventBus()
     const events: SurfaceEventDescriptor[] = []
     bus.on('*', (e) => events.push(e))
     const writer = {
       write: vi.fn(async () => ({
         success: false,
-        error: { type: 'not_found', message: 'The server could not save this record (404): Route not found' },
+        error: { type: 'not_found', message: 'Route not found', details: { status: 404, detail: '404 NOT_FOUND: Route not found' } },
       })),
     } as unknown as FormWriter
     attachFormEntityBridge(bus, writer, { formId: 'add-form', sourceId: 'contact' as never, statusKeys: keys })
     submit(bus)
     await flush()
     const states = setStates(events)
-    expect(states).toContainEqual({
-      key: 'saveMessage',
-      value: 'The server could not save this record (404): Route not found',
-    })
+    expect(states).toContainEqual({ key: 'saveMessage', value: 'This could not be saved.' })
+    expect(states).toContainEqual({ key: 'saveDetail', value: '404 NOT_FOUND: Route not found' })
     // Cleared at the start of the attempt, before the result lands.
     const first = states.findIndex((s) => s.key === 'saveMessage')
     expect(states[first]).toEqual({ key: 'saveMessage', value: '' })

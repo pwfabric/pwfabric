@@ -26,25 +26,34 @@ import type {
 export type EntityConnectorType = 'http' | 'database' | 'static' | 'custom'
 
 /**
+ * Why a connector operation failed, when it knows: the HTTP status the server
+ * answered with, or `'network'` when no answer arrived. Absent when the
+ * failure is neither (an unreadable answer, an engine's own refusal). A
+ * runtime turns it into a page's error state (`__errorCodes.<id>`,
+ * data-protocol §2.5), never into a message shown as written.
+ */
+export type ConnectorFailureCode = number | 'network'
+
+/**
  * Result of a connector CRUD operation
  */
 export type ConnectorResult =
   | { readonly success: true; readonly data: Record<string, unknown> }
-  | { readonly success: false; readonly error: string }
+  | { readonly success: false; readonly error: string; readonly code?: ConnectorFailureCode }
 
 /**
  * Result of a connector query operation
  */
 export type ConnectorQueryResult =
   | { readonly success: true; readonly result: EntityQueryResult }
-  | { readonly success: false; readonly error: string }
+  | { readonly success: false; readonly error: string; readonly code?: ConnectorFailureCode }
 
 /**
  * Result of a connector aggregate operation
  */
 export type ConnectorAggregateResult =
   | { readonly success: true; readonly result: EntityAggregateResult }
-  | { readonly success: false; readonly error: string }
+  | { readonly success: false; readonly error: string; readonly code?: ConnectorFailureCode }
 
 // ============================================================
 // ENTITY CONNECTOR INTERFACE

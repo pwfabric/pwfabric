@@ -15,6 +15,7 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { isRecordServerField, type RecordServerField } from '@pwfabric/contracts'
 
 export interface AuthDeclaration {
   readonly required: boolean
@@ -36,6 +37,10 @@ export interface EntityField {
   readonly name: string
   readonly type: string
   readonly required: boolean
+  /** `enum` only: the values it may hold. */
+  readonly values?: readonly string[]
+  /** Set by the server, never by a client (definitions, "Server-owned fields"). */
+  readonly server?: RecordServerField
 }
 
 export interface EntityDeclaration {
@@ -90,9 +95,17 @@ export function readEntities(root: string): EntityDeclaration[] {
   const list = isObject(raw) && Array.isArray(raw.entities) ? raw.entities : []
   return list.filter(isObject).flatMap((e) => {
     if (typeof e.typeId !== 'string' || !e.typeId) return []
-    const fields = (Array.isArray(e.fields) ? e.fields : []).filter(isObject).flatMap((f) =>
+    const fields = (Array.isArray(e.fields) ? e.fields : []).filter(isObject).flatMap((f): EntityField[] =>
       typeof f.name === 'string' && f.name
-        ? [{ name: f.name, type: typeof f.type === 'string' ? f.type : 'text', required: f.required === true }]
+        ? [
+            {
+              name: f.name,
+              type: typeof f.type === 'string' ? f.type : 'text',
+              required: f.required === true,
+              ...(Array.isArray(f.values) ? { values: strings(f.values) } : {}),
+              ...(isRecordServerField(f.server) ? { server: f.server } : {}),
+            },
+          ]
         : []
     )
     return [

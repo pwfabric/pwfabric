@@ -16,7 +16,7 @@
 /**
  * Expression result
  */
-import { DEFAULT_BINDING_HELPERS, evaluateWithScope, readProperty } from '../binding/expression.js'
+import { DEFAULT_BINDING_HELPERS, evaluateWithScope, localeHelpers, readProperty } from '../binding/expression.js'
 
 export type ExpressionResult<T = unknown> =
   | { readonly success: true; readonly value: T }
@@ -28,6 +28,8 @@ export type ExpressionResult<T = unknown> =
 export interface ExpressionContext {
   readonly data: Record<string, unknown>
   readonly helpers?: Record<string, (...args: unknown[]) => unknown>
+  /** The app's locale (BCP 47) that dates and numbers are written in; absent: the visitor's. */
+  readonly locale?: string
 }
 
 // ============================================================
@@ -111,6 +113,7 @@ export function evaluate(expression: string, context: ExpressionContext): Expres
         lookup: (name) => data[name],
         helper: (name) =>
           helpers && Object.prototype.hasOwnProperty.call(helpers, name) ? helpers[name] : undefined,
+        ...(context.locale ? { locale: context.locale } : {}),
       },
       { hyphenNames: true }
     )
@@ -209,10 +212,13 @@ export const DEFAULT_HELPERS: Record<string, (...args: unknown[]) => unknown> = 
  */
 export function createExpressionContext(
   data: Record<string, unknown>,
-  additionalHelpers?: Record<string, (...args: unknown[]) => unknown>
+  additionalHelpers?: Record<string, (...args: unknown[]) => unknown>,
+  /** The app's locale: `date()`, `currency()`, `number()` and `n.toLocaleString()` write in it. */
+  locale?: string
 ): ExpressionContext {
   return {
     data,
-    helpers: { ...DEFAULT_HELPERS, ...additionalHelpers },
+    helpers: { ...DEFAULT_HELPERS, ...(locale ? localeHelpers(locale) : {}), ...additionalHelpers },
+    ...(locale ? { locale } : {}),
   }
 }

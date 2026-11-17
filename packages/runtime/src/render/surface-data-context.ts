@@ -15,6 +15,7 @@
  */
 
 import { createContext, useContext } from 'react'
+import type { LinkHref } from './links.js'
 
 export type SurfaceData = Readonly<Record<string, unknown>>
 
@@ -22,4 +23,16 @@ export const SurfaceDataContext = createContext<SurfaceData | null>(null)
 
 export function useSurfaceData(): SurfaceData | null {
   return useContext(SurfaceDataContext)
+}
+
+/**
+ * How this page writes an in-app link (the renderer's `linkHref` option), for
+ * the providers that resolve a link after render — a form's
+ * `successRedirect`. `null` when the host gave none: a link is followed as
+ * resolved.
+ */
+export const SurfaceLinkHrefContext = createContext<LinkHref | null>(null)
+
+export function useSurfaceLinkHref(): LinkHref | null {
+  return useContext(SurfaceLinkHrefContext)
 }

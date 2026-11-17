@@ -33,6 +33,7 @@ import type {
   SurfaceDataSourceDefinition,
   SurfaceAction,
   RuntimeBehavior,
+  WriteAction,
 } from './data-binding-types.js'
 import type {
   SurfaceEvent,
@@ -44,13 +45,18 @@ import type { Block } from '@pwfabric/core'
 import type { DataSourceDefinition } from '../data/types.js'
 import { createEntityDataSource } from '../entity/entity-datasource.js'
 import { aggregateThrough } from '../entity/aggregate.js'
-import { SurfaceDataContext } from './surface-data-context.js'
+import { SurfaceDataContext, SurfaceLinkHrefContext } from './surface-data-context.js'
+import { createSourceWriter } from './source-writer.js'
+import { resolveValueIn } from './resolve-expressions.js'
+import { writeFailureSentence } from '../forms/form-write-target.js'
 import type { EntityFacade } from '../entity/facade.js'
 import type { EntityAggregate, EntityQuery, EntityTypeId } from '../entity/types.js'
 import type { SurfaceConnectionsValue } from '../connectors/types.js'
 import { PLATFORM_PERSISTENCE_CAPABILITY_ID } from '@pwfabric/contracts'
 import { isCapability } from '../capability/type-mapping.js'
 import { writeOnlySourceIds } from './write-only-sources.js'
+import { failureCodeOf, sourceFailureMessage, type SourceFailureCode } from './source-failure.js'
+import { applyEntityQuery } from '../entity/apply-query.js'
 
 // ============================================================
 // extract dataSources + initialState from persistence config
@@ -88,18 +94,15 @@ function extractPersistenceSeeds(surface: {
 }
 
 /**
- * A source that could not be served but declares a `fallback`: the caller
- * binds `data` AND records `message` under `__errors.<id>`, so the surface
- * renders honestly (sample data + error flag) instead of empty or crashed.
+ * A source's `fallback`, as the source's query would have cut it (see
+ * source-failure: bound only when nothing is connected to serve the source).
+ * A list is filtered, sorted and paged like live rows, so a detail page
+ * filtering `id eq <x>` shows that record or none — never the first sample.
+ * Anything else (an aggregate's `{ value }`) is bound as written.
  */
-class SourceFallback extends Error {
-  constructor(
-    message: string,
-    readonly data: unknown
-  ) {
-    super(message)
-    this.name = 'SourceFallback'
-  }
+function fallbackRows(fallback: unknown, query: EntityQuery | undefined): unknown {
+  if (!query || !Array.isArray(fallback)) return fallback
+  return applyEntityQuery(fallback as Record<string, unknown>[], query).items
 }
 
 /**
@@ -204,7 +207,10 @@ export function surfaceNeedsDataBinding(surface: {
 interface SourceData {
   readonly data: unknown
   readonly loading: boolean
+  /** The internal detail of the last failure (logged, never bound as written). */
   readonly error: string | null
+  /** Why the last fetch failed — `__errorCodes.<id>`; null when it did not. */
+  readonly errorCode?: SourceFailureCode | null
   /** HTTP status of the last answer; null for a network failure or a non-HTTP kind. */
   readonly status?: number | null
   /** The envelope `returns` unwrapped the list from (`total`, `skip`, `limit` …). */
@@ -297,7 +303,15 @@ interface SurfaceDataResult {
 /** What one fetch of one source came to. */
 type FetchOutcome =
   | { readonly kind: 'ok'; readonly data: unknown; readonly status: number | null; readonly meta: Readonly<Record<string, unknown>> | null }
-  | { readonly kind: 'error'; readonly message: string; readonly status: number | null; readonly fallback?: { readonly data: unknown } }
+  | {
+      readonly kind: 'error'
+      /** The internal detail — for the console, never the page. */
+      readonly message: string
+      readonly code: SourceFailureCode
+      readonly status: number | null
+      /** Only for `unconnected`: the fallback rows, cut by the query. */
+      readonly fallback?: { readonly data: unknown }
+    }
 
 /** JSON of a source DEFINITION, computed once per definition object. */
 const definitionJsonCache = new WeakMap<object, string>()
@@ -466,9 +480,8 @@ function useSurfaceData(
       const failed = (err: unknown, status: number | null = null): FetchOutcome => ({
         kind: 'error',
         message: err instanceof Error ? err.message : String(err),
+        code: failureCodeOf(err, status),
         status,
-        // fallback declared → bind it; the error stays visible next to it
-        ...(err instanceof SourceFallback ? { fallback: { data: err.data } } : {}),
       })
 
       // State sources read from React state directly
@@ -503,12 +516,23 @@ function useSurfaceData(
           ? (resolveQueryState(source.aggregate, state) as unknown as EntityAggregate)
           : undefined
         const entityType = source.entityType as EntityTypeId
-        // Any failure below binds `fallback` (when declared) and still reports
-        // the error — see SourceFallback.
-        const fail = (message: string): never => {
-          if (source.fallback !== undefined) throw new SourceFallback(message, source.fallback)
-          throw new Error(message)
-        }
+        // A REAL failure binds no rows, whatever `fallback` says
+        // (source-failure). The code travels with the detail.
+        const fail = (message: string, code?: SourceFailureCode): FetchOutcome => ({
+          kind: 'error',
+          message,
+          code: code ?? 'error',
+          status: typeof code === 'number' ? code : null,
+        })
+        // NOTHING IS CONNECTED to serve this source: the one case its
+        // `fallback` is bound, cut by its query.
+        const unconnected = (message: string): FetchOutcome => ({
+          kind: 'error',
+          message,
+          code: 'unconnected',
+          status: null,
+          fallback: { data: fallbackRows(source.fallback, query) },
+        })
         try {
           const engines = connectionsRef.current?.engines
           if (source.connector && engines) {
@@ -519,12 +543,14 @@ function useSurfaceData(
                 if (aggregate) {
                   const agg = await aggregateThrough(engine, entityType, aggregate)
                   if (agg.success) return { kind: 'ok', data: agg.result, status: null, meta: null }
-                  return fail(agg.error)
+                  return fail(agg.error, agg.code)
                 }
                 const res = await engine.query(entityType, (query ?? {}) as EntityQuery)
                 if (res.success) return { kind: 'ok', data: res.result.items, status: null, meta: null }
-                return fail(res.error)
+                return fail(res.error, res.code)
               }
+              // A configured connection whose engine could not be built: a
+              // real failure, not a missing connection.
               const failedStatus = engines.getStatus(source.connector)
               return fail(
                 failedStatus.state === 'failed'
@@ -536,14 +562,14 @@ function useSurfaceData(
             // its connection. With a fallback this is the "sample data" path;
             // without one, today's facade route stays.
             if (source.fallback !== undefined) {
-              return fail(`Connector '${source.connector}' is not connected`)
+              return unconnected(`Connector '${source.connector}' is not connected`)
             }
           }
 
           const facade = entityFacadeRef.current
           if (!facade) {
             return source.fallback !== undefined
-              ? fail('No entity facade available')
+              ? unconnected('No entity facade available')
               : {
                   kind: 'ok',
                   data: aggregate
@@ -561,7 +587,7 @@ function useSurfaceData(
                 const agg = await facade.resolveAggregate(entityType, aggregate)
                 return { kind: 'ok', data: agg, status: null, meta: null }
               } catch (err) {
-                return fail(err instanceof Error ? err.message : String(err))
+                return failed(err)
               }
             }
             // A facade from before `resolveAggregate` lists; the rows it
@@ -571,7 +597,7 @@ function useSurfaceData(
               entityType,
               aggregate
             )
-            if (!viaList.success) return fail(viaList.error)
+            if (!viaList.success) return fail(viaList.error, viaList.code)
             return { kind: 'ok', data: viaList.result, status: null, meta: null }
           }
           const eds = createEntityDataSource(facade, {
@@ -583,7 +609,7 @@ function useSurfaceData(
             const result = await eds.fetch()
             return { kind: 'ok', data: result.items, status: null, meta: null }
           } catch (err) {
-            return fail(err instanceof Error ? err.message : String(err))
+            return failed(err)
           }
         } catch (err) {
           return failed(err)
@@ -604,17 +630,21 @@ function useSurfaceData(
           meta: result.metadata.envelope ?? null,
         }
       }
-      // A refused read (401/403), a 404, a 500 or no answer at all: the source
-      // could not be served, and its `fallback` is bound like an entity
-      // source's (data-protocol §2). This branch reported the error and
-      // dropped the fallback, so under a host that rewrites entity sources
-      // into rest reads of its records (`pwf dev`), a page reading a
-      // create-only model showed neither rows nor its sample data.
-      const message = result.error.message
-      return failed(
-        source.fallback !== undefined ? new SourceFallback(message, source.fallback) : new Error(message),
-        result.error.status ?? null
-      )
+      // A refused read (401/403), a 404, a 500 or no answer at all is a REAL
+      // failure: no rows, whatever `fallback` says (source-failure). The page
+      // shows its own state from `__errorCodes.<id>`.
+      const { error } = result
+      return {
+        kind: 'error',
+        message: error.message,
+        code:
+          error.status !== undefined
+            ? error.status
+            : error.type === 'timeout'
+              ? 'network'
+              : failureCodeOf(error.cause),
+        status: error.status ?? null,
+      }
     },
     [dataService, registerSource]
   )
@@ -681,7 +711,17 @@ function useSurfaceData(
           try {
             outcome = await fetchSource(source, state, controller.signal)
           } catch (err) {
-            outcome = { kind: 'error', message: err instanceof Error ? err.message : String(err), status: null }
+            outcome = {
+              kind: 'error',
+              message: err instanceof Error ? err.message : String(err),
+              code: failureCodeOf(err),
+              status: null,
+            }
+          }
+          if (outcome.kind === 'error' && outcome.code !== 'unconnected' && !controller.signal.aborted) {
+            // The detail is the developer's, so it goes to the console; the
+            // page binds a sentence and a code.
+            console.warn(`[surface] source "${source.id}" could not be served (${String(outcome.code)}): ${outcome.message}`)
           }
           if (controller.signal.aborted) return
           controllersRef.current.delete(source.id)
@@ -700,6 +740,7 @@ function useSurfaceData(
                 data: outcome.fallback ? outcome.fallback.data : keep ? (p?.data ?? null) : null,
                 loading: false,
                 error: outcome.message,
+                errorCode: outcome.code,
                 status: outcome.status,
                 meta: keep ? (p?.meta ?? null) : null,
                 ...(keep ? { key } : {}),
@@ -810,11 +851,13 @@ function useSurfaceData(
     // synchronously from React state and are never "loading".
     const loadingMap: Record<string, boolean> = {}
     let anyLoading = false
-    // Per-source error messages — `{{__errors.<sourceId>}}` — so a block can
+    // Per-source errors — `{{__errors.<sourceId>}}` — so a block can
     // distinguish "fetch failed" from "fetched, genuinely empty" instead of
-    // showing a false empty-state. The value is the error MESSAGE string
-    // (truthy check + tooltip content in one binding); null when healthy.
+    // showing a false empty-state. The value is a sentence a visitor can read
+    // (truthy check + message in one binding); null when healthy. Why it
+    // failed is `{{__errorCodes.<sourceId>}}` (source-failure).
     const errorMap: Record<string, string | null> = {}
+    const errorCodeMap: Record<string, SourceFailureCode | null> = {}
     let anyError = false
     // `{{__status.<id>}}` — the HTTP status of the last answer (200, 404, …);
     // null for a network failure, an idle source or a non-HTTP kind.
@@ -833,9 +876,10 @@ function useSurfaceData(
         source.kind === 'state' || writeOnly?.has(source.id) === true ? false : entry ? entry.loading : true
       loadingMap[source.id] = loading
       if (loading) anyLoading = true
-      const error = entry?.error ?? null
-      errorMap[source.id] = error
-      if (error) anyError = true
+      const code = entry?.error ? (entry.errorCode ?? 'error') : null
+      errorMap[source.id] = code === null ? null : sourceFailureMessage(code)
+      errorCodeMap[source.id] = code
+      if (code !== null) anyError = true
       const status = entry?.status ?? null
       statusMap[source.id] = status
       notFoundMap[source.id] = status === 404
@@ -874,6 +918,7 @@ function useSurfaceData(
     ctx['__loading'] = loadingMap
     ctx['__anyLoading'] = anyLoading
     ctx['__errors'] = errorMap
+    ctx['__errorCodes'] = errorCodeMap
     ctx['__anyError'] = anyError
     ctx['__status'] = statusMap
     ctx['__notFound'] = notFoundMap
@@ -941,7 +986,8 @@ export function isSurfaceAction(value: unknown): value is SurfaceAction {
     obj.type === 'refreshAll' ||
     obj.type === 'showBlock' ||
     obj.type === 'hideBlock' ||
-    obj.type === 'navigate'
+    obj.type === 'navigate' ||
+    obj.type === 'write'
   )
 }
 
@@ -973,8 +1019,8 @@ export function isSafeNavigateUrl(url: unknown): url is string {
  * fetches data, manages state, resolves expressions, and intercepts events.
  */
 export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): React.ReactElement {
-  const { surface, onEvent, behaviors: hostBehaviors, onNavigateAction, dataServiceConfig, ...rest } = props
-  const { blocks, appearance, capabilities } = surface
+  const { surface, onEvent, behaviors: hostBehaviors, onNavigateAction, onTitle, dataServiceConfig, ...rest } = props
+  const { blocks, appearance, capabilities, title } = surface
   // dataSources + initialState + declared behaviors live under platform/persistence config
   const { dataSources, initialState, behaviors: declaredBehaviors } = extractPersistenceSeeds(surface)
   // Declared (JSON) first, host (its store) after — same id in both: host wins.
@@ -985,12 +1031,21 @@ export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): 
     return [...declaredBehaviors.filter((b) => !hostIds.has(b.id)), ...hostBehaviors]
   }, [declaredBehaviors, hostBehaviors])
   const hasBehaviors = Boolean(behaviors && behaviors.length > 0)
+  const dataBound = hasBehaviors || surfaceNeedsDataBinding(surface)
+
+  // A page with nothing dynamic still has a title; one with expressions in it
+  // is resolved by DataBoundInner, against what has loaded.
+  const literalTitle =
+    !dataBound && typeof title === 'string' && title.trim() && !title.includes('{{') ? title : undefined
+  React.useEffect(() => {
+    if (!dataBound) onTitle?.(literalTitle)
+  }, [dataBound, literalTitle, onTitle])
 
   // Nothing dynamic — no sources, no state, no behaviors, no form bindings, no
   // block action: pass through directly (zero overhead). Write-only surfaces
   // (formBindings without any read source) and state-only wizards must NOT
   // take it — see surfaceNeedsDataBinding() and hasEntityFormBindings().
-  if (!hasBehaviors && !surfaceNeedsDataBinding(surface)) {
+  if (!dataBound) {
     const passthrough: RenderableSurface = {
       // `id` FORWARDED, not dropped. SurfaceRenderer derives its scope from
       // `surface.id`: with an id the per-surface rules key off the attribute
@@ -1023,6 +1078,8 @@ export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): 
           capabilities={capabilities}
           {...(behaviors !== undefined ? { behaviors } : {})}
           {...(onNavigateAction !== undefined ? { onNavigateAction } : {})}
+          {...(title !== undefined ? { title } : {})}
+          {...(onTitle !== undefined ? { onTitle } : {})}
           onEvent={onEvent}
           rendererProps={rest}
         />
@@ -1036,6 +1093,8 @@ export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): 
           capabilities={capabilities}
           {...(behaviors !== undefined ? { behaviors } : {})}
           {...(onNavigateAction !== undefined ? { onNavigateAction } : {})}
+          {...(title !== undefined ? { title } : {})}
+          {...(onTitle !== undefined ? { onTitle } : {})}
           rendererProps={rest}
         />
       )}
@@ -1061,6 +1120,8 @@ interface DataBoundInnerProps {
   onEvent?: (event: SurfaceEvent) => void
   behaviors?: readonly RuntimeBehavior[]
   onNavigateAction?: (url: string) => boolean
+  title?: string
+  onTitle?: (title: string | undefined) => void
   rendererProps: Omit<SurfaceRendererProps, 'surface' | 'onEvent'>
 }
 
@@ -1074,6 +1135,8 @@ function DataBoundInner({
   onEvent,
   behaviors,
   onNavigateAction,
+  title,
+  onTitle,
   rendererProps,
 }: DataBoundInnerProps): React.ReactElement {
   const interactionMode = rendererProps.interactionMode ?? 'live'
@@ -1088,6 +1151,7 @@ function DataBoundInner({
   const connections = (rendererProps as { connections?: SurfaceConnectionsValue }).connections
   const dataCache = (rendererProps as { dataCache?: SurfaceDataCache }).dataCache
   const linkHref = (rendererProps as { linkHref?: LinkHref }).linkHref
+  const locale = (rendererProps as { locale?: string }).locale
   // Keyed by the ids, so a re-render that changes nothing hands useSurfaceData
   // the same set (its expression context depends on it).
   const writeOnlyKey = React.useMemo(
@@ -1100,6 +1164,67 @@ function DataBoundInner({
   )
   const { expressionData, initialLoaded, setStateValue, refreshSource, fetchAllSources } =
     useSurfaceData(dataSources, initialState, interactionMode, entityFacade, connections, dataCache, writeOnly)
+  // The page scope as bound NOW, for actions resolved at dispatch time.
+  const expressionDataRef = React.useRef(expressionData)
+  expressionDataRef.current = expressionData
+
+  // THE TITLE OF THIS RECORD'S PAGE. `{{dish.0.name}}` is the dish once it
+  // has loaded; until then (or when it resolves to nothing) the host shows
+  // its own. A title an expression could not resolve stays unreported rather
+  // than putting braces in the tab.
+  const resolvedTitle = React.useMemo(() => {
+    if (typeof title !== 'string' || !title.trim()) return undefined
+    const value = resolveValueIn(title, expressionData, locale ? { locale } : {})
+    if (value === undefined || value === null) return undefined
+    const text = String(value).trim()
+    return text === '' || text.includes('{{') ? undefined : text
+  }, [title, expressionData, locale])
+  React.useEffect(() => {
+    onTitle?.(resolvedTitle)
+  }, [resolvedTitle, onTitle])
+
+  // The `write` action's way to a source — the same one a form binding uses.
+  const dataService = useDataService()
+  const writeRecord = React.useMemo(
+    () => createSourceWriter({ dataSources, entityFacade, dataService }),
+    [dataSources, entityFacade, dataService]
+  )
+
+  /**
+   * THE WRITE ACTION: one record created, updated or deleted, the page state
+   * driven through its lifecycle like a form's, and every source fetched
+   * again afterwards so what the page shows is what the server now holds. The
+   * server decides whether the caller may (access rules); a refusal is a
+   * failed write, with a visitor's sentence and the detail kept apart.
+   */
+  const runWrite = React.useCallback(
+    async (action: WriteAction) => {
+      const sk = action.statusKeys
+      if (sk?.loading) setStateValue(sk.loading, true)
+      if (sk?.success) setStateValue(sk.success, false)
+      if (sk?.error) setStateValue(sk.error, false)
+      if (sk?.message) setStateValue(sk.message, '')
+      if (sk?.detail) setStateValue(sk.detail, '')
+      const id = action.id === undefined || action.id === null || action.id === '' ? undefined : String(action.id)
+      const result = await writeRecord(action.sourceId, {
+        op: action.op,
+        ...(id !== undefined ? { id } : {}),
+        ...(action.values ? { values: action.values } : {}),
+      })
+      if (sk?.loading) setStateValue(sk.loading, false)
+      if (result.success) {
+        if (sk?.success) setStateValue(sk.success, true)
+        await fetchAllSources()
+        return
+      }
+      if (sk?.error) setStateValue(sk.error, true)
+      if (sk?.message) setStateValue(sk.message, writeFailureSentence(result.error))
+      const detail = (result.error.details as { detail?: unknown } | undefined)?.detail
+      if (sk?.detail) setStateValue(sk.detail, typeof detail === 'string' ? detail : result.error.message)
+      console.warn(`[surface] write to "${action.sourceId}" failed: ${typeof detail === 'string' ? detail : result.error.message}`)
+    },
+    [writeRecord, setStateValue, fetchAllSources]
+  )
 
   // The props each block's manifest declares `bindable: false` stay as
   // written; the descriptors the host handed the renderer carry them.
@@ -1112,8 +1237,9 @@ function DataBoundInner({
       resolveBlockExpressions(blocks as Block[], expressionData, undefined, {
         literalProps,
         ...(linkHref ? { linkHref } : {}),
+        ...(locale ? { locale } : {}),
       }),
-    [blocks, expressionData, linkHref, literalProps]
+    [blocks, expressionData, linkHref, literalProps, locale]
   )
 
   // Shared action dispatcher — handles all six action types
@@ -1146,9 +1272,29 @@ function DataBoundInner({
             console.warn('[surface] blocked unsafe navigate URL:', action.url)
           }
           break
+        case 'write':
+          void runWrite(action)
+          break
       }
     },
-    [setStateValue, refreshSource, fetchAllSources, onNavigateAction]
+    [setStateValue, refreshSource, fetchAllSources, onNavigateAction, runWrite]
+  )
+
+  /**
+   * A BEHAVIOR'S ACTIONS ARE RESOLVED AT DISPATCH, against the page scope as
+   * it is when the event fires: `{ navigate, url: "/dish?id={{state.dish}}" }`
+   * goes to that dish, `{ setState, value: "{{state.count + 1}}" }` writes the
+   * number. They used to pass as written, so the braces went into the URL and
+   * into state. A block's own `action` prop needs none of this: it is
+   * resolved with the block's other props (inside a repeat, per row).
+   */
+  const resolveBehaviorAction = React.useCallback(
+    (action: SurfaceAction): SurfaceAction =>
+      resolveValueIn(action, expressionDataRef.current, {
+        ...(linkHref ? { linkHref } : {}),
+        ...(locale ? { locale } : {}),
+      }) as SurfaceAction,
+    [linkHref, locale]
   )
 
   // Event interceptor
@@ -1190,7 +1336,7 @@ function DataBoundInner({
           for (const b of behaviors) {
             if (canonicalizeEventType(b.event) !== fired) continue
             if (b.targetBlockId && !behaviorTargets(b.targetBlockId, event.blockId)) continue
-            b.actions.forEach(dispatchAction)
+            for (const action of b.actions) dispatchAction(resolveBehaviorAction(action))
           }
         }
       }
@@ -1199,7 +1345,7 @@ function DataBoundInner({
       // host decides what side-effects, if any, to run).
       onEvent?.(event)
     },
-    [interactionMode, onEvent, dispatchAction, resolvedBlocks, behaviors]
+    [interactionMode, onEvent, dispatchAction, resolvedBlocks, behaviors, resolveBehaviorAction]
   )
 
   // Loading state — 'gate' strategy only (the historical default): the whole
@@ -1250,7 +1396,9 @@ function DataBoundInner({
     // must act on it — the form writer decides create-vs-update from the
     // record a source has loaded, and could not see one before this.
     <SurfaceDataContext.Provider value={expressionData}>
-      <SurfaceRenderer surface={resolvedSurface} onEvent={handleEvent} {...rendererProps} />
+      <SurfaceLinkHrefContext.Provider value={linkHref ?? null}>
+        <SurfaceRenderer surface={resolvedSurface} onEvent={handleEvent} {...rendererProps} />
+      </SurfaceLinkHrefContext.Provider>
     </SurfaceDataContext.Provider>
   )
 }

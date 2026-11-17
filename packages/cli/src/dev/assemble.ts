@@ -352,7 +352,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   files.set('blocks/manifest.json', json(blockManifest))
   files.set('engines/manifest.json', json(engineManifest))
 
-  files.set('pwpack/project.json', json(buildProjectJson({ id: identity.id, title, entry, pages, auth: authDoc })))
+  files.set('pwpack/project.json', json(buildProjectJson({ id: identity.id, title, entry, pages, auth: authDoc, ...(locale !== undefined ? { locale } : {}) })))
   for (const page of pages) files.set(`pwpack/surfaces/${page.key}.receipt.json`, page.bytes)
   files.set('pwpack/navigation.json', json(isRecord(navigationDoc) ? navigationDoc : deriveNavigation(pages, entry)))
   if (appearance) files.set('pwpack/appearance.json', json(appearance))

@@ -156,6 +156,46 @@ function resolveValue(value: unknown, context: ResolveContext): unknown {
   return value
 }
 
+/**
+ * Resolve a value outside the block tree — an action, a link — against `data`
+ * (the page scope, plus whatever the caller adds: `result` after a write),
+ * with the same rules as a block prop: whole values keep their type, a link
+ * member whose page is an expression is checked (safeDataLink) and written in
+ * the router's form.
+ */
+export function resolveValueIn(
+  value: unknown,
+  data: Record<string, unknown>,
+  options: { readonly linkHref?: LinkHref; readonly locale?: string } = {}
+): unknown {
+  const context: ResolveContext = {
+    ...createExpressionContext(data, undefined, options.locale),
+    ...(options.linkHref ? { linkHref: options.linkHref } : {}),
+  }
+  return resolveValue(value, context)
+}
+
+/**
+ * A link template (`/confirmation?id={{result.id}}`, `{{item.url}}`)
+ * resolved against `data`. A template whose page is an expression must come
+ * out as a safe link (safeDataLink), else `undefined`; one that names its
+ * page is the author's and only its expressions are filled in.
+ */
+export function resolveLinkTemplate(
+  template: string,
+  data: Record<string, unknown>,
+  linkHref?: LinkHref
+): string | undefined {
+  const resolved = resolveValueIn({ successRedirect: template }, data, linkHref ? { linkHref } : {}) as {
+    successRedirect?: unknown
+  }
+  const out = resolved.successRedirect
+  if (typeof out !== 'string') return undefined
+  // An unresolvable expression is left as written; a link with braces in it
+  // goes nowhere useful.
+  return /\{\{/.test(out) ? undefined : out
+}
+
 // ============================================================
 // BLOCK EXPRESSION RESOLUTION
 // ============================================================
@@ -173,16 +213,18 @@ function resolveValue(value: unknown, context: ResolveContext): unknown {
  *   form; applied to links whose page is an expression (see links.ts)
  * @param options.literalProps - Per block type, the props left as written
  *   (`bindable: false`; see literalPropsOf)
+ * @param options.locale - The app's locale (BCP 47) dates and numbers are
+ *   written in; absent, the visitor's
  * @returns New block array with resolved prop values
  */
 export function resolveBlockExpressions(
   blocks: readonly Block[],
   data: Record<string, unknown>,
   helpers?: Record<string, (...args: unknown[]) => unknown>,
-  options: { readonly linkHref?: LinkHref; readonly literalProps?: LiteralProps } = {}
+  options: { readonly linkHref?: LinkHref; readonly literalProps?: LiteralProps; readonly locale?: string } = {}
 ): Block[] {
   const context: ResolveContext = {
-    ...createExpressionContext(data, helpers),
+    ...createExpressionContext(data, helpers, options.locale),
     ...(options.linkHref ? { linkHref: options.linkHref } : {}),
     ...(options.literalProps && options.literalProps.size > 0 ? { literalProps: options.literalProps } : {}),
   }

@@ -144,9 +144,10 @@ describe('fallback payload', () => {
   const blocks = [
     { id: 't', type: 'table', props: { data: '{{alerts}}' } },
     { id: 'e', type: 'text', props: { testId: 'err', content: '{{__errors.alerts}}' } },
+    { id: 'c', type: 'text', props: { testId: 'code', content: '{{__errorCodes.alerts}}' } },
   ]
 
-  it('binds the fallback AND reports the error when the connector is not connected', async () => {
+  it('binds the fallback with the code "unconnected" when the connector is not connected', async () => {
     render(
       <DataBoundSurfaceRenderer
         surface={surfaceWith(
@@ -159,11 +160,42 @@ describe('fallback payload', () => {
       />
     )
     await waitFor(() => expect(screen.getByTestId('rows').textContent).toBe('sample-1,sample-2'))
-    expect(screen.getByTestId('err').textContent).toMatch(/not connected/)
+    expect(screen.getByTestId('err').textContent).toBe('Not connected — showing sample data.')
+    expect(screen.getByTestId('code').textContent).toBe('unconnected')
   })
 
-  it('binds the fallback AND reports the error when the engine query fails', async () => {
-    const engine: ConnectorEngine = { name: 'graph-security', query: async () => ({ success: false as const, error: 'HTTP 403 Forbidden' }) }
+  it('applies the source query to the fallback: a detail filter never shows another record', async () => {
+    render(
+      <DataBoundSurfaceRenderer
+        surface={surfaceWith(
+          {
+            dataSources: [
+              {
+                id: 'alerts',
+                kind: 'entity',
+                entityType: 'SecurityAlerts',
+                connector: 'graph-security',
+                fallback,
+                query: { filter: { field: 'id', operator: 'eq', value: '{{state.id}}' } },
+              },
+            ],
+            initialState: { id: 'sample-2' },
+          },
+          blocks
+        )}
+        components={components as never}
+        connections={{ connections: [], engines: stubRegistry({}) }}
+        interactionMode="live"
+      />
+    )
+    await waitFor(() => expect(screen.getByTestId('rows').textContent).toBe('sample-2'))
+  })
+
+  it('binds NO fallback when a connected engine refuses — the code is its status', async () => {
+    const engine: ConnectorEngine = {
+      name: 'graph-security',
+      query: async () => ({ success: false as const, error: 'HTTP 403 Forbidden', code: 403 }),
+    }
     render(
       <DataBoundSurfaceRenderer
         surface={surfaceWith(
@@ -178,8 +210,9 @@ describe('fallback payload', () => {
         interactionMode="live"
       />
     )
-    await waitFor(() => expect(screen.getByTestId('rows').textContent).toBe('sample-1,sample-2'))
-    expect(screen.getByTestId('err').textContent).toBe('HTTP 403 Forbidden')
+    await waitFor(() => expect(screen.getByTestId('err').textContent).toBe('You do not have access to this.'))
+    expect(screen.getByTestId('code').textContent).toBe('403')
+    expect(screen.getByTestId('rows').textContent).toBe('')
   })
 
   it('without a fallback the failure still yields an empty bind plus the error (unchanged law)', async () => {
@@ -195,7 +228,8 @@ describe('fallback payload', () => {
         interactionMode="live"
       />
     )
-    await waitFor(() => expect(screen.getByTestId('err').textContent).toBe('boom'))
+    await waitFor(() => expect(screen.getByTestId('err').textContent).toBe('This could not be loaded.'))
+    expect(screen.getByTestId('code').textContent).toBe('error')
     expect(screen.getByTestId('rows').textContent).toBe('')
   })
 })

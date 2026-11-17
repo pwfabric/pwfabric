@@ -51,6 +51,7 @@ export { DefaultEntityStore, createEntityStore } from './store.js'
 export type {
   EntityConnectorType,
   ConnectorResult,
+  ConnectorFailureCode,
   ConnectorQueryResult,
   ConnectorAggregateResult,
   EntityConnector,

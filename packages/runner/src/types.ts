@@ -25,6 +25,12 @@ export interface PwappProject {
   readonly schemaVersion?: string | number
   readonly id?: string
   readonly title?: string
+  /**
+   * The app's locale (BCP 47, `en-GB`), from `app/plan.json` `locale`: the
+   * one dates and numbers on its pages are written in (expressions §6).
+   * Absent: the visitor's.
+   */
+  readonly locale?: string
   readonly entrySurfaceId: string
   readonly surfaceOrder: readonly string[]
   readonly surfaceReceiptFiles?: Readonly<Record<string, string>>

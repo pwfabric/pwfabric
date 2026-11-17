@@ -236,9 +236,9 @@ describe('an aggregate entity source binds the number', () => {
     expect(resolveBinding).not.toHaveBeenCalled()
   })
 
-  it('a facade that cannot serve the count binds fallback and reports the error — never a 0', async () => {
+  it('a facade that cannot serve the count binds NO fallback and reports the error — never a 0', async () => {
     const resolveAggregate = vi.fn(async () => {
-      throw new Error('HTTP 403: RECORDS_NOT_PUBLIC')
+      throw Object.assign(new Error('HTTP 403: RECORDS_NOT_PUBLIC'), { status: 403 })
     })
     render(
       <DataBoundSurfaceRenderer
@@ -251,7 +251,7 @@ describe('an aggregate entity source binds the number', () => {
       />
     )
     await waitFor(() =>
-      expect(screen.getByTestId('text-block').textContent).toBe('n:—|e:HTTP 403: RECORDS_NOT_PUBLIC')
+      expect(screen.getByTestId('text-block').textContent).toBe('n:|e:You do not have access to this.')
     )
   })
 
@@ -269,7 +269,7 @@ describe('an aggregate entity source binds the number', () => {
         entityFacade={{ resolveAggregate, resolveBinding: vi.fn() } as never}
       />
     )
-    await waitFor(() => expect(screen.getByTestId('text-block').textContent).toBe('n:|e:HTTP 400: INVALID_AGGREGATE'))
+    await waitFor(() => expect(screen.getByTestId('text-block').textContent).toBe('n:|e:This could not be loaded.'))
   })
 
   it('the list-wrap exemption is entity-only: a rest source carrying aggregate is still a list', async () => {

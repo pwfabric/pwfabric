@@ -113,6 +113,10 @@ export interface EmbedOptions {
   readonly dataCache?: SurfaceDataCache
   /** How the host writes an in-app link whose page was an expression; see the runtime's render/links.ts. */
   readonly linkHref?: LinkHref
+  /** Told the page title once its expressions resolve (`undefined` while they resolve to nothing). */
+  readonly onTitle?: (title: string | undefined) => void
+  /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
+  readonly locale?: string
 
 
   // ── shared render passthrough ─────────────────────────
@@ -165,6 +169,8 @@ function passthrough(options?: EmbedOptions): Partial<RenderCoreOptions> {
     ...(o.loadingStrategy !== undefined ? { loadingStrategy: o.loadingStrategy } : {}),
     ...(o.dataCache !== undefined ? { dataCache: o.dataCache } : {}),
     ...(o.linkHref !== undefined ? { linkHref: o.linkHref } : {}),
+    ...(o.onTitle !== undefined ? { onTitle: o.onTitle } : {}),
+    ...(o.locale !== undefined ? { locale: o.locale } : {}),
     ...(o.placeholderMissingBlocks !== undefined ? { placeholderMissingBlocks: o.placeholderMissingBlocks } : {}),
   }
 }

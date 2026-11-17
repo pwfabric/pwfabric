@@ -553,6 +553,11 @@ export interface NameResolver {
   lookup(name: string): unknown
   /** The helper a call names, or undefined when there is none. */
   helper(name: string): ((...args: unknown[]) => unknown) | undefined
+  /**
+   * The app's locale (BCP 47, `en-GB`): what `n.toLocaleString()` without
+   * arguments writes in. Absent: the visitor's.
+   */
+  readonly locale?: string
 }
 
 /**
@@ -568,8 +573,14 @@ const STRING_METHODS = new Set([
 const ARRAY_METHODS = new Set(['includes', 'indexOf', 'lastIndexOf', 'join', 'slice', 'at', 'concat'])
 const NUMBER_METHODS = new Set(['toFixed', 'toPrecision', 'toString', 'toLocaleString'])
 
-function callMethod(target: unknown, name: string, args: unknown[]): unknown {
+function callMethod(target: unknown, name: string, args: unknown[], locale?: string): unknown {
   if (target === null || target === undefined) return undefined
+  // A number written for people is written in the APP's locale, not the
+  // browser's: an en-GB shop shows `1,234.5` to a visitor whose browser says
+  // de-DE, as its dates and prices do.
+  if (name === 'toLocaleString' && typeof target === 'number' && args.length === 0 && locale) {
+    return target.toLocaleString(safeLocale(locale))
+  }
   let allowed = false
   if (typeof target === 'string') allowed = STRING_METHODS.has(name)
   else if (Array.isArray(target)) allowed = ARRAY_METHODS.has(name)
@@ -614,7 +625,8 @@ function evalNode(node: Node, scope: NameResolver): unknown {
       return callMethod(
         evalNode(node.obj, scope),
         node.name,
-        node.args.map((a) => evalNode(a, scope))
+        node.args.map((a) => evalNode(a, scope)),
+        scope.locale
       )
     case 'unary': {
       const v = evalNode(node.arg, scope)
@@ -792,6 +804,56 @@ export function interpolate(template: string, context: BindingExpressionContext)
 // ============================================================
 
 /**
+ * A locale a formatter accepts: the tag as given when Intl knows it, else
+ * none (the runtime's default) — a typo in `plan.json` must not throw out of
+ * every date on the page.
+ */
+function safeLocale(locale: string | undefined): string | undefined {
+  if (!locale) return undefined
+  try {
+    return Intl.getCanonicalLocales(locale)[0]
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The helpers that write dates and numbers for people, in `locale` — the
+ * app's declared locale (`app/plan.json` `locale`, carried to the runner as
+ * `project.json` `locale`). Without one they write in the visitor's.
+ *
+ *  - `date(v)`, `time(v)`, `datetime(v)` — `v` read as a date;
+ *  - `currency(n, code = 'USD', locale = <app locale, else en-US>)`;
+ *  - `number(n, decimals?)` — `n` with the locale's grouping and decimal
+ *    mark; exactly `decimals` fraction digits when given.
+ */
+export function localeHelpers(locale: string | undefined): Record<string, (...args: unknown[]) => unknown> {
+  const tag = safeLocale(locale)
+  return {
+    date: (v: unknown) => new Date(v as string | number).toLocaleDateString(tag),
+    time: (v: unknown) => new Date(v as string | number).toLocaleTimeString(tag),
+    datetime: (v: unknown) => new Date(v as string | number).toLocaleString(tag),
+    currency: (v: unknown, currency?: unknown, explicit?: unknown) => {
+      const num = Number(v)
+      return new Intl.NumberFormat(explicit !== undefined && explicit !== null ? String(explicit) : (tag ?? 'en-US'), {
+        style: 'currency',
+        currency: String(currency ?? 'USD'),
+      }).format(num)
+    },
+    number: (v: unknown, decimals?: unknown) => {
+      const num = Number(v)
+      if (v === null || v === undefined || v === '' || !Number.isFinite(num)) return ''
+      const d = Number(decimals)
+      const digits = decimals !== undefined && Number.isFinite(d) ? Math.min(20, Math.max(0, Math.trunc(d))) : undefined
+      return new Intl.NumberFormat(
+        tag,
+        digits === undefined ? {} : { minimumFractionDigits: digits, maximumFractionDigits: digits }
+      ).format(num)
+    },
+  }
+}
+
+/**
  * Default helper functions for expressions
  */
 export const DEFAULT_BINDING_HELPERS: Record<string, (...args: unknown[]) => unknown> = {
@@ -916,16 +978,7 @@ export const DEFAULT_BINDING_HELPERS: Record<string, (...args: unknown[]) => unk
     const dd = String(d.getDate()).padStart(2, '0')
     return `${d.getFullYear()}-${mm}-${dd}`
   },
-  date: (v: unknown) => new Date(v as string | number).toLocaleDateString(),
-  time: (v: unknown) => new Date(v as string | number).toLocaleTimeString(),
-  datetime: (v: unknown) => new Date(v as string | number).toLocaleString(),
-  currency: (v: unknown, currency?: unknown, locale?: unknown) => {
-    const num = Number(v)
-    return new Intl.NumberFormat(String(locale ?? 'en-US'), {
-      style: 'currency',
-      currency: String(currency ?? 'USD'),
-    }).format(num)
-  },
+  ...localeHelpers(undefined),
   percent: (v: unknown, decimals?: unknown) => {
     const num = Number(v)
     const d = Number(decimals ?? 0)

@@ -20,10 +20,16 @@
  *
  * The development user carries every role `access.roles` declares, so the
  * author can try the app as staff; any other e-mail signs in as a plain member.
+ *
+ * WRITES follow the record write contract (`prepareRecordWrite` in
+ * `@pwfabric/contracts`, definitions "Server-owned fields"): a field the
+ * entity does not declare is refused, declared types are checked, and the
+ * fields declared `server` are set here — a client value for one is refused.
  */
 
 import { randomUUID } from 'node:crypto'
 import { HostError } from './http.js'
+import { prepareRecordWrite } from '@pwfabric/contracts'
 import { readSeed, type AuthDeclaration, type EntityDeclaration } from './definitions.js'
 import { aggregate, matches, parseFilter, parseSort, sortRows, type AggregateResult, type Filter, type Row } from './query.js'
 import type { Principal } from './tokens.js'
@@ -52,24 +58,30 @@ const OPEN: Access = { create: 'all', list: 'all', view: 'all', update: 'all', d
 const CLOSED: Access = { create: 'none', list: 'none', view: 'none', update: 'none', delete: 'none', count: 'none' }
 const RANK: Readonly<Record<Reach, number>> = { none: 0, own: 1, all: 2 }
 
-/** Fields a record names its owner in; a create fills the first one when blank. */
-const OWNER_FIELDS = new Set([
-  'owner',
-  'ownerid',
-  'createdby',
-  'createdbyid',
-  'userid',
-  'memberid',
-  'authorid',
-  'principalid',
-  'accountid',
-])
-const RESERVED = new Set(['id', 'entityType', 'createdAt', 'updatedAt', '__proto__', 'constructor', 'prototype'])
-
 const norm = (s: string): string => s.toLowerCase().replace(/[\s_-]/g, '')
 
+/** The field a record names its owner in: the one declared `server: "owner"`. */
 function ownerFieldOf(entity: EntityDeclaration): string | undefined {
-  return entity.fields.find((f) => OWNER_FIELDS.has(norm(f.name)))?.name
+  return entity.fields.find((f) => f.server === 'owner')?.name
+}
+
+/** Run a write through the contract; a refusal is the host's `400 VALIDATION_FAILED`. */
+function prepared(
+  entity: EntityDeclaration,
+  body: Record<string, unknown>,
+  op: 'create' | 'update',
+  caller: Caller,
+  now: string
+): Record<string, unknown> {
+  const result = prepareRecordWrite({
+    fields: entity.fields,
+    body,
+    op,
+    ...(caller.principal ? { callerId: caller.principal.id } : {}),
+    now,
+  })
+  if (!result.ok) throw new HostError(400, result.code, result.message)
+  return result.fields
 }
 
 /** The words of a rule: verbs and `own`; anything else is ignored. */
@@ -137,8 +149,6 @@ export interface AggregateAnswer {
   readonly data: AggregateResult
   readonly meta: { readonly scope: Scope; readonly timestamp: string }
 }
-
-const isEmpty = (v: unknown): boolean => v === undefined || v === null || v === ''
 
 /** The data the request is about: which collection, under which declaration, for whom. */
 export interface Target {
@@ -274,16 +284,8 @@ export class RecordStore {
   create(target: Target, body: Record<string, unknown>): Row {
     const { entity, caller } = target
     this.allow(target, 'create')
-    const fields = writable(body)
-    const ownerField = ownerFieldOf(entity)
-    if (ownerField && isEmpty(fields[ownerField]) && caller.principal) {
-      fields[ownerField] = caller.principal.id
-    }
-    const missing = entity.fields.filter((f) => f.required && isEmpty(fields[f.name])).map((f) => f.name)
-    if (missing.length > 0) {
-      throw new HostError(400, 'VALIDATION_FAILED', `Missing required field(s): ${missing.join(', ')}.`)
-    }
     const now = new Date().toISOString()
+    const fields = prepared(entity, body, 'create', caller, now)
     const id = randomUUID()
     const record: Row = { ...fields, id, entityType: entity.typeId, createdAt: now, updatedAt: now }
     this.collection(entity).set(id, { record, owner: caller.principal?.id, touched: ++this.clock })
@@ -292,19 +294,14 @@ export class RecordStore {
 
   update(target: Target, id: string, body: Record<string, unknown>): Row {
     const stored = this.find(target, 'update', id)
-    const fields = writable(body)
-    const cleared = target.entity.fields
-      .filter((f) => f.required && f.name in fields && isEmpty(fields[f.name]))
-      .map((f) => f.name)
-    if (cleared.length > 0) {
-      throw new HostError(400, 'VALIDATION_FAILED', `Required field(s) cannot be empty: ${cleared.join(', ')}.`)
-    }
+    const now = new Date().toISOString()
+    const fields = prepared(target.entity, body, 'update', target.caller, now)
     stored.record = {
       ...stored.record,
       ...fields,
       id,
       entityType: target.entity.typeId,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     }
     stored.touched = ++this.clock
     return stored.record
@@ -314,19 +311,4 @@ export class RecordStore {
     this.find(target, 'delete', id)
     this.collection(target.entity).delete(id)
   }
-}
-
-/** The record itself is the body; a lone `{ data: { … } }` wrapper is unwrapped. Server-owned members are dropped. */
-function writable(body: Record<string, unknown>): Record<string, unknown> {
-  const keys = Object.keys(body)
-  const inner = body.data
-  const source =
-    keys.length === 1 && keys[0] === 'data' && inner && typeof inner === 'object' && !Array.isArray(inner)
-      ? (inner as Record<string, unknown>)
-      : body
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(source)) {
-    if (!RESERVED.has(k)) out[k] = v
-  }
-  return out
 }

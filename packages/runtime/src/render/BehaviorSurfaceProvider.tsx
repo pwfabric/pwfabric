@@ -27,10 +27,12 @@ import { SurfaceIdContext } from './surface-id-context.js'
 import { createSurfaceEventBus } from './surface-event-bus.js'
 import { useEntityFacade } from './entity-facade-context.js'
 import { useOptionalDataService } from '../data/DataCapabilityProvider.js'
-import { useSurfaceData } from './surface-data-context.js'
+import { useSurfaceData, useSurfaceLinkHref } from './surface-data-context.js'
 import { attachFormEntityBridge } from '../forms/form-entity-bridge.js'
 import type { FormWriter } from '../forms/form-entity-bridge.js'
-import { resolveFormWriteTarget, toFormWriteError } from '../forms/form-write-target.js'
+import { resolveFormWriteTarget } from '../forms/form-write-target.js'
+import { createSourceWriter } from './source-writer.js'
+import { resolveLinkTemplate } from './resolve-expressions.js'
 import type { SurfaceDataSourceDefinition } from './data-binding-types.js'
 import type { FormEntityBridgeConfig } from '../forms/form-entity-bridge.js'
 import { completeNamedControlValues } from '../forms/named-control-values.js'
@@ -160,51 +162,33 @@ export function BehaviorSurfaceProvider({
    * highlighted fields".
    */
   const writer = React.useMemo<FormWriter>(() => {
-    const byId = new Map((dataSources ?? []).map((s) => [s.id, s]))
+    const writeTo = createSourceWriter({ dataSources, entityFacade, dataService })
     return {
       async write(sourceId, values, method) {
-        const source = byId.get(sourceId)
         const target = resolveFormWriteTarget(method, surfaceDataRef.current?.[sourceId])
-        if (source?.kind === 'entity' && source.entityType && entityFacade) {
-          const entityType = source.entityType as never
-          return target.recordId
-            ? entityFacade.store.update(entityType, target.recordId as never, values)
-            : entityFacade.store.create(entityType, values)
-        }
-        if (!source) {
-          return {
-            success: false,
-            error: {
-              type: 'not_found',
-              message: `This form writes to "${sourceId}", which this page does not declare.`,
-            },
-          }
-        }
-        if (!dataService) {
-          return {
-            success: false,
-            error: {
-              type: 'connector',
-              message: `This form writes to "${sourceId}", but this page has no data layer to write through.`,
-            },
-          }
-        }
-        const res = await dataService.fetchData(sourceId, {
-          method: target.method,
-          body: values,
-          ...(target.recordId !== undefined ? { recordId: target.recordId } : {}),
-        })
-        if (!res.success) return { success: false, error: toFormWriteError(res.error) }
-        const written = res.data as Record<string, unknown> | null
-        const id = written && typeof written === 'object' ? written['id'] : undefined
-        return {
-          success: true,
-          data: (written ?? {}) as never,
-          id: (typeof id === 'string' || typeof id === 'number' ? String(id) : target.recordId ?? sourceId) as never,
-        }
+        return writeTo(
+          sourceId,
+          target.recordId
+            ? { op: 'update', id: target.recordId, values, updateMethod: target.method === 'PUT' ? 'PUT' : 'PATCH' }
+            : { op: 'create', values }
+        )
       },
     }
   }, [dataSources, entityFacade, dataService])
+
+  /**
+   * `successRedirect` resolved after the write: the page scope as bound now,
+   * plus `result` — the record the write returned — so
+   * `/confirmation?id={{result.id}}` carries the new record's id. A link whose
+   * page is an expression is written in the router's form here, like a
+   * block's (resolve-expressions).
+   */
+  const linkHref = useSurfaceLinkHref()
+  const resolveRedirect = React.useCallback(
+    (template: string, result: Record<string, unknown>): string | undefined =>
+      resolveLinkTemplate(template, { ...(surfaceDataRef.current ?? {}), result }, linkHref ?? undefined),
+    [linkHref]
+  )
 
   // Read at submit time through a ref, like the bound data, so a re-render
   // never re-attaches the bridges.
@@ -224,9 +208,9 @@ export function BehaviorSurfaceProvider({
   React.useMemo(() => {
     bridgeUnsubsRef.current.forEach((u) => u())
     bridgeUnsubsRef.current = entityFormBindings?.length
-      ? entityFormBindings.map((cfg) => attachFormEntityBridge(bus, writer, cfg, completeValues))
+      ? entityFormBindings.map((cfg) => attachFormEntityBridge(bus, writer, cfg, completeValues, resolveRedirect))
       : []
-  }, [writer, bus, entityFormBindings, completeValues])
+  }, [writer, bus, entityFormBindings, completeValues, resolveRedirect])
 
   // Detach on unmount. Keyed on nothing so it runs once per mount; the memo
   // above owns teardown for every other transition.

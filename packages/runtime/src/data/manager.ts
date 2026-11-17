@@ -377,6 +377,9 @@ export class DataService implements DataServiceInterface {
       throw error
     }
 
+    // A write answered `204 No Content` has no body to read: it succeeded
+    // with nothing to bind.
+    if (response.status === 204) return new RestAnswer(null, response.status, undefined)
     const body: unknown = await response.json()
     const rows = pluck(body, source.returns)
     // Filter / sort / pagination are not sent (the endpoint does not speak
