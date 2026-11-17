@@ -318,13 +318,13 @@ async function l3(browser, s) {
       // L3 declares an identity, so the runner asks for auth.json; a static
       // build has no host to write the door, so the file is absent.
       await checkClean(s, page, 'products', (r) => /^404 \S+\/pwpack\/auth\.json$/.test(r))
-      // The products source is an `entity` source. A static folder has no host
-      // to answer it (and seed records are a development convention, not part
-      // of the build), so the repeater draws nothing and nothing is requested.
-      s.check('static: no records request (no host behind a static folder)', !page.requests.some((r) => /\/records\/Product/.test(r.url)))
+      // The products source is an `entity` source. `pwf run` on the app's own
+      // build output mounts its local host READ-ONLY, so the rows are the app's
+      // records, in file order, through the same query path as `pwf dev`.
+      s.check('static: records are read from the read-only host', page.requests.some((r) => /\/_host\/records\/Product/.test(r.url)))
       const rows = await page.evaluate(ROWS)
-      s.check('static: the repeater draws no rows and no unexpanded template', rows.length === 0, rows)
-      s.note(`static: ${rows.length} product rows (an entity source needs a host; pwf dev provides one)`)
+      s.check('static: the repeater draws the seeded rows', (await sortedRows(page)) === SEEDED, rows)
+      s.note(`static: ${rows.length} product rows (read-only records under pwf run)`)
     } finally {
       await server.stop()
     }
