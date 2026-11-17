@@ -602,7 +602,17 @@ function useSurfaceData(
           meta: result.metadata.envelope ?? null,
         }
       }
-      return failed(new Error(result.error.message), result.error.status ?? null)
+      // A refused read (401/403), a 404, a 500 or no answer at all: the source
+      // could not be served, and its `fallback` is bound like an entity
+      // source's (data-protocol §2). This branch reported the error and
+      // dropped the fallback, so under a host that rewrites entity sources
+      // into rest reads of its records (`pwf dev`), a page reading a
+      // create-only model showed neither rows nor its sample data.
+      const message = result.error.message
+      return failed(
+        source.fallback !== undefined ? new SourceFallback(message, source.fallback) : new Error(message),
+        result.error.status ?? null
+      )
     },
     [dataService, registerSource]
   )
