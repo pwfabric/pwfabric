@@ -51,6 +51,16 @@ export interface SurfaceThemeColors {
   info?: string
   /** Text color for use on primary-colored backgrounds */
   textOnPrimary?: string
+  /**
+   * A BLOCK COLOUR the cascade has no name for — `codeSurface`,
+   * `codeHeader`, `codeText`, `codeMuted`, `codeBorder` for a code block.
+   * Emitted as `--pw-color-<kebab-case name>` (`--pw-color-code-surface`), in
+   * the light map and, from `darkTheme.colors`, the dark one. A camelCase name
+   * of letters and digits; a token the cascade itself emits or derives
+   * (`--pw-color-on-accent`, `--pw-color-error-ink` …) keeps the cascade's
+   * value. See `extraColorVars`.
+   */
+  readonly [blockColor: string]: string | undefined
 }
 
 // ============================================================
