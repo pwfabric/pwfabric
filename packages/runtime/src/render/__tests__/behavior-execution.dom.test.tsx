@@ -477,3 +477,72 @@ describe('behavior block:click with a canonicalType-less legacy click event', ()
     expect(readState()).toEqual(stateBefore)
   })
 })
+
+// ============================================================
+// 8. A behavior aimed at a block inside a `repeat` — the template id
+// ============================================================
+
+describe('behavior aimed at a template block inside a repeat', () => {
+  const Box = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>
+  const withBox: Partial<BlockComponentRegistry> = { ...components, box: Box as never }
+
+  function renderRows(targetBlockId: string): void {
+    const list: Block = {
+      id: 'rows',
+      type: 'box',
+      layout: L,
+      repeat: '{{state.rows}}',
+      props: {},
+      children: [{ id: 'row-btn', type: 'legacybtn', layout: L, props: { testId: 'row-{{index}}' } }],
+    } as Block
+    const behaviors: RuntimeBehavior[] = [
+      {
+        id: 'b8',
+        event: 'block:click',
+        targetBlockId,
+        actions: [{ type: 'setState', key: 'rowClicked', value: true }],
+      },
+    ]
+    render(
+      <DataBoundSurfaceRenderer
+        surface={makeSurface([dumpBlock, list], { rows: ['a', 'b'] })}
+        behaviors={behaviors}
+        components={withBox}
+        interactionMode="live"
+      />
+    )
+  }
+
+  it('fires for a copy (`row-btn--1`) when it names the template id (`row-btn`)', async () => {
+    renderRows('row-btn')
+    await waitFor(() => expect(screen.queryByTestId('row-1')).not.toBeNull())
+    await act(async () => {
+      screen.getByTestId('row-1').click()
+    })
+    await waitFor(() => expect(readState()).toMatchObject({ rowClicked: true }))
+  })
+
+  it('a copy id still names that one copy only', async () => {
+    renderRows('row-btn--0')
+    await waitFor(() => expect(screen.queryByTestId('row-1')).not.toBeNull())
+    await act(async () => {
+      screen.getByTestId('row-1').click()
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(readState()).not.toHaveProperty('rowClicked')
+    await act(async () => {
+      screen.getByTestId('row-0').click()
+    })
+    await waitFor(() => expect(readState()).toMatchObject({ rowClicked: true }))
+  })
+
+  it('does not fire for a block whose id merely starts with the target', async () => {
+    renderRows('row')
+    await waitFor(() => expect(screen.queryByTestId('row-0')).not.toBeNull())
+    await act(async () => {
+      screen.getByTestId('row-0').click()
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(readState()).not.toHaveProperty('rowClicked')
+  })
+})

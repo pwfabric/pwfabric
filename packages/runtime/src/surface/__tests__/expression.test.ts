@@ -122,6 +122,17 @@ describe('evaluate', () => {
       expect(evaluate('length(items)', context)).toEqual({ success: true, value: 3 })
     })
 
+    it('length is the length of a list or a string, 0 for anything else', () => {
+      // A source that has not answered yet is undefined; `length` must not
+      // count the letters of "undefined" or "null".
+      expect(evaluate('length(missing)', context)).toEqual({ success: true, value: 0 })
+      expect(evaluate('length(null)', context)).toEqual({ success: true, value: 0 })
+      expect(evaluate('length(42)', context)).toEqual({ success: true, value: 0 })
+      expect(evaluate('length(active)', context)).toEqual({ success: true, value: 0 })
+      expect(evaluate("length('abc')", context)).toEqual({ success: true, value: 3 })
+      expect(evaluate('length(items)', context)).toEqual({ success: true, value: 3 })
+    })
+
     it('should fail for unknown helpers', () => {
       const result = evaluate('unknown()', context)
       expect(result.success).toBe(false)

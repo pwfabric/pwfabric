@@ -114,6 +114,8 @@ export { resolveEndpoint, encodeEndpointValue } from './endpoint.js'
 export { dataSourceCacheKey } from './data-cache.js'
 export type { SurfaceDataCache } from './data-cache.js'
 export { resolveBlockExpressions, resolveString } from './resolve-expressions.js'
+export { isHrefKey, isLinkMember, isExpressionLink, safeDataLink } from './links.js'
+export type { LinkHref } from './links.js'
 
 // Block Error Boundary (crash isolation)
 export { BlockErrorBoundary } from './BlockErrorBoundary.js'

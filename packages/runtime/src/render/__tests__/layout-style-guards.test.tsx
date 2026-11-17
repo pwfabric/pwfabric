@@ -290,3 +290,23 @@ describe('auto-centred max-width wrapper', () => {
     expect(wrapperStyle(row, 'c')).not.toMatch(/(^|;)width:/)
   })
 })
+
+describe('grid placement goes on the grid item (the wrapper)', () => {
+  it('puts a flat style.gridColumn on the wrapper, not on the component', () => {
+    const html = render([
+      { id: 'g', type: 'grid', props: {}, children: [{ id: 'c', type: 'echo', props: {}, style: { gridColumn: 'span 4', gridRow: 'span 2', color: 'red' } }] },
+    ])
+    const wrapper = wrapperStyle(html, 'c')
+    expect(wrapper).toContain('grid-column:span 4')
+    expect(wrapper).toContain('grid-row:span 2')
+    const inner = html.slice(html.indexOf('data-echo'))
+    expect(inner).not.toContain('grid-column')
+    expect(inner).not.toContain('grid-row')
+    expect(inner).toContain('color:red')
+  })
+
+  it('a top-level block keeps its authored gridColumn over the layout span', () => {
+    const html = render([{ id: 'c', type: 'echo', props: {}, style: { gridArea: 'main' } }])
+    expect(wrapperStyle(html, 'c')).toContain('grid-area:main')
+  })
+})

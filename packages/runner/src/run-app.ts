@@ -22,7 +22,7 @@ import {
   type SurfaceConnectionsValue,
 } from '@pwfabric/runtime'
 import type { RunAppOptions, SurfaceReceipt } from './types.js'
-import { assembleFooter, assembleNav, composeTitle, doorHeaders, fetchJson, queryStateSeed, receiptFilesOf, rewriteHrefs, seedStateFromQuery, withVersion } from './helpers.js'
+import { assembleFooter, assembleNav, composeTitle, doorHeaders, fetchJson, linkHrefFor, queryStateSeed, receiptFilesOf, rewriteHrefs, seedStateFromQuery, withVersion } from './helpers.js'
 import { createRouter, resolveRouterMode, type RouteChange } from './router.js'
 import { createAuthBridge, type AuthBridge } from './auth.js'
 import { accountUserFrom, applyAccountControl } from './apply-auth.js'
@@ -540,6 +540,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // And a page the visitor has already seen shows yesterday's rows
       // while today's load, so going back and forth costs nothing visible.
       dataCache,
+      // A link whose page is an expression is written for the router once its
+      // value is known (rewriteHrefs left it as written).
+      linkHref: linkHrefFor(entry, router.toHref),
       ...(entityFacade ? { entityFacade } : {}),
       // The account control's two actions. The renderer forwards every block
       // event here; the runtime's own dispatcher ignores these types.

@@ -431,3 +431,38 @@ describe('StrictMode — mount, unmount, mount', () => {
     await waitFor(() => expect(screen.queryByTestId('s')).not.toBeNull())
   })
 })
+
+// ============================================================
+// fallback — a rest source the host refuses binds its fallback
+// ============================================================
+
+describe('a rest source that cannot be served binds its fallback', () => {
+  // What `pwf dev` makes of an entity source on a create-only model: a rest
+  // read of the host's records, which the access rule refuses.
+  const ORDERS_OWN = {
+    id: 'orders',
+    kind: 'rest',
+    method: 'GET',
+    returns: 'data',
+    endpoint: 'http://localhost/api/records/Order',
+    fallback: [{ title: 'Sample order' }],
+  }
+  const own = text('own', 'first={{orders[0].title}} err={{__anyError}} status={{__status.orders}}')
+
+  for (const status of [401, 403, 500]) {
+    it(`a ${status} binds the fallback and keeps the error flag set`, async () => {
+      serve(() => ({ status, body: { error: { code: 'FORBIDDEN', message: 'Not allowed' } } }))
+      render(<DataBoundSurfaceRenderer surface={surface([ORDERS_OWN], [own])} components={components} interactionMode="live" />)
+      await waitFor(() => expect(textOf('own')).toContain('first=Sample order'))
+      expect(textOf('own')).toContain('err=true')
+      expect(textOf('own')).toContain(`status=${status}`)
+    })
+  }
+
+  it('a network failure binds the fallback too', async () => {
+    serve(() => 'network-error')
+    render(<DataBoundSurfaceRenderer surface={surface([ORDERS_OWN], [own])} components={components} interactionMode="live" />)
+    await waitFor(() => expect(textOf('own')).toContain('first=Sample order'))
+    expect(textOf('own')).toContain('err=true')
+  })
+})

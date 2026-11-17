@@ -36,6 +36,7 @@ import type {
   SurfaceConnectionsValue,
   DataServiceConfig,
   SurfaceDataCache,
+  LinkHref,
   BlockComponentProps,
 } from '@pwfabric/runtime'
 import type {
@@ -92,6 +93,8 @@ export interface RenderCoreOptions {
   readonly loadingStrategy?: 'gate' | 'immediate'
   /** See DataBoundSurfaceRendererProps — yesterday's rows while today's load. */
   readonly dataCache?: SurfaceDataCache
+  /** How the host writes an in-app link whose page was an expression; see the runtime's render/links.ts. */
+  readonly linkHref?: LinkHref
 
 
   /** `live` (default) or `inert` (no auto-refresh, no dispatched actions). */
@@ -192,6 +195,7 @@ function buildRendererProps(opts: RenderCoreOptions): Record<string, unknown> {
   if (opts.dataServiceConfig !== undefined) props.dataServiceConfig = opts.dataServiceConfig
   if (opts.loadingStrategy !== undefined) props.loadingStrategy = opts.loadingStrategy
   if (opts.dataCache !== undefined) props.dataCache = opts.dataCache
+  if (opts.linkHref !== undefined) props.linkHref = opts.linkHref
   if (opts.interactionMode !== undefined) props.interactionMode = opts.interactionMode
   if (opts.basePath !== undefined) props.basePath = opts.basePath
   if (opts.imageAdapter !== undefined) props.imageAdapter = opts.imageAdapter

@@ -16,6 +16,13 @@ import type { Block } from '@pwfabric/core'
 import { BREAKPOINT_ORDER } from '@pwfabric/core'
 import { evaluate, interpolate, createExpressionContext } from '../surface/expression.js'
 import type { ExpressionContext } from '../surface/expression.js'
+import { isExpressionLink, isLinkMember, safeDataLink, type LinkHref } from './links.js'
+
+/**
+ * The expression scope plus how this page writes an in-app link. Carried in
+ * the context so a repeat's per-row context (`{ ...context, data }`) keeps it.
+ */
+type ResolveContext = ExpressionContext & { readonly linkHref?: LinkHref }
 
 // ============================================================
 // WHOLE-VALUE PATTERN
@@ -82,7 +89,7 @@ export function resolveString(value: string, context: ExpressionContext): unknow
  * - Arrays and plain objects are traversed
  * - Other types pass through unchanged
  */
-function resolveValue(value: unknown, context: ExpressionContext): unknown {
+function resolveValue(value: unknown, context: ResolveContext): unknown {
   if (typeof value === 'string') {
     return resolveString(value, context)
   }
@@ -95,6 +102,24 @@ function resolveValue(value: unknown, context: ExpressionContext): unknown {
     const resolved: Record<string, unknown> = {}
     for (const [key, val] of Object.entries(value)) {
       resolved[key] = resolveValue(val, context)
+      // A link whose page is an expression (`href: "{{item.url}}"`) was left
+      // as written by the host; now that its value is known, it is written in
+      // the active router's form. Its value came from DATA, so it must be a
+      // link and nothing else: `javascript:alert(1)` in a row is dropped and
+      // the link has no href (safeDataLink). FAIL CLOSED: a value that is not
+      // a string (a list, an object, a number, undefined while loading) is
+      // no link either. Only a link that did not resolve — the template
+      // left as written — stays as it is.
+      const href = resolved[key]
+      if (
+        typeof val === 'string' &&
+        href !== val &&
+        isExpressionLink(val) &&
+        isLinkMember(key, value as Record<string, unknown>)
+      ) {
+        const safe = typeof href === 'string' ? safeDataLink(href) : undefined
+        resolved[key] = safe === undefined ? undefined : context.linkHref ? context.linkHref(safe) : safe
+      }
     }
     return resolved
   }
@@ -115,14 +140,20 @@ function resolveValue(value: unknown, context: ExpressionContext): unknown {
  * @param blocks - Block array to resolve
  * @param data - Data context (keyed by source ID, plus 'state')
  * @param helpers - Optional additional helper functions
+ * @param options.linkHref - Writes a resolved in-app link in the host's router
+ *   form; applied to links whose page is an expression (see links.ts)
  * @returns New block array with resolved prop values
  */
 export function resolveBlockExpressions(
   blocks: readonly Block[],
   data: Record<string, unknown>,
-  helpers?: Record<string, (...args: unknown[]) => unknown>
+  helpers?: Record<string, (...args: unknown[]) => unknown>,
+  options: { readonly linkHref?: LinkHref } = {}
 ): Block[] {
-  const context = createExpressionContext(data, helpers)
+  const context: ResolveContext = {
+    ...createExpressionContext(data, helpers),
+    ...(options.linkHref ? { linkHref: options.linkHref } : {}),
+  }
   return blocks
     .map((block) => resolveBlock(block, context, false))
     .filter((b): b is Block => b !== null)
@@ -231,7 +262,7 @@ function hideInPlace(block: Block): Block {
  * inputs keep their values and stay part of the submission. The form itself,
  * and everything outside forms, still unmounts as before.
  */
-function resolveBlock(block: Block, context: ExpressionContext, insideForm: boolean): Block | null {
+function resolveBlock(block: Block, context: ResolveContext, insideForm: boolean): Block | null {
   const stateMap = context.data['state'] as Record<string, unknown> | undefined
   const override = stateMap?.[`__show:${block.id}`]
   let hidden = override === false
@@ -254,7 +285,7 @@ function resolveBlock(block: Block, context: ExpressionContext, insideForm: bool
   return hidden ? hideInPlace(resolved) : resolved
 }
 
-function resolveVisibleBlock(block: Block, context: ExpressionContext, insideForm: boolean): Block {
+function resolveVisibleBlock(block: Block, context: ResolveContext, insideForm: boolean): Block {
   const resolvedProps = block.props
     ? (resolveValue(block.props, context) as Record<string, unknown>)
     : block.props
@@ -277,7 +308,7 @@ function resolveVisibleBlock(block: Block, context: ExpressionContext, insideFor
     const template = block.children
     const expanded: Block[] = []
     for (let index = 0; index < items.length; index++) {
-      const itemContext: ExpressionContext = {
+      const itemContext: ResolveContext = {
         ...context,
         data: { ...context.data, item: items[index], index },
       }

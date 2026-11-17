@@ -355,3 +355,103 @@ describe('resolveBlockExpressions', () => {
     })
   })
 })
+
+// ============================================================
+// Links whose page is an expression — rewritten once the value is known
+// ============================================================
+
+describe('resolveBlockExpressions — linkHref', () => {
+  const linkHref = (href: string): string => `#${href}`
+  const L = DEFAULT_BLOCK_LAYOUT
+  const sessions = [{ id: 4, url: '/session?id=4' }]
+
+  function rows(props: Record<string, unknown>): Block[] {
+    return [
+      {
+        id: 'list',
+        type: 'container',
+        layout: L,
+        repeat: '{{sessions}}',
+        props: {},
+        children: [{ id: 'row', type: 'link', layout: L, props }],
+      } as Block,
+    ]
+  }
+  const rowProps = (blocks: Block[]): Record<string, unknown> =>
+    (at(blocks, 0).children?.[0]?.props ?? {}) as Record<string, unknown>
+
+  it('writes a resolved `{{item.url}}` href in the router form', () => {
+    const out = resolveBlockExpressions(rows({ href: '{{item.url}}', text: '{{item.url}}' }), { sessions }, undefined, { linkHref })
+    expect(rowProps(out).href).toBe('#/session?id=4')
+    // only links are rewritten
+    expect(rowProps(out).text).toBe('/session?id=4')
+  })
+
+  it('covers role-named links and navigate actions', () => {
+    const out = resolveBlockExpressions(
+      rows({ ctaHref: '{{item.url}}', action: { type: 'navigate', url: '{{item.url}}' } }),
+      { sessions },
+      undefined,
+      { linkHref }
+    )
+    expect(rowProps(out).ctaHref).toBe('#/session?id=4')
+    expect(rowProps(out).action).toEqual({ type: 'navigate', url: '#/session?id=4' })
+  })
+
+  it('leaves a link the host already rewrote, and one that did not resolve', () => {
+    const literal = resolveBlockExpressions(rows({ href: '#/session?id={{item.id}}' }), { sessions }, undefined, { linkHref })
+    expect(rowProps(literal).href).toBe('#/session?id=4')
+    const failed = resolveBlockExpressions(rows({ href: '{{nope(item.url)}}' }), { sessions }, undefined, { linkHref })
+    expect(rowProps(failed).href).toBe('{{nope(item.url)}}')
+  })
+
+  it('without linkHref the value is bound as it resolves', () => {
+    const out = resolveBlockExpressions(rows({ href: '{{item.url}}' }), { sessions })
+    expect(rowProps(out).href).toBe('/session?id=4')
+  })
+})
+
+describe('resolveBlockExpressions — a link from data is a link or nothing', () => {
+  const L = DEFAULT_BLOCK_LAYOUT
+  const hrefOf = (url: string, linkHref?: (h: string) => string): unknown => {
+    const blocks: Block[] = [
+      {
+        id: 'list',
+        type: 'container',
+        layout: L,
+        repeat: '{{rows}}',
+        props: {},
+        children: [{ id: 'row', type: 'link', layout: L, props: { href: '{{item.url}}', action: { type: 'navigate', url: '{{item.url}}' } } }],
+      } as Block,
+    ]
+    const out = resolveBlockExpressions(blocks, { rows: [{ url }] }, undefined, linkHref ? { linkHref } : {})
+    const props = (at(out, 0).children?.[0]?.props ?? {}) as Record<string, unknown>
+    expect((props.action as Record<string, unknown>).url).toBe(props.href)
+    return props.href
+  }
+  const linkHref = (h: string): string => (h.startsWith('/') ? `#${h}` : h)
+
+  for (const bad of ['javascript:alert(1)', 'JAVASCRIPT:alert(1)', 'java\tscript:alert(1)', ' javascript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'vbscript:x', '//evil.example/x', '/\\evil.example/x', 'session?id=4']) {
+    it(`drops ${JSON.stringify(bad)} — with and without a router`, () => {
+      expect(hrefOf(bad, linkHref)).toBeUndefined()
+      expect(hrefOf(bad)).toBeUndefined()
+    })
+  }
+
+  it('drops a value that is not a string — fail closed', () => {
+    for (const bad of [['/a'], { href: '/a' }, 42, true, null, undefined]) {
+      expect(hrefOf(bad as never, linkHref)).toBeUndefined()
+      expect(hrefOf(bad as never)).toBeUndefined()
+    }
+  })
+
+  it('keeps root-relative paths (for the router), fragments and http/https/mailto/tel', () => {
+    expect(hrefOf('/session?id=4', linkHref)).toBe('#/session?id=4')
+    expect(hrefOf('#speakers', linkHref)).toBe('#speakers')
+    expect(hrefOf('https://example.com/x', linkHref)).toBe('https://example.com/x')
+    expect(hrefOf('HTTP://example.com', linkHref)).toBe('HTTP://example.com')
+    expect(hrefOf('mailto:hello@example.com', linkHref)).toBe('mailto:hello@example.com')
+    expect(hrefOf('tel:+15550100', linkHref)).toBe('tel:+15550100')
+    expect(hrefOf('/café', linkHref)).toBe('#/café')
+  })
+})

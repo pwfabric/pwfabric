@@ -22,6 +22,7 @@
 import * as React from 'react'
 import { SurfaceRenderer } from './renderer.js'
 import { resolveBlockExpressions } from './resolve-expressions.js'
+import { readableUrl, urlSchemeOf, type LinkHref } from './links.js'
 import { endpointMissingPathValue, resolveEndpoint } from './endpoint.js'
 import { resolveQueryState } from './query-state.js'
 import { dataSourceCacheKey, type SurfaceDataCache } from './data-cache.js'
@@ -602,7 +603,17 @@ function useSurfaceData(
           meta: result.metadata.envelope ?? null,
         }
       }
-      return failed(new Error(result.error.message), result.error.status ?? null)
+      // A refused read (401/403), a 404, a 500 or no answer at all: the source
+      // could not be served, and its `fallback` is bound like an entity
+      // source's (data-protocol §2). This branch reported the error and
+      // dropped the fallback, so under a host that rewrites entity sources
+      // into rest reads of its records (`pwf dev`), a page reading a
+      // create-only model showed neither rows nor its sample data.
+      const message = result.error.message
+      return failed(
+        source.fallback !== undefined ? new SourceFallback(message, source.fallback) : new Error(message),
+        result.error.status ?? null
+      )
     },
     [dataService, registerSource]
   )
@@ -898,6 +909,25 @@ export function canonicalizeEventType(raw: string): string {
 }
 
 // ============================================================
+// behaviorTargets
+// ============================================================
+
+/**
+ * Whether a behavior aimed at `targetBlockId` hears an event from `blockId`.
+ *
+ * A block inside a `repeat` is drawn once per row, each copy with the id
+ * `<id>--<index>` (`<id>--<outer>--<inner>` in a nested repeat) — the id the
+ * event carries. The receipt can only name the TEMPLATE id; matching it
+ * exactly meant a behavior aimed at a repeated block never fired. The
+ * template id names every copy; a copy id still names that one copy.
+ */
+export function behaviorTargets(targetBlockId: string, blockId: string): boolean {
+  if (blockId === targetBlockId) return true
+  if (!blockId.startsWith(`${targetBlockId}--`)) return false
+  return /^(--\d+)+$/.test(blockId.slice(targetBlockId.length))
+}
+
+// ============================================================
 // isSurfaceAction
 // ============================================================
 
@@ -923,11 +953,9 @@ export function isSurfaceAction(value: unknown): value is SurfaceAction {
  */
 export function isSafeNavigateUrl(url: unknown): url is string {
   if (typeof url !== 'string') return false
-  const stripped = url.replace(/[^!-~]/g, '')
-  if (stripped === '') return false
-  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(stripped)
-  if (!scheme) return true // relative path / query / hash / protocol-relative
-  const s = (scheme[1] ?? '').toLowerCase()
+  if (readableUrl(url) === '') return false
+  const s = urlSchemeOf(url)
+  if (s === null) return true // relative path / query / hash / protocol-relative
   return s === 'http' || s === 'https'
 }
 
@@ -1058,6 +1086,7 @@ function DataBoundInner({
   // SurfaceConnectionsContext provider via the rendererProps spread below).
   const connections = (rendererProps as { connections?: SurfaceConnectionsValue }).connections
   const dataCache = (rendererProps as { dataCache?: SurfaceDataCache }).dataCache
+  const linkHref = (rendererProps as { linkHref?: LinkHref }).linkHref
   // Keyed by the ids, so a re-render that changes nothing hands useSurfaceData
   // the same set (its expression context depends on it).
   const writeOnlyKey = React.useMemo(
@@ -1073,8 +1102,8 @@ function DataBoundInner({
 
   // Resolve expressions in blocks
   const resolvedBlocks = React.useMemo(
-    () => resolveBlockExpressions(blocks as Block[], expressionData),
-    [blocks, expressionData]
+    () => resolveBlockExpressions(blocks as Block[], expressionData, undefined, linkHref ? { linkHref } : {}),
+    [blocks, expressionData, linkHref]
   )
 
   // Shared action dispatcher — handles all six action types
@@ -1150,7 +1179,7 @@ function DataBoundInner({
         if (behaviors && behaviors.length > 0) {
           for (const b of behaviors) {
             if (canonicalizeEventType(b.event) !== fired) continue
-            if (b.targetBlockId && b.targetBlockId !== event.blockId) continue
+            if (b.targetBlockId && !behaviorTargets(b.targetBlockId, event.blockId)) continue
             b.actions.forEach(dispatchAction)
           }
         }

@@ -857,7 +857,10 @@ export const DEFAULT_BINDING_HELPERS: Record<string, (...args: unknown[]) => unk
   },
 
   // Array helpers
-  length: (arr: unknown) => (Array.isArray(arr) ? arr.length : String(arr).length),
+  // A list or a string has a length; anything else — a source that has not
+  // answered (`undefined`), `null`, a number — has none, and `String(v).length`
+  // counted the letters of "undefined" (9) or "null" (4) instead.
+  length: (v: unknown) => (Array.isArray(v) || typeof v === 'string' ? v.length : 0),
   first: (arr: unknown) => (Array.isArray(arr) ? arr[0] : undefined),
   last: (arr: unknown) => (Array.isArray(arr) ? arr[arr.length - 1] : undefined),
   join: (arr: unknown, sep?: unknown) =>
