@@ -1,7 +1,12 @@
 # @pwfabric/cli
 
-## Unreleased
+## 2.1.0
 
+- Fixed: `pwf run` and `pwf dev` answer a page path that contains a dot (`/layout.two-pane`) with the app shell; only a path ending in a file type the server serves is an asset, and a missing asset of a known type is still a 404.
+- Added (minor): `pwf build` and `pwf dev` add the origins a placed block declares (`definition.origins`) to the app's Content Security Policy, directive by directive; a block an app carries but no page places adds nothing, and a malformed declaration on a placed block fails the build.
+- Changed: `blocks/manifest.json` carries each placed block's props with their `bindable` flag (`definition.props: [{ name, bindable? }]`), so the runtime can leave a `bindable: false` prop as written.
+- Fixed: `pwf dev` reloads the page only when what it serves changed. A file the app does not read (a screenshot saved in the folder, an editor backup) no longer reloads the page and resets its state; `publishedAt` is fixed for the session.
+- Added: `pwf validate` knows the row fields of a connector-served source from the entities its connector or provider declares (through `app/definitions/connections.json`), and reports `FIELD_UNKNOWN` for those too.
 - Added (minor): `pwpack.json` is written with `name`, `description` and `category` after `formatVersion`, and `tokens` after `requires` (key order `id, version, formatVersion, name, description, category, engines, requires, tokens, license, app, packs`).
 - Changed: `pwf create` writes `formatVersion` `1.1`.
 - Added: `pwf validate` (and `pwf pack`) warn about block props in the receipts (`app/surfaces/*.receipt.json`) that do not fit the block's manifest: `BLOCK_PROP_UNKNOWN`, `BLOCK_PROP_ENUM` (names the allowed values), `BLOCK_PROP_TYPE`. Block types resolve as in `pwf dev`: the app's own blocks first, then its pinned packs from `.pwf/packs/`. A button with `size: "sm"` used to render as `medium` without a word.

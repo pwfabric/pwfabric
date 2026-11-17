@@ -1,7 +1,8 @@
 # @pwfabric/runner
 
-## Unreleased
+## 2.1.0
 
+- Fixed: `rewriteHrefs` leaves a link that starts with an expression as written; `linkHrefFor(entry, toHref)` rewrites it once resolved, the same way.
 - Changed (behaviour, changes the documented default): an `entity` data source with no `connector` reads the app's own records of its `entityType` (data-protocol §2.2). Until now the runner bound it to a connection named `graph-lists` (Microsoft SharePoint lists), contradicting the spec's examples and `pwf dev`. Now:
   - with the app's own API base known (`ownApiBaseOf(auth)`), the source is served from the record endpoints exactly as `pwf dev` serves it: `{ kind: "rest", method: "GET", endpoint: "<base>/records/<T>", authProviderRef: "<base>", returns: "data" }`, an aggregate at `/records/<T>/count` or `/records/<T>/aggregate?fn=&field=&filter=`;
   - without one, no facade is built for it and it draws its `fallback`.
