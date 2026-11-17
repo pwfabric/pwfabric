@@ -5,40 +5,32 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
-import { extname, join, resolve, sep } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { withBaseHref } from '../../dev/shell.js'
+import { CONTENT_TYPES, contentTypeOf, isPagePath } from '../../dev/content-types.js'
 
-export const CONTENT_TYPES: Readonly<Record<string, string>> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.map': 'application/json; charset=utf-8',
-  '.txt': 'text/plain; charset=utf-8',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.avif': 'image/avif',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.wasm': 'application/wasm',
-}
-
-export function contentTypeOf(path: string): string {
-  return CONTENT_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream'
-}
+export { CONTENT_TYPES, contentTypeOf, isPagePath }
 
 /** Where the files come from: a folder on disk, or files held in memory (an opened archive). */
 export type StaticSource = { readonly dir: string } | { readonly files: ReadonlyMap<string, Uint8Array> }
 
+/**
+ * A host mounted beside the files (`pwf run` serves an app's records through
+ * one): requests it claims are its own, and the envelope files it answers for
+ * replace the built ones.
+ */
+export interface StaticHost {
+  /** Handles a request; resolves false when the path is not the host's. */
+  handle(req: IncomingMessage, res: ServerResponse): Promise<boolean>
+  /** The body to serve instead of a built file, or undefined to serve it as built. */
+  envelopeFile(rel: string, built: Uint8Array): Uint8Array | undefined
+}
+
 export interface StaticServerOptions {
   readonly source: StaticSource
+  /** A host mounted beside the files. */
+  readonly host?: StaticHost
   /** 0 picks a free port. */
   readonly port: number
   /** Default 127.0.0.1. */
@@ -77,16 +69,6 @@ async function load(source: StaticSource, rel: string): Promise<Uint8Array | nul
   const st = await stat(abs).catch(() => null)
   if (!st?.isFile()) return null
   return new Uint8Array(await readFile(abs))
-}
-
-/**
- * Whether a request path names a page rather than a file: its last segment
- * does not end in an extension this server serves. A page id may carry a dot
- * (`layout.two-pane`), so "has no extension" is not the test — only a known
- * file type makes a path an asset, and a missing asset stays a 404.
- */
-export function isPagePath(rel: string): boolean {
-  return !(extname(rel).toLowerCase() in CONTENT_TYPES)
 }
 
 /** Resolves a request to a file: the path itself, `<path>/index.html`, then the SPA fallback for page paths. */
@@ -151,7 +133,8 @@ async function extraHeaders(source: StaticSource, rel: string): Promise<Record<s
   return out
 }
 
-async function handle(source: StaticSource, req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handle(source: StaticSource, req: IncomingMessage, res: ServerResponse, host: StaticHost | undefined): Promise<void> {
+  if (host && (await host.handle(req, res))) return
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405, { ...TEXT, allow: 'GET, HEAD' }).end('method not allowed\n')
     return
@@ -164,7 +147,8 @@ async function handle(source: StaticSource, req: IncomingMessage, res: ServerRes
     return
   }
   // A page path answered with the shell gets the app's base (see withBaseHref).
-  const body = found.path === 'index.html' && rel !== '' && rel !== 'index.html' ? withBaseHref(found.body) : found.body
+  const built = found.path === 'index.html' && rel !== '' && rel !== 'index.html' ? withBaseHref(found.body) : found.body
+  const body = host?.envelopeFile(found.path, built) ?? built
   res.writeHead(200, {
     ...(await extraHeaders(source, rel ?? '')),
     'content-type': contentTypeOf(found.path),
@@ -179,7 +163,7 @@ async function handle(source: StaticSource, req: IncomingMessage, res: ServerRes
 export function startStaticServer(options: StaticServerOptions): Promise<StaticServer> {
   const hostname = options.hostname ?? '127.0.0.1'
   const server = createServer((req, res) => {
-    handle(options.source, req, res).catch(() => {
+    handle(options.source, req, res, options.host).catch(() => {
       if (!res.headersSent) res.writeHead(500, TEXT)
       res.end('internal error\n')
     })
