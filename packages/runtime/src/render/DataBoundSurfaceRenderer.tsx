@@ -21,7 +21,8 @@
 
 import * as React from 'react'
 import { SurfaceRenderer } from './renderer.js'
-import { resolveBlockExpressions } from './resolve-expressions.js'
+import { literalPropsOf, resolveBlockExpressions } from './resolve-expressions.js'
+import { useDynamicBlocks } from './dynamic-artifact-context.js'
 import { readableUrl, urlSchemeOf, type LinkHref } from './links.js'
 import { endpointMissingPathValue, resolveEndpoint } from './endpoint.js'
 import { resolveQueryState } from './query-state.js'
@@ -1100,10 +1101,19 @@ function DataBoundInner({
   const { expressionData, initialLoaded, setStateValue, refreshSource, fetchAllSources } =
     useSurfaceData(dataSources, initialState, interactionMode, entityFacade, connections, dataCache, writeOnly)
 
+  // The props each block's manifest declares `bindable: false` stay as
+  // written; the descriptors the host handed the renderer carry them.
+  const { blocks: descriptors } = useDynamicBlocks()
+  const literalProps = React.useMemo(() => literalPropsOf(descriptors.values()), [descriptors])
+
   // Resolve expressions in blocks
   const resolvedBlocks = React.useMemo(
-    () => resolveBlockExpressions(blocks as Block[], expressionData, undefined, linkHref ? { linkHref } : {}),
-    [blocks, expressionData, linkHref]
+    () =>
+      resolveBlockExpressions(blocks as Block[], expressionData, undefined, {
+        literalProps,
+        ...(linkHref ? { linkHref } : {}),
+      }),
+    [blocks, expressionData, linkHref, literalProps]
   )
 
   // Shared action dispatcher — handles all six action types

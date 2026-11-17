@@ -38,10 +38,23 @@ export interface PropertySchemaEntry {
 }
 
 /**
+ * One prop a block's manifest declares (block-manifest, "Prop descriptor"),
+ * reduced to what a renderer reads before the module loads: its name and
+ * whether it takes a binding. `bindable: false` means the prop takes a literal
+ * only — a `{{…}}` in it is shown as written. Absent means bindable.
+ */
+export interface DynamicBlockProp {
+  readonly name: string
+  readonly bindable?: boolean
+}
+
+/**
  * Block definition extracted from the dynamic module.
  */
 export interface DynamicBlockDefinition {
   readonly name: string
+  /** The props the block's manifest declares (`definition.props`), name and `bindable` only. */
+  readonly props?: readonly DynamicBlockProp[]
   readonly icon?: string
   readonly category?: string
   readonly defaultProps?: Readonly<Record<string, unknown>>
