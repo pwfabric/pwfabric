@@ -163,6 +163,27 @@ describe('applyScroll — hash mode', () => {
     expect(scrolledInto).toContain(target)
   })
 
+  it('a block that renders no id of its own is found by its data-block-id', () => {
+    // The renderer's wrapper carries data-block-id only (one id per element).
+    const wrapper = document.createElement('div')
+    wrapper.setAttribute('data-block-id', 'pricing')
+    document.body.appendChild(wrapper)
+    goTo('/index.html#/people#pricing')
+    createRouter('hash', PAGES, 'home').applyScroll()
+    expect(scrolledInto).toContain(wrapper)
+  })
+
+  it('an element with the id wins over a block wrapper with that block id', () => {
+    const wrapper = document.createElement('div')
+    wrapper.setAttribute('data-block-id', 'team')
+    document.body.appendChild(wrapper)
+    const own = section('team')
+    goTo('/index.html#/people#team')
+    createRouter('hash', PAGES, 'home').applyScroll()
+    expect(scrolledInto).toContain(own)
+    expect(scrolledInto).not.toContain(wrapper)
+  })
+
   it('a malformed escape finds nothing and does not throw', () => {
     goTo('/index.html#/people#%E0%A4%A')
     expect(() => createRouter('hash', PAGES, 'home').applyScroll()).not.toThrow()
@@ -335,6 +356,16 @@ describe('hash router start()', () => {
     reduce = true
     click(link('#rsvp'))
     expect(behaviours).toEqual(['smooth', 'auto'])
+  })
+
+  it('a bare anchor naming only a block id is scrolled to by the router', () => {
+    const wrapper = document.createElement('div')
+    wrapper.setAttribute('data-block-id', 'contact')
+    document.body.appendChild(wrapper)
+    const { onChange } = started('#/people')
+    fireHashChange('#contact')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(scrolledInto).toContain(wrapper)
   })
 
   it('a new query on the same page is reported as query-only', () => {

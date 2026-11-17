@@ -88,16 +88,36 @@ export interface RouteChange {
 /** How long an anchor keeps being honoured while the surface fills in. */
 const ANCHOR_WATCH_MS = 3000
 
+/**
+ * The element an anchor names: the one with that id, else the block with that
+ * id. A block's component renders its id on its own root; the renderer's
+ * wrapper carries only `data-block-id` (one id per element in the page), so a
+ * block that renders no id of its own is still reachable by its block id.
+ */
 function elementFor(anchor: string): HTMLElement | null {
-  const byId = document.getElementById(anchor)
-  if (byId) return byId
   // A non-ASCII anchor travels percent-encoded in the address but is authored
   // decoded in the receipt, so the id on the page is the decoded form.
+  let decoded = anchor
   try {
-    return document.getElementById(decodeURIComponent(anchor))
+    decoded = decodeURIComponent(anchor)
   } catch {
-    return null
+    // a malformed escape: the anchor as written is all there is
   }
+  const names = decoded === anchor ? [anchor] : [anchor, decoded]
+  for (const name of names) {
+    const byId = document.getElementById(name)
+    if (byId) return byId
+  }
+  for (const name of names) {
+    const block = document.querySelector<HTMLElement>(`[data-block-id="${cssString(name)}"]`)
+    if (block) return block
+  }
+  return null
+}
+
+/** `value` safe inside a double-quoted CSS attribute selector. */
+function cssString(value: string): string {
+  return value.replace(/["\\]/g, '\\$&')
 }
 
 /**

@@ -37,6 +37,7 @@ vi.mock('../dynamic-block-loader.js', () => ({
     loadAtom: vi.fn(),
     isLoaded: vi.fn().mockReturnValue(false),
     getSync: vi.fn().mockReturnValue(null),
+    subscribeSized: vi.fn(() => () => {}),
     invalidate: vi.fn(),
   },
 }))

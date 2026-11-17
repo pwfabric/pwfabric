@@ -66,6 +66,7 @@ import type { SurfaceDataSourceDefinition } from './data-binding-types.js'
 import { EntityFacadeContext } from './entity-facade-context.js'
 import { SurfaceConnectionsContext } from './connections-context.js'
 import { ShellSelectionProvider } from './shell-selection.js'
+import { BlockModuleLoader } from './dynamic-block-loader.js'
 import type { FormEntityBridgeConfig } from '../forms/form-entity-bridge.js'
 import { isRepeatExpanded } from './resolve-expressions.js'
 
@@ -195,7 +196,8 @@ function baseWrapperProps(
     // `exactOptionalPropertyTypes`: an optional field cannot be given an
     // explicit `undefined`; when absent it is left out.
     ...(layoutStyle ? { style: layoutStyle } : {}),
-    id: block.id,
+    // No `id` here: the component renders it on its own root (see
+    // BlockWrapperProps). Both carrying it put every id in the page twice.
     'data-block-id': block.id,
     ...scopeAttr,
     // `data-block-wrapper`: an ALIAS carrying the same value as `data-block-id`
@@ -339,9 +341,18 @@ function applyRowStacking(
   if (!ROW_DIRECTIONS.has(String(props.direction))) return block
   if (props.keepRow === true || props.wrap === true) return block
   const children = block.children ?? []
-  const fluid = children.filter((c) => components[c.type]?.sizing !== 'intrinsic').length
+  const fluid = children.filter((c) => sizingOf(c.type, components) !== 'intrinsic').length
   if (fluid < 2) return block
   return { ...block, props: { ...props, direction: 'column', stackedFromRow: true } }
+}
+
+/**
+ * What a block type declares about its sizing: the static on its component —
+ * a component handed to the renderer, or an installed block's module once it
+ * has loaded (SurfaceRenderer draws again when one that declares it arrives).
+ */
+function sizingOf(type: string, components: BlockComponentRegistry): BlockSizing | undefined {
+  return components[type]?.sizing ?? BlockModuleLoader.getSync(type)?.sizing
 }
 
 const FIXED_PX_WIDTH = /^\s*\d+(?:\.\d+)?\s*px\s*$/i
@@ -510,6 +521,23 @@ function computeBlockLayoutStyle(
     }
   }
 
+  // A FILL block (a progress bar) has no content width of its own. Its wrapper
+  // is the flex item or grid cell, and a wrapper shrunk around nothing — in a
+  // centred column, `align-items: center` — is 0 wide, so the block's own
+  // `width: 100%` resolved to 0 and the bar vanished. The wrapper fills the
+  // line instead, which is what the block would do without a wrapper. A width
+  // the layout already decided (a row's flex share, a column span, an authored
+  // width) wins.
+  if (
+    sizing === 'fill' &&
+    !isRowContainer &&
+    columnChildWidth === undefined &&
+    hoistedStyle.width === undefined &&
+    !hasFixedWidth(block)
+  ) {
+    hoistedStyle.width = '100%'
+  }
+
   // Interaction states (block.states) are rendered as scoped `:hover`/`:active`/
   // `:focus-visible` CSS rules elsewhere; here we add a default `transition` to
   // the base wrapper style so the state change animates. Authors can still
@@ -573,7 +601,7 @@ function renderBlock(
     block,
     parentBlock,
     (context.viewport ?? 'lg') as BreakpointName,
-    components[block.type]?.sizing
+    sizingOf(block.type, components)
   )
 
   // Scope stamp. A viewport audit needs to see the declaration in the DOM to
@@ -919,6 +947,11 @@ export function SurfaceRenderer({
 
   // Read dynamic block descriptors
   const { blocks: dynamicBlockMap } = useDynamicBlocks()
+
+  // An installed block's `sizing` is known only once its module has loaded,
+  // after its parent drew the wrapper. Draw again when such a module arrives.
+  const [, sizedModuleLoaded] = React.useReducer((n: number) => n + 1, 0)
+  React.useEffect(() => BlockModuleLoader.subscribeSized(sizedModuleLoaded), [])
 
   // The root FLOWS; the measure lives in an INNER container.
   //

@@ -31,7 +31,10 @@ const Box: BlockComponent = ({ children }) => <div data-box>{children}</div>
 const Chip: BlockComponent = () => <span data-chip>chip</span>
 Chip.sizing = 'intrinsic'
 
-const components = { echo: StyleEcho, grid: Box, container: Box, chip: Chip }
+const Bar: BlockComponent = () => <div data-bar style={{ width: '100%' }} />
+Bar.sizing = 'fill'
+
+const components = { echo: StyleEcho, grid: Box, container: Box, chip: Chip, bar: Bar }
 
 function wrapperStyle(html: string, id: string): string {
   const m = html.match(new RegExp('<div style="([^"]*)"[^>]*data-block-id="' + id + '"'))
@@ -308,5 +311,39 @@ describe('grid placement goes on the grid item (the wrapper)', () => {
   it('a top-level block keeps its authored gridColumn over the layout span', () => {
     const html = render([{ id: 'c', type: 'echo', props: {}, style: { gridArea: 'main' } }])
     expect(wrapperStyle(html, 'c')).toContain('grid-area:main')
+  })
+})
+
+describe('component-declared fill sizing', () => {
+  // A bar has no content width. In a centred column its wrapper shrank to 0
+  // and the bar's own width:100% resolved against nothing — the track vanished.
+  it('the wrapper of a sizing:fill block fills a column', () => {
+    const html = render([
+      {
+        id: 'col', type: 'container', props: { direction: 'column', align: 'center' },
+        children: [{ id: 'b', type: 'bar', props: {} }],
+      },
+    ])
+    expect(wrapperStyle(html, 'b')).toContain('width:100%')
+  })
+
+  it('leaves a fluid block without the declaration as it was', () => {
+    const html = render([
+      {
+        id: 'col', type: 'container', props: { direction: 'column' },
+        children: [{ id: 'e', type: 'echo', props: {} }],
+      },
+    ])
+    expect(wrapperStyle(html, 'e')).not.toContain('width')
+  })
+
+  it('a row share and an authored width still win', () => {
+    const html = render([
+      { id: 'r', type: 'container', props: { direction: 'row' }, children: [{ id: 'b1', type: 'bar', props: {} }] },
+      { id: 'c', type: 'container', props: { direction: 'column' }, children: [{ id: 'b2', type: 'bar', props: {}, style: { width: '120px' } }] },
+    ])
+    expect(wrapperStyle(html, 'b1')).not.toContain('width:100%')
+    expect(wrapperStyle(html, 'b1')).toContain('flex-grow:1')
+    expect(wrapperStyle(html, 'b2')).not.toContain('width:100%')
   })
 })

@@ -100,8 +100,18 @@ export type BlockComponent<T = Record<string, unknown>> = ((
   sizing?: BlockSizing
 }
 
-/** The only sizing word the engine knows besides its default (fluid share). */
-export type BlockSizing = 'intrinsic'
+/**
+ * The sizing words the engine knows besides its default (a fluid share).
+ *
+ * - `intrinsic` — the block's width is its content (avatar, badge, button):
+ *   in a row it keeps that width instead of taking an equal share.
+ * - `fill` — the block takes the whole width of where it is placed and has no
+ *   content width of its own (a progress bar, a rule). Its wrapper fills the
+ *   parent's line in a column or centred parent, so the block does not
+ *   collapse to the zero width of a wrapper shrunk around nothing. In a row the
+ *   flex share decides, as for any fluid block.
+ */
+export type BlockSizing = 'intrinsic' | 'fill'
 
 /**
  * Block component registry
@@ -198,17 +208,15 @@ export type BlockInteractionMode = 'live' | 'inert'
 export interface BlockWrapperProps {
   readonly style?: CSSProperties
   /**
-   * The block id as a DOM id, so `#<blockId>` is a reachable anchor.
+   * Unified per-block selector — present on every render path.
    *
-   * Separate from `data-block-id`, which addresses blocks for styling and
-   * editing: only a real `id` makes a fragment link scroll, so without it
-   * same-page navigation would be silently impossible.
-   *
-   * A decorator that renders its own wrapper receives this and is expected to
-   * apply it — two elements carrying one id is worse than none.
+   * The wrapper carries NO DOM `id`. The block's component renders `id` on its
+   * own root (every first-party block does), and a wrapper carrying the same id
+   * put every id in the document twice — invalid HTML, and `#<id>` /
+   * `aria-labelledby` resolved to the wrapper rather than the block. A host
+   * looking for an anchor falls back to `[data-block-id]` for a block that
+   * renders no id of its own.
    */
-  readonly id?: string
-  /** Unified per-block selector — present on every render path. */
   readonly 'data-block-id': string
   /** Any other `data-*` attributes the runtime sets (e.g. data-dynamic-block). */
   readonly [dataAttr: `data-${string}`]: string | undefined
