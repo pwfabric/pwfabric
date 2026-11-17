@@ -13,7 +13,11 @@
  * schema has one, its `enum`/`const`. `anyOf`/`oneOf`/`allOf` combine branches;
  * nothing below the top level of an object or array value is checked. A value
  * that is a binding (a string carrying `{{…}}`, whole or interpolated) resolves
- * at runtime and is not checked.
+ * at runtime and is not checked — except on a prop the manifest declares
+ * `bindable: false`. The runtime leaves such a prop exactly as written, nested
+ * values included, so a template anywhere in it would show its braces: that is
+ * a warning of its own (BLOCK_PROP_NOT_BINDABLE), and the value is judged as
+ * the literal it is. A prop with no `bindable` declaration is bindable.
  */
 import type { AtomRef } from '@pwfabric/contracts'
 import type { PackFolder, PackIssue } from './types.js'
@@ -24,11 +28,15 @@ export const BLOCK_PROP_UNKNOWN = 'BLOCK_PROP_UNKNOWN'
 export const BLOCK_PROP_ENUM = 'BLOCK_PROP_ENUM'
 /** A value's JSON type is not one the prop's `jsonSchema` accepts. */
 export const BLOCK_PROP_TYPE = 'BLOCK_PROP_TYPE'
+/** A `{{…}}` template sits in a prop declared `bindable: false`; it is not resolved and renders as written. */
+export const BLOCK_PROP_NOT_BINDABLE = 'BLOCK_PROP_NOT_BINDABLE'
 
 /** One prop as a block manifest declares it; the members this check reads. */
 export interface BlockPropDescriptor {
   readonly name: string
   readonly jsonSchema?: unknown
+  /** `false`: the prop takes a literal only (block-manifest, "Prop descriptor"). Absent means bindable. */
+  readonly bindable?: boolean
 }
 
 /** A block type as the check resolves it. */
@@ -130,6 +138,37 @@ export function isBinding(value: unknown): boolean {
   return typeof value === 'string' && /\{\{[\s\S]*?\}\}/.test(value)
 }
 
+/*
+ * The runtime's own test for a string it resolves (@pwfabric/runtime,
+ * render/resolve-expressions.ts: WHOLE_VALUE_PATTERN, HAS_EXPRESSION_PATTERN),
+ * mirrored exactly: this package does not depend on the runtime. Keep the two
+ * in step.
+ */
+const WHOLE_VALUE_PATTERN = /^\{\{((?:(?!\}\}).)+)\}\}$/s
+const HAS_EXPRESSION_PATTERN = /\{\{.+?\}\}/
+
+/** A string the runtime would resolve as a template (`resolveString`), were its prop bindable. */
+export function isTemplate(value: unknown): value is string {
+  return typeof value === 'string' && (WHOLE_VALUE_PATTERN.test(value) || HAS_EXPRESSION_PATTERN.test(value))
+}
+
+/** The first template in a value, nested in lists and objects too, and where it is (`prop.lines[1].text`). */
+function firstTemplate(value: unknown, at: string): { at: string; text: string } | undefined {
+  if (isTemplate(value)) return { at, text: value }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      const found = firstTemplate(value[i], `${at}[${i}]`)
+      if (found) return found
+    }
+  } else if (isRecord(value)) {
+    for (const [key, v] of Object.entries(value)) {
+      const found = firstTemplate(v, `${at}.${key}`)
+      if (found) return found
+    }
+  }
+  return undefined
+}
+
 type JsonType = 'string' | 'number' | 'integer' | 'boolean' | 'null' | 'object' | 'array'
 
 function jsonTypeOf(v: unknown): JsonType | undefined {
@@ -206,8 +245,15 @@ function short(v: unknown): string {
 }
 
 /** The findings for one value of one prop, or none. */
-function valueIssue(where: string, prop: string, value: unknown, schema: unknown, atomId: string): Pick<PackIssue, 'code' | 'message'> | undefined {
-  if (value === undefined || isBinding(value) || fits(schema, value)) return undefined
+function valueIssue(
+  where: string,
+  prop: string,
+  value: unknown,
+  schema: unknown,
+  atomId: string,
+  literal: boolean
+): Pick<PackIssue, 'code' | 'message'> | undefined {
+  if (value === undefined || (!literal && isBinding(value)) || fits(schema, value)) return undefined
   const a = accepts(schema)
   const actual = jsonTypeOf(value)
   const sameKind = a.values.some((x) => {
@@ -254,7 +300,17 @@ export function checkReceiptBlockProps(receipt: unknown, catalog: BlockPropsCata
           })
           continue
         }
-        const found = valueIssue(where, prop, value, spec.jsonSchema, entry.atomId)
+        const literal = spec.bindable === false
+        const template = literal ? firstTemplate(value, prop) : undefined
+        if (template) {
+          issues.push({
+            severity: 'warning',
+            code: BLOCK_PROP_NOT_BINDABLE,
+            path,
+            message: `${where} sets ${template.at} to ${short(template.text)}, but ${entry.atomId} declares ${prop} bindable: false; the {{…}} is not resolved and renders as written`,
+          })
+        }
+        const found = valueIssue(where, prop, value, spec.jsonSchema, entry.atomId, literal)
         if (found) issues.push({ severity: 'warning', path, ...found })
       }
     }

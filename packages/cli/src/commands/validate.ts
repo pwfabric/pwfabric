@@ -35,6 +35,7 @@ error. Every block in app/surfaces/*.receipt.json is checked
 against its block's manifest (definition.props[].jsonSchema): an undeclared
 prop (BLOCK_PROP_UNKNOWN), a value outside the prop's enum (BLOCK_PROP_ENUM)
 or of the wrong JSON type (BLOCK_PROP_TYPE) is a warning; {{…}} bindings are
-not checked. Exit code 1 when there is any error, 0 otherwise.`,
+not checked, except that a {{…}} in a prop the manifest declares
+bindable: false is a warning (BLOCK_PROP_NOT_BINDABLE): it renders as written. Exit code 1 when there is any error, 0 otherwise.`,
   run: (args, io) => guard('validate', io, () => runValidate(args, io)),
 }

@@ -69,6 +69,7 @@ export {
 export {
   atomManifestPath,
   BLOCK_PROP_ENUM,
+  BLOCK_PROP_NOT_BINDABLE,
   BLOCK_PROP_TYPE,
   BLOCK_PROP_UNKNOWN,
   blockPropDescriptors,
@@ -77,6 +78,7 @@ export {
   checkBlockProps,
   checkReceiptBlockProps,
   isBinding,
+  isTemplate,
   type BlockPropDescriptor,
   type BlockPropsCatalog,
   type BlockPropsEntry,

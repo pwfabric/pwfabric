@@ -63,6 +63,10 @@ const WHOLE_VALUE_PATTERN = /^\{\{((?:(?!\}\}).)+)\}\}$/s
 
 /**
  * Matches strings that contain at least one expression placeholder.
+ *
+ * These two patterns are the test for "a string that resolves". `pwf
+ * validate` mirrors them (@pwfabric/pack, block-props.ts `isTemplate`) to warn
+ * about a template on a `bindable: false` prop; change both together.
  */
 const HAS_EXPRESSION_PATTERN = /\{\{.+?\}\}/
 
