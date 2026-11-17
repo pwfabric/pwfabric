@@ -1,5 +1,9 @@
 # @pwfabric/embed
 
+## 2.1.0
+
+- Added (minor): a `linkHref` option on the render entry points, passed through to the runtime: how the host writes an in-app link whose page was an expression (`href: "{{item.url}}"`), rewritten for its router once the value is known. The runner sets it; a host that renders receipts itself sets it the same way.
+
 ## 2.0.0
 
 - Changed (breaking): `zod` is a peer dependency at `^4.6.6` (was `^3.23.0`). zod 3 has no fix for GHSA “Zod can exhaust memory while validating oversized constrained collections”. A project on zod 3 stays on 1.x.

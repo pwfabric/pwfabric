@@ -1,7 +1,13 @@
 # @pwfabric/runtime
 
-## Unreleased
+## 2.1.0
 
+- Fixed: a link whose href is a whole expression (`{{item.url}}`) is rewritten for the router once its value is known (`linkHref` render option), instead of being taken for a page key. A resolved value is used only when it is a root-relative path, a `#` fragment or an http, https, mailto or tel URL; anything else — `javascript:`, `data:`, a value that is not a string — leaves the link without an href.
+- Fixed: a behavior aimed at a block inside a `repeat` fires for every copy (`<id>--N`); a copy's own id still matches only that copy.
+- Fixed: grid placement (`gridColumn`, `gridRow`, `gridArea`, also as breakpoint maps) goes on the grid item, the block's wrapper, not on its inner element.
+- Fixed: a `rest` source that cannot be served (401, 403, 5xx, network) binds its `fallback`, with the error flag set, as data-protocol says.
+- Fixed: `length(v)` is the length of a list or a string and 0 for anything else (`length(undefined)` was 9, `length(null)` 4).
+- Fixed: a prop the block manifest declares `bindable: false` is left exactly as written — its `{{…}}` is not resolved (block-manifest). **First-party packs before foundation 9.0.0 marked props apps bind (`text.content`, `heading.text`, `link.href`…) `bindable: false`; move to the corrected packs together with this release.**
 - Fixed: `createApiOutput` accepts `data` without `json` again, as in 1.x (zod 4 made the `z.unknown()` member required; it is now `.optional()`).
 
 ## 2.0.0

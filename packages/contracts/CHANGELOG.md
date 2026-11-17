@@ -1,7 +1,9 @@
 # @pwfabric/contracts
 
-## Unreleased
+## 2.1.0
 
+- Added (minor): `definition.origins` on a block manifest — the exact origins a block's own code reaches, by CSP directive (`connect`, `frame`, `img`, `media`, `font`, `style`); `BlockOriginsSchema`, `safeParseBlockOrigins`, `BLOCK_ORIGIN_INVALID`.
+- Added (minor): `DynamicBlockProp { name, bindable? }` and `DynamicBlockDefinition.props`, the prop declarations a host hands the runtime in `blocks/manifest.json`.
 - Fixed: a `setState` action without `value` (`{ "type": "setState", "key": "k" }`) parses again, as in 1.x, and so do `form:change` / `input:change` event payloads without `value`. zod 3 treated an object member typed `z.unknown()` / `z.any()` as optional; zod 4 makes it required, which 2.0.0 did not account for. Those members are now `.optional()`; the inferred types are back to `value?: unknown`.
 - Added (minor): `pwpack.json` format 1.1 — four optional members on `PwpackIdentity` / `PwpackIdentitySchema`: `name` (non-empty string), `description` (string), `category` (lowercase slug, `PWPACK_CATEGORY_PATTERN`) and `tokens` (CSS custom property names the pack's blocks read from the host theme, `PWPACK_TOKEN_PATTERN`). A malformed value is refused with a message naming the member. Files without them parse as before.
 - Fixed: `deriveDarkTheme` lifted a dark `primary`/`accent` until it cleared 3:1 on the derived dark **background** only. The derived card is one step lighter, so the lifted colour could fall under 3:1 on it (a light primary `#18181b` became `#60606c`: 3.09:1 on the page, 2.75:1 on the card). The lift now walks until the colour clears 3:1 on every derived ground — the background and, when the theme has one, the card. Same 0.05 lightness steps, same hue, same 3:1 floor; light themes are unchanged.

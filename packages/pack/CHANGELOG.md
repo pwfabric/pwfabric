@@ -1,7 +1,9 @@
 # @pwfabric/pack
 
-## Unreleased
+## 2.1.0
 
+- Added: `validatePack` reports a malformed `definition.origins` on a block manifest (`BLOCK_ORIGIN_INVALID`).
+- Added: `connectionFieldSets(app, sources)` — the known row fields of connector-served entities; `checkRowFields`, `checkReceiptRowFields` and `rowFieldSets` accept it.
 - Added (minor): `validatePack` checks the `pwpack.json` format 1.1 members `name`, `description`, `category` and `tokens`; a malformed one is an `IDENTITY_INVALID` error whose message names the member. They are accepted without a warning under `formatVersion` 1.0 too.
 - Added: `deriveManifest` carries `description` into `PwpackManifest.description` and `tokens` into `PwpackManifest.requires.tokens`. `name` and `category` have no place in `PwpackManifest` and are not carried.
 - Added: `checkBlockProps(app, catalog)` / `checkReceiptBlockProps(receipt, catalog, path)` report receipt block props that do not fit the block manifests' `definition.props[].jsonSchema`, as warnings: `BLOCK_PROP_UNKNOWN` (a prop the manifest does not declare), `BLOCK_PROP_ENUM` (a value outside the prop's `enum`/`const`), `BLOCK_PROP_TYPE` (a value of a JSON type the schema does not accept). `{{…}}` bindings are not checked. `blockPropsCatalog(sources)` builds the catalogue from manifests only (no block code runs); `blockTypeNames(id, manifest)` is the name rule a receipt's `type` resolves by.

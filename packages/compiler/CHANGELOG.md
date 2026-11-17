@@ -1,5 +1,9 @@
 # @pwfabric/compiler
 
+## 2.1.0
+
+- No changes; released with the other packages at 2.1.0.
+
 ## 2.0.0
 
 - Security: `esbuild` 0.25.12 → 0.28.2 (advisories against its development server; the compiler uses only the build API).
