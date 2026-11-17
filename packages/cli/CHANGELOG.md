@@ -1,5 +1,10 @@
 # @pwfabric/cli
 
+## Unreleased
+
+- Added (minor): `pwpack.json` is written with `name`, `description` and `category` after `formatVersion`, and `tokens` after `requires` (key order `id, version, formatVersion, name, description, category, engines, requires, tokens, license, app, packs`).
+- Changed: `pwf create` writes `formatVersion` `1.1`.
+
 ## 2.0.0
 
 - No changes of its own; released with the other packages at 2.0.0. `pwf create` names `engines.pwfabric` `>=2.0 <3`.

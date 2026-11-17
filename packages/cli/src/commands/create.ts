@@ -88,7 +88,7 @@ export async function runCreate(args: ParsedArgs, io: CommandIO, options: Create
   const identity = {
     id: `@pwpack/local/${name}`,
     version: '0.1.0',
-    formatVersion: '1.0',
+    formatVersion: '1.1',
     engines: { pwfabric: engineRange(options.engineVersion ?? engineVersion()) },
     requires: [{ id: foundationId, range: caretRange(foundationVersion) }],
     license: { fork: true, redistribute: true },

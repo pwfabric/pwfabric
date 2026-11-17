@@ -3,8 +3,10 @@
  *
  * A pwpack folder is the unit the engine reads: `pwpack.json` at the root,
  * `app/` (an app's own composition) and `atoms/` (reusable parts). This file
- * says which pack the folder is, what it stands on, what its publisher allows,
- * where an app starts, and which exact pack builds it was made against.
+ * says which pack the folder is, how it is listed (`name`, `description`,
+ * `category`), what it stands on (`engines`, `requires`, and the host theme
+ * `tokens` its blocks read), what its publisher allows, where an app starts,
+ * and which exact pack builds it was made against.
  *
  * NOT THE DERIVED MANIFEST. {@link PwpackManifest} in ./atom.ts is what a
  * build DERIVES from the folder (`atoms[]`, `contentHash`, `storageRef`); it
@@ -64,6 +66,12 @@ export interface PwpackEngines {
   readonly pwfabric?: string
 }
 
+/** A lowercase slug: `ui-design`, `marketing`. What {@link PwpackIdentity.category} must look like. */
+export const PWPACK_CATEGORY_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
+
+/** A CSS custom property name: `--pw-color-primary-ink`. What each {@link PwpackIdentity.tokens} entry must look like. */
+export const PWPACK_TOKEN_PATTERN = /^--[a-z0-9-]+$/
+
 /** The parsed `pwpack.json` at the root of a pwpack folder. */
 export interface PwpackIdentity {
   /** `@pwpack/<publisher>/<name>` for a published pack. */
@@ -78,10 +86,30 @@ export interface PwpackIdentity {
    * "latest".
    */
   readonly formatVersion?: string
+  /**
+   * The pack's display name, e.g. `"PhiWebs Foundation"`. Format 1.1. Absent:
+   * a host shows the id.
+   */
+  readonly name?: string
+  /** One or two sentences on what the pack is for. Format 1.1. */
+  readonly description?: string
+  /**
+   * Where a catalogue files the pack: a lowercase slug (`ui-design`,
+   * `marketing`). Format 1.1. A free string — the engine does not interpret
+   * it; a host's catalogue decides which slugs it understands.
+   */
+  readonly category?: string
   /** Engine releases the pack runs on. Absent: no constraint is stated. */
   readonly engines?: PwpackEngines
   /** Names of what the pack needs from the host or from other packs. */
   readonly requires?: readonly (string | { readonly id: string; readonly range: string })[]
+  /**
+   * CSS custom properties the pack's blocks read from the host theme, e.g.
+   * `["--pw-color-primary-ink"]`. Format 1.1. An installer may check that the
+   * host theme provides them. List only those whose absence would be wrong,
+   * not ones the pack defines itself.
+   */
+  readonly tokens?: readonly string[]
   /**
    * What the publisher allows others to do with the pack's atoms. Same shape
    * as {@link PwpackManifest.license}; absent is not "both off" — the
@@ -129,8 +157,17 @@ export const PwpackIdentitySchema = z.object({
     .string()
     .regex(/^\d+\.\d+$/, 'formatVersion must be MAJOR.MINOR, e.g. "1.0"')
     .optional(),
+  name: z.string().min(1, 'name must be a non-empty string').optional(),
+  description: z.string().optional(),
+  category: z
+    .string()
+    .regex(PWPACK_CATEGORY_PATTERN, 'category must be a lowercase slug, e.g. "ui-design"')
+    .optional(),
   engines: PwpackEnginesSchema.optional(),
   requires: z.array(z.union([z.string().min(1), PwpackPackRequirementSchema])).optional(),
+  tokens: z
+    .array(z.string().regex(PWPACK_TOKEN_PATTERN, 'each token must be a CSS custom property name, e.g. "--pw-color-primary-ink"'))
+    .optional(),
   license: z.object({ fork: z.boolean(), redistribute: z.boolean() }).optional(),
   app: PwpackIdentityAppSchema.optional(),
   packs: z.array(PwpackIdentityPinSchema).optional(),

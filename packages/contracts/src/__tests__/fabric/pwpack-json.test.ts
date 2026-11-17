@@ -131,3 +131,59 @@ describe('pwpack.json requires and app display fields', () => {
     if (r.ok) expect(r.value.app?.title).toBe('Shop')
   })
 })
+
+describe('pwpack.json listing members (format 1.1)', () => {
+  const listed = {
+    id: '@pwpack/phiwebs/foundation',
+    version: '1.0.0',
+    formatVersion: '1.1',
+    name: 'PhiWebs Foundation',
+    description: 'The blocks every app starts from.',
+    category: 'ui-design',
+    tokens: ['--pw-color-primary-ink', '--pw-radius-2'],
+  }
+
+  it('keeps name, description, category and tokens', () => {
+    expect(parsePwpackIdentity(listed)).toEqual(listed)
+  })
+
+  it('accepts them under formatVersion 1.0 too (a minor adds, it does not gate)', () => {
+    expect(safeParsePwpackIdentity({ ...listed, formatVersion: '1.0' }).ok).toBe(true)
+  })
+
+  it('accepts an empty description and an empty token list', () => {
+    expect(safeParsePwpackIdentity({ id: 'a', version: '1', description: '', tokens: [] }).ok).toBe(true)
+  })
+
+  it('refuses an empty name', () => {
+    const r = safeParsePwpackIdentity({ id: 'a', version: '1', name: '' })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.issues).toEqual(['name: name must be a non-empty string'])
+  })
+
+  it('refuses a category that is not a lowercase slug', () => {
+    for (const category of ['UI Design', 'ui_design', '-ui', 'ui-', 'ui--design', '']) {
+      const r = safeParsePwpackIdentity({ id: 'a', version: '1', category })
+      expect(r.ok, category).toBe(false)
+      if (!r.ok) expect(r.issues).toEqual(['category: category must be a lowercase slug, e.g. "ui-design"'])
+    }
+  })
+
+  it('refuses a token that is not a CSS custom property name', () => {
+    for (const token of ['pw-color', '--PW-color', '--pw color', '--', 'var(--pw-color)']) {
+      const r = safeParsePwpackIdentity({ id: 'a', version: '1', tokens: ['--pw-ok', token] })
+      expect(r.ok, token).toBe(false)
+      if (!r.ok) expect(r.issues).toEqual(['tokens.1: each token must be a CSS custom property name, e.g. "--pw-color-primary-ink"'])
+    }
+  })
+
+  it('refuses tokens that are not a list of strings', () => {
+    expect(safeParsePwpackIdentity({ id: 'a', version: '1', tokens: '--pw-a' }).ok).toBe(false)
+    expect(safeParsePwpackIdentity({ id: 'a', version: '1', tokens: [1] }).ok).toBe(false)
+  })
+
+  it('exports the slug and token patterns', () => {
+    expect(contracts.PWPACK_CATEGORY_PATTERN.test('ai-automation')).toBe(true)
+    expect(contracts.PWPACK_TOKEN_PATTERN.test('--pw-color-primary-ink')).toBe(true)
+  })
+})

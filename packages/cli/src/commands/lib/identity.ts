@@ -8,7 +8,20 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** The order `pwpack.json` members are written in. Members not listed follow, in their original order. */
-export const IDENTITY_KEY_ORDER = ['id', 'version', 'formatVersion', 'engines', 'requires', 'license', 'app', 'packs'] as const
+export const IDENTITY_KEY_ORDER = [
+  'id',
+  'version',
+  'formatVersion',
+  'name',
+  'description',
+  'category',
+  'engines',
+  'requires',
+  'tokens',
+  'license',
+  'app',
+  'packs',
+] as const
 
 export const IDENTITY_FILE = 'pwpack.json'
 

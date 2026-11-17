@@ -20,6 +20,10 @@ describe('identity helpers', () => {
   it('orders members and keeps unknown ones after the known', () => {
     expect(Object.keys(orderIdentity({ z: 1, packs: [], id: 'a', version: '1', gone: undefined }))).toEqual(['id', 'version', 'packs', 'z'])
   })
+  it('places the listing members and tokens where the format lists them', () => {
+    const doc = { packs: [], app: {}, license: {}, tokens: [], requires: [], engines: {}, category: 'c', description: 'd', name: 'n', formatVersion: '1.1', version: '1', id: 'a' }
+    expect(Object.keys(orderIdentity(doc))).toEqual(['id', 'version', 'formatVersion', 'name', 'description', 'category', 'engines', 'requires', 'tokens', 'license', 'app', 'packs'])
+  })
   it('derives ranges and refuses non-semver', () => {
     expect(caretRange('12.4.0')).toBe('^12.0.0')
     expect(() => caretRange('latest')).toThrow('not a semver version')

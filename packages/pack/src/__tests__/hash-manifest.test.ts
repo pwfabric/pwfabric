@@ -102,6 +102,29 @@ describe('deriveManifest', () => {
     expect('license' in m).toBe(false)
   })
 
+  it('carries description and tokens from pwpack.json, but not name or category', () => {
+    const identity = {
+      id: '@pwpack/x/y',
+      version: '1.0.0',
+      formatVersion: '1.1',
+      name: 'Y',
+      description: 'A pack.',
+      category: 'marketing',
+      tokens: ['--pw-color-primary-ink'],
+    }
+    const m = deriveManifest(packFromRecord({ 'pwpack.json': JSON.stringify(identity) }), { archive: new Uint8Array(0) })
+    expect(m.description).toBe('A pack.')
+    expect(m.requires).toEqual({ tokens: ['--pw-color-primary-ink'] })
+    expect('name' in m).toBe(false)
+    expect('category' in m).toBe(false)
+  })
+
+  it('omits description and requires when pwpack.json has neither', () => {
+    const m = deriveManifest(packFromRecord({ 'pwpack.json': '{"id":"@pwpack/x/y","version":"1.0.0"}' }), { archive: new Uint8Array(0) })
+    expect('description' in m).toBe(false)
+    expect('requires' in m).toBe(false)
+  })
+
   it('throws IDENTITY_REQUIRED without an id or version', () => {
     const run = (record: Record<string, string>): string => {
       try {

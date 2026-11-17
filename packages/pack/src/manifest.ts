@@ -82,8 +82,10 @@ export interface DeriveManifestOptions {
 /**
  * A full `PwpackManifest` for a pack and its archive.
  *
- * `id` / `version` come from the options or `pwpack.json`; `license` from
- * `pwpack.json` when it parses. `contentHash` is {@link legacyContentHash} of
+ * `id` / `version` come from the options or `pwpack.json`; `license`,
+ * `description` and `tokens` (as `requires.tokens`) from `pwpack.json` when it
+ * parses. `name` and `category` have no member in `PwpackManifest` and are not
+ * carried; read them from the identity. `contentHash` is {@link legacyContentHash} of
  * the archive and `storageRef` is `pwpacks/<slug>/<version>/<first 12 hex>.tgz`
  * with `slug` = the id without its leading `@`, `/` turned into `-` — the
  * values existing publishers record. Throws `IDENTITY_REQUIRED` when no id or
@@ -97,7 +99,10 @@ export function deriveManifest(pack: PackFolder, options: DeriveManifestOptions)
     throw new PackError('IDENTITY_REQUIRED', 'a manifest needs an id and a version (from pwpack.json or the options)')
   }
   const parsed = raw ? safeParsePwpackIdentity(raw) : null
-  const license = parsed?.ok ? parsed.value.license : undefined
+  const identity = parsed?.ok ? parsed.value : undefined
+  const license = identity?.license
+  const description = identity?.description
+  const tokens = identity?.tokens
   const contentHash = legacyContentHash(options.archive)
   const slug = id.replace(/^@/, '').replace(/\//g, '-')
   return {
@@ -106,6 +111,8 @@ export function deriveManifest(pack: PackFolder, options: DeriveManifestOptions)
     atoms: deriveAtoms(pack),
     contentHash,
     storageRef: `pwpacks/${slug}/${version}/${contentHash.slice('sha256:'.length, 'sha256:'.length + 12)}.tgz`,
+    ...(description !== undefined ? { description } : {}),
+    ...(tokens !== undefined ? { requires: { tokens } } : {}),
     ...(license ? { license } : {}),
   }
 }
