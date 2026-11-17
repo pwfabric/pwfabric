@@ -39,6 +39,7 @@ import type {
   SurfaceConnectionsValue,
   DataServiceConfig,
   SurfaceDataCache,
+  LinkHref,
 } from '@pwfabric/runtime'
 
 // Re-export the building blocks for bundler consumers.
@@ -110,6 +111,8 @@ export interface EmbedOptions {
   readonly dataServiceConfig?: DataServiceConfig
   readonly loadingStrategy?: 'gate' | 'immediate'
   readonly dataCache?: SurfaceDataCache
+  /** How the host writes an in-app link whose page was an expression; see the runtime's render/links.ts. */
+  readonly linkHref?: LinkHref
 
 
   // ── shared render passthrough ─────────────────────────
@@ -161,6 +164,7 @@ function passthrough(options?: EmbedOptions): Partial<RenderCoreOptions> {
     ...(o.components !== undefined ? { components: o.components } : {}),
     ...(o.loadingStrategy !== undefined ? { loadingStrategy: o.loadingStrategy } : {}),
     ...(o.dataCache !== undefined ? { dataCache: o.dataCache } : {}),
+    ...(o.linkHref !== undefined ? { linkHref: o.linkHref } : {}),
     ...(o.placeholderMissingBlocks !== undefined ? { placeholderMissingBlocks: o.placeholderMissingBlocks } : {}),
   }
 }

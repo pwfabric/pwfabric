@@ -9,6 +9,7 @@
  * @module @pwfabric/runner/helpers
  */
 
+import { isExpressionLink, isHrefKey, isLinkMember } from '@pwfabric/runtime'
 import type { PwappFooterLink, PwappNavigation, PwappProject, SurfaceBlockNode, SurfaceReceipt } from './types.js'
 
 /** Builds a page href for the active router ('#/x' in hash mode, '<base>/x' in path mode). */
@@ -48,15 +49,12 @@ export function pageKeyOf(href: string): string | null {
  * Returns a NEW tree (non-mutating) — safe to run on the raw fetched receipt.
  */
 /**
- * Which prop keys carry a link. `href` is the obvious one; the pack also
- * names links by role — a navbar's `ctaHref`, a card's `linkHref` — and those
- * are rewritten too, or a navbar "Contact" button would walk off the app to
- * `<origin>/contact`.
- * A key naming a FIELD that holds a link (`ctaHrefField`) is not a link.
+ * Which prop keys carry a link — the runtime's rule (render/links.ts), so the
+ * renderer rewriting a link at render time and this rewriter agree. A role-named
+ * link (a navbar's `ctaHref`) is rewritten too, or a navbar "Contact" button
+ * would walk off the app to `<origin>/contact`.
  */
-export function isHrefKey(key: string): boolean {
-  return key === 'href' || /Href$/.test(key)
-}
+export { isHrefKey }
 
 /**
  * A root-relative href that names one of this app's pages — `/session/`,
@@ -73,16 +71,19 @@ export function strayPageKeyOf(href: string, pages: readonly string[]): string |
 }
 
 /**
- * Links that are not `…Href` props but go to a page all the same: a form
+ * Links that are not `…Href` props go to a page all the same: a form
  * binding's `successRedirect` and a `navigate` action's `url` (in a block's
- * `action` or a behavior). The runtime follows them with `location.assign`,
- * so left as written `/thanks` walked off a hash-routed app to
- * `<origin>/thanks`.
+ * `action` or a behavior) — `isLinkMember`. The runtime follows them with
+ * `location.assign`, so left as written `/thanks` walked off a hash-routed app
+ * to `<origin>/thanks`.
+ *
+ * A link whose PAGE is an expression (`{{item.url}}`) is left as written: which
+ * page it names is known only when the data is, and keyed as written it became
+ * `#/{{item.url}}` — `#//session?id=4` once resolved, a page nobody has. The
+ * renderer rewrites it when its value is known, through the `linkHref` render
+ * option (`linkHrefFor`). A literal page with expressions after it
+ * (`/session?id={{item.id}}`) is rewritten here.
  */
-function isLinkMember(key: string, owner: Record<string, unknown>): boolean {
-  return isHrefKey(key) || key === 'successRedirect' || (key === 'url' && owner['type'] === 'navigate')
-}
-
 export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref): T {
   if (Array.isArray(node)) {
     return node.map((n) => rewriteHrefs(n, entry, toHref)) as unknown as T
@@ -94,7 +95,7 @@ export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref): T {
       // `strayPageKeyOf` excludes it too (`href.startsWith('//')`); otherwise
       // `//cdn.example.com/x` would be reduced to a page key, turned into an
       // in-app route, and the external link would land on not-found.
-      if (isLinkMember(k, node as Record<string, unknown>) && typeof v === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(v) && !v.startsWith('#') && !v.startsWith('//')) {
+      if (isLinkMember(k, node as Record<string, unknown>) && typeof v === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(v) && !v.startsWith('#') && !v.startsWith('//') && !isExpressionLink(v)) {
         // THE PAGE IS THE ADDRESS; the query and fragment ride along. Keying
         // the whole href would make `/api-reference#authentication` into the
         // page key `api-reference#authentication`, which names no page — so in
@@ -104,8 +105,6 @@ export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref): T {
         // The query rides along in BOTH modes: `/product?id={{item.id}}`
         // becomes `<base>/product?id=…` in path mode and `#/product?id=…` in
         // hash mode, where the router reads it back.
-        // Authors write the PAGE as a literal path: a whole `{{item.href}}`
-        // value is still a string here and is taken for a page key.
         const cut = /[?#]/.exec(v)
         const path = cut ? v.slice(0, cut.index) : v
         out[k] = toHref(pageKeyOf(path) ?? entry) + (cut ? v.slice(cut.index) : '')
@@ -116,6 +115,14 @@ export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref): T {
     return out as T
   }
   return node
+}
+
+/**
+ * The `linkHref` render option: a link resolved at render time, written for
+ * the active router by the same rule as every other link.
+ */
+export function linkHrefFor(entry: string, toHref: ToHref): (href: string) => string {
+  return (href) => rewriteHrefs({ href }, entry, toHref).href
 }
 
 // ============================================================

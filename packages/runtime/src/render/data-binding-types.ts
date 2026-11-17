@@ -9,6 +9,7 @@
  */
 
 import type { SurfaceDataCache } from './data-cache.js'
+import type { LinkHref } from './links.js'
 import type { Block } from '@pwfabric/core'
 import type { RenderableSurface, SurfaceRendererProps } from './types.js'
 import type { DataServiceConfig } from '../data/types.js'
@@ -198,6 +199,13 @@ export interface DataBoundSurfaceRendererProps extends Omit<SurfaceRendererProps
    * written back. Pairs naturally with `loadingStrategy: 'immediate'`.
    */
   readonly dataCache?: SurfaceDataCache
+  /**
+   * How the host writes an in-app link (`/session?id=4` → `#/session?id=4`).
+   * A host rewrites the links it can read before render; a link whose page is
+   * an expression (`href: "{{item.url}}"`) it leaves as written, and the
+   * renderer passes its resolved value through this. See render/links.ts.
+   */
+  readonly linkHref?: LinkHref
 
   /**
    * Configuration for the DataService this renderer creates.

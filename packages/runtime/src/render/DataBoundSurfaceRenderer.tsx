@@ -22,6 +22,7 @@
 import * as React from 'react'
 import { SurfaceRenderer } from './renderer.js'
 import { resolveBlockExpressions } from './resolve-expressions.js'
+import type { LinkHref } from './links.js'
 import { endpointMissingPathValue, resolveEndpoint } from './endpoint.js'
 import { resolveQueryState } from './query-state.js'
 import { dataSourceCacheKey, type SurfaceDataCache } from './data-cache.js'
@@ -1087,6 +1088,7 @@ function DataBoundInner({
   // SurfaceConnectionsContext provider via the rendererProps spread below).
   const connections = (rendererProps as { connections?: SurfaceConnectionsValue }).connections
   const dataCache = (rendererProps as { dataCache?: SurfaceDataCache }).dataCache
+  const linkHref = (rendererProps as { linkHref?: LinkHref }).linkHref
   // Keyed by the ids, so a re-render that changes nothing hands useSurfaceData
   // the same set (its expression context depends on it).
   const writeOnlyKey = React.useMemo(
@@ -1102,8 +1104,8 @@ function DataBoundInner({
 
   // Resolve expressions in blocks
   const resolvedBlocks = React.useMemo(
-    () => resolveBlockExpressions(blocks as Block[], expressionData),
-    [blocks, expressionData]
+    () => resolveBlockExpressions(blocks as Block[], expressionData, undefined, linkHref ? { linkHref } : {}),
+    [blocks, expressionData, linkHref]
   )
 
   // Shared action dispatcher — handles all six action types

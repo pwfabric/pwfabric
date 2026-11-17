@@ -6,6 +6,7 @@ import {
   composeTitle,
   doorHeaders,
   isHrefKey,
+  linkHrefFor,
   pageKeyOf,
   receiptFilesOf,
   rewriteHrefs,
@@ -133,6 +134,33 @@ describe('rewriteHrefs', () => {
     expect(rewriteHrefs('hello', ENTRY, hashHref)).toBe('hello')
     expect(rewriteHrefs(42, ENTRY, hashHref)).toBe(42)
     expect(rewriteHrefs(null, ENTRY, hashHref)).toBeNull()
+  })
+})
+
+describe('a link whose page is an expression', () => {
+  // examples/summit: a timeline row's `href: "{{item.url}}"` with url
+  // `/session?id=4` was keyed as written — `#/{{item.url}}` — and rendered as
+  // `#//session?id=4`: "Page not found".
+  it('is left as written at assembly, for the renderer to rewrite', () => {
+    expect(rewriteHrefs({ href: '{{item.url}}' }, ENTRY, hashHref)).toEqual({ href: '{{item.url}}' })
+    expect(rewriteHrefs({ ctaHref: '{{state.next}}' }, ENTRY, pathHref)).toEqual({ ctaHref: '{{state.next}}' })
+    expect(
+      rewriteHrefs({ action: { type: 'navigate', url: '{{item.link}}' } }, ENTRY, hashHref)
+    ).toEqual({ action: { type: 'navigate', url: '{{item.link}}' } })
+  })
+
+  it('a literal page with expressions after it is still rewritten at assembly', () => {
+    expect(rewriteHrefs({ href: '/session?id={{item.id}}' }, ENTRY, hashHref)).toEqual({
+      href: '#/session?id={{item.id}}',
+    })
+  })
+
+  it('linkHrefFor writes the resolved value for the active router, by the same rule', () => {
+    expect(linkHrefFor(ENTRY, hashHref)('/session?id=4')).toBe('#/session?id=4')
+    expect(linkHrefFor(ENTRY, pathHref)('/session?id=4')).toBe('/apps/intranet/session?id=4')
+    expect(linkHrefFor(ENTRY, hashHref)('/')).toBe('#/home')
+    expect(linkHrefFor(ENTRY, hashHref)('https://example.com/x')).toBe('https://example.com/x')
+    expect(linkHrefFor(ENTRY, hashHref)('#speakers')).toBe('#speakers')
   })
 })
 

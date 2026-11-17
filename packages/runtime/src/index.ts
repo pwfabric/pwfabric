@@ -123,7 +123,7 @@ export {
 // Block Error Boundary (crash isolation)
 export { BlockErrorBoundary } from './render/index.js'
 export { dataSourceCacheKey } from './render/index.js'
-export type { SurfaceDataCache } from './render/index.js'
+export type { SurfaceDataCache, LinkHref } from './render/index.js'
 
 // Surface event protocol
 export { createSurfaceEventBus } from './render/index.js'
@@ -164,6 +164,9 @@ export {
   resolveEndpoint,
   resolveBlockExpressions,
   resolveString,
+  isHrefKey,
+  isLinkMember,
+  isExpressionLink,
   surfaceThemeToCSS,
 } from './render/index.js'
 // legacy first-party `*Block` component re-exports +

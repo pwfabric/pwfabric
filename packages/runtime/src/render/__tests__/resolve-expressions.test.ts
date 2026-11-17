@@ -355,3 +355,58 @@ describe('resolveBlockExpressions', () => {
     })
   })
 })
+
+// ============================================================
+// Links whose page is an expression — rewritten once the value is known
+// ============================================================
+
+describe('resolveBlockExpressions — linkHref', () => {
+  const linkHref = (href: string): string => `#${href}`
+  const L = DEFAULT_BLOCK_LAYOUT
+  const sessions = [{ id: 4, url: '/session?id=4' }]
+
+  function rows(props: Record<string, unknown>): Block[] {
+    return [
+      {
+        id: 'list',
+        type: 'container',
+        layout: L,
+        repeat: '{{sessions}}',
+        props: {},
+        children: [{ id: 'row', type: 'link', layout: L, props }],
+      } as Block,
+    ]
+  }
+  const rowProps = (blocks: Block[]): Record<string, unknown> =>
+    (at(blocks, 0).children?.[0]?.props ?? {}) as Record<string, unknown>
+
+  it('writes a resolved `{{item.url}}` href in the router form', () => {
+    const out = resolveBlockExpressions(rows({ href: '{{item.url}}', text: '{{item.url}}' }), { sessions }, undefined, { linkHref })
+    expect(rowProps(out).href).toBe('#/session?id=4')
+    // only links are rewritten
+    expect(rowProps(out).text).toBe('/session?id=4')
+  })
+
+  it('covers role-named links and navigate actions', () => {
+    const out = resolveBlockExpressions(
+      rows({ ctaHref: '{{item.url}}', action: { type: 'navigate', url: '{{item.url}}' } }),
+      { sessions },
+      undefined,
+      { linkHref }
+    )
+    expect(rowProps(out).ctaHref).toBe('#/session?id=4')
+    expect(rowProps(out).action).toEqual({ type: 'navigate', url: '#/session?id=4' })
+  })
+
+  it('leaves a link the host already rewrote, and one that did not resolve', () => {
+    const literal = resolveBlockExpressions(rows({ href: '#/session?id={{item.id}}' }), { sessions }, undefined, { linkHref })
+    expect(rowProps(literal).href).toBe('#/session?id=4')
+    const failed = resolveBlockExpressions(rows({ href: '{{nope(item.url)}}' }), { sessions }, undefined, { linkHref })
+    expect(rowProps(failed).href).toBe('{{nope(item.url)}}')
+  })
+
+  it('without linkHref the value is bound as it resolves', () => {
+    const out = resolveBlockExpressions(rows({ href: '{{item.url}}' }), { sessions })
+    expect(rowProps(out).href).toBe('/session?id=4')
+  })
+})
