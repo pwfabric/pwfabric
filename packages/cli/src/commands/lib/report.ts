@@ -4,7 +4,18 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { blockPropsCatalog, checkBlockProps, checkRowFields, hashPack, validatePack, type PackFolder, type PackIssue, type PackValidation } from '@pwfabric/pack'
+import {
+  blockPropsCatalog,
+  checkBlockProps,
+  checkRowFields,
+  connectionFieldSets,
+  hashPack,
+  validatePack,
+  type BlockSource,
+  type PackFolder,
+  type PackIssue,
+  type PackValidation,
+} from '@pwfabric/pack'
 import type { CommandIO } from '../types.js'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { pinsOf } from './identity.js'
@@ -179,24 +190,43 @@ export function checkAccess(root: string): PackIssue[] {
  * order. A pack that is not cached contributes nothing (its pin is reported).
  */
 export async function checkProps(root: string, identity: PackValidation['identity']): Promise<PackIssue[]> {
+  return propIssues(await atomSources(root, identity))
+}
+
+function propIssues(sources: readonly BlockSource[]): PackIssue[] {
+  const app = sources[0]
+  return app ? checkBlockProps(app.folder, blockPropsCatalog(sources)) : []
+}
+
+/**
+ * The folders atoms resolve from, as `pwf dev` resolves them: the app first,
+ * then its pinned packs from `.pwf/packs/` in pin order (each labelled with
+ * its cache path). Empty without an identity or a readable app.
+ */
+async function atomSources(root: string, identity: PackValidation['identity']): Promise<BlockSource[]> {
   if (!identity) return []
   const sources = await loadSources(root)
   if (!sources.app) return []
-  const catalog = blockPropsCatalog([sources.app, ...sources.packs].map((s) => ({ folder: s.folder, atoms: s.validation.atoms })))
-  return checkBlockProps(sources.app.folder, catalog)
+  return [
+    { folder: sources.app.folder, atoms: sources.app.validation.atoms },
+    ...sources.packs.map((s) => ({ folder: s.folder, atoms: s.validation.atoms, label: s.label })),
+  ]
 }
+
 
 /**
  * `validatePack` plus {@link checkPins}, {@link checkSeeds}, {@link checkEntities},
  * {@link checkAccess}, {@link checkProps} and the pack library's `checkRowFields`
  * (`FIELD_UNKNOWN` warnings: a receipt reading a row field its data source's rows
- * do not have), as one result.
+ * do not have; a connector-served source is known from the engine that serves
+ * its connection, the app's own or a pinned pack's), as one result.
  */
 export async function validateProject(root: string, pack: PackFolder): Promise<PackValidation> {
   const result = validatePack(pack)
   const pinIssues = await checkPins(root, result.identity)
-  const propIssues = await checkProps(root, result.identity)
-  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...propIssues, ...checkRowFields(pack)]
+  const sources = await atomSources(root, result.identity)
+  const fieldIssues = checkRowFields(pack, connectionFieldSets(pack, sources))
+  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...propIssues(sources), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 

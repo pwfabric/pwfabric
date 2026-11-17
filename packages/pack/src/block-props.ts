@@ -46,6 +46,8 @@ export type BlockPropsCatalog = ReadonlyMap<string, BlockPropsEntry>
 export interface BlockSource {
   readonly folder: PackFolder
   readonly atoms: readonly AtomRef[]
+  /** Where the folder is, as messages print it (`.pwf/packs/<id>@<version>`); absent for the app itself. */
+  readonly label?: string
 }
 
 const RECEIPT = /^app\/surfaces\/[^/]+\.receipt\.json$/

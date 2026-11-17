@@ -13,16 +13,27 @@
  *   `app/definitions/entities.json`, the keys of that collection's records in
  *   `app/content/` and `app/data/`, and the record envelope (`id`,
  *   `entityType`, `createdAt`, `updatedAt`);
+ * - an `entity` source whose `connector` names a connection of the app
+ *   (`app/definitions/connections.json`) served by a connector or provider
+ *   atom whose manifest declares that `entityType` (connector-manifest §4):
+ *   `id` and the declared fields. The atom is the first one — the app's own,
+ *   then its pinned packs in pin order — whose `connection` is the
+ *   connection's `connector` (its `name` when it has none), as `pwf dev`
+ *   resolves it;
  * - a `static` source whose `staticData` is a list of objects: their keys;
  * - any source with a `fallback` list of objects: their keys (added to the
  *   above).
  *
- * Any other source — a `rest` or connector-served source without a fallback,
- * an aggregate, a `state` source — has no known field set and is not checked.
+ * Any other source — a `rest` source without a fallback, a connector-served
+ * source whose connection is not declared or whose engine declares no
+ * `entities` for its type, an aggregate, a `state` source — has no known
+ * field set and is not checked.
  * The check reads JSON only; no block code runs.
  *
  * @module @pwfabric/pack/row-fields
  */
+import { ConnectorEntityDeclarationSchema, connectorEntityFields, type ConnectorEntityDeclaration } from '@pwfabric/contracts'
+import type { BlockSource } from './block-props.js'
 import type { PackFolder, PackIssue } from './types.js'
 import { stripBom } from './manifest.js'
 
@@ -35,6 +46,7 @@ const LISTED_FIELDS = 12
 const SURFACES = 'app/surfaces/'
 const RECEIPT_SUFFIX = '.receipt.json'
 const ENTITIES_FILE = 'app/definitions/entities.json'
+const CONNECTIONS_FILE = 'app/definitions/connections.json'
 const RECORD_DIRS = ['app/content/', 'app/data/']
 
 /**
@@ -69,13 +81,24 @@ const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\
 /** Per-source known row fields, in a stable order (declared first). */
 export type RowFieldSets = ReadonlyMap<string, readonly string[]>
 
+/** The entities an app's connection serves, as its engine's manifest declares them. */
+export interface ConnectionRowFields {
+  /** Where the declaration is, for the message: the engine manifest's path. */
+  readonly from: string
+  /** `entityType` → its known row fields (`id`, then the declared fields). */
+  readonly entities: RowFieldSets
+}
+
+/** Connection `name` → what its engine declares. A connection missing here has no known entities. */
+export type ConnectionFieldSets = ReadonlyMap<string, ConnectionRowFields>
+
 /**
  * The known row fields of each data source of one receipt. `entities` maps an
  * entity `typeId` to its known fields (declared fields and record keys; the
  * envelope is added here). A source missing from the result has no known set.
  */
-export function rowFieldSets(receipt: unknown, entities: RowFieldSets): Map<string, string[]> {
-  return new Map([...knownSources(receipt, entities)].map(([id, k]) => [id, k.fields]))
+export function rowFieldSets(receipt: unknown, entities: RowFieldSets, connections: ConnectionFieldSets = new Map()): Map<string, string[]> {
+  return new Map([...knownSources(receipt, entities, connections)].map(([id, k]) => [id, k.fields]))
 }
 
 interface KnownSource {
@@ -84,7 +107,7 @@ interface KnownSource {
   readonly basis: string
 }
 
-function knownSources(receipt: unknown, entities: RowFieldSets): Map<string, KnownSource> {
+function knownSources(receipt: unknown, entities: RowFieldSets, connections: ConnectionFieldSets): Map<string, KnownSource> {
   const out = new Map<string, KnownSource>()
   for (const source of dataSourcesOf(receipt)) {
     const id = source['id']
@@ -98,7 +121,15 @@ function knownSources(receipt: unknown, entities: RowFieldSets): Map<string, Kno
     }
     const kind = source['kind']
     const entityType = source['entityType']
-    if (kind === 'entity' && typeof entityType === 'string' && source['connector'] === undefined) {
+    const connector = source['connector']
+    if (kind === 'entity' && typeof entityType === 'string' && typeof connector === 'string') {
+      const declared = connections.get(connector)
+      const known = declared?.entities.get(entityType)
+      if (declared && known) {
+        basis.push(`the entity "${entityType}" of connection "${connector}" (${declared.from})`)
+        for (const f of known) fields.add(f)
+      }
+    } else if (kind === 'entity' && typeof entityType === 'string' && connector === undefined) {
       const declared = entities.get(entityType)
       if (declared) {
         basis.push(`the entity "${entityType}"`)
@@ -232,8 +263,14 @@ function fieldPropReads(props: Record<string, unknown>, sources: RowFieldSets): 
  * `FIELD_UNKNOWN` warnings for one receipt. `surface` names the page in the
  * message; `path` is the issue's path.
  */
-export function checkReceiptRowFields(receipt: unknown, entities: RowFieldSets, path: string, surface: string): PackIssue[] {
-  const known = knownSources(receipt, entities)
+export function checkReceiptRowFields(
+  receipt: unknown,
+  entities: RowFieldSets,
+  path: string,
+  surface: string,
+  connections: ConnectionFieldSets = new Map(),
+): PackIssue[] {
+  const known = knownSources(receipt, entities, connections)
   const sources: RowFieldSets = new Map([...known].map(([id, k]) => [id, k.fields]))
   if (sources.size === 0 || !isRecord(receipt) || !Array.isArray(receipt['blocks'])) return []
   const issues: PackIssue[] = []
@@ -319,11 +356,58 @@ export function entityFieldSets(folder: PackFolder): Map<string, string[]> {
   return out
 }
 
+/** A manifest's `entities`, keeping the declarations that fit the schema (the pack validation reports the rest). */
+function declaredEntities(manifest: unknown): ConnectorEntityDeclaration[] {
+  const list = isRecord(manifest) && Array.isArray(manifest['entities']) ? manifest['entities'] : []
+  return list.filter((e): e is ConnectorEntityDeclaration => ConnectorEntityDeclarationSchema.safeParse(e).success)
+}
+
+/**
+ * What each connection of the app (`app/definitions/connections.json`; a bare
+ * string entry is `{ name }`) is served by. `sources` are the folders whose
+ * connector and provider atoms may serve it, in precedence order — the app
+ * first, then its pinned packs in pin order (`validatePack(folder).atoms`);
+ * a source's `label` prefixes the manifest path in messages. A connection no
+ * atom answers to, or whose engine declares no entities, is left out.
+ */
+export function connectionFieldSets(app: PackFolder, sources: readonly BlockSource[]): Map<string, ConnectionRowFields> {
+  const out = new Map<string, ConnectionRowFields>()
+  const doc = parse(app.files.get(CONNECTIONS_FILE))
+  const list = isRecord(doc) && Array.isArray(doc['connections']) ? doc['connections'] : []
+  for (const raw of list) {
+    const entry = typeof raw === 'string' ? { name: raw } : isRecord(raw) ? raw : undefined
+    const name = entry?.['name']
+    if (typeof name !== 'string' || !name || out.has(name)) continue
+    const wanted = typeof entry?.['connector'] === 'string' ? entry['connector'] : name
+    const served = engineFor(wanted, sources)
+    if (!served) continue
+    const entities = connectorEntityFields({ entities: declaredEntities(served.manifest) })
+    if (entities.size > 0) out.set(name, { from: served.from, entities })
+  }
+  return out
+}
+
+/** The first connector or provider atom whose manifest `connection` is `wanted`. */
+function engineFor(wanted: string, sources: readonly BlockSource[]): { manifest: unknown; from: string } | undefined {
+  for (const source of sources) {
+    for (const ref of source.atoms) {
+      if (ref.kind !== 'connector' && ref.kind !== 'provider') continue
+      const manifest = parse(source.folder.files.get(ref.relPath))
+      if (isRecord(manifest) && manifest['connection'] === wanted) {
+        return { manifest, from: source.label ? `${source.label}/${ref.relPath}` : ref.relPath }
+      }
+    }
+  }
+  return undefined
+}
+
 /**
  * `FIELD_UNKNOWN` warnings for every `app/surfaces/<key>.receipt.json` of a
  * folder. A receipt that is not JSON is skipped (the pack validation reports it).
+ * `connections` ({@link connectionFieldSets}) makes connector-served sources
+ * known; a source whose connection is not in it is not checked.
  */
-export function checkRowFields(folder: PackFolder): PackIssue[] {
+export function checkRowFields(folder: PackFolder, connections: ConnectionFieldSets = new Map()): PackIssue[] {
   const entities = entityFieldSets(folder)
   const issues: PackIssue[] = []
   const receipts = [...folder.files.keys()]
@@ -332,7 +416,7 @@ export function checkRowFields(folder: PackFolder): PackIssue[] {
   for (const path of receipts) {
     const receipt = parse(folder.files.get(path))
     if (receipt === undefined) continue
-    issues.push(...checkReceiptRowFields(receipt, entities, path, path.slice(SURFACES.length, -RECEIPT_SUFFIX.length)))
+    issues.push(...checkReceiptRowFields(receipt, entities, path, path.slice(SURFACES.length, -RECEIPT_SUFFIX.length), connections))
   }
   return issues
 }

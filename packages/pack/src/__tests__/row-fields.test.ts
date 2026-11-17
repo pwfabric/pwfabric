@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkReceiptRowFields, checkRowFields, entityFieldSets, packFromRecord, rowFieldSets } from '../index.js'
+import { checkReceiptRowFields, checkRowFields, connectionFieldSets, entityFieldSets, packFromRecord, rowFieldSets, validatePack, type PackFolder } from '../index.js'
 
 const ENTITIES = new Map([['Product', ['name', 'price', 'tags']]])
 
@@ -209,5 +209,61 @@ describe('checkRowFields — a pack folder', () => {
   it('knows nothing without entities.json', () => {
     expect(checkRowFields(packFromRecord({ 'app/surfaces/home.receipt.json': receipt('{{item.nope}}') }))).toEqual([])
     expect(entityFieldSets(packFromRecord({ 'app/definitions/entities.json': '[]' })).size).toBe(0)
+  })
+})
+
+describe('connector-served sources (connector-manifest §4)', () => {
+  const TASKS = {
+    kind: 'provider',
+    name: 'Tasks',
+    connection: 'graph-tasks',
+    entities: [{ entityType: 'TodoTasks', fields: [{ name: 'title', type: 'text' }, { name: 'status', type: 'text' }] }],
+  }
+  const tasksPage = (content: string, connector = 'tasks') =>
+    JSON.stringify(page([repeater([text('t', content)], '{{todo}}')], [{ id: 'todo', kind: 'entity', entityType: 'TodoTasks', connector }]))
+  const app = (content: string, files: Record<string, string> = {}, connector?: string) =>
+    packFromRecord({
+      'app/definitions/connections.json': JSON.stringify({ connections: [{ name: 'tasks', connector: 'graph-tasks' }, 'bare'] }),
+      'app/surfaces/home.receipt.json': tasksPage(content, connector),
+      ...files,
+    })
+  const pack = (manifest: unknown) =>
+    packFromRecord({ 'atoms/providers/microsoft/entities/tasks.knowledge.json': JSON.stringify(manifest) })
+  const run = (folder: PackFolder, packs: PackFolder[] = [pack(TASKS)]) => {
+    const sources = [folder, ...packs].map((f, i) => ({
+      folder: f,
+      atoms: validatePack(f).atoms,
+      ...(i > 0 ? { label: `.pwf/packs/@pwpack/m365@1.0.${i - 1}` } : {}),
+    }))
+    return checkRowFields(folder, connectionFieldSets(folder, sources))
+  }
+
+  it('is silent on a field the engine declares, and on id', () => {
+    expect(run(app('{{item.title}} {{item.status}} {{item.id}}'))).toEqual([])
+  })
+
+  it('warns on a field it does not declare, naming the connection and the manifest', () => {
+    const issues = run(app('{{item.dueDate}}'))
+    expect(issues.map((i) => i.message)).toEqual([
+      'surface "home", block "t" reads field "dueDate" of source "todo", whose rows have no such field (known from the entity "TodoTasks" of connection "tasks" (.pwf/packs/@pwpack/m365@1.0.0/atoms/providers/microsoft/entities/tasks.knowledge.json): id, title, status); it renders empty',
+    ])
+  })
+
+  it('the app\'s own engine wins over a pack\'s; a bare connection answers to its name', () => {
+    const own = { 'atoms/providers/microsoft/entities/tasks.knowledge.json': JSON.stringify({ ...TASKS, entities: [{ entityType: 'TodoTasks', fields: [{ name: 'dueDate', type: 'date' }] }] }) }
+    expect(run(app('{{item.dueDate}}', own))).toEqual([])
+    const bare = { 'atoms/connectors/Bare.knowledge.json': JSON.stringify({ ...TASKS, connection: 'bare' }) }
+    expect(run(app('{{item.nope}}', bare, 'bare'), [])).toHaveLength(1)
+  })
+
+  it('does not check a source whose connection is undeclared, or whose engine declares no such entity', () => {
+    expect(run(app('{{item.nope}}', {}, 'graph-tasks'))).toEqual([])
+    expect(run(app('{{item.nope}}'), [pack({ ...TASKS, entities: [] })])).toEqual([])
+    expect(run(app('{{item.nope}}'), [pack({ ...TASKS, entities: undefined })])).toEqual([])
+    expect(run(app('{{item.nope}}'), [pack({ ...TASKS, entities: [{ entityType: 'TodoLists', fields: [] }] })])).toEqual([])
+    expect(run(app('{{item.nope}}'), [pack({ ...TASKS, connection: 'other' })])).toEqual([])
+    expect(run(app('{{item.nope}}'), [])).toEqual([])
+    // Without the connections, connector-served sources stay unchecked.
+    expect(checkRowFields(app('{{item.nope}}'))).toEqual([])
   })
 })
