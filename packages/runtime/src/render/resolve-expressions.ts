@@ -106,17 +106,18 @@ function resolveValue(value: unknown, context: ResolveContext): unknown {
       // as written by the host; now that its value is known, it is written in
       // the active router's form. Its value came from DATA, so it must be a
       // link and nothing else: `javascript:alert(1)` in a row is dropped and
-      // the link has no href (safeDataLink). A link that did not resolve
-      // stays as it is.
+      // the link has no href (safeDataLink). FAIL CLOSED: a value that is not
+      // a string (a list, an object, a number, undefined while loading) is
+      // no link either. Only a link that did not resolve — the template
+      // left as written — stays as it is.
       const href = resolved[key]
       if (
         typeof val === 'string' &&
-        typeof href === 'string' &&
         href !== val &&
         isExpressionLink(val) &&
         isLinkMember(key, value as Record<string, unknown>)
       ) {
-        const safe = safeDataLink(href)
+        const safe = typeof href === 'string' ? safeDataLink(href) : undefined
         resolved[key] = safe === undefined ? undefined : context.linkHref ? context.linkHref(safe) : safe
       }
     }

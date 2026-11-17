@@ -438,6 +438,13 @@ describe('resolveBlockExpressions — a link from data is a link or nothing', ()
     })
   }
 
+  it('drops a value that is not a string — fail closed', () => {
+    for (const bad of [['/a'], { href: '/a' }, 42, true, null, undefined]) {
+      expect(hrefOf(bad as never, linkHref)).toBeUndefined()
+      expect(hrefOf(bad as never)).toBeUndefined()
+    }
+  })
+
   it('keeps root-relative paths (for the router), fragments and http/https/mailto/tel', () => {
     expect(hrefOf('/session?id=4', linkHref)).toBe('#/session?id=4')
     expect(hrefOf('#speakers', linkHref)).toBe('#speakers')
