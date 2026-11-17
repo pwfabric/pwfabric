@@ -280,7 +280,10 @@ async function l2(browser, s) {
     if (!(await validateAndBuild(s, app.root))) return
     const manifest = JSON.parse(await readFile(join(app.root, '.pwf', 'out', 'blocks', 'manifest.json'), 'utf8'))
     s.check('the app block is in blocks/manifest.json', manifest.some((b) => b.blockType === 'greeting'), manifest.map((b) => b.blockType))
-    const { server, page } = await openBuilt(s, browser, app.root, textOf('[data-block-id="greeting"]'))
+    // Blocks load by type, lazily: wait for every block this scenario reads, not
+    // only the first — on a slow runner the foundation's note arrived after
+    // the app's own greeting and the check read null.
+    const { server, page } = await openBuilt(s, browser, app.root, `(${textOf('[data-block-id="greeting"]')}) && (${textOf('[data-block-id="note"]')})`)
     try {
       s.check('greeting renders from the app block', (await page.evaluate(textOf('[data-block-id="greeting"]'))) === 'Hello, visitor!')
       const greeting = await page.evaluate(
