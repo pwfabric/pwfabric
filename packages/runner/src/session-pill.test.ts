@@ -146,13 +146,24 @@ describe('mountSessionPill', () => {
     }).not.toThrow()
   })
 
-  it('sits above the bottom-bar: its offset reads --pw-bottom-bar-height', () => {
+  it('is docked in the page flow after the app, so it never covers content', () => {
+    // It floated (position:fixed, bottom-right) over whatever the page put in
+    // that corner, at every width.
+    const app = document.createElement('div')
+    app.id = 'root'
+    document.body.appendChild(app)
     mountSessionPill({ bridge: fakeBridge(), getAppSession: () => null, onSignedOut: vi.fn() })
     const css = document.getElementById('pwapp-shell-css')?.textContent ?? ''
-    expect(css).toMatch(/#pwapp-session-pill\s*\{[^}]*bottom:\s*calc\(16px \+ var\(--pw-bottom-bar-height,\s*0px\)\)/)
-    expect(css).toMatch(/#pwapp-login-error\s*\{[^}]*bottom:\s*calc\(62px \+ var\(--pw-bottom-bar-height,\s*0px\)\)/)
-    // No inline position left to override the sheet.
-    expect(pill()?.style.bottom).toBe('')
+    const rule = /#pwapp-session-pill\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(rule).toMatch(/position:\s*static/)
+    expect(rule).not.toMatch(/fixed|z-index/)
+    // A fixed bottom bar of the app's own does not cover it either.
+    expect(rule).toMatch(/margin:[^;]*var\(--pw-bottom-bar-height,\s*0px\)/)
+    expect(/#pwapp-login-error\s*\{([^}]*)\}/.exec(css)?.[1]).not.toMatch(/fixed/)
+    // After the app, the note right above the bar.
+    expect(app.compareDocumentPosition(pill()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(document.getElementById('pwapp-login-error')?.nextElementSibling).toBe(pill())
+    expect(pill()?.style.position).toBe('')
   })
 
   it("paints with the app's appearance tokens", () => {
