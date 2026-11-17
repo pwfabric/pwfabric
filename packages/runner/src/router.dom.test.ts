@@ -259,10 +259,82 @@ describe('hash router start()', () => {
     expect(onChange).toHaveBeenCalledWith()
   })
 
-  it('a bare in-page anchor is the browser’s, not a route change', () => {
-    const { onChange } = started('#/people')
+  it('a bare in-page anchor set without a click scrolls, keeps the page and is written onto it', () => {
+    // A `navigate` action's `location.assign('#contact')`, or a typed fragment:
+    // the address said `#contact`, which names no page, so a reload or a shared
+    // link opened the entry page.
+    const target = section('contact')
+    const { onChange } = started('#/people?tab=all')
     fireHashChange('#contact')
     expect(onChange).not.toHaveBeenCalled()
+    expect(location.hash).toBe('#/people?tab=all#contact')
+    expect(scrolledInto).toContain(target)
+  })
+
+  it('an in-page anchor link keeps the page and its query in the address', () => {
+    const target = section('rsvp')
+    const { onChange } = started('#/product?id=12')
+    click(link('#rsvp'))
+    expect(lastClickPrevented).toBe(true)
+    expect(location.hash).toBe('#/product?id=12#rsvp')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(scrolledInto).toContain(target)
+  })
+
+  it('the address an in-page anchor leaves reloads onto the same page at the anchor', () => {
+    started('#/product?id=12')
+    click(link('#rsvp'))
+    // A reload: a fresh router reads the address the click left behind.
+    const target = section('rsvp')
+    const reloaded = createRouter('hash', PAGES, 'home')
+    expect(reloaded.current()).toBe('product')
+    expect(reloaded.query()).toBe('id=12')
+    reloaded.applyScroll()
+    expect(scrolledInto).toContain(target)
+  })
+
+  it('an in-page anchor link is one history entry, so Back returns to the page as it was', () => {
+    started('#/product?id=12')
+    const before = history.length
+    click(link('#rsvp'))
+    expect(history.length).toBe(before + 1)
+  })
+
+  it('a bare "#" link keeps the page and goes to the top', () => {
+    const { onChange } = started('#/people')
+    click(link('#'))
+    expect(lastClickPrevented).toBe(true)
+    expect(location.hash).toBe('#/people')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(scrollTo).toHaveBeenCalledWith(0, 0)
+  })
+
+  it('an in-page anchor on the not-found page keeps that address', () => {
+    const { router } = started('#/services')
+    expect(router.current()).toBeNull()
+    click(link('#help'))
+    expect(location.hash).toBe('#/services#help')
+  })
+
+  it('an in-page anchor after a compound anchor replaces the anchor, not the page', () => {
+    started('#/people#team')
+    click(link('#contact'))
+    expect(location.hash).toBe('#/people#contact')
+  })
+
+  it('an in-page jump scrolls smoothly, and instantly when the reader asks for reduced motion', () => {
+    section('rsvp')
+    started('#/people')
+    const behaviours: unknown[] = []
+    Element.prototype.scrollIntoView = function (this: Element, arg?: boolean | ScrollIntoViewOptions) {
+      behaviours.push(typeof arg === 'object' ? arg.behavior : undefined)
+    }
+    let reduce = false
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(prefers-reduced-motion: reduce)' && reduce }))
+    click(link('#rsvp'))
+    reduce = true
+    click(link('#rsvp'))
+    expect(behaviours).toEqual(['smooth', 'auto'])
   })
 
   it('a new query on the same page is reported as query-only', () => {
@@ -463,6 +535,21 @@ describe('path router start()', () => {
     click(a)
     expect(onChange).not.toHaveBeenCalled()
     expect(location.pathname).toBe(`${BASE}/home`)
+  })
+
+  it('a bare #anchor link stays on the page shown, even though <base href> points at the app root', () => {
+    // `#rsvp` resolves against `<base href="/apps/x/">` to the ENTRY page's
+    // address, so following it as written left the page the reader was on.
+    const base = document.createElement('base')
+    base.href = `${BASE}/`
+    document.head.appendChild(base)
+    const target = section('rsvp')
+    const { onChange } = started(`${BASE}/product?id=12`)
+    click(link('#rsvp'))
+    expect(lastClickPrevented).toBe(true)
+    expect(location.pathname + location.search + location.hash).toBe(`${BASE}/product?id=12#rsvp`)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(scrolledInto).toContain(target)
   })
 
   it('a link at the base itself is the entry page', () => {

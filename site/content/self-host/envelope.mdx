@@ -90,9 +90,15 @@ Routing is one rule in both modes: the location either names a key in
 page. It never falls back to the entry page.
 
 - **hash mode** (default): `#/<key>`; `#/` and no hash mean the entry page.
-  `#section` without a slash is an in-page anchor and is left to the browser.
+  `#section` without a slash is an in-page anchor, never a route: following
+  it scrolls the page shown (smoothly, unless the reader asked for reduced
+  motion) and the runner writes it onto that page's route, query kept —
+  `#/session?id=4#rsvp` — so a reload or a shared link opens the same page at
+  the same place. A route may carry a query and an anchor, in that order.
 - **path mode**: `<base>/<key>`, where `<base>` is the shell's `<base href>`.
-  Needs an SPA fallback on the host. `router: 'auto'` chooses path mode only
+  Needs an SPA fallback on the host. A `#section` link stays on the page
+  shown (`<base>/<key>?query#section`), although `<base href>` would resolve it
+  against the entry page. `router: 'auto'` chooses path mode only
   when the page also declares `<meta name="pw-router" content="path">`.
 
 Links inside receipts are written **root-relative to the app**: `/people`,

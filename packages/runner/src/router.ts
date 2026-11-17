@@ -100,9 +100,20 @@ function elementFor(anchor: string): HTMLElement | null {
   }
 }
 
-function scrollToAnchor(anchor: string | null): void {
+/**
+ * How a jump WITHIN the page already shown moves: smoothly, so the reader sees
+ * where they went — instantly when they asked the system for reduced motion.
+ * A route render always lands instantly (`'auto'`): there is no "from" to show.
+ */
+function jumpBehaviour(): ScrollBehavior {
+  if (typeof window.matchMedia !== 'function') return 'auto'
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+}
+
+function scrollToAnchor(anchor: string | null, behavior: ScrollBehavior = 'auto'): void {
   if (anchor === null || anchor === '') {
-    window.scrollTo(0, 0)
+    if (behavior === 'auto') window.scrollTo(0, 0)
+    else window.scrollTo({ top: 0, left: 0, behavior })
     return
   }
   /**
@@ -117,7 +128,7 @@ function scrollToAnchor(anchor: string | null): void {
    * data filling in ABOVE the anchor ("PAINT FIRST, FILL IN AFTER") pushes it
    * back down after the first scroll.
    */
-  const honour = (): void => elementFor(anchor)?.scrollIntoView()
+  const honour = (): void => elementFor(anchor)?.scrollIntoView({ behavior })
   honour()
   if (typeof MutationObserver !== 'function') return
 
@@ -169,7 +180,8 @@ export function resolveRouterMode(requested: RouterMode): 'hash' | 'path' {
 
 /**
  * A route reference is `#/<key>` — the slash is REQUIRED. `#contact-form` is
- * an in-page anchor and belongs to the document, not to this router.
+ * an in-page anchor, never a route: following one scrolls the page shown and
+ * writes the anchor onto its route (`inPageAddress`).
  *
  * The slash used to be optional (`/^#\/?/`), which made the two forms
  * indistinguishable: clicking an in-page anchor on a sub-page fired
@@ -212,6 +224,11 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
   let resolved: string | null = null
   /** The query of the location `resolved` was read from. */
   let resolvedQuery = ''
+  /**
+   * The ROUTE PART (`#/<key>?<query>`, no anchor) of the last location that
+   * named a route — known page or not. An in-page anchor is written onto it.
+   */
+  let shownRoute = '#/'
 
   const routeOf = (hash: string): string | null => {
     const match = ROUTE_HASH.exec(hash)
@@ -220,6 +237,21 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
     return key === '' ? entry : key
   }
 
+  const noteRoute = (match: RegExpExecArray): void => {
+    shownRoute = `#/${match[1] ?? ''}${match[2] !== undefined ? `?${match[2]}` : ''}`
+  }
+
+  /**
+   * AN IN-PAGE ANCHOR KEEPS THE PAGE. `#rsvp` names no route, so left in the
+   * address as the browser writes it (`/#rsvp`) the page was gone from the
+   * URL: the scroll happened, but a reload or a shared link opened the entry
+   * page. The anchor is written onto the page shown instead —
+   * `#/session?id=4#rsvp`, the compound form this router already reads back,
+   * so a reload lands on the same page at the same place. `#` alone names the
+   * top of the page.
+   */
+  const inPageAddress = (anchor: string): string => (anchor === '' ? shownRoute : `${shownRoute}#${anchor}`)
+
   return {
     mode: 'hash',
     // Hash mode: the pathname IS the shell and never changes per page.
@@ -227,6 +259,7 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
     current() {
       const match = ROUTE_HASH.exec(location.hash)
       if (!match) return resolved ?? entry
+      noteRoute(match)
       resolvedQuery = match[2] ?? ''
       const key = (match[1] ?? '').replace(/\/+$/, '')
       if (key === '') {
@@ -246,10 +279,20 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
     },
     start(onChange) {
       window.addEventListener('hashchange', () => {
-        // A BARE in-page anchor (`#contact-form`) is a true document fragment
-        // in this mode: the browser finds that id itself and scrolls to it.
-        // Re-rendering would discard the scroll it is about to set.
-        if (!ROUTE_HASH.test(location.hash)) return
+        // A BARE in-page anchor (`#contact-form`) that did not come from a
+        // click — a `navigate` action's `location.assign`, a typed fragment.
+        // It is not a route, so nothing re-renders (that would discard the
+        // scroll); the address is rewritten onto the page shown, in place of
+        // the entry the browser just made. An EMPTY hash is a step back to the
+        // shell's own address, not an anchor, and is left alone.
+        if (!ROUTE_HASH.test(location.hash)) {
+          const anchor = location.hash.slice(1)
+          if (anchor === '') return
+          history.replaceState(history.state, '', inPageAddress(anchor))
+          scrollToAnchor(anchor, jumpBehaviour())
+          return
+        }
+        noteRoute(ROUTE_HASH.exec(location.hash) as RegExpExecArray)
         // A COMPOUND `#/route#anchor` on the page already shown changed the
         // address, not the surface. Re-rendering would replace the DOM under
         // the reader — and the browser cannot scroll here, because the
@@ -261,16 +304,30 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
             onChange({ queryOnly: true })
             return
           }
-          scrollToAnchor(hashAnchorOf(location.hash))
+          scrollToAnchor(hashAnchorOf(location.hash), jumpBehaviour())
           return
         }
         onChange()
       })
-      // A root-relative link naming one of our pages (`/people/`) is ours even
-      // though the rewriter never saw it — data rows render such hrefs. Left to
-      // the browser it walks off the app to `<origin>/people/`.
       document.addEventListener('click', (ev) => {
-        const stray = strayLinkFromClick(ev, pages)
+        const link = ownLinkFromClick(ev)
+        if (link === null) return
+        const written = link.getAttribute('href') ?? ''
+        // An in-page anchor link: one history entry naming page AND anchor
+        // (see `inPageAddress`), then the scroll — `pushState` never scrolls.
+        if (written.startsWith('#') && !written.startsWith('#/')) {
+          ev.preventDefault()
+          const anchor = written.slice(1)
+          const address = inPageAddress(anchor)
+          if (address === location.hash) history.replaceState(history.state, '', address)
+          else history.pushState(null, '', address)
+          scrollToAnchor(anchor, jumpBehaviour())
+          return
+        }
+        // A root-relative link naming one of our pages (`/people/`) is ours even
+        // though the rewriter never saw it — data rows render such hrefs. Left to
+        // the browser it walks off the app to `<origin>/people/`.
+        const stray = strayLinkOf(written, pages)
         if (stray === null) return
         ev.preventDefault()
         // The query and fragment ride along: `/records/5#top` names a place in
@@ -338,10 +395,20 @@ function createPathRouter(
       // a page the app does not have, which then render the not-found page
       // in place. Anything outside the base is the browser's, not ours.
       document.addEventListener('click', (ev) => {
-        if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return
-        const target = ev.target as Element | null
-        const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null
-        if (!anchor || (anchor.target && anchor.target !== '_self')) return
+        const anchor = ownLinkFromClick(ev)
+        if (anchor === null) return
+        const written = anchor.getAttribute('href') ?? ''
+        // A FRAGMENT-ONLY link names a place in the page SHOWN. `anchor.href`
+        // resolves it against the shell's `<base href>` — the app root, i.e.
+        // the ENTRY page's address — so on any other page following it as
+        // resolved left the page the reader was on. The fragment goes onto the
+        // current address instead.
+        if (written.startsWith('#')) {
+          ev.preventDefault()
+          history.pushState(null, '', location.pathname + location.search + written)
+          scrollToAnchor(written.slice(1) || null, jumpBehaviour())
+          return
+        }
         const url = new URL(anchor.href, location.href)
         if (url.origin !== location.origin) return
         const path = trimBase(url.pathname)
@@ -349,7 +416,7 @@ function createPathRouter(
           // Not under our base — but a root-relative `/people/` that names one
           // of our pages is still ours (see strayPageKeyOf). Route it under
           // the base instead of letting the document walk to `<origin>/people/`.
-          const stray = strayLinkOf(anchor.getAttribute('href') ?? '', pages)
+          const stray = strayLinkOf(written, pages)
           if (stray === null) return
           ev.preventDefault()
           history.pushState(null, '', `${base}/${stray.key}${stray.suffix}`)
@@ -358,7 +425,7 @@ function createPathRouter(
           // guard here, a `/people#top` link on `/people` would fetch the
           // receipt again, replace the DOM, and throw the reader to the top.
           if (stray.key === resolved && stray.suffix.startsWith('#')) {
-            scrollToAnchor(stray.suffix.slice(1) || null)
+            scrollToAnchor(stray.suffix.slice(1) || null, jumpBehaviour())
             return
           }
           onChange(stray.key === resolved ? { queryOnly: true } : undefined)
@@ -381,7 +448,7 @@ function createPathRouter(
         // the anchor is ours, and re-rendering would replace the DOM the
         // reader is looking at and send them back to the top.
         if (sameSurface) {
-          scrollToAnchor(url.hash.startsWith('#') ? url.hash.slice(1) : null)
+          scrollToAnchor(url.hash.startsWith('#') ? url.hash.slice(1) : null, jumpBehaviour())
           return
         }
         onChange()
@@ -390,13 +457,17 @@ function createPathRouter(
   }
 }
 
-/** The stray root-relative page link a plain left-click names, else null. */
-function strayLinkFromClick(ev: MouseEvent, pages: readonly string[]): StrayLink | null {
+/**
+ * The link a plain left-click follows in this tab, else null — a click
+ * something already handled, a modified or middle click, or a link opening
+ * elsewhere is the browser's.
+ */
+function ownLinkFromClick(ev: MouseEvent): HTMLAnchorElement | null {
   if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return null
   const target = ev.target as Element | null
   const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null
   if (!anchor || (anchor.target && anchor.target !== '_self')) return null
-  return strayLinkOf(anchor.getAttribute('href') ?? '', pages)
+  return anchor
 }
 
 /** A stray link split into the page it names and the query/fragment riding along. */
