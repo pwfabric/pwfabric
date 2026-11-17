@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { packFromRecord, writePwpack } from '@pwfabric/pack'
 import { main } from '../../index.js'
 import { parsePort, runRun, untilSignal, DEFAULT_RUN_PORT } from '../../commands/run.js'
-import { contentTypeOf, parseHeadersFile, requestPath, startStaticServer, type StaticServer } from '../../commands/lib/static-server.js'
+import { contentTypeOf, isPagePath, parseHeadersFile, requestPath, startStaticServer, type StaticServer } from '../../commands/lib/static-server.js'
 import { capture, tempDir } from './helpers.js'
 
 async function builtApp(): Promise<string> {
@@ -34,6 +34,11 @@ describe('static server', () => {
       const page = await fetch(new URL('menu/today', server.url))
       expect(page.status).toBe(200)
       expect(await page.text()).toContain('id="root"')
+
+      // A page id may carry a dot: only a known file type makes a path an asset.
+      const dotted = await fetch(new URL('layout.two-pane', server.url))
+      expect(dotted.status).toBe(200)
+      expect(await dotted.text()).toContain('id="root"')
 
       expect(await (await fetch(new URL('docs', server.url))).text()).toBe('<p>docs</p>')
       expect((await fetch(new URL('assets/missing.js', server.url))).status).toBe(404)
@@ -125,6 +130,10 @@ describe('static server', () => {
     expect(contentTypeOf('a.css')).toBe('text/css; charset=utf-8')
     expect(contentTypeOf('a.svg')).toBe('image/svg+xml')
     expect(contentTypeOf('a.bin')).toBe('application/octet-stream')
+    expect(isPagePath('menu/today')).toBe(true)
+    expect(isPagePath('layout.two-pane')).toBe(true)
+    expect(isPagePath('assets/runner.js')).toBe(false)
+    expect(isPagePath('logo.PNG')).toBe(false)
     expect(requestPath('/a/./b/?q=1#x')).toBe('a/b')
     expect(requestPath('/a/../b')).toBe('b')
     expect(requestPath('/a%2F..%2Fb')).toBeNull()

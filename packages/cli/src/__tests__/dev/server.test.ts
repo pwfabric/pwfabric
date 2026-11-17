@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LocalHost } from '../../host/types.js'
-import { contentTypeOf, createDevServer, logLines, startDevServer, urlFor } from '../../dev/server.js'
+import { contentTypeOf, createDevServer, isPagePath, logLines, startDevServer, urlFor } from '../../dev/server.js'
 import type { DevServer } from '../../dev/types.js'
 import { makeApp } from './helpers.js'
 
@@ -145,6 +145,10 @@ describe('dev server', () => {
     const deep = await at('/about')
     expect(deep.headers.get('content-type')).toBe('text/html; charset=utf-8')
     expect(await deep.text()).toContain('./assets/boot.js')
+    // A dotted page id is a page, not a file of an unknown type.
+    const dotted = await at('/layout.two-pane')
+    expect(dotted.status).toBe(200)
+    expect(await dotted.text()).toContain('./assets/boot.js')
   })
 
   it('mounts a local host: forwards its requests and carries its envelope entries', async () => {
@@ -257,6 +261,8 @@ describe('server helpers', () => {
     expect(contentTypeOf('a/b.mjs')).toBe('text/javascript; charset=utf-8')
     expect(contentTypeOf('x.WEBP')).toBe('image/webp')
     expect(contentTypeOf('x.bin')).toBe('application/octet-stream')
+    expect(isPagePath('layout.two-pane')).toBe(true)
+    expect(isPagePath('nope.js')).toBe(false)
     expect(urlFor('127.0.0.1', 1)).toBe('http://127.0.0.1:1/')
     expect(urlFor('0.0.0.0', 2)).toBe('http://localhost:2/')
     expect(urlFor('::1', 3)).toBe('http://[::1]:3/')
