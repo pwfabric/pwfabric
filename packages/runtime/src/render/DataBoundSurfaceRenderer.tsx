@@ -57,6 +57,8 @@ import { isCapability } from '../capability/type-mapping.js'
 import { writeOnlySourceIds } from './write-only-sources.js'
 import { failureCodeOf, sourceFailureMessage, type SourceFailureCode } from './source-failure.js'
 import { applyEntityQuery } from '../entity/apply-query.js'
+import { documentAddress, type SurfaceAddress } from './address.js'
+import { useNotFoundReport, useUrlStateSync } from './address-sync.js'
 
 // ============================================================
 // extract dataSources + initialState from persistence config
@@ -72,6 +74,7 @@ function extractPersistenceSeeds(surface: {
   dataSources: readonly SurfaceDataSourceDefinition[] | undefined
   initialState: Readonly<Record<string, unknown>> | undefined
   behaviors: readonly RuntimeBehavior[] | undefined
+  urlState: readonly string[] | undefined
 } {
   const binding = surface.capabilities?.find(
     (c) => isCapability(c, PLATFORM_PERSISTENCE_CAPABILITY_ID)
@@ -81,6 +84,7 @@ function extractPersistenceSeeds(surface: {
         dataSources?: readonly SurfaceDataSourceDefinition[]
         initialState?: Readonly<Record<string, unknown>>
         behaviors?: readonly RuntimeBehavior[]
+        urlState?: readonly string[]
       }
     | undefined
   return {
@@ -90,6 +94,8 @@ function extractPersistenceSeeds(surface: {
     // renderer merges these with host-provided behaviors (the host's store) so a pack
     // can carry its own controls without the host knowing about them.
     behaviors: cfg?.behaviors,
+    // State keys that live in the page's address (render/address-sync.ts).
+    urlState: Array.isArray(cfg?.urlState) ? cfg.urlState.filter((k): k is string => typeof k === 'string' && k !== '') : undefined,
   }
 }
 
@@ -1162,7 +1168,7 @@ function DataBoundInner({
     () => new Set(writeOnlyKey === '' ? [] : writeOnlyKey.split('\n')),
     [writeOnlyKey]
   )
-  const { expressionData, initialLoaded, setStateValue, refreshSource, fetchAllSources } =
+  const { expressionData, surfaceState, initialLoaded, setStateValue, refreshSource, fetchAllSources } =
     useSurfaceData(dataSources, initialState, interactionMode, entityFacade, connections, dataCache, writeOnly)
   // The page scope as bound NOW, for actions resolved at dispatch time.
   const expressionDataRef = React.useRef(expressionData)
@@ -1225,6 +1231,14 @@ function DataBoundInner({
     },
     [writeRecord, setStateValue, fetchAllSources]
   )
+
+  // The page's address (render/address.ts): its declared `urlState` keys are
+  // written back there, and a record source that finds nothing says so.
+  const hostAddress = (rendererProps as { address?: SurfaceAddress }).address
+  const ownAddress = React.useMemo(() => hostAddress ?? documentAddress(), [hostAddress])
+  const urlState = React.useMemo(() => extractPersistenceSeeds({ capabilities }).urlState, [capabilities])
+  useUrlStateSync(urlState, surfaceState, ownAddress, interactionMode)
+  useNotFoundReport(dataSources, expressionData, ownAddress, interactionMode)
 
   // The props each block's manifest declares `bindable: false` stay as
   // written; the descriptors the host handed the renderer carry them.
@@ -1397,7 +1411,8 @@ function DataBoundInner({
     // record a source has loaded, and could not see one before this.
     <SurfaceDataContext.Provider value={expressionData}>
       <SurfaceLinkHrefContext.Provider value={linkHref ?? null}>
-        <SurfaceRenderer surface={resolvedSurface} onEvent={handleEvent} {...rendererProps} />
+        {/* A split shell's selection is page state too (`state.<selectionKey>`). */}
+        <SurfaceRenderer surface={resolvedSurface} onEvent={handleEvent} {...rendererProps} onSelection={setStateValue} />
       </SurfaceLinkHrefContext.Provider>
     </SurfaceDataContext.Provider>
   )

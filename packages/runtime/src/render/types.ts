@@ -7,6 +7,7 @@
  */
 
 import type { Block, BreakpointName, SurfaceDocument, SurfaceTheme } from '@pwfabric/contracts'
+import type { SurfaceAddress } from './address.js'
 import type { CSSProperties, ReactNode } from 'react'
 import type { ImageAdapter as ImageAdapterType } from '../adapters/types.js'
 import type { EntityFacade } from '../entity/facade.js'
@@ -322,6 +323,18 @@ export interface SurfaceRendererProps {
    * and block-dispatched surface actions (for editor/preview embedding).
    */
   readonly interactionMode?: BlockInteractionMode
+  /**
+   * The page's address, as its host exposes it (see render/address.ts): where
+   * a split shell's selection and the page's `urlState` live, and where the
+   * page reports a record that is not there. Absent: the document's own
+   * `location.search`, with no not-found page.
+   */
+  readonly address?: SurfaceAddress | undefined
+  /**
+   * Told the selection a split shell shows (its id, or `null`), so the
+   * data-bound renderer holds it as page state. Set by that renderer.
+   */
+  readonly onSelection?: ((key: string, id: string | null) => void) | undefined
 }
 
 /**

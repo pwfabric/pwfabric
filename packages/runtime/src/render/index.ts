@@ -167,6 +167,8 @@ export { SurfaceConnectionsContext, useSurfaceConnections } from './connections-
 // Shell × body: SPLIT shell selection, projected onto the URL so a selected
 // record can be linked to and the Back button undoes the selection.
 export type { ShellSelectionStore, ShellSelectionOptions, ShellSelectionProviderProps } from './shell-selection.js'
+export type { SurfaceAddress } from './address.js'
+export { documentAddress, SurfaceAddressContext } from './address.js'
 export {
   ShellSelectionContext,
   ShellSelectionProvider,

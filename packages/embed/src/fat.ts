@@ -28,6 +28,7 @@ import type {
   DataServiceConfig,
   SurfaceDataCache,
   LinkHref,
+  SurfaceAddress,
 } from '@pwfabric/runtime'
 import type { DynamicBlockDescriptor } from '@pwfabric/contracts'
 
@@ -81,6 +82,12 @@ export interface RenderFatOptions {
   readonly onTitle?: (title: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
+  /**
+   * The page's address as the host owns it (runtime render/address.ts): where
+   * a split shell's selection and the page's `urlState` live, and where a page
+   * reports a record that is not there. Absent: the document's own query.
+   */
+  readonly address?: SurfaceAddress
 
   /** Inline appearance ref; overrides `surface.appearance` when given. */
   readonly appearance?: RenderableSurface['appearance']
@@ -192,6 +199,7 @@ export function fatCoreOptions(opts: RenderFatOptions): RenderCoreOptions {
     ...(opts.linkHref !== undefined ? { linkHref: opts.linkHref } : {}),
     ...(opts.onTitle !== undefined ? { onTitle: opts.onTitle } : {}),
     ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
+    ...(opts.address !== undefined ? { address: opts.address } : {}),
     ...(opts.theme !== undefined ? { theme: opts.theme } : {}),
     ...(opts.viewport !== undefined ? { viewport: opts.viewport } : {}),
     ...(opts.interactionMode !== undefined ? { interactionMode: opts.interactionMode } : {}),

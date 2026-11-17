@@ -35,6 +35,13 @@ export interface PwappProject {
   readonly surfaceOrder: readonly string[]
   readonly surfaceReceiptFiles?: Readonly<Record<string, string>>
   /**
+   * Key of the app's own not-found page — its receipt is in
+   * `surfaceReceiptFiles`, and it is not in `surfaceOrder` (not a route).
+   * Drawn like any page, inside the app's shell, when the location names no
+   * page or a page's record is not there. Absent: the runner's own page.
+   */
+  readonly notFoundSurfaceId?: string
+  /**
    * WHO THE VISITOR IS — frozen at export.
    *
    * `authRequired` lived in the plan, was drawn on the canvas card and never

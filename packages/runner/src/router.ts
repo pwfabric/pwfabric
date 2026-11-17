@@ -55,6 +55,14 @@ export interface RouterHandle {
    * page state from it.
    */
   query(): string
+  /**
+   * Put `query` (without the `?`) in the current location's query, keeping
+   * the page and the anchor — `#/<key>?<query>#<anchor>` in hash mode,
+   * `<path>?<query>#<anchor>` in path mode. `push` adds a history entry,
+   * `replace` does not. No location-change event fires: the page wrote its own
+   * address and already shows it.
+   */
+  writeQuery(query: string, how: 'push' | 'replace'): void
   /** Build an href for a page key in this router's form. */
   toHref: ToHref
   /**
@@ -293,6 +301,14 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
       return null
     },
     query: () => (ROUTE_HASH.test(location.hash) ? hashQueryOf(location.hash) : resolvedQuery),
+    writeQuery(query, how) {
+      const key = resolved ?? entry
+      const anchor = hashAnchorOf(location.hash)
+      const hash = `#/${key}${query ? `?${query}` : ''}${anchor ? `#${anchor}` : ''}`
+      // The query this page now shows: a Back to the old one is a change.
+      resolvedQuery = query
+      writeLocation(location.pathname + location.search + hash, how)
+    },
     toHref: (key) => `#/${key}`,
     applyScroll() {
       scrollToAnchor(hashAnchorOf(location.hash))
@@ -359,6 +375,13 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
   }
 }
 
+/** Moves the address without a navigation; a no-op when it would not change. */
+function writeLocation(url: string, how: 'push' | 'replace'): void {
+  if (url === location.pathname + location.search + location.hash) return
+  if (how === 'push') history.pushState(null, '', url)
+  else history.replaceState(history.state, '', url)
+}
+
 // ============================================================
 // PATH ROUTER
 // ============================================================
@@ -404,6 +427,9 @@ function createPathRouter(
       return resolved
     },
     query: () => location.search.replace(/^\?/, ''),
+    writeQuery(query, how) {
+      writeLocation(location.pathname + (query ? `?${query}` : '') + location.hash, how)
+    },
     toHref: (key) => `${base}/${key}`,
     applyScroll() {
       scrollToAnchor(location.hash.startsWith('#') ? location.hash.slice(1) : null)

@@ -226,6 +226,15 @@ export const dataSourceSchema = z.object({
    */
   fallback: z.unknown().optional(),
   /**
+   * The source is THE RECORD THE PAGE SHOWS (a detail page's `?id=`). When it
+   * settles with no record — a 404, no row, or not fetched because the path
+   * value it needs is empty — the page is not found: the host renders the
+   * app's not-found page at this address (data-protocol, envelope §3). A
+   * refused read or a server error is not "not found"; it is the source's
+   * error state.
+   */
+  notFoundWhenEmpty: z.boolean().optional(),
+  /**
    * Ask for ONE NUMBER over the collection instead of its rows. The
    * source binds `{ fn, field?, value, count }` — `{{<id>.value}}` is the
    * number — and is exempt from the list wrap. `count` needs no field; the

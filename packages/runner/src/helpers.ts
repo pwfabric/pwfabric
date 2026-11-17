@@ -491,7 +491,6 @@ function authorityPart(endpoint: string): string {
 
 /**
  * Keys the page reads that the address must NOT seed (plan decision 3):
- *  - split-view selection keys (default `sec`) — the block owns that query key;
  *  - formBinding statusKeys — a success/error banner must not be faked by a link;
  *  - keys read in a single-expression REST endpoint (`"{{state.url}}"`, placed
  *    unencoded) or in an endpoint's scheme/host part — encoding does not
@@ -499,17 +498,9 @@ function authorityPart(endpoint: string): string {
  */
 export function unseedableStateKeys(receipt: SurfaceReceipt): Set<string> {
   const out = new Set<string>()
-  const walk = (node: unknown): void => {
-    if (Array.isArray(node)) return node.forEach(walk)
-    if (!node || typeof node !== 'object') return
-    const n = node as { type?: unknown; props?: Record<string, unknown>; children?: unknown }
-    const sel = n.props?.selectionKey
-    if (typeof sel === 'string' && sel) out.add(sel)
-    else if (typeof n.type === 'string' && /(^|\/)split-view$/.test(n.type)) out.add('sec')
-    walk(n.children)
-  }
-  walk(receipt.blocks)
-
+  // A split view's selection key IS seeded: the selection lives in the
+  // route's query and is page state (`state.<selectionKey>`), so the address
+  // that names it is the one source of it (runtime render/shell-selection).
   const entities = receipt.capabilities?.find((c) => isCapabilityNamed(c, 'entities'))?.config
   for (const fb of (entities?.formBindings as { statusKeys?: Record<string, unknown> }[] | undefined) ?? []) {
     for (const v of Object.values(fb?.statusKeys ?? {})) if (typeof v === 'string' && v) out.add(v)
@@ -526,7 +517,8 @@ export function unseedableStateKeys(receipt: SurfaceReceipt): Set<string> {
 
 /**
  * What the address seeds on this page: `{ key: rawString }` for every key the
- * page READS (allow-list), minus reserved, `__`-prefixed, prototype and
+ * page READS or declares as living in its address (`urlState`, an allow-list
+ * either way), minus reserved, `__`-prefixed, prototype and
  * unseedable keys. Values stay strings (`"12"`), the first of a repeated key
  * wins, cut at MAX_SEED_LENGTH, and a value that is exactly `.` or `..` becomes
  * `''`. An unread parameter (`utm_source`) seeds nothing.
@@ -534,7 +526,7 @@ export function unseedableStateKeys(receipt: SurfaceReceipt): Set<string> {
 export function queryStateSeed(receipt: SurfaceReceipt, params: URLSearchParams): Record<string, string> {
   const blocked = unseedableStateKeys(receipt)
   const seed: Record<string, string> = {}
-  for (const key of stateKeysRead(receipt)) {
+  for (const key of new Set([...stateKeysRead(receipt), ...urlStateKeys(receipt)])) {
     if (RESERVED_QUERY_KEYS.has(key) || blocked.has(key)) continue
     if (key.startsWith('__') || key === 'constructor' || key === 'prototype') continue
     const raw = params.get(key)
@@ -543,6 +535,12 @@ export function queryStateSeed(receipt: SurfaceReceipt, params: URLSearchParams)
     seed[key] = value === '.' || value === '..' ? '' : value
   }
   return seed
+}
+
+/** The state keys the page declares as living in its address (persistence `urlState`). */
+export function urlStateKeys(receipt: SurfaceReceipt): string[] {
+  const keys = persistenceConfigOf(receipt)?.urlState
+  return Array.isArray(keys) ? keys.filter((k): k is string => typeof k === 'string' && k !== '') : []
 }
 
 /**

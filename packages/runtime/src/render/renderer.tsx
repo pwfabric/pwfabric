@@ -66,6 +66,7 @@ import type { SurfaceDataSourceDefinition } from './data-binding-types.js'
 import { EntityFacadeContext } from './entity-facade-context.js'
 import { SurfaceConnectionsContext } from './connections-context.js'
 import { ShellSelectionProvider } from './shell-selection.js'
+import { SurfaceAddressContext } from './address.js'
 import { BlockModuleLoader } from './dynamic-block-loader.js'
 import type { FormEntityBridgeConfig } from '../forms/form-entity-bridge.js'
 import { isRepeatExpanded } from './resolve-expressions.js'
@@ -868,6 +869,8 @@ export function SurfaceRenderer({
   connections,
   renderBlockWrapper,
   interactionMode = 'live',
+  address,
+  onSelection,
 }: SurfaceRendererProps): React.ReactElement {
   // Use explicit viewport or auto-detect
   const autoViewport = useViewport()
@@ -1140,7 +1143,8 @@ export function SurfaceRenderer({
             detail pane and any header reading the same key agree. `syncUrl`
             follows interactionMode: an inert canvas selects without moving the
             host's address bar. */}
-        <ShellSelectionProvider syncUrl={interactionMode !== 'inert'}>
+        <SurfaceAddressContext.Provider value={address ?? null}>
+        <ShellSelectionProvider syncUrl={interactionMode !== 'inert'} address={address} onSelection={onSelection}>
         <div
           className={className}
           style={rootStyle}
@@ -1195,6 +1199,7 @@ export function SurfaceRenderer({
           {renderedBlocks}
         </div>
         </ShellSelectionProvider>
+        </SurfaceAddressContext.Provider>
       </BehaviorSurfaceProvider>
     </EntityFacadeContext.Provider>
     </SurfaceConnectionsContext.Provider>
