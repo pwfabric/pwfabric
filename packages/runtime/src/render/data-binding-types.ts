@@ -121,6 +121,7 @@ export type BlockActionProp = SurfaceAction | readonly SurfaceAction[]
 export interface RuntimeBehavior {
   readonly id: string
   readonly event: string
+  /** The block whose event it hears. A template id inside a `repeat` names every copy (`<id>--<index>`). */
   readonly targetBlockId?: string
   readonly actions: readonly SurfaceAction[]
 }

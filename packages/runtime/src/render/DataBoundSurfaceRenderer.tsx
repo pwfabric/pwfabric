@@ -898,6 +898,25 @@ export function canonicalizeEventType(raw: string): string {
 }
 
 // ============================================================
+// behaviorTargets
+// ============================================================
+
+/**
+ * Whether a behavior aimed at `targetBlockId` hears an event from `blockId`.
+ *
+ * A block inside a `repeat` is drawn once per row, each copy with the id
+ * `<id>--<index>` (`<id>--<outer>--<inner>` in a nested repeat) — the id the
+ * event carries. The receipt can only name the TEMPLATE id; matching it
+ * exactly meant a behavior aimed at a repeated block never fired. The
+ * template id names every copy; a copy id still names that one copy.
+ */
+export function behaviorTargets(targetBlockId: string, blockId: string): boolean {
+  if (blockId === targetBlockId) return true
+  if (!blockId.startsWith(`${targetBlockId}--`)) return false
+  return /^(--\d+)+$/.test(blockId.slice(targetBlockId.length))
+}
+
+// ============================================================
 // isSurfaceAction
 // ============================================================
 
@@ -1150,7 +1169,7 @@ function DataBoundInner({
         if (behaviors && behaviors.length > 0) {
           for (const b of behaviors) {
             if (canonicalizeEventType(b.event) !== fired) continue
-            if (b.targetBlockId && b.targetBlockId !== event.blockId) continue
+            if (b.targetBlockId && !behaviorTargets(b.targetBlockId, event.blockId)) continue
             b.actions.forEach(dispatchAction)
           }
         }
