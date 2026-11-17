@@ -110,15 +110,23 @@ export function parseHeadersFile(text: string): HeaderRule[] {
     }
     const at = raw.indexOf(':')
     const rule = rules[rules.length - 1]
-    if (at > 0 && rule) rule.headers.push([raw.slice(0, at).trim(), raw.slice(at + 1).trim()])
+    if (rule && raw.trim().startsWith('!')) rule.headers.push([raw.trim(), ''])
+    else if (at > 0 && rule) rule.headers.push([raw.slice(0, at).trim(), raw.slice(at + 1).trim()])
   }
   return rules
 }
 
-/** Whether a `_headers` pattern matches a request path (`/` + the relative path). */
+/**
+ * Whether a `_headers` pattern matches a request path (`/` + the relative
+ * path). One `*` (a splat) may stand anywhere and matches any characters:
+ * `/assets/*`, `/blocks/*.mjs`.
+ */
 export function headerPatternMatches(pattern: string, path: string): boolean {
-  if (pattern.endsWith('*')) return path.startsWith(pattern.slice(0, -1))
-  return pattern === path
+  const star = pattern.indexOf('*')
+  if (star < 0) return pattern === path
+  const head = pattern.slice(0, star)
+  const tail = pattern.slice(star + 1)
+  return path.length >= head.length + tail.length && path.startsWith(head) && path.endsWith(tail)
 }
 
 /** The headers the `_headers` file adds for a relative path. */
@@ -128,7 +136,11 @@ async function extraHeaders(source: StaticSource, rel: string): Promise<Record<s
   if (!file) return out
   for (const rule of parseHeadersFile(new TextDecoder().decode(file))) {
     if (!headerPatternMatches(rule.pattern, `/${rel}`)) continue
-    for (const [name, value] of rule.headers) out[name.toLowerCase()] = value
+    for (const [name, value] of rule.headers) {
+      // `! Name` takes back what an earlier rule set (the static-host convention).
+      if (name.startsWith('!')) delete out[name.slice(1).trim().toLowerCase()]
+      else out[name.toLowerCase()] = value
+    }
   }
   return out
 }

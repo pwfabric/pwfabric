@@ -23,6 +23,16 @@ const project = { surfaceOrder: ['home'], entrySurfaceId: 'home' }
 const base = { './blocks/manifest.json': [] }
 
 describe('loadEnvelope', () => {
+  it('does not request auth.json when the identity has no door (a build no host serves)', async () => {
+    const identity = { required: true, topology: 'external', methods: [], door: false }
+    const { fetchJson, asked } = served({ ...base, './pwpack/project.json': { ...project, identity } })
+    const env = await loadEnvelope(AT, fetchJson)
+    expect(asked).not.toContain('./pwpack/auth.json')
+    expect(env.auth).toBeNull()
+    expect(env.project.identity?.required).toBe(true)
+    expect(wantsAuthJson({ identity })).toBe(false)
+  })
+
   it('does not request auth.json when project.json declares no identity', async () => {
     const { fetchJson, asked } = served({ ...base, './pwpack/project.json': project })
     const env = await loadEnvelope(AT, fetchJson)

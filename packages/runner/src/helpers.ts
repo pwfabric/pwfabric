@@ -9,7 +9,10 @@
  * @module @pwfabric/runner/helpers
  */
 
-import { isExpressionLink, isHrefKey, isLinkMember, isMediaLink, mediaLinkOf } from '@pwfabric/runtime'
+// The runtime's own link rule, BUNDLED into runner.js (the subpath is not an
+// import-map specifier): the runner must load before the renderer does, so it
+// imports nothing the renderer seeds (see run-app.ts, loadRenderer).
+import { isExpressionLink, isHrefKey, isLinkMember, isMediaLink, mediaLinkOf } from '@pwfabric/runtime/render/links'
 import type { PwappFooterLink, PwappNavigation, PwappProject, SurfaceBlockNode, SurfaceReceipt } from './types.js'
 
 /** Builds a page href for the active router ('#/x' in hash mode, '<base>/x' in path mode). */

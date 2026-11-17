@@ -28,7 +28,7 @@
  *    Until that answer arrives nothing else is read. After it, only the origin
  *    that answered is listened to, and every message must carry the nonce.
  * 4. Payload — capped at `MAX_PREVIEW_MESSAGE_BYTES` serialized, unknown
- *    `type`s dropped, the rest parsed with the schemas below before anything
+ *    `type`s dropped, the rest checked against the shapes below before anything
  *    renders.
  *
  * Every refusal is SILENT: no error is posted back, nothing is logged. A
@@ -37,7 +37,6 @@
  * @module @pwfabric/runner/preview-bridge
  */
 
-import { z } from 'zod'
 import type { SurfaceBlockNode } from './types.js'
 
 // ============================================================
@@ -73,97 +72,128 @@ export interface PreviewBridgeOptions {
 }
 
 // ============================================================
-// PAYLOAD SCHEMAS
+// PAYLOAD SHAPES
 // ============================================================
 //
-// Declared here rather than imported from the contracts package: a published
-// runner resolves contracts through a host-seeded shim that carries the public
-// value surface of the runtime only, and a missing named export would fail the
-// whole runner module at link time. These mirror the contracts' surface and
+// Checked by hand rather than with zod: this module is part of runner.js,
+// which loads BEFORE the renderer that seeds the page's zod (see renderer.ts)
+// and so cannot import it. The checks mirror the contracts' surface and
 // appearance schemas — same field names and value types — and stay as loose
-// as they are (`passthrough`), because the renderer is the one that decides
-// what a block's props mean.
+// as they are (unknown members pass through, except at the top of a message,
+// where they are dropped), because the renderer is the one that decides what
+// a block's props mean.
 
-const blockNodeSchema: z.ZodType<SurfaceBlockNode> = z.lazy(() =>
-  z
-    .object({
-      id: z.string().min(1).optional(),
-      type: z.string().min(1).max(256),
-      props: z.record(z.string(), z.unknown()).optional(),
-      children: z.array(blockNodeSchema).optional(),
-    })
-    .passthrough()
-) as z.ZodType<SurfaceBlockNode>
+type Json = Record<string, unknown>
+
+const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v)
+const isString = (v: unknown, min = 0, max = Infinity): v is string =>
+  typeof v === 'string' && v.length >= min && v.length <= max
+/** An absent member, or one that passes `check`. */
+const opt = (v: unknown, check: (x: unknown) => boolean): boolean => v === undefined || check(v)
+const isRecordOf = (v: unknown, value: (x: unknown) => boolean = () => true): boolean =>
+  isObject(v) && Object.values(v).every(value)
+/** An object holding only the members `allowed` names. */
+const onlyKeys = (v: Json, allowed: readonly string[]): boolean => Object.keys(v).every((k) => allowed.includes(k))
+
+/** Mirrors the contracts' block node: `type` 1–256 characters, `id` non-empty, `children` nodes. */
+function isBlockNode(v: unknown): v is SurfaceBlockNode {
+  if (!isObject(v)) return false
+  return (
+    isString(v['type'], 1, 256) &&
+    opt(v['id'], (x) => isString(x, 1)) &&
+    opt(v['props'], (x) => isRecordOf(x)) &&
+    opt(v['children'], (x) => Array.isArray(x) && x.every(isBlockNode))
+  )
+}
+
+const MODE_POLICIES: readonly unknown[] = ['light', 'dark', 'system']
+const CONTRASTS: readonly unknown[] = ['normal', 'high']
 
 /** Mirrors `AppearanceConfigSchema`: token groups are data, variables and keyframes are strings. */
-const appearanceConfigSchema = z
-  .object({
-    theme: z.record(z.string(), z.unknown()).optional(),
-    darkTheme: z.record(z.string(), z.unknown()).optional(),
-    styleVariables: z.record(z.string(), z.string()).optional(),
-    keyframes: z.record(z.string(), z.string()).optional(),
-    extensions: z.record(z.string(), z.unknown()).optional(),
-    mode: z
-      .object({
-        policy: z.enum(['light', 'dark', 'system']).optional(),
-        contrast: z.enum(['normal', 'high']).optional(),
-      })
-      .strict()
-      .optional(),
-    brand: z
-      .object({
-        logo: z.string().min(1).max(2048).optional(),
-        favicon: z.string().min(1).max(2048).optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .passthrough()
-
-/** Mirrors `SurfaceAppearanceRefSchema`. */
-const appearanceRefSchema = z.object({ config: appearanceConfigSchema.optional() }).passthrough()
+function isAppearanceConfig(v: unknown): v is Json {
+  if (!isObject(v)) return false
+  const strings = (x: unknown): boolean => isRecordOf(x, (y) => typeof y === 'string')
+  return (
+    opt(v['theme'], (x) => isRecordOf(x)) &&
+    opt(v['darkTheme'], (x) => isRecordOf(x)) &&
+    opt(v['styleVariables'], strings) &&
+    opt(v['keyframes'], strings) &&
+    opt(v['extensions'], (x) => isRecordOf(x)) &&
+    opt(
+      v['mode'],
+      (x) =>
+        isObject(x) &&
+        onlyKeys(x, ['policy', 'contrast']) &&
+        opt(x['policy'], (p) => MODE_POLICIES.includes(p)) &&
+        opt(x['contrast'], (c) => CONTRASTS.includes(c))
+    ) &&
+    opt(
+      v['brand'],
+      (x) =>
+        isObject(x) &&
+        onlyKeys(x, ['logo', 'favicon']) &&
+        opt(x['logo'], (l) => isString(l, 1, 2048)) &&
+        opt(x['favicon'], (f) => isString(f, 1, 2048))
+    )
+  )
+}
 
 /** Mirrors `capabilityBindingSchema`, with `required` optional as receipts write it. */
-const capabilityBindingSchema = z
-  .object({
-    capability: z.string().min(1),
-    required: z.boolean().optional(),
-    config: z.record(z.string(), z.unknown()).optional(),
-  })
-  .passthrough()
+const isCapabilityBinding = (v: unknown): boolean =>
+  isObject(v) &&
+  isString(v['capability'], 1) &&
+  opt(v['required'], (x) => typeof x === 'boolean') &&
+  opt(v['config'], (x) => isRecordOf(x))
 
-const surfaceSchema = z.object({
-  blocks: z.array(blockNodeSchema),
-  appearance: appearanceRefSchema.optional(),
-  capabilities: z.array(capabilityBindingSchema).optional(),
-})
+/** The page a host pushes: its blocks, and optionally its appearance ref and capabilities. */
+export interface PreviewSurface {
+  blocks: SurfaceBlockNode[]
+  appearance?: { config?: Record<string, unknown>; [key: string]: unknown }
+  capabilities?: { capability: string; required?: boolean; config?: Record<string, unknown>; [key: string]: unknown }[]
+}
 
-const surfaceUpdateSchema = z.object({
-  type: z.literal(PREVIEW_MESSAGE.surfaceUpdate),
-  nonce: z.string(),
-  pageKey: z.string().min(1).optional(),
-  surfaceId: z.string().min(1).optional(),
-  surface: surfaceSchema,
-})
+/** The surface a message carries, its own unknown members dropped; null when it is not one. */
+function parseSurface(v: unknown): PreviewSurface | null {
+  if (!isObject(v) || !Array.isArray(v['blocks']) || !v['blocks'].every(isBlockNode)) return null
+  const appearance = v['appearance']
+  if (!opt(appearance, (x) => isObject(x) && opt(x['config'], isAppearanceConfig))) return null
+  const capabilities = v['capabilities']
+  if (!opt(capabilities, (x) => Array.isArray(x) && x.every(isCapabilityBinding))) return null
+  return {
+    blocks: v['blocks'] as SurfaceBlockNode[],
+    ...(appearance !== undefined ? { appearance: appearance as NonNullable<PreviewSurface['appearance']> } : {}),
+    ...(capabilities !== undefined ? { capabilities: capabilities as NonNullable<PreviewSurface['capabilities']> } : {}),
+  }
+}
+
+/** A surface update's members, or null when the message is not one. */
+function parseSurfaceUpdate(data: Json): PreviewSurfaceUpdate | null {
+  if (!isString(data['nonce'])) return null
+  const { pageKey, surfaceId } = data
+  if (!opt(pageKey, (x) => isString(x, 1)) || !opt(surfaceId, (x) => isString(x, 1))) return null
+  const surface = parseSurface(data['surface'])
+  if (!surface) return null
+  return {
+    ...(typeof pageKey === 'string' ? { pageKey } : {}),
+    ...(typeof surfaceId === 'string' ? { surfaceId } : {}),
+    surface,
+  }
+}
 
 /**
- * The project theme takes the forms `pwpack/appearance.json` takes: a ref
- * (`{ config }`), a bare config, or a preset name (`{ use }`) with overrides.
- * The runner then resolves it with `projectAppearanceRef` — the same function
- * a normal load uses.
+ * The project theme a message carries, or null. It takes the forms
+ * `pwpack/appearance.json` takes: a ref (`{ config }`), a bare config, or a
+ * preset name (`{ use }`) with overrides. The runner then resolves it with
+ * `projectAppearanceRef` — the same function a normal load uses.
  */
-const themeSchema = z.union([
-  z.object({ config: appearanceConfigSchema }).passthrough(),
-  appearanceConfigSchema.extend({ use: z.string().min(1).max(128).optional() }),
-])
-
-const projectThemeSchema = z.object({
-  type: z.literal(PREVIEW_MESSAGE.projectTheme),
-  nonce: z.string(),
-  theme: themeSchema,
-})
-
-export type PreviewSurface = z.infer<typeof surfaceSchema>
+function parseProjectTheme(data: Json): Json | null {
+  if (!isString(data['nonce'])) return null
+  const theme = data['theme']
+  if (!isObject(theme)) return null
+  if (isAppearanceConfig(theme['config'])) return theme
+  if (isAppearanceConfig(theme) && opt(theme['use'], (x) => isString(x, 1, 128))) return theme
+  return null
+}
 
 export interface PreviewSurfaceUpdate {
   readonly pageKey?: string
@@ -290,19 +320,12 @@ export function createPreviewBridge(
       // 4. Size, then shape.
       if (serializedBytes(data) > MAX_PREVIEW_MESSAGE_BYTES) return
       if (type === PREVIEW_MESSAGE.surfaceUpdate) {
-        const parsed = surfaceUpdateSchema.safeParse(data)
-        if (!parsed.success) return
-        const { pageKey, surfaceId, surface } = parsed.data
-        handlers.onSurfaceUpdate({
-          ...(pageKey !== undefined ? { pageKey } : {}),
-          ...(surfaceId !== undefined ? { surfaceId } : {}),
-          surface,
-        })
+        const update = parseSurfaceUpdate(data as Json)
+        if (update) handlers.onSurfaceUpdate(update)
         return
       }
-      const parsed = projectThemeSchema.safeParse(data)
-      if (!parsed.success) return
-      handlers.onProjectTheme(parsed.data.theme as Record<string, unknown>)
+      const theme = parseProjectTheme(data as Json)
+      if (theme) handlers.onProjectTheme(theme)
     } catch {
       // Silent by design: a malformed message is dropped, never echoed.
     }

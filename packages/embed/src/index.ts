@@ -25,6 +25,7 @@
 import { mountSurface, type SurfaceMountHandle, type RenderCoreOptions } from './render-core.js'
 import { renderFat, type RenderFatOptions } from './fat.js'
 import { loadThin, type ThinAuth, type ThinSurfaceRef } from './thin.js'
+import { loadBlocks } from './load-blocks.js'
 import type {
   DynamicBlockDescriptor,
   BreakpointName,
@@ -47,6 +48,7 @@ import type {
 export { renderFat, fatCoreOptions } from './fat.js'
 export { loadThin, grantsToDescriptors } from './thin.js'
 export { buildFatHtml } from './build-fat-html.js'
+export { loadBlocks, surfaceBlockTypes, BLOCK_WAIT_MS } from './load-blocks.js'
 export type { BuildFatHtmlOptions } from './build-fat-html.js'
 export {
   mountSurface,
@@ -216,6 +218,10 @@ export async function render(
         ...(o.dataServiceConfig ? { dataServiceConfig: o.dataServiceConfig } : {}),
         ...passthrough(options),
       }
+      // The page's block modules first, all at once: drawn before they are in,
+      // a page arrives in one wave per nesting level and shifts at each (see
+      // load-blocks.ts).
+      await loadBlocks(source.surface.blocks, o.blocks)
       const handle = renderFat(target, fatOpts)
       o.onReady?.(handle)
       return handle

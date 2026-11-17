@@ -148,3 +148,19 @@ describe('a static source applies its query', () => {
     await waitFor(() => expect(screen.getByTestId('out').textContent).toBe('Date,Fig,Apple'))
   })
 })
+
+describe('a static source is in the first frame', () => {
+  it('binds its rows — query applied — in the very first commit, not a tick after paint', () => {
+    // Bound a tick later, a static list was drawn empty and then filled: the
+    // content under it moved after the page had painted (a layout shift).
+    render(
+      <DataBoundSurfaceRenderer
+        surface={surfaceWith({ dataSources: [{ id: 'list', kind: 'static', staticData: rows, query: { sort: [{ field: 'name', direction: 'asc' }] } }] }, [first])}
+        components={components}
+        loadingStrategy="immediate"
+      />
+    )
+    // No waitFor: synchronously after the first render.
+    expect(screen.getByTestId('out').textContent).toBe('Apple|4')
+  })
+})

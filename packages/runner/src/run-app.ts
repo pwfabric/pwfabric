@@ -14,15 +14,19 @@
  * @module @pwfabric/runner/run-app
  */
 
-import {
-  createConnectorEngineRegistry,
-  type SurfaceAddress,
-  type EntityConnector,
-  type ConnectorConnectionBinding,
-  type SurfaceConnection,
-  type SurfaceConnectionsValue,
+// TYPES ONLY from the runtime at load: runner.js loads before the renderer
+// that seeds the runtime for the page (renderer.ts), so a value it needs is
+// imported once the renderer is in (see `engineConnections`).
+import type {
+  SurfaceAddress,
+  EntityConnector,
+  ConnectorConnectionBinding,
+  SurfaceConnection,
+  SurfaceConnectionsValue,
 } from '@pwfabric/runtime'
 import type { RunAppOptions, SurfaceReceipt } from './types.js'
+import { loadRenderer, warmBlockModules } from './renderer.js'
+import { applyDescription } from './description.js'
 import { assembleFooter, assembleNav, composeTitle, doorHeaders, fetchJson, linkHrefFor, queryStateSeed, receiptFilesOf, rewriteHrefs, seedStateFromQuery, withVersion } from './helpers.js'
 import { createRouter, resolveRouterMode, type RouteChange } from './router.js'
 import { createAuthBridge, type AuthBridge } from './auth.js'
@@ -123,6 +127,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   const blocksBase = String(opts.blocks ?? './blocks/').replace(/\/+$/, '')
 
   const enginesBase = String(opts.engines ?? './engines').replace(/\/+$/, '')
+  const rendererUrl = String(opts.renderer ?? './assets/embed.js')
   // `auth.json` is asked for only when `project.json` declares an identity
   // (see load-envelope.ts); every other file in parallel, as before.
   const { project, navigation, appearance, auth, connections, blockManifest, engineManifest } = await loadEnvelope(
@@ -146,6 +151,10 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   const dataCache = sessionDataCache(sessionStorage, appId)
   const boot = await bootSession({ project, auth, storage: sessionStorage, appId })
   let appSession: AppSession | null = boot.session
+  // A visitor who will see a page gets the renderer started now, so it is
+  // evaluated while the page's receipt is on its way rather than after it. A
+  // visitor the gate holds does not (renderer.ts).
+  if (!isGated(project, null, Boolean(appSession))) void loadRenderer(rendererUrl).catch(() => undefined)
   const initialError = boot.authError ? authErrorMessage(locale, boot.authError) : undefined
 
   /**
@@ -312,7 +321,13 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   // Kept outside the block: a token change reconfigures the registry from these
   // bindings, which also drops the declared engines mirrored into it below.
   let engineBindings: ConnectorConnectionBinding[] = []
-  if (bridge && engineManifest && engineManifest.length > 0) {
+  // Built when the first page is drawn, not at boot: the registry is the
+  // runtime's, and the runtime arrives with the renderer.
+  let enginesReady: Promise<void> | null = null
+  const engineConnections = (): Promise<void> => (enginesReady ??= buildEngineConnections())
+  async function buildEngineConnections(): Promise<void> {
+    if (!bridge || !engineManifest || engineManifest.length === 0) return
+    const { createConnectorEngineRegistry } = await import('@pwfabric/runtime')
     const authBridge = bridge
     const registry = createConnectorEngineRegistry({
       getAccessToken: async () => (await authBridge.getAccessToken()) ?? null,
@@ -509,6 +524,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       locale,
     })
     if (project.title) document.title = project.title
+    applyDescription(document, undefined, project.description)
   }
 
   /**
@@ -551,6 +567,13 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     params: URLSearchParams,
     notFoundPage: boolean
   ): Promise<void> {
+    // The page's block modules start downloading now, beside the renderer.
+    warmBlockModules(receipt.blocks, blockManifest)
+    // The renderer, the first time a page is drawn (renderer.ts) — never for
+    // a visitor the gate holds — and the engine registry, which is its.
+    const fabric = await loadRenderer(rendererUrl)
+    await engineConnections()
+    if (seq !== routeSeq) return
     // A capability's config carries links too (a form's successRedirect, a
     // behavior's navigate url): rewritten like the blocks' hrefs.
     const seededCapabilities = rewriteHrefs(seedStateFromQuery(receipt, params).capabilities, entry, router.toHref)
@@ -566,6 +589,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     const titleIsExpression = titleTemplate?.includes('{{') === true
     const title = composeTitle(project.title, titleIsExpression ? undefined : titleTemplate)
     if (title) document.title = title
+    applyDescription(document, receipt.description, project.description)
 
     // Token-backed entity facade (only with a live session and declared
     // entity bindings) — otherwise omitted so embed's offline stubs apply.
@@ -601,13 +625,17 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // a source's fallback for any connection the registry calls unregistered.
     if (entityFacade) mirrorDeclaredEngines(connectionsValue?.engines, connectorCache)
 
+    // EVERY BLOCK MODULE THE PAGE NAMES, AT ONCE, while the previous page is
+    // still on screen. Drawn before they are in, a page arrived in one wave
+    // per nesting level and shifted under the visitor at each (embed
+    // load-blocks.ts); drawn after, it is one commit.
+    await fabric.loadBlocks(blocks, blockManifest)
+    if (seq !== routeSeq) return
+
     container.replaceChildren()
     const mount = document.createElement('div')
     mount.id = 'pw-root'
     container.appendChild(mount)
-
-    const fabric = window.PWFabric
-    if (!fabric) throw new Error('[pwapp] window.PWFabric not found — embed.js is not loaded')
     // capabilities MUST travel: DataBound derives its dataSources from
     // surface.capabilities — omitting them leaves every `{{source}}`
     // expression unresolved and data blocks stuck in their error state.

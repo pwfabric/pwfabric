@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 vi.setConfig({ testTimeout: 60_000 })
 import { BLOCK_HOST_IMPORTS, blockShimFiles, isExportableName, shimSource } from '@pwfabric/core'
 import {
+  BOOT_FILES,
   bootScript,
   buildShellHtml,
+  hashedName,
   importMapText,
-  seedScript,
   buildShims,
   escapeHtml,
   htmlLangOf,
@@ -50,7 +51,7 @@ describe('shims', () => {
       expect.arrayContaining(['createConnectorEngineRegistry', 'useSurfaceEvents', 'applyEntityQuery'])
     )
     expect(exportsOf(shims.get('contracts.mjs') as string)).toContain('SURFACE_EVENTS')
-    // react-dom comes from the renderer's vendor table, which the shell seeds.
+    // react-dom: the renderer seeds it itself.
     expect(exportsOf(shims.get('react-dom.mjs') as string)).toEqual(expect.arrayContaining(['createPortal', 'flushSync']))
     // Unseeded globals still export the package's names, so blocks link.
     expect(exportsOf(shims.get('core.mjs') as string)).toEqual(expect.arrayContaining(['defineCapability', 'BREAKPOINTS']))
@@ -58,18 +59,20 @@ describe('shims', () => {
     expect(await shimsFor(embedJs)).toBe(await shimsFor(embedJs))
   })
 
-  it('covers every name the runner imports from a host specifier', async () => {
+  it('the runner imports no host specifier at load, and the shims carry what it imports later', async () => {
     const { runnerJs, embedJs } = await loadRuntimeAssets()
     const shims = await shimsFor(embedJs)
     const map = importMap().imports
-    const imports = [...runnerJs.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)]
-    expect(imports.length).toBeGreaterThan(0)
-    for (const [, names, spec] of imports) {
-      const target = map[spec as string]
-      expect(target, spec).toBeDefined()
-      const exported = exportsOf(shims.get((target as string).replace('./shims/', '')) as string)
-      for (const n of (names as string).split(',')) expect(exported).toContain(n.trim().split(/\s+as\s+/)[0])
-    }
+    // It runs before the renderer that seeds them (pwapp-format §2).
+    const statics = [...runnerJs.matchAll(/(?:^|[;}\s])import\s*\{?[^;()]*?\}?\s*from\s*["']([^"']+)["']/g)].map((m) => m[1])
+    expect(statics.filter((spec) => spec !== undefined && spec in map)).toEqual([])
+    // Once the renderer is in it imports these by name (run-app.ts, entity-facade.ts).
+    const dynamic = [...runnerJs.matchAll(/import\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1])
+    expect(dynamic.sort()).toEqual(['@pwfabric/runtime', 'zod'])
+    expect(exportsOf(shims.get('runtime.mjs') as string)).toContain('createConnectorEngineRegistry')
+    expect(exportsOf(shims.get('zod.mjs') as string)).toContain('z')
+    // The bundle's own map is not shipped, so it does not point at one.
+    expect(runnerJs).not.toMatch(/sourceMappingURL/)
   })
 
   it('reads core names off the vendor table and sdk names off the global the renderer seeds', async () => {
@@ -104,44 +107,57 @@ describe('shims', () => {
 })
 
 describe('shell', () => {
-  it('declares the import map, then the renderer and the seeding file, then the boot module', () => {
-    const html = buildShellHtml({ title: 'A <b>', bodyExtra: '<!--dev-->', appearance: { theme: { typography: { fontFamily: 'Inter' } } } })
+  it('declares the import map, preloads what the first page needs, and boots; it loads no renderer itself', () => {
+    const html = buildShellHtml({ title: 'A <b>', description: 'A "café".', bodyExtra: '<!--dev-->', appearance: { theme: { typography: { fontFamily: 'Inter' } } } })
     const map = html.indexOf('type="importmap"')
-    const embed = html.indexOf('./assets/embed.js')
-    const seed = html.indexOf('./assets/seed.js')
+    const runner = html.indexOf('<link rel="modulepreload" href="./assets/runner.js" />')
+    const renderer = html.indexOf('<link rel="preload" as="script" href="./assets/embed.js" />')
     const root = html.indexOf('<div id="root">')
     const boot = html.indexOf('<script type="module" src="./assets/boot.js">')
     expect(map).toBeGreaterThan(0)
-    expect(map).toBeLessThan(embed)
-    expect(embed).toBeLessThan(seed)
-    expect(seed).toBeLessThan(root)
+    expect(map).toBeLessThan(runner)
+    expect(runner).toBeLessThan(root)
+    expect(renderer).toBeGreaterThan(map)
     expect(root).toBeLessThan(boot)
-    // The import map is the only inline script.
-    expect(html.match(/<script(?![^>]*\bsrc=)[^>]*>/g)).toEqual(['<script type="importmap">'])
+    // No script but the import map and the boot module; the renderer is not one.
+    expect(html.match(/<script\b[^>]*>/g)).toEqual(['<script type="importmap">', '<script type="module" src="./assets/boot.js">'])
     expect(html).toContain(`<script type="importmap">${importMapText()}</script>`)
+    for (const shim of new Set(Object.values(importMap().imports))) expect(html).toContain(`<link rel="modulepreload" href="${shim}" />`)
+    for (const f of BOOT_FILES) expect(html).toContain(`<link rel="preload" as="fetch" href="./${f}" crossorigin />`)
     expect(html).toContain('<title>A &lt;b&gt;</title>')
-    expect(html).toContain('fonts.googleapis.com')
+    expect(html).toContain('<meta name="description" content="A &quot;café&quot;." />')
+    // The webfont stylesheet is preloaded, not linked: it must not hold the first paint.
+    expect(html).toMatch(/<link rel="preload" as="style" href="https:\/\/fonts\.googleapis\.com[^"]*" \/>/)
+    expect(html).not.toMatch(/<link rel="stylesheet" href="https:\/\/fonts/)
     expect(html).toContain('<!--dev-->')
     expect(html).toContain('<html lang="en">')
     expect(html).not.toContain('Content-Security-Policy')
-    const plain = buildShellHtml({ title: 'x', lang: 'tr-TR', csp: "default-src 'none'" })
+    const plain = buildShellHtml({ title: 'x', lang: 'tr-TR', csp: "default-src 'none'", preloadRenderer: false, bootFiles: ['pwpack/project.json'] })
     expect(plain).not.toContain('fonts.googleapis.com')
+    expect(plain).not.toContain('name="description"')
     expect(plain).toContain('<html lang="tr-TR">')
+    // A gated app's visitor may never need the renderer: not preloaded.
+    expect(plain).not.toContain('as="script"')
+    expect(plain.match(/as="fetch"/g)).toHaveLength(1)
     // The policy comes before anything it governs.
     const meta = plain.indexOf(`<meta http-equiv="Content-Security-Policy" content="default-src 'none'" />`)
     expect(meta).toBeGreaterThan(0)
     expect(meta).toBeLessThan(plain.indexOf('<link'))
     expect(meta).toBeLessThan(plain.indexOf('<script'))
   })
-  it('seeds core and react-dom from the vendor table in seed.js, and boots with the locale', () => {
-    const seed = seedScript()
-    expect(seed).toContain('g.__pwfabric_react_dom = g.__pwfabric_react_dom || v["react-dom"];')
-    expect(seed).toContain('g.__pwfabric_core = g.__pwfabric_core || v["@pwfabric/core"];')
-    // The renderer seeds the authoring kit itself.
-    expect(seed).not.toContain('__pwfabric_sdk')
-    expect(bootScript('tr')).toContain("import { runApp } from './runner.js'")
-    expect(bootScript('tr')).toContain("locale: 'tr'")
+  it('names the hashed runtime files, and boots the runner with the renderer’s address and the locale', () => {
+    expect(hashedName('assets/embed.js', 'abc')).toMatch(/^assets\/embed\.[0-9a-f]{8}\.js$/)
+    expect(hashedName('assets/embed.js', 'abc')).toBe(hashedName('assets/embed.js', 'abc'))
+    expect(hashedName('assets/embed.js', 'abd')).not.toBe(hashedName('assets/embed.js', 'abc'))
+    const assets = { embed: 'assets/embed.1.js', runner: 'assets/runner.2.js', boot: 'assets/boot.3.js', theme: 'assets/theme.4.css' }
+    const boot = bootScript({ locale: 'tr', assets, webfontHref: 'https://fonts.googleapis.com/css2?family=Inter&display=swap' })
+    expect(boot).toContain('import { runApp } from "./runner.2.js"')
+    expect(boot).toContain('renderer: "./assets/embed.1.js"')
+    expect(boot).toContain("locale: 'tr'")
+    // The boot module links the webfonts, so they never block the first paint.
+    expect(boot).toContain("fonts.rel = 'stylesheet'")
     expect(bootScript()).toContain("locale: 'en'")
+    expect(bootScript()).not.toContain('stylesheet')
   })
   it('escapes and normalises', () => {
     expect(escapeHtml('<a href="x">&</a>')).toBe('&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;')

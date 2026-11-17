@@ -107,10 +107,16 @@ export function resolveMeasureStyle(
  * React hook that returns the current viewport breakpoint.
  * Uses matchMedia for efficient viewport detection.
  *
- * Returns 'lg' on server (SSR fallback).
+ * The FIRST render already has the window's breakpoint. It used to start at
+ * 'lg' and correct itself in an effect — after the browser had painted the
+ * desktop layout on a phone, so the whole page moved once (a layout shift of
+ * up to 0.5 on a split page). 'lg' is only the answer where there is no
+ * window (server rendering).
  */
 export function useViewport(): BreakpointName {
-  const [breakpoint, setBreakpoint] = React.useState<BreakpointName>('lg')
+  const [breakpoint, setBreakpoint] = React.useState<BreakpointName>(() =>
+    typeof window === 'undefined' ? 'lg' : getBreakpointForWidth(window.innerWidth)
+  )
 
   React.useEffect(() => {
     // Set initial value from current window width

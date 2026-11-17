@@ -44,6 +44,7 @@ import type {
 import type { Block } from '@pwfabric/core'
 import type { DataSourceDefinition } from '../data/types.js'
 import { createEntityDataSource } from '../entity/entity-datasource.js'
+import { applyEntityQuery } from '../entity/apply-query.js'
 import { aggregateThrough } from '../entity/aggregate.js'
 import { SurfaceDataContext, SurfaceLinkHrefContext } from './surface-data-context.js'
 import { createSourceWriter } from './source-writer.js'
@@ -410,9 +411,25 @@ function useSurfaceData(
   // Source data store — seeded from the host's cache when it has yesterday's
   // rows for a source, so the first frame is not an empty table. The seed is
   // marked loading: the fetch that follows is what makes it today's.
+  //
+  // A STATIC source is in the receipt already, so its rows are in the FIRST
+  // frame (its query applied, as the data service applies it). Bound one tick
+  // later through the data service, a static list was drawn empty and then
+  // filled, pushing everything under it down after the page had painted.
   const [sourceData, setSourceData] = React.useState<Record<string, SourceData>>(() => {
-    if (!dataCache || !dataSources) return {}
+    if (!dataSources) return {}
     const seeded: Record<string, SourceData> = {}
+    for (const source of dataSources) {
+      if (source.kind !== 'static') continue
+      const state = initialState ?? {}
+      const rows = source.staticData
+      const data =
+        source.query && Array.isArray(rows)
+          ? applyEntityQuery(rows as Record<string, unknown>[], resolveQueryState(source.query, state) as EntityQuery).items
+          : rows
+      seeded[source.id] = { data, loading: false, error: null, key: requestKeyOf(source, state) }
+    }
+    if (!dataCache) return seeded
     for (const source of dataSources) {
       const key = dataSourceCacheKey(source, initialState ?? {})
       if (!key) continue

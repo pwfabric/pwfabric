@@ -3,12 +3,14 @@ import type { AssembleDiagnostic } from '../../dev/diagnostics.js'
 import {
   appearanceConfigOf,
   buildThemeCss,
+  fallbackFontFaces,
   findTheme,
   mergeGroups,
   resolveAppearance,
   themeAtomOf,
   themeWebfonts,
   webfontStylesheetHref,
+  withWebfontFallbacks,
   type ThemeAtom,
 } from '../../dev/theme.js'
 
@@ -126,10 +128,51 @@ describe('webfonts', () => {
     })
     expect(fonts.map((f) => f.family)).toEqual(['Inter', 'Newsreader', 'Source Code Pro'])
     const href = webfontStylesheetHref(fonts)
-    expect(href).toContain('family=Newsreader:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700')
-    expect(href).toContain('family=Source+Code+Pro:ital,wght@0,400;0,500;1,400;1,500')
+    expect(href).toContain('family=Newsreader:wght@700')
+    expect(href).toContain('family=Source+Code+Pro:wght@400')
     expect(webfontStylesheetHref(themeWebfonts({ theme: { typography: { monoFontFamily: 'Fira Code' } } }))).toBe(
-      'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap'
+      'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400&display=swap'
     )
+  })
+  it('asks only for the styles the theme draws — one app asked for fourteen', () => {
+    // The café theme: Nunito body, Lora headings at 700. It used to load every
+    // weight of both, upright and italic: 6 + 8 styles.
+    const fonts = themeWebfonts({
+      theme: { typography: { fontFamily: 'Nunito, ui-sans-serif, sans-serif', headingFontFamily: 'Lora, Georgia, serif', headingWeight: '700', bodyWeight: '400' } },
+    })
+    expect(webfontStylesheetHref(fonts)).toBe(
+      'https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Lora:wght@700&display=swap'
+    )
+    // A heading weight the family lacks is the nearest it has; one family in two roles is asked for once.
+    const one = themeWebfonts({ theme: { typography: { fontFamily: 'Lato', headingFontFamily: 'Lato', headingWeight: '800' } } })
+    expect(one).toHaveLength(1)
+    expect(one[0]?.weights).toEqual([400, 700])
+    expect(one[0]?.italic).toBe(false)
+  })
+})
+
+describe('webfont fallbacks', () => {
+  it('names a metric-matched stand-in right after each webfont in its stack', () => {
+    const config = withWebfontFallbacks({
+      theme: { typography: { fontFamily: 'Nunito, ui-sans-serif, sans-serif', headingFontFamily: '"Playfair Display", Georgia, serif', monoFontFamily: 'Menlo, monospace' } },
+      darkTheme: { colors: {} },
+    }) as { theme: { typography: Record<string, string> }; darkTheme: unknown }
+    expect(config.theme.typography['fontFamily']).toBe('Nunito, "Nunito Fallback", ui-sans-serif, sans-serif')
+    expect(config.theme.typography['headingFontFamily']).toBe('"Playfair Display", "Playfair Display Fallback", Georgia, serif')
+    // Not an allow-listed webfont: left as it is.
+    expect(config.theme.typography['monoFontFamily']).toBe('Menlo, monospace')
+    expect(config.darkTheme).toEqual({ colors: {} })
+    // Idempotent.
+    expect(withWebfontFallbacks(config)).toEqual(config)
+  })
+  it('declares the stand-ins in the theme stylesheet', () => {
+    const config = { theme: { typography: { fontFamily: 'Nunito, sans-serif' } } }
+    const faces = fallbackFontFaces(themeWebfonts(config))
+    expect(faces).toContain('font-family: "Nunito Fallback";')
+    expect(faces).toContain('src: local("Arial");')
+    expect(faces).toMatch(/size-adjust: [\d.]+%;/)
+    expect(faces).toMatch(/ascent-override: [\d.]+%;/)
+    expect(buildThemeCss(config)).toContain('font-family: "Nunito Fallback";')
+    expect(buildThemeCss(undefined)).not.toContain('@font-face')
   })
 })

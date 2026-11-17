@@ -10,8 +10,8 @@
  *                Blocks and compiled engines are verified and then imported
  *                from `blob:` URLs. The import map is the shell's only inline
  *                script (an import map cannot be an external file), so its
- *                hash is listed; the renderer seeding and the boot call are
- *                files (`assets/seed.js`, `assets/boot.js`).
+ *                hash is listed; the boot call is a file (`assets/boot.<hash>.js`),
+ *                and the runner adds the renderer as one.
  *   style-src    'self' 'unsafe-inline' [+ the webfont stylesheet origin]
  *                The renderer draws `<style>` elements at run time (the
  *                surface base, visibility, state, responsive and dark-theme
@@ -327,7 +327,45 @@ export function deriveCsp(input: CspInputs): AppCsp {
   }
 }
 
-/** The static-host `_headers` file (`/*` and the policy). */
+/** What a content-hashed file is served with: its name changes when its bytes do. */
+export const IMMUTABLE = 'public, max-age=31536000, immutable'
+/** What a file whose name never changes is served with: always asked again (a 304 when unchanged). */
+export const REVALIDATE = 'no-cache'
+/** The app's own media: names are kept across publishes, so an hour, then asked again. */
+export const MEDIA = 'public, max-age=3600'
+
+/**
+ * The static-host `_headers` file: the policy on every path, then how long
+ * each part of the folder may be kept (pwapp-format §2.2).
+ *
+ * A host applies EVERY rule that matches a path and joins a header two rules
+ * set, so the caching rules match disjoint paths: the shell, the hashed
+ * runtime files (`assets/`), the hashed block and engine modules, and the
+ * files under fixed names — the shims, the two manifests, the envelope —
+ * which are revalidated. Media comes last and replaces the envelope's rule
+ * (`! Cache-Control`), since it lives under `pwpack/` too.
+ */
 export function headersFile(policy: string): string {
-  return `/*\n  Content-Security-Policy: ${policy}\n`
+  const rule = (path: string, ...lines: string[]): string => `${path}\n${lines.map((l) => `  ${l}\n`).join('')}`
+  return [
+    rule('/*', `Content-Security-Policy: ${policy}`),
+    rule('/', `Cache-Control: ${REVALIDATE}`),
+    rule('/index.html', `Cache-Control: ${REVALIDATE}`),
+    rule('/assets/*', `Cache-Control: ${IMMUTABLE}`),
+    rule('/blocks/*.mjs', `Cache-Control: ${IMMUTABLE}`),
+    rule('/engines/*.mjs', `Cache-Control: ${IMMUTABLE}`),
+    rule('/blocks/manifest.json', `Cache-Control: ${REVALIDATE}`),
+    rule('/engines/manifest.json', `Cache-Control: ${REVALIDATE}`),
+    rule('/shims/*', `Cache-Control: ${REVALIDATE}`),
+    rule('/pwpack/*', `Cache-Control: ${REVALIDATE}`),
+    rule('/pwpack/media/*', '! Cache-Control', `Cache-Control: ${MEDIA}`),
+  ].join('')
+}
+
+/**
+ * `robots.txt`: a published app is meant to be found, so every crawler may
+ * read every path. (A host that serves an app privately answers with its own.)
+ */
+export function robotsTxt(): string {
+  return 'User-agent: *\nAllow: /\n'
 }
