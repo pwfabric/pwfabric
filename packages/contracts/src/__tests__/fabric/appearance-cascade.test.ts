@@ -15,6 +15,7 @@ import {
   relativeLuminance,
   surfaceThemeToCSS,
   deriveDarkTheme,
+  extraColorVars,
 } from '../../fabric/appearance-cascade.js'
 import { DEFAULT_APPEARANCE_THEME } from '../../fabric/surface-theme.js'
 import type { SurfaceTheme } from '../../fabric/surface-theme.js'
@@ -460,3 +461,35 @@ function hslToHexForTest(h: number, s: number, l: number): string {
   const hex = (x: number) => Math.round(x * 255).toString(16).padStart(2, '0')
   return `#${hex(f(0))}${hex(f(8))}${hex(f(4))}`
 }
+
+/**
+ * A theme may carry extra block tokens. A code block reads
+ * `--pw-color-code-surface` and friends; the cascade emitted only the colours
+ * it named, so no theme could set them.
+ */
+describe('extra block colours', () => {
+  const code = { codeSurface: '#0b1020', codeHeader: '#141a2e', codeText: '#e6e9f2', codeMuted: '#9aa3b8', codeBorder: '#232a40' }
+
+  it('emits every camelCase colour the cascade does not name as --pw-color-<kebab>', () => {
+    const vars = surfaceThemeToCSS({ colors: { primary: '#4f46e5', ...code } })
+    expect(vars['--pw-color-code-surface']).toBe('#0b1020')
+    expect(vars['--pw-color-code-header']).toBe('#141a2e')
+    expect(vars['--pw-color-code-text']).toBe('#e6e9f2')
+    expect(vars['--pw-color-code-muted']).toBe('#9aa3b8')
+    expect(vars['--pw-color-code-border']).toBe('#232a40')
+    expect(vars['--pw-color-primary']).toBe('#4f46e5')
+  })
+
+  it('cascades like any colour: the surface wins over the project, over the baseline', () => {
+    const vars = surfaceThemeToCSS({ colors: { codeSurface: '#000000' } }, { colors: { codeSurface: '#111111' } }, { colors: { codeSurface: '#222222', codeText: '#eeeeee' } })
+    expect(vars['--pw-color-code-surface']).toBe('#000000')
+    expect(vars['--pw-color-code-text']).toBe('#eeeeee')
+  })
+
+  it('a name that is not camelCase, a value that could leave its declaration, or a derived token is not taken', () => {
+    expect(extraColorVars({ 'code-surface': '#000', Code: '#000', x1: 'red', bad: 'red;}body{color:red' })).toEqual({ '--pw-color-x1': 'red' })
+    // A derived token keeps the cascade's value.
+    const vars = surfaceThemeToCSS({ colors: { accent: '#ffd400', onAccent: '#ffffff' } })
+    expect(vars['--pw-color-on-accent']).not.toBe('#ffffff')
+  })
+})

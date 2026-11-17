@@ -114,7 +114,7 @@ export { resolveEndpoint, encodeEndpointValue } from './endpoint.js'
 export { dataSourceCacheKey } from './data-cache.js'
 export type { SurfaceDataCache } from './data-cache.js'
 export { literalPropsOf, resolveBlockExpressions, resolveString, type LiteralProps } from './resolve-expressions.js'
-export { isHrefKey, isLinkMember, isExpressionLink, safeDataLink } from './links.js'
+export { isHrefKey, isLinkMember, isExpressionLink, isMediaLink, mediaLinkOf, MEDIA_PATH_PREFIX, safeDataLink } from './links.js'
 export type { LinkHref } from './links.js'
 
 // Block Error Boundary (crash isolation)
@@ -167,6 +167,8 @@ export { SurfaceConnectionsContext, useSurfaceConnections } from './connections-
 // Shell × body: SPLIT shell selection, projected onto the URL so a selected
 // record can be linked to and the Back button undoes the selection.
 export type { ShellSelectionStore, ShellSelectionOptions, ShellSelectionProviderProps } from './shell-selection.js'
+export type { SurfaceAddress } from './address.js'
+export { documentAddress, SurfaceAddressContext } from './address.js'
 export {
   ShellSelectionContext,
   ShellSelectionProvider,

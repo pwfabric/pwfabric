@@ -236,14 +236,17 @@ export function validatePack(pack: PackFolder): PackValidation {
 
   // ---- app ----
   if (identity?.app) {
-    const { entry, surfaceOrder } = identity.app
+    const { entry, surfaceOrder, notFound } = identity.app
     const receipt = (key: string): string => `${APP_SURFACES}${key}${RECEIPT_SUFFIX}`
     const missing = new Set<string>()
-    for (const key of [entry, ...surfaceOrder]) {
+    for (const key of [entry, ...surfaceOrder, ...(notFound ? [notFound] : [])]) {
       if (!pack.files.has(receipt(key)) && !missing.has(key)) {
         missing.add(key)
         add('error', 'APP_SURFACE_MISSING', `pwpack.json app names surface "${key}" but ${receipt(key)} is absent`, receipt(key))
       }
+    }
+    if (notFound && surfaceOrder.includes(notFound)) {
+      add('warning', 'APP_NOT_FOUND_IS_A_ROUTE', `app.notFound "${notFound}" is also in app.surfaceOrder, so its address answers "found" — keep it out of the route table`, IDENTITY_FILE)
     }
     if (!surfaceOrder.includes(entry)) {
       add('warning', 'APP_ENTRY_NOT_IN_ORDER', `app.entry "${entry}" is not listed in app.surfaceOrder`, IDENTITY_FILE)
@@ -265,7 +268,7 @@ export function validatePack(pack: PackFolder): PackValidation {
     // its key there is a page nobody can reach — every link to it lands on
     // not-found — and the pack still validated clean.
     const key = rest.slice(0, -RECEIPT_SUFFIX.length)
-    if (identity?.app && !identity.app.surfaceOrder.includes(key) && identity.app.entry !== key) {
+    if (identity?.app && !identity.app.surfaceOrder.includes(key) && identity.app.entry !== key && identity.app.notFound !== key) {
       add('warning', 'APP_SURFACE_NOT_SERVED', `${path} is not in pwpack.json app.surfaceOrder, so the app does not serve it — add "${key}" there`, path)
     }
   }

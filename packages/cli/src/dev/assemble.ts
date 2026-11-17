@@ -167,13 +167,24 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // ── pages ────────────────────────────────────────────────────────
   const reported = new Set(diagnostics.map((d) => d.path))
   const pages: Page[] = []
-  for (const key of identity.app.surfaceOrder) {
+  // The app's own not-found page (`app.notFound`) is read like a page and
+  // served like one, but it is no route: not in `surfaceOrder`, not in the
+  // derived navigation.
+  const routeKeys = identity.app.surfaceOrder
+  const notFoundKey = identity.app.notFound !== undefined && !routeKeys.includes(identity.app.notFound) ? identity.app.notFound : undefined
+  const keys = [...routeKeys, ...(notFoundKey ? [notFoundKey] : [])]
+  for (const key of keys) {
     const path = `app/surfaces/${key}.receipt.json`
     const bytes = app.folder.files.get(path)
     const value = jsonOf(app.folder, path)
     if (!bytes) {
       if (!reported.has(path)) {
-        diagnostics.push({ severity: 'error', code: 'RECEIPT_MISSING', message: `page "${key}" is in app.surfaceOrder but ${path} does not exist`, path })
+        diagnostics.push({
+          severity: 'error',
+          code: 'RECEIPT_MISSING',
+          message: `page "${key}" is in ${key === notFoundKey ? 'app.notFound' : 'app.surfaceOrder'} but ${path} does not exist`,
+          path,
+        })
       }
       continue
     }
@@ -188,6 +199,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     }
     pages.push({ key, path, bytes, receipt: value })
   }
+  // `pages` is everything served; `routes` is what an address can name.
+  const notFoundPage = notFoundKey === undefined ? undefined : pages.find((p) => p.key === notFoundKey)
+  const routes = notFoundPage ? pages.filter((p) => p !== notFoundPage) : pages
   const entry = identity.app.entry
   if (!identity.app.surfaceOrder.includes(entry)) {
     diagnostics.push({ severity: 'error', code: 'ENTRY_NOT_A_PAGE', message: `app.entry "${entry}" is not in app.surfaceOrder`, path: 'pwpack.json' })
@@ -352,9 +366,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   files.set('blocks/manifest.json', json(blockManifest))
   files.set('engines/manifest.json', json(engineManifest))
 
-  files.set('pwpack/project.json', json(buildProjectJson({ id: identity.id, title, entry, pages, auth: authDoc, ...(locale !== undefined ? { locale } : {}) })))
+  files.set('pwpack/project.json', json(buildProjectJson({ id: identity.id, title, entry, pages: routes, notFound: notFoundPage, auth: authDoc, ...(locale !== undefined ? { locale } : {}) })))
   for (const page of pages) files.set(`pwpack/surfaces/${page.key}.receipt.json`, page.bytes)
-  files.set('pwpack/navigation.json', json(isRecord(navigationDoc) ? navigationDoc : deriveNavigation(pages, entry)))
+  files.set('pwpack/navigation.json', json(isRecord(navigationDoc) ? navigationDoc : deriveNavigation(routes, entry)))
   if (appearance) files.set('pwpack/appearance.json', json(appearance))
   // Always written: the runner asks for it on every boot, and an app that
   // declares no connection should not cost the visitor a 404 in the console.
@@ -422,7 +436,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
 
   const compiled = atoms.filter((a) => a.status === 'compiled' || a.status === 'precompiled')
   return done({
-    pages: pages.length,
+    pages: routes.length,
     blocks: blockManifest.length,
     engines: engineManifest.length,
     atoms: atoms.length,

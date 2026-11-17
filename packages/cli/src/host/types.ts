@@ -17,6 +17,12 @@ export interface LocalHostOptions {
   readonly prefix: string
   /** The development user signed in by the dev issuer. */
   readonly user?: { readonly id: string; readonly name: string; readonly email: string }
+  /**
+   * Serve the records READ-ONLY (`pwf run`): lists, reads, counts and
+   * aggregates answer as under `pwf dev`, through the same store and query
+   * path; a create, update or delete is refused with `403 READ_ONLY`.
+   */
+  readonly readOnly?: boolean
 }
 
 export interface LocalHost {

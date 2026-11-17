@@ -160,6 +160,37 @@ function isLightColor(hex: string): boolean | null {
  * - focus.*               → --pw-focus-ring-{color,width,offset}
  * - zIndex.*              → --pw-z-{sticky,nav,dropdown,drawer,modal,toast}
  */
+/** The colour names the cascade maps itself (see surfaceThemeToCSS). */
+const NAMED_COLORS: ReadonlySet<string> = new Set([
+  'primary', 'secondary', 'accent', 'background', 'card', 'text', 'textMuted', 'border',
+  'error', 'success', 'warning', 'info', 'textOnPrimary',
+])
+
+/** A block colour name: camelCase letters and digits. */
+const BLOCK_COLOR_NAME = /^[a-z][a-zA-Z0-9]*$/
+
+/** A value that cannot leave its declaration (no `;`, braces, angle brackets or newlines). */
+const SAFE_CSS_VALUE = /^[^;{}<>\n\r]+$/
+
+/**
+ * A THEME MAY CARRY EXTRA BLOCK TOKENS. A block that paints a surface the
+ * cascade has no name for — a code block's surface, header, text, muted text
+ * and border — reads `--pw-color-code-surface` and friends, and a theme could
+ * not set them: the cascade emitted only the colours it knew. Every other
+ * entry of `colors` with a camelCase name now becomes `--pw-color-<kebab>`
+ * (`codeSurface` → `--pw-color-code-surface`). A name that is not camelCase,
+ * or a value that could leave its declaration, is not emitted.
+ */
+export function extraColorVars(colors: Readonly<Record<string, string | undefined>> | undefined): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [name, value] of Object.entries(colors ?? {})) {
+    if (NAMED_COLORS.has(name) || !BLOCK_COLOR_NAME.test(name)) continue
+    if (typeof value !== 'string' || !SAFE_CSS_VALUE.test(value.trim())) continue
+    out[`--pw-color-${name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()}`] = value.trim()
+  }
+  return out
+}
+
 export function surfaceThemeToCSS(
   theme: SurfaceTheme | undefined,
   defaults?: SurfaceTheme,
@@ -474,6 +505,10 @@ export function surfaceThemeToCSS(
   if (zIndex?.drawer !== undefined) vars['--pw-z-drawer'] = String(zIndex.drawer)
   if (zIndex?.modal !== undefined) vars['--pw-z-modal'] = String(zIndex.modal)
   if (zIndex?.toast !== undefined) vars['--pw-z-toast'] = String(zIndex.toast)
+
+  // Block colours the cascade has no name for, last: a token it emits or
+  // derives above keeps its value.
+  for (const [name, value] of Object.entries(extraColorVars(colors))) vars[name] ??= value
 
   return vars
 }

@@ -51,6 +51,15 @@ describe('rewriteHrefs', () => {
     })
   })
 
+  it('leaves a link to the app’s own media a file link, in both modes', () => {
+    // An export's CSV and PDF: `#/pwpack/media/x.csv` names no page.
+    for (const toHref of [hashHref, pathHref]) {
+      expect(rewriteHrefs({ href: 'pwpack/media/sprint.csv' }, ENTRY, toHref)).toEqual({ href: 'pwpack/media/sprint.csv' })
+      expect(rewriteHrefs({ href: '/pwpack/media/sprint.pdf' }, ENTRY, toHref)).toEqual({ href: 'pwpack/media/sprint.pdf' })
+      expect(linkHrefFor(ENTRY, toHref)('pwpack/media/receipt.pdf')).toBe('pwpack/media/receipt.pdf')
+    }
+  })
+
   it("maps '/' (and '') to the entry page", () => {
     expect(rewriteHrefs({ href: '/' }, ENTRY, hashHref)).toEqual({ href: '#/home' })
     expect(rewriteHrefs({ href: '' }, ENTRY, hashHref)).toEqual({ href: '#/home' })

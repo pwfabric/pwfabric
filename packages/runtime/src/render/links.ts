@@ -36,6 +36,27 @@ export function isLinkMember(key: string, owner: Readonly<Record<string, unknown
   return isHrefKey(key) || key === 'successRedirect' || (key === 'url' && owner['type'] === 'navigate')
 }
 
+/**
+ * Where an app's own media is served, relative to the shell's base
+ * (pwapp-format §1): the same form a block's `src` is written in.
+ */
+export const MEDIA_PATH_PREFIX = 'pwpack/media/'
+
+/**
+ * A link to one of the app's own media files — `pwpack/media/report.pdf`
+ * (`/pwpack/media/…` and `./pwpack/media/…` name the same file). It is a FILE,
+ * not a page: a host leaves it as a relative path against the shell's base and
+ * never turns it into a route (`#/pwpack/media/report.pdf` names no page).
+ */
+export function isMediaLink(value: string): boolean {
+  return value.replace(/^\.?\//, '').startsWith(MEDIA_PATH_PREFIX)
+}
+
+/** The media link in the one form a host serves it at: relative to the shell's base. */
+export function mediaLinkOf(value: string): string {
+  return value.replace(/^\.?\//, '')
+}
+
 /** A link whose page is an expression: known only when the data is. */
 export function isExpressionLink(value: string): boolean {
   return value.startsWith('{{')
@@ -62,8 +83,9 @@ const LINK_SCHEMES: ReadonlySet<string> = new Set(['http', 'https', 'mailto', 't
 
 /**
  * What a link whose value came from data may be: a root-relative path (`/x`,
- * which the host then writes for its router), a fragment (`#x`), or an
- * absolute URL with an allowed scheme. Anything else — `javascript:`,
+ * which the host then writes for its router), a fragment (`#x`), a link to the
+ * app's own media (`pwpack/media/x.pdf`, see isMediaLink), or an absolute URL
+ * with an allowed scheme. Anything else — `javascript:`,
  * `data:`, a protocol-relative `//host` or `/\host`, a bare relative path — is
  * `undefined`, and the link gets no href. Data is not the author: an author's
  * literal link is checked when the page is validated; a row's value never is.
@@ -77,6 +99,8 @@ export function safeDataLink(href: string): string | undefined {
   const scheme = urlSchemeOf(url)
   if (scheme !== null) return LINK_SCHEMES.has(scheme) ? kept : undefined
   if (url.startsWith('#')) return kept
+  // The app's own media file (a receipt's PDF, an export's CSV).
+  if (isMediaLink(url) && !url.includes('..')) return mediaLinkOf(kept)
   // `//host` and `/\host` (browsers read `\` as `/`) leave the origin.
   if (url.startsWith('/') && !url.startsWith('//') && !url.startsWith('/\\')) return kept
   return undefined

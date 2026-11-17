@@ -174,11 +174,11 @@ const SHELL_CSS = `
 #pwapp-sign-in-gate .pwapp-gate-error{margin:6px 0 0;min-height:1.5em;color:var(--pw-color-error,#b00020)}
 #pwapp-sign-in-gate .pwapp-gate-close{position:absolute;top:-8px;right:-8px;width:36px;height:36px;border:0;border-radius:var(--pw-border-radius-full,999px);background:transparent;color:var(--pw-color-text-muted,#444444);font-size:22px;line-height:1}
 #pwapp-sign-in-gate :focus-visible{outline:2px solid var(--pw-focus-ring-color,var(--pw-color-primary,#111111));outline-offset:2px}
-#pwapp-session-pill{position:fixed;right:16px;bottom:calc(16px + var(--pw-bottom-bar-height, 0px));z-index:2147483000;display:flex;align-items:center;gap:10px;padding:10px 18px;border-radius:var(--pw-border-radius-full,999px);border:1px solid var(--pw-color-border,rgba(0,0,0,0.15));background:var(--pw-color-card,#ffffff);color:var(--pw-color-text,#111111);font-family:var(--pw-font-family,system-ui,sans-serif);font-size:var(--pw-font-size-sm,14px);font-weight:500;line-height:1;box-shadow:var(--pw-shadow-lg,0 2px 10px rgba(0,0,0,0.18))}
+#pwapp-session-pill{position:static;display:flex;justify-content:flex-end;align-items:center;gap:10px;margin:0 0 var(--pw-bottom-bar-height, 0px);padding:10px 16px;border-top:1px solid var(--pw-color-border,rgba(0,0,0,0.15));background:var(--pw-color-card,#ffffff);color:var(--pw-color-text,#111111);font-family:var(--pw-font-family,system-ui,sans-serif);font-size:var(--pw-font-size-sm,14px);font-weight:500;line-height:1}
 #pwapp-session-pill button{border:0;background:transparent;color:inherit;font:inherit;padding:0;cursor:pointer}
 #pwapp-session-pill [data-session-signout]{text-decoration:underline}
 #pwapp-session-pill :focus-visible{outline:2px solid var(--pw-focus-ring-color,var(--pw-color-primary,#111111));outline-offset:2px}
-#pwapp-login-error{position:fixed;right:16px;bottom:calc(62px + var(--pw-bottom-bar-height, 0px));z-index:2147483000;max-width:min(320px,calc(100vw - 32px));padding:8px 12px;border-radius:var(--pw-border-radius-lg,10px);border:1px solid var(--pw-color-error,#f2b8b5);background:var(--pw-color-card,#fdecea);color:var(--pw-color-error,#8c1d18);font-family:var(--pw-font-family,system-ui,sans-serif);font-size:13px;line-height:1.4;box-shadow:var(--pw-shadow-lg,0 2px 10px rgba(0,0,0,0.18))}
+#pwapp-login-error{position:static;margin:0;padding:8px 16px;border-top:1px solid var(--pw-color-error,#f2b8b5);background:var(--pw-color-card,#fdecea);color:var(--pw-color-error,#8c1d18);font-family:var(--pw-font-family,system-ui,sans-serif);font-size:13px;line-height:1.4;text-align:end}
 `
 
 /** Inject the shell stylesheet once per document. */

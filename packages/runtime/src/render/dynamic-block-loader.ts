@@ -52,6 +52,7 @@ interface BlockModule {
 class BlockModuleLoaderImpl {
   private readonly cache = new Map<string, CachedModule>()
   private readonly pending = new Map<string, Promise<LoadedAtom>>()
+  private readonly sizedListeners = new Set<() => void>()
 
   /**
    * Load a dynamic block module and return its component.
@@ -84,6 +85,10 @@ class BlockModuleLoaderImpl {
         definition: atom.definition,
         loadedAt: Date.now(),
       })
+      // A block that declares its sizing changes how its WRAPPER is laid out,
+      // and the wrapper is drawn by the parent before the module arrived. Tell
+      // the renderers, so the parent draws it again with the declaration.
+      if (atom.Component.sizing !== undefined) for (const l of [...this.sizedListeners]) l()
       return atom
     } finally {
       this.pending.delete(descriptor.blockType)
@@ -100,6 +105,17 @@ class BlockModuleLoaderImpl {
           // Preload failure is non-fatal
         })
       }
+    }
+  }
+
+  /**
+   * Called when a module that declares `sizing` has loaded. Returns the
+   * unsubscribe.
+   */
+  subscribeSized(listener: () => void): () => void {
+    this.sizedListeners.add(listener)
+    return () => {
+      this.sizedListeners.delete(listener)
     }
   }
 

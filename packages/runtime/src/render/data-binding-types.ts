@@ -53,6 +53,12 @@ export interface SurfaceDataSourceDefinition {
    * failed). `__errors.<id>` stays populated alongside it. */
   readonly fallback?: unknown
   /**
+   * Contract parity with `dataSourceSchema.notFoundWhenEmpty`: the source is
+   * the record the page shows; settled with no record, the page tells its
+   * host's address it is not found (render/address-sync.ts).
+   */
+  readonly notFoundWhenEmpty?: boolean
+  /**
    * Contract parity with `dataSourceSchema.connector`: which
    * data-plane engine serves this entity source (e.g. 'graph-lists').
    * Routed through the host-provided `ConnectorEngineRegistry` when the

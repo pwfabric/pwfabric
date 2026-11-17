@@ -37,6 +37,7 @@ import type {
   DataServiceConfig,
   SurfaceDataCache,
   LinkHref,
+  SurfaceAddress,
   BlockComponentProps,
 } from '@pwfabric/runtime'
 import type {
@@ -99,6 +100,12 @@ export interface RenderCoreOptions {
   readonly onTitle?: (title: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
+  /**
+   * The page's address as the host owns it (runtime render/address.ts): where
+   * a split shell's selection and the page's `urlState` live, and where a page
+   * reports a record that is not there. Absent: the document's own query.
+   */
+  readonly address?: SurfaceAddress
 
 
   /** `live` (default) or `inert` (no auto-refresh, no dispatched actions). */
@@ -202,6 +209,7 @@ function buildRendererProps(opts: RenderCoreOptions): Record<string, unknown> {
   if (opts.linkHref !== undefined) props.linkHref = opts.linkHref
   if (opts.onTitle !== undefined) props.onTitle = opts.onTitle
   if (opts.locale !== undefined) props.locale = opts.locale
+  if (opts.address !== undefined) props.address = opts.address
   if (opts.interactionMode !== undefined) props.interactionMode = opts.interactionMode
   if (opts.basePath !== undefined) props.basePath = opts.basePath
   if (opts.imageAdapter !== undefined) props.imageAdapter = opts.imageAdapter

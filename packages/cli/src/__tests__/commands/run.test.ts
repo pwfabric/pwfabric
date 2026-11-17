@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { cp, mkdir, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { packFromRecord, writePwpack } from '@pwfabric/pack'
 import { main } from '../../index.js'
-import { parsePort, runRun, untilSignal, DEFAULT_RUN_PORT } from '../../commands/run.js'
+import { appFolderOf, parsePort, runRun, untilSignal, DEFAULT_RUN_PORT } from '../../commands/run.js'
 import { contentTypeOf, isPagePath, parseHeadersFile, requestPath, startStaticServer, type StaticServer } from '../../commands/lib/static-server.js'
 import { capture, tempDir } from './helpers.js'
 
@@ -134,6 +135,9 @@ describe('static server', () => {
     expect(isPagePath('layout.two-pane')).toBe(true)
     expect(isPagePath('assets/runner.js')).toBe(false)
     expect(isPagePath('logo.PNG')).toBe(false)
+    expect(contentTypeOf('pwpack/media/export.CSV')).toBe('text/csv; charset=utf-8')
+    expect(contentTypeOf('pwpack/media/receipt.pdf')).toBe('application/pdf')
+    expect(isPagePath('pwpack/media/receipt.pdf')).toBe(false)
     expect(requestPath('/a/./b/?q=1#x')).toBe('a/b')
     expect(requestPath('/a/../b')).toBe('b')
     expect(requestPath('/a%2F..%2Fb')).toBeNull()
@@ -206,4 +210,81 @@ describe('pwf run', () => {
     expect(parsePort(undefined)).toBe(DEFAULT_RUN_PORT)
     expect(parsePort('0')).toBe(0)
   })
+})
+
+/**
+ * `pwf run` and the app's records. A static serve has no record host, so every
+ * entity source bound its fallback: no filter, no pager, the same row behind
+ * every `?id=`. For an app folder (or its default build output) the records
+ * are served read-only, through the same store and query path as `pwf dev`.
+ */
+describe('pwf run serves the app records read-only', () => {
+  const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '__fixtures__')
+
+  async function builtShop(): Promise<string> {
+    const app = join(await tempDir(), 'shop')
+    await cp(join(FIXTURES, 'l-shop'), app, { recursive: true })
+    const out = join(app, '.pwf', 'out')
+    await mkdir(join(out, 'pwpack', 'surfaces'), { recursive: true })
+    await writeFile(join(out, 'index.html'), '<!doctype html><div id="root"></div>')
+    await writeFile(
+      join(out, 'pwpack', 'surfaces', 'home.receipt.json'),
+      JSON.stringify({
+        blocks: [],
+        capabilities: [
+          { capability: 'platform/persistence', config: { dataSources: [{ id: 'products', kind: 'entity', entityType: 'Product', fallback: [{ name: 'Sample' }] }] } },
+        ],
+      })
+    )
+    return app
+  }
+
+  it('finds the app folder of an app and of its default build output, and nothing else', async () => {
+    const app = await builtShop()
+    expect(await appFolderOf(app)).toBe(app)
+    expect(await appFolderOf(join(app, '.pwf', 'out'))).toBe(app)
+    expect(await appFolderOf(await builtApp())).toBeNull()
+  })
+
+  for (const served of ['app', 'build output']) {
+    it(`reads through the dev query path and refuses writes — serving the ${served}`, async () => {
+      const app = await builtShop()
+      const target = served === 'app' ? app : join(app, '.pwf', 'out')
+      const c = capture(dirname(app))
+      const code = await runRun({ positionals: [target], flags: { port: '0' } }, c.io, {
+        until: async (server) => {
+          // The built receipt reads from the host instead of drawing its fallback.
+          const receipt = (await (await fetch(new URL('pwpack/surfaces/home.receipt.json', server.url))).json()) as {
+            capabilities: { config: { dataSources: { kind: string; endpoint: string }[] } }[]
+          }
+          expect(receipt.capabilities[0]!.config.dataSources[0]).toMatchObject({ kind: 'rest', endpoint: '/_host/records/Product' })
+
+          // File order, filter and limit — the same answers as pwf dev.
+          const all = (await (await fetch(new URL('_host/records/Product', server.url))).json()) as { data: { name: string }[] }
+          expect(all.data.map((r) => r.name)).toEqual(['Tea', 'Coffee', 'Cocoa'])
+          const q = new URLSearchParams({ filter: JSON.stringify({ field: 'price', operator: 'gte', value: 5 }), limit: '1' })
+          const page = (await (await fetch(new URL(`_host/records/Product?${q}`, server.url))).json()) as { data: { name: string }[]; meta: { total: number } }
+          expect(page.data.map((r) => r.name)).toEqual(['Coffee'])
+          expect(page.meta.total).toBe(2)
+          expect((await (await fetch(new URL('_host/records/Product/p1', server.url))).json())).toMatchObject({ id: 'p1' })
+
+          // A write is refused in words.
+          const post = await fetch(new URL('_host/records/Product', server.url), {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: 'Mate' }),
+          })
+          expect(post.status).toBe(403)
+          const refusal = (await post.json()) as { error: { code: string; message: string } }
+          expect(refusal.error.code).toBe('READ_ONLY')
+          expect(refusal.error.message).toMatch(/read-only/)
+          expect((await fetch(new URL('_host/records/Product/p1', server.url), { method: 'DELETE' })).status).toBe(403)
+          const after = (await (await fetch(new URL('_host/records/Product', server.url))).json()) as { data: unknown[] }
+          expect(after.data).toHaveLength(3)
+        },
+      })
+      expect(code).toBe(0)
+      expect(c.text()).toMatch(/records are served read-only/)
+    })
+  }
 })

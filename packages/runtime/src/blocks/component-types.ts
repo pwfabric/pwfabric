@@ -94,8 +94,18 @@ export type BlockComponent<T = Record<string, unknown>> = ((
   sizing?: BlockSizing
 }
 
-/** The only sizing word the engine knows besides its default (fluid share). */
-export type BlockSizing = 'intrinsic'
+/**
+ * The sizing words the engine knows besides its default (a fluid share).
+ *
+ * - `intrinsic` — the block's width is its content (avatar, badge, button):
+ *   in a row it keeps that width instead of taking an equal share.
+ * - `fill` — the block takes the whole width of where it is placed and has no
+ *   content width of its own (a progress bar, a rule). Its wrapper fills the
+ *   parent's line in a column or centred parent, so the block does not
+ *   collapse to the zero width of a wrapper shrunk around nothing. In a row the
+ *   flex share decides, as for any fluid block.
+ */
+export type BlockSizing = 'intrinsic' | 'fill'
 
 /**
  * Block component registry — maps block type strings to React component implementations

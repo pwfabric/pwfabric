@@ -127,6 +127,30 @@ describe('assemblePwapp', () => {
     expect(codes(r)).toContain('THEME_NOT_FOUND')
   })
 
+  it("serves the app's own not-found page beside its routes, never as one", async () => {
+    // An unknown route rendered the runner's page outside the app shell; the app
+    // declares its own (`app.notFound`), drawn like a page but not a route.
+    const root = await app()
+    const identity = JSON.parse(await readFile(join(root, 'pwpack.json'), 'utf8')) as { app: Record<string, unknown> }
+    await writeFile(join(root, 'pwpack.json'), JSON.stringify({ ...identity, app: { ...identity.app, notFound: 'missing' } }))
+    await writeFile(join(root, 'app/surfaces/missing.receipt.json'), JSON.stringify({ title: 'Not found', blocks: [{ id: 'nf', type: 'title', props: { text: 'Not here' } }] }))
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const project = parse(r.files.get('pwpack/project.json')) as Record<string, unknown>
+    expect(project).toMatchObject({ surfaceOrder: ['home'], notFoundSurfaceId: 'missing' })
+    expect((project.surfaceReceiptFiles as Record<string, string>).missing).toBe('surfaces/missing.receipt.json')
+    expect(r.files.has('pwpack/surfaces/missing.receipt.json')).toBe(true)
+    expect(r.stats.pages).toBe(1)
+    // Not in the derived navigation.
+    expect(text(r.files.get('pwpack/navigation.json'))).not.toContain('missing')
+
+    // A declared not-found page without its receipt is an error.
+    await rm(join(root, 'app/surfaces/missing.receipt.json'))
+    const broken = await assemblePwapp(root, { cacheDir: null })
+    expect(broken.ok).toBe(false)
+    expect(broken.diagnostics.some((d) => d.path === 'app/surfaces/missing.receipt.json' && d.severity === 'error')).toBe(true)
+  })
+
   it('reports an unknown block type, a broken receipt and a broken definition', async () => {
     const root = await app()
     await writeFile(

@@ -39,6 +39,10 @@ export const persistenceCapabilityConfigSchema = z
     // Declarative seed payload (moved off surface root)
     dataSources: z.array(dataSourceSchema).optional(),
     initialState: z.record(z.string(), z.unknown()).optional(),
+    // State keys that live in the page's address query: seeded from it on
+    // load and written back (replacing the history entry) when they change,
+    // so a reload or a shared link keeps them (data-protocol, envelope §4).
+    urlState: z.array(z.string().min(1)).optional(),
     // Declared event→action behaviors (see surfaceBehaviorSchema). Merged
     // with host-provided (world DB) behaviors by DataBoundSurfaceRenderer.
     behaviors: z.array(surfaceBehaviorSchema).optional(),

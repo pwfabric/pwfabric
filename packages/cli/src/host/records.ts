@@ -133,7 +133,6 @@ export function accessOf(
 interface Stored {
   record: Row
   readonly owner: string | undefined
-  touched: number
 }
 
 export interface Caller {
@@ -159,7 +158,6 @@ export interface Target {
 
 export class RecordStore {
   private readonly collections = new Map<string, Map<string, Stored>>()
-  private clock = 0
 
   constructor(
     private readonly root: string,
@@ -168,7 +166,6 @@ export class RecordStore {
 
   reset(): void {
     this.collections.clear()
-    this.clock = 0
   }
 
   private collection(entity: EntityDeclaration): Map<string, Stored> {
@@ -190,7 +187,6 @@ export class RecordStore {
         },
         // Seed rows belong to the development user unless they name an owner.
         owner: typeof declaredOwner === 'string' && declaredOwner ? declaredOwner : this.devUser.id,
-        touched: ++this.clock,
       })
     }
     this.collections.set(entity.typeId, rows)
@@ -215,7 +211,13 @@ export class RecordStore {
     throw new HostError(403, 'FORBIDDEN', `You may not ${verb} ${name} records.`)
   }
 
-  /** The rows within `reach`, newest change first, after `filter`. */
+  /**
+   * The rows within `reach`, after `filter`, IN FILE ORDER: the seed's order,
+   * then records in the order they were created. An update keeps a record
+   * where it is. Newest-change-first reversed every seeded list (a menu, a
+   * timeline) the moment it was served, and a list's order is the source's
+   * `query.sort` to state, not the host's to invent.
+   */
   private rows(target: Target, reach: Reach, params: URLSearchParams): Row[] {
     let filter: Filter | undefined
     try {
@@ -225,7 +227,6 @@ export class RecordStore {
     }
     const rows = [...this.collection(target.entity).values()]
       .filter((s) => reach === 'all' || s.owner === target.caller.principal?.id)
-      .sort((a, b) => b.touched - a.touched)
       .map((s) => s.record)
     return filter ? rows.filter((r) => matches(r, filter)) : rows
   }
@@ -288,7 +289,7 @@ export class RecordStore {
     const fields = prepared(entity, body, 'create', caller, now)
     const id = randomUUID()
     const record: Row = { ...fields, id, entityType: entity.typeId, createdAt: now, updatedAt: now }
-    this.collection(entity).set(id, { record, owner: caller.principal?.id, touched: ++this.clock })
+    this.collection(entity).set(id, { record, owner: caller.principal?.id })
     return record
   }
 
@@ -303,7 +304,6 @@ export class RecordStore {
       entityType: target.entity.typeId,
       updatedAt: now,
     }
-    stored.touched = ++this.clock
     return stored.record
   }
 

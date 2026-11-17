@@ -49,6 +49,13 @@ export interface PwpackIdentityApp {
   readonly entry: string
   /** Surface keys in navigation order; each names an `app/surfaces/<key>.receipt.json`. */
   readonly surfaceOrder: readonly string[]
+  /**
+   * Key of the app's own not-found surface (`app/surfaces/<key>.receipt.json`),
+   * drawn inside the app's shell like any page when the address names a page
+   * the app does not have, or a record a page cannot find. It is not a route:
+   * it is not listed in `surfaceOrder`. Absent: the runner's own not-found page.
+   */
+  readonly notFound?: string
   /** Display name of the app. */
   readonly title?: string
   /** One-line description of the app. */
@@ -135,6 +142,7 @@ export const PwpackIdentityPinSchema = z.object({
 export const PwpackIdentityAppSchema = z.object({
   entry: z.string().min(1),
   surfaceOrder: z.array(z.string().min(1)),
+  notFound: z.string().min(1).optional(),
   title: z.string().optional(),
   description: z.string().optional(),
   icon: z.string().optional(),

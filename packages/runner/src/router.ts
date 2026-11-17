@@ -55,6 +55,14 @@ export interface RouterHandle {
    * page state from it.
    */
   query(): string
+  /**
+   * Put `query` (without the `?`) in the current location's query, keeping
+   * the page and the anchor — `#/<key>?<query>#<anchor>` in hash mode,
+   * `<path>?<query>#<anchor>` in path mode. `push` adds a history entry,
+   * `replace` does not. No location-change event fires: the page wrote its own
+   * address and already shows it.
+   */
+  writeQuery(query: string, how: 'push' | 'replace'): void
   /** Build an href for a page key in this router's form. */
   toHref: ToHref
   /**
@@ -88,16 +96,36 @@ export interface RouteChange {
 /** How long an anchor keeps being honoured while the surface fills in. */
 const ANCHOR_WATCH_MS = 3000
 
+/**
+ * The element an anchor names: the one with that id, else the block with that
+ * id. A block's component renders its id on its own root; the renderer's
+ * wrapper carries only `data-block-id` (one id per element in the page), so a
+ * block that renders no id of its own is still reachable by its block id.
+ */
 function elementFor(anchor: string): HTMLElement | null {
-  const byId = document.getElementById(anchor)
-  if (byId) return byId
   // A non-ASCII anchor travels percent-encoded in the address but is authored
   // decoded in the receipt, so the id on the page is the decoded form.
+  let decoded = anchor
   try {
-    return document.getElementById(decodeURIComponent(anchor))
+    decoded = decodeURIComponent(anchor)
   } catch {
-    return null
+    // a malformed escape: the anchor as written is all there is
   }
+  const names = decoded === anchor ? [anchor] : [anchor, decoded]
+  for (const name of names) {
+    const byId = document.getElementById(name)
+    if (byId) return byId
+  }
+  for (const name of names) {
+    const block = document.querySelector<HTMLElement>(`[data-block-id="${cssString(name)}"]`)
+    if (block) return block
+  }
+  return null
+}
+
+/** `value` safe inside a double-quoted CSS attribute selector. */
+function cssString(value: string): string {
+  return value.replace(/["\\]/g, '\\$&')
 }
 
 /**
@@ -273,6 +301,14 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
       return null
     },
     query: () => (ROUTE_HASH.test(location.hash) ? hashQueryOf(location.hash) : resolvedQuery),
+    writeQuery(query, how) {
+      const key = resolved ?? entry
+      const anchor = hashAnchorOf(location.hash)
+      const hash = `#/${key}${query ? `?${query}` : ''}${anchor ? `#${anchor}` : ''}`
+      // The query this page now shows: a Back to the old one is a change.
+      resolvedQuery = query
+      writeLocation(location.pathname + location.search + hash, how)
+    },
     toHref: (key) => `#/${key}`,
     applyScroll() {
       scrollToAnchor(hashAnchorOf(location.hash))
@@ -339,6 +375,13 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
   }
 }
 
+/** Moves the address without a navigation; a no-op when it would not change. */
+function writeLocation(url: string, how: 'push' | 'replace'): void {
+  if (url === location.pathname + location.search + location.hash) return
+  if (how === 'push') history.pushState(null, '', url)
+  else history.replaceState(history.state, '', url)
+}
+
 // ============================================================
 // PATH ROUTER
 // ============================================================
@@ -384,6 +427,9 @@ function createPathRouter(
       return resolved
     },
     query: () => location.search.replace(/^\?/, ''),
+    writeQuery(query, how) {
+      writeLocation(location.pathname + (query ? `?${query}` : '') + location.hash, how)
+    },
     toHref: (key) => `${base}/${key}`,
     applyScroll() {
       scrollToAnchor(location.hash.startsWith('#') ? location.hash.slice(1) : null)

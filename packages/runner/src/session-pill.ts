@@ -1,5 +1,12 @@
 /**
- * Floating session pill — the one place a visitor can enter and leave.
+ * Session bar — the one place a visitor can enter and leave, when the app's
+ * shell draws no account control of its own.
+ *
+ * DOCKED IN THE PAGE'S FLOW, NOT FLOATING. It is a slim bar after the app, at
+ * the end of the document. It used to float in the bottom-right corner above
+ * everything (`position: fixed`), and there it covered whatever the page put
+ * in that corner — a table's last column, a form's submit button — at every
+ * width. In the flow it cannot cover anything: the page ends, then the bar.
  *
  * Both doors end here. With a PKCE bridge and no session the pill offers
  * "Sign in"; with a session of either kind (an issuer session on the bridge,
@@ -90,7 +97,8 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
     note.id = ERROR_ID
     note.setAttribute('role', 'alert')
     note.style.display = 'none'
-    document.body.appendChild(note)
+    // Right above the bar it explains.
+    document.body.insertBefore(note, pill)
   }
 
   if (options.themeVars) {

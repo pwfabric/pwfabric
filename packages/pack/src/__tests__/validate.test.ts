@@ -109,6 +109,20 @@ describe('validatePack — app', () => {
     expect(codes(app('home', ['about'], ['home', 'about']))).toEqual(['APP_ENTRY_NOT_IN_ORDER'])
   })
 
+  it('an app.notFound surface is served without being a route', () => {
+    const declared = (notFound: string, order: string[], surfaces: string[]): PackValidation =>
+      withIdentity(
+        { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: order, notFound } },
+        Object.fromEntries(surfaces.map((s) => [`app/surfaces/${s}.receipt.json`, '{}']))
+      )
+    // Its receipt is not "not served".
+    expect(codes(declared('missing', ['home'], ['home', 'missing']))).toEqual([])
+    // It must exist…
+    expect(codes(declared('missing', ['home'], ['home']), 'error')).toEqual(['APP_SURFACE_MISSING'])
+    // …and must not also be a route, or its address answers "found".
+    expect(codes(declared('home', ['home'], ['home']))).toEqual(['APP_NOT_FOUND_IS_A_ROUTE'])
+  })
+
   it('accepts app/content for a shared entity with UUID ids', () => {
     const v = withIdentity({ id: 'x', version: '1' }, {
       'app/definitions/entities.json': JSON.stringify({ entities: [{ typeId: 'Product', fields: [] }] }),

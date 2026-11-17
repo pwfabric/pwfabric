@@ -1,8 +1,8 @@
 /**
  * The address seeds page state.
  *
- *  A2  seedStateFromQuery — allow-list of read keys; reserved, `__`, prototype,
- *      selectionKey, statusKeys and host/single-expression keys never seeded;
+ *  A2  seedStateFromQuery — allow-list of read and `urlState` keys; reserved,
+ *      `__`, prototype, statusKeys and host/single-expression keys never seeded;
  *      receipt initialState is the base, the address writes over it
  *  A3  hash mode: `#/product?id=12` → page `product` + query `id=12`
  *  A4  path mode: `/product?id=12` → `?id=13` re-renders (queryOnly change)
@@ -61,7 +61,8 @@ describe('the address seeds only what the page reads', () => {
     expect(queryStateSeed(r, qs('code=x&state=y&error=z&iss=i&returnTo=/r&__show=1&__proto__=p&constructor=c&prototype=p'))).toEqual({})
   })
 
-  it('a split-view selectionKey (default sec) and formBinding statusKeys are never seeded', () => {
+  it('formBinding statusKeys are never seeded; a split-view selection key is', () => {
+    // The selection lives in the route query and is page state: the address is its one source.
     const r = receipt({
       blocks: [
         { id: 'sv', type: 'split-view', props: {} },
@@ -73,7 +74,16 @@ describe('the address seeds only what the page reads', () => {
         { capability: 'platform/entities', config: { formBindings: [{ formId: 'f', sourceId: 's', statusKeys: { success: 'saved', error: 'failed' } }] } },
       ],
     })
-    expect(queryStateSeed(r, qs('sec=1&pick=2&saved=true&failed=true&id=9'))).toEqual({ id: '9' })
+    expect(queryStateSeed(r, qs('sec=1&pick=2&saved=true&failed=true&id=9'))).toEqual({ sec: '1', pick: '2', id: '9' })
+  })
+
+  it('a key the page declares in urlState is seeded even when no expression reads it', () => {
+    // A select writing `stateKey: "severity"` names the key in a prop, not as `state.severity`.
+    const r = receipt({
+      blocks: [{ id: 'f', type: 'select', props: { stateKey: 'severity' } }],
+      capabilities: [{ capability: 'platform/persistence', config: { urlState: ['severity', 'code'] } }],
+    })
+    expect(queryStateSeed(r, qs('severity=high&code=x&other=1'))).toEqual({ severity: 'high' })
   })
 
   it('a key read in a single-expression endpoint or in the scheme/host part is never seeded', () => {
@@ -158,6 +168,7 @@ function stubBrowser(pathname: string, search = '', hash = '') {
   ;(globalThis as Record<string, unknown>).document = {
     addEventListener: (t: string, f: Listener) => (doc[t] ??= []).push(f),
     getElementById: () => null,
+    querySelector: () => null,
   }
   ;(globalThis as Record<string, unknown>).history = {
     pushState: (_s: unknown, _t: string, url: string) => {

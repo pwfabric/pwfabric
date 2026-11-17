@@ -163,6 +163,27 @@ describe('applyScroll — hash mode', () => {
     expect(scrolledInto).toContain(target)
   })
 
+  it('a block that renders no id of its own is found by its data-block-id', () => {
+    // The renderer's wrapper carries data-block-id only (one id per element).
+    const wrapper = document.createElement('div')
+    wrapper.setAttribute('data-block-id', 'pricing')
+    document.body.appendChild(wrapper)
+    goTo('/index.html#/people#pricing')
+    createRouter('hash', PAGES, 'home').applyScroll()
+    expect(scrolledInto).toContain(wrapper)
+  })
+
+  it('an element with the id wins over a block wrapper with that block id', () => {
+    const wrapper = document.createElement('div')
+    wrapper.setAttribute('data-block-id', 'team')
+    document.body.appendChild(wrapper)
+    const own = section('team')
+    goTo('/index.html#/people#team')
+    createRouter('hash', PAGES, 'home').applyScroll()
+    expect(scrolledInto).toContain(own)
+    expect(scrolledInto).not.toContain(wrapper)
+  })
+
   it('a malformed escape finds nothing and does not throw', () => {
     goTo('/index.html#/people#%E0%A4%A')
     expect(() => createRouter('hash', PAGES, 'home').applyScroll()).not.toThrow()
@@ -335,6 +356,16 @@ describe('hash router start()', () => {
     reduce = true
     click(link('#rsvp'))
     expect(behaviours).toEqual(['smooth', 'auto'])
+  })
+
+  it('a bare anchor naming only a block id is scrolled to by the router', () => {
+    const wrapper = document.createElement('div')
+    wrapper.setAttribute('data-block-id', 'contact')
+    document.body.appendChild(wrapper)
+    const { onChange } = started('#/people')
+    fireHashChange('#contact')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(scrolledInto).toContain(wrapper)
   })
 
   it('a new query on the same page is reported as query-only', () => {
@@ -557,5 +588,64 @@ describe('path router start()', () => {
     click(link(`${BASE}/`))
     expect(location.pathname).toBe(`${BASE}/`)
     expect(onChange).toHaveBeenCalledWith()
+  })
+})
+
+// ============================================================
+// THE PAGE WRITES ITS OWN QUERY
+// ============================================================
+
+/**
+ * `writeQuery` is how a page keeps state in its address (a split shell's
+ * selection, its `urlState`). Under the hash router the page's query is the one
+ * inside the fragment: written to `location.search` it landed beside the route
+ * (`/?endpoint=x#/reference`), where nothing read it.
+ */
+describe('writeQuery', () => {
+  it('hash mode: writes the query inside the route, keeping page and anchor', () => {
+    goTo('/index.html#/people#team')
+    const router = createRouter('hash', PAGES, 'home')
+    router.current()
+    const before = history.length
+    router.writeQuery('endpoint=charges', 'push')
+    expect(location.hash).toBe('#/people?endpoint=charges#team')
+    expect(location.search).toBe('')
+    expect(history.length).toBe(before + 1)
+    expect(router.query()).toBe('endpoint=charges')
+    router.writeQuery('endpoint=refunds', 'replace')
+    expect(location.hash).toBe('#/people?endpoint=refunds#team')
+    expect(history.length).toBe(before + 1)
+  })
+
+  it('hash mode: the entry page gets its key so the query has a route to sit in', () => {
+    goTo('/index.html')
+    const router = createRouter('hash', PAGES, 'home')
+    router.current()
+    router.writeQuery('tab=b', 'replace')
+    expect(location.hash).toBe('#/home?tab=b')
+  })
+
+  it('hash mode: a Back to the query before a write is a query change, not a scroll', () => {
+    goTo('/index.html#/product?id=12')
+    const router = createRouter('hash', PAGES, 'home')
+    router.current()
+    const onChange = vi.fn<(change?: RouteChange) => void>()
+    router.start(onChange)
+    router.writeQuery('id=13', 'push')
+    fireHashChange('#/product?id=12')
+    expect(onChange).toHaveBeenCalledWith({ queryOnly: true })
+  })
+
+  it('path mode: writes location.search, keeping the path and anchor', () => {
+    const BASE = '/apps/x'
+    goTo(`${BASE}/people#team`)
+    const router = createRouter('path', PAGES, 'home', { basePath: `${BASE}/` })
+    router.current()
+    router.writeQuery('tab=b', 'replace')
+    expect(location.pathname).toBe(`${BASE}/people`)
+    expect(location.search).toBe('?tab=b')
+    expect(location.hash).toBe('#team')
+    router.writeQuery('', 'replace')
+    expect(location.search).toBe('')
   })
 })

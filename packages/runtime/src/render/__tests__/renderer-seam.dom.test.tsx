@@ -343,32 +343,39 @@ describe('dynamic block layout (regression)', () => {
 })
 
 /**
- * Fragment anchors.
+ * Block ids in the DOM.
  *
- * A wrapper that carries `data-block-id` and no `id` gives the browser nothing
- * to scroll to, so every `#`-fragment link would be dead. A same-page table of
- * contents is basic to a documentation app.
- *
- * The block id is the anchor namespace rather than a new `anchor` prop: block
- * ids are already author-chosen strings, unique within a surface, and they are
- * what a fragment would name anyway.
+ * The block's component renders `id` on its own root; the wrapper carries
+ * `data-block-id` only. A wrapper carrying the id too put every id in the page
+ * twice (invalid HTML; `#<id>` and `aria-labelledby` resolved to the wrapper).
+ * A host looking for an anchor falls back to `[data-block-id]` for a block
+ * that renders no id of its own (runner/router.ts).
  */
-describe('fragment anchors', () => {
-  it('emits the block id as a DOM id so `#text-1` reaches the block', () => {
+describe('block ids', () => {
+  it('the wrapper carries data-block-id and no DOM id', () => {
     const surface: RenderableSurface = { blocks: [textBlock] }
     const { container } = render(<SurfaceRenderer surface={surface} components={components} />)
 
-    const anchored = container.querySelector('#text-1')
-    expect(anchored).not.toBeNull()
-    // The SAME element the selectors already address — an anchor that landed on
-    // a different node than the one styling targets would scroll to the wrong box.
-    expect(anchored).toBe(container.querySelector('[data-block-id="text-1"]'))
+    const wrapper = container.querySelector('[data-block-wrapper="text-1"]')
+    expect(wrapper).not.toBeNull()
+    expect(wrapper!.hasAttribute('id')).toBe(false)
+    expect(wrapper!.getAttribute('data-block-id')).toBe('text-1')
   })
 
-  it('hands the id to a decorator instead of emitting its own wrapper', () => {
-    // Red when: the runtime emits a bare `id` div AND the editor emits its own,
-    // putting two elements with the same id in one document. The editor owns the
-    // wrapper; the runtime only states what the id should be.
+  it('a component that renders its id puts it in the page exactly once', () => {
+    const withId: Partial<BlockComponentRegistry> = {
+      text: (({ block }: { block: Block }) => <p id={block.id}>Hi</p>) as never,
+    }
+    const surface: RenderableSurface = { blocks: [textBlock] }
+    const { container } = render(<SurfaceRenderer surface={surface} components={withId} />)
+
+    expect(container.querySelectorAll('[id="text-1"]')).toHaveLength(1)
+    expect(container.querySelector('#text-1')!.tagName).toBe('P')
+  })
+
+  it('a decorator gets the wrapper props without an id', () => {
+    // The editor owns the wrapper; an id in its props would put the block's id
+    // in the document a second time, beside the one the component renders.
     const seen: string[] = []
     const surface: RenderableSurface = { blocks: [textBlock] }
     const { container } = render(
@@ -376,12 +383,13 @@ describe('fragment anchors', () => {
         surface={surface}
         components={components}
         renderBlockWrapper={({ children, wrapperProps }: BlockWrapperRenderArgs) => {
-          seen.push(String((wrapperProps as { id?: string }).id))
+          seen.push(String((wrapperProps as { id?: string }).id) + '|' + wrapperProps['data-block-id'])
           return <section data-testid="decorated">{children}</section>
         }}
       />
     )
-    expect(seen).toEqual(['text-1'])
+    expect(seen).toEqual(['undefined|text-1'])
     expect(container.querySelectorAll('#text-1')).toHaveLength(0)
+    expect(container.querySelector('[data-testid="decorated"]')).not.toBeNull()
   })
 })

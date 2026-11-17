@@ -142,8 +142,10 @@ export type {
   ShellSelectionStore,
   ShellSelectionOptions,
   ShellSelectionProviderProps,
+  SurfaceAddress,
 } from './render/index.js'
 export type { LiteralProps } from './render/index.js'
+export { documentAddress, SurfaceAddressContext } from './render/index.js'
 export {
   ShellSelectionContext,
   ShellSelectionProvider,
@@ -169,6 +171,8 @@ export {
   isHrefKey,
   isLinkMember,
   isExpressionLink,
+  isMediaLink,
+  mediaLinkOf,
   surfaceThemeToCSS,
 } from './render/index.js'
 // legacy first-party `*Block` component re-exports +

@@ -194,8 +194,9 @@ describe('the app door, end to end', () => {
     const write = await service.fetchData('orders', { method: 'POST', body: { item: 'Coffee', qty: 1 } })
     expect(write.success).toBe(true)
     const list = await service.fetchData<{ item: string; id: string }[]>('orders', { skipCache: true })
-    expect(list.success && list.data.map((o) => o.item)).toEqual(['Coffee', 'Tea'])
-    const id = list.success ? list.data[0]!.id : ''
+    // File order: the seeded order first, the one just created after it.
+    expect(list.success && list.data.map((o) => o.item)).toEqual(['Tea', 'Coffee'])
+    const id = list.success ? list.data[1]!.id : ''
     const patch = await service.fetchData('orders', { method: 'PATCH', recordId: id, body: { qty: 4 } })
     expect(patch.success).toBe(true)
 

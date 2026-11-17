@@ -16,6 +16,7 @@
 
 import {
   createConnectorEngineRegistry,
+  type SurfaceAddress,
   type EntityConnector,
   type ConnectorConnectionBinding,
   type SurfaceConnection,
@@ -417,6 +418,21 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     })
   }
 
+  /** The receipt a page was fetched from, for the not-found page and every route. */
+  async function fetchReceipt(file: string): Promise<SurfaceReceipt> {
+    // EITHER DOOR'S CREDENTIAL, because the gateway gates receipts behind
+    // whichever door the app declared. A platform session is presented as
+    // itself; an issuer's visitor presents the token minted for THIS app
+    // (see AuthBridge.getDoorToken) — never the data token, whose audience
+    // is the data provider and which the door rightly refuses.
+    return withOwnRecords(
+      await fetchJson<SurfaceReceipt>(
+        withVersion(`${source}/${file}`, opts.version),
+        doorHeaders({ appSession: appSession?.token, doorToken: await bridge?.getDoorToken() })
+      )
+    )
+  }
+
   async function route(change?: RouteChange): Promise<void> {
     // Nothing to fetch behind the wall. The session server would refuse
     // the receipt anyway; asking for it would print a 401 under a gate the
@@ -429,32 +445,13 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // entry surface, which is what made every broken link look like a working
     // home page.
     if (key === null) {
-      shown = null
-      preview?.cleared()
-      renderNotFound({
-        container,
-        appTitle: project.title,
-        entry,
-        toHref: router.toHref,
-        locale,
-      })
-      if (project.title) document.title = project.title
+      await showNotFound(seq)
       return
     }
 
     const file = receiptFiles[key]
     if (!file) throw new Error(`[pwapp] no receipt file for page "${key}"`)
-    // EITHER DOOR'S CREDENTIAL, because the gateway gates receipts behind
-    // whichever door the app declared. A platform session is presented as
-    // itself; an issuer's visitor presents the token minted for THIS app
-    // (see AuthBridge.getDoorToken) — never the data token, whose audience
-    // is the data provider and which the door rightly refuses.
-    const receipt = withOwnRecords(
-      await fetchJson<SurfaceReceipt>(
-        withVersion(`${source}/${file}`, opts.version),
-        doorHeaders({ appSession: appSession?.token, doorToken: await bridge?.getDoorToken() })
-      )
-    )
+    const receipt = await fetchReceipt(file)
     if (seq !== routeSeq) return
 
     /**
@@ -473,9 +470,91 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       return
     }
     shown = { key, seed: seedSig }
+    await renderPage(seq, key, receipt, params, false)
+  }
+
+  /**
+   * THE NOT-FOUND PAGE, AT THE ADDRESS THAT NAMED NOTHING. The app's own
+   * (`project.notFoundSurfaceId`) is drawn like any page — inside its shell,
+   * with its navigation — so a reader who followed a wrong link is still in
+   * the app. Only without one, or when it cannot be fetched, the runner's own
+   * page is drawn.
+   */
+  async function showNotFound(seq: number): Promise<void> {
+    shown = null
+    const own = project.notFoundSurfaceId
+    const file = own ? receiptFiles[own] : undefined
+    if (own && file) {
+      try {
+        const receipt = await fetchReceipt(file)
+        if (seq !== routeSeq) return
+        await renderPage(seq, own, receipt, new URLSearchParams(router.query()), true)
+        return
+      } catch (err) {
+        console.warn(`[pwapp] the not-found page "${own}" could not be drawn; showing the runner's own`, err)
+        if (seq !== routeSeq) return
+      }
+    }
+    showRunnerNotFound()
+  }
+
+  function showRunnerNotFound(): void {
+    shown = null
+    preview?.cleared()
+    renderNotFound({
+      container,
+      appTitle: project.title,
+      entry,
+      toHref: router.toHref,
+      locale,
+    })
+    if (project.title) document.title = project.title
+  }
+
+  /**
+   * The page's address seam (runtime render/address.ts), bound to the render
+   * it was made for: a page that has been replaced writes nothing.
+   */
+  function pageAddress(seq: number, key: string, receipt: SurfaceReceipt, notFoundPage: boolean): SurfaceAddress {
+    return {
+      query: () => router.query(),
+      writeQuery(values, how) {
+        if (seq !== routeSeq) return
+        const query = new URLSearchParams(router.query())
+        for (const [k, v] of Object.entries(values)) {
+          if (v === null) query.delete(k)
+          else query.set(k, v)
+        }
+        router.writeQuery(query.toString(), how)
+        // What the page shows now IS this address: a later move away from it
+        // is a change, and a move to it is not.
+        if (shown !== null && shown.key === key) shown = { key, seed: JSON.stringify(queryStateSeed(receipt, query)) }
+      },
+      notFound() {
+        if (seq !== routeSeq) return
+        // The not-found page's own record missing has nowhere further to go.
+        if (notFoundPage) {
+          ++routeSeq
+          showRunnerNotFound()
+          return
+        }
+        void showNotFound(++routeSeq)
+      },
+    }
+  }
+
+  /** Draws a fetched receipt as the page `key`. */
+  async function renderPage(
+    seq: number,
+    key: string,
+    receipt: SurfaceReceipt,
+    params: URLSearchParams,
+    notFoundPage: boolean
+  ): Promise<void> {
     // A capability's config carries links too (a form's successRedirect, a
     // behavior's navigate url): rewritten like the blocks' hrefs.
     const seededCapabilities = rewriteHrefs(seedStateFromQuery(receipt, params).capabilities, entry, router.toHref)
+    const address = pageAddress(seq, key, receipt, notFoundPage)
 
     const blocks = pageBlocks(receipt.blocks, key)
     const session = bridge?.session
@@ -559,6 +638,10 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
         const next = composeTitle(project.title, resolved)
         if (next) document.title = next
       },
+      // The page's address: its `urlState` and a split shell's selection live
+      // in the route's query, and a record source that finds nothing reports
+      // here (runtime render/address.ts).
+      address,
       ...(entityFacade ? { entityFacade } : {}),
       // The account control's two actions. The renderer forwards every block
       // event here; the runtime's own dispatcher ignores these types.
@@ -617,7 +700,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       ...(connectionsValue ? { connections: connectionsValue } : {}),
     }
     const rendered = fabric.render('#pw-root', { surface }, renderOptions)
-    if (preview) {
+    if (preview && !notFoundPage) {
       // Kept, not discarded: the bridge re-renders through this handle.
       const surfaceId = receiptSurfaceId(receipt)
       preview.rendered({
@@ -629,6 +712,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
         handle: rendered,
       })
     } else {
+      if (notFoundPage) preview?.cleared()
       void rendered
     }
     // Where the address says — the top for a plain page, the anchored element

@@ -297,6 +297,11 @@ describe('server helpers', () => {
     expect(contentTypeOf('x.bin')).toBe('application/octet-stream')
     expect(isPagePath('layout.two-pane')).toBe(true)
     expect(isPagePath('nope.js')).toBe(false)
+    // An app's own media files are files, opened as what they are.
+    expect(contentTypeOf('pwpack/media/sprint-25.csv')).toBe('text/csv; charset=utf-8')
+    expect(contentTypeOf('pwpack/media/receipt.pdf')).toBe('application/pdf')
+    expect(isPagePath('pwpack/media/sprint-25.csv')).toBe(false)
+    expect(isPagePath('pwpack/media/receipt.pdf')).toBe(false)
     expect(urlFor('127.0.0.1', 1)).toBe('http://127.0.0.1:1/')
     expect(urlFor('0.0.0.0', 2)).toBe('http://localhost:2/')
     expect(urlFor('::1', 3)).toBe('http://[::1]:3/')

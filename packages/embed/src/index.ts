@@ -40,6 +40,7 @@ import type {
   DataServiceConfig,
   SurfaceDataCache,
   LinkHref,
+  SurfaceAddress,
 } from '@pwfabric/runtime'
 
 // Re-export the building blocks for bundler consumers.
@@ -117,6 +118,12 @@ export interface EmbedOptions {
   readonly onTitle?: (title: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
+  /**
+   * The page's address as the host owns it (runtime render/address.ts): where
+   * a split shell's selection and the page's `urlState` live, and where a page
+   * reports a record that is not there. Absent: the document's own query.
+   */
+  readonly address?: SurfaceAddress
 
 
   // ── shared render passthrough ─────────────────────────
@@ -171,6 +178,7 @@ function passthrough(options?: EmbedOptions): Partial<RenderCoreOptions> {
     ...(o.linkHref !== undefined ? { linkHref: o.linkHref } : {}),
     ...(o.onTitle !== undefined ? { onTitle: o.onTitle } : {}),
     ...(o.locale !== undefined ? { locale: o.locale } : {}),
+    ...(o.address !== undefined ? { address: o.address } : {}),
     ...(o.placeholderMissingBlocks !== undefined ? { placeholderMissingBlocks: o.placeholderMissingBlocks } : {}),
   }
 }
