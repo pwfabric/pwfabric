@@ -30,16 +30,18 @@ import {
   type Page,
 } from './envelope.js'
 import { collectMedia, fillMediaSlots } from './media.js'
-import { deriveCsp, headersFile } from './csp.js'
+import { deriveCsp, headersFile, robotsTxt } from './csp.js'
 import {
+  BOOT_FILES,
   bootScript,
   buildShellHtml,
+  hashedName,
   importMapText,
   loadRuntimeAssets,
   runnerLocaleOf,
-  seedScript,
   shimsFor,
   type RuntimeAssets,
+  type ShellAssets,
 } from './shell.js'
 import { isRecord, jsonOf, loadSources, PWF_DIR, type PackMemo, type SourcePack } from './sources.js'
 import {
@@ -49,6 +51,7 @@ import {
   themeAtomOf,
   themeWebfonts,
   webfontStylesheetHref,
+  withWebfontFallbacks,
   type ThemeAtom,
 } from './theme.js'
 
@@ -132,6 +135,22 @@ function titleOf(plan: unknown, id: string): string {
     .filter(Boolean)
     .map((w) => (w[0] as string).toUpperCase() + w.slice(1))
     .join(' ')
+}
+
+/** A non-empty trimmed string member of `doc`, or undefined. */
+function textOf(doc: unknown, key: string): string | undefined {
+  const v = isRecord(doc) ? doc[key] : undefined
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined
+}
+
+/**
+ * The app's resolved appearance with each webfont's metric-matched stand-in
+ * named in its stacks (theme.ts `withWebfontFallbacks`), in whichever of the
+ * shapes it came.
+ */
+function withFallbackStacks(doc: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!doc) return doc
+  return isRecord(doc['config']) ? { ...doc, config: withWebfontFallbacks(doc['config']) } : withWebfontFallbacks(doc)
 }
 
 function atomLabel(atom: CompiledAtom): string {
@@ -237,7 +256,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       if (theme) themes.push(theme)
     }
   }
-  const appearance = resolveAppearance(appearanceDoc, themes, diagnostics)
+  const appearance = withFallbackStacks(resolveAppearance(appearanceDoc, themes, diagnostics))
 
   // ── blocks ───────────────────────────────────────────────────────
   const byName = new Map<string, CompiledAtom[]>()
@@ -343,30 +362,56 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const config = appearanceConfigOf(appearance)
   const title = titleOf(plan, identity.id)
   const locale = isRecord(plan) && typeof plan['locale'] === 'string' ? plan['locale'] : undefined
+  // The app in a sentence (`app/plan.json` `description`); the shell's
+  // <meta name="description"> falls back to the entry page's own, which is
+  // also what the runner shows on that page.
+  const appDescription = textOf(plan, 'description')
+  const entryPage = routes.find((p) => p.key === entry)
+  const shellDescription = appDescription ?? textOf(entryPage?.receipt, 'description')
+  // An app that requires sign-in shows a visitor the gate first; whether the
+  // renderer is ever needed is up to the visitor, so it is not preloaded.
+  const gated = isRecord(authDoc) && authDoc['required'] === true
+
+  // ── the runtime files, content-hashed (cached as immutable: _headers) ──
+  const webfontHref = webfontStylesheetHref(themeWebfonts(config))
+  const themeCss = enc.encode(buildThemeCss(config))
+  const assets0 = {
+    embed: hashedName('assets/embed.js', runtime.embedJs),
+    runner: hashedName('assets/runner.js', runtime.runnerJs),
+    theme: hashedName('assets/theme.css', themeCss),
+  }
+  const bootJs = bootScript({ locale: runnerLocaleOf(locale), assets: { ...assets0, boot: '' }, webfontHref })
+  const assets: ShellAssets = { ...assets0, boot: hashedName('assets/boot.js', bootJs) }
   const shell = (csp?: string): Uint8Array =>
     enc.encode(
       buildShellHtml({
         title,
+        ...(shellDescription !== undefined ? { description: shellDescription } : {}),
         ...(locale !== undefined ? { lang: locale } : {}),
         ...(config ? { appearance: config } : {}),
         ...(options.shellExtra !== undefined ? { bodyExtra: options.shellExtra } : {}),
         ...(csp !== undefined ? { csp } : {}),
+        assets,
+        preloadRenderer: !gated,
+        bootFiles: BOOT_FILES.filter((f) => files.has(f)),
       })
     )
-  // Written again with its policy once everything the policy reads is known.
-  files.set('index.html', shell())
-  files.set('assets/seed.js', enc.encode(seedScript()))
-  files.set('assets/boot.js', enc.encode(bootScript(runnerLocaleOf(locale))))
-  files.set('assets/runner.js', enc.encode(runtime.runnerJs))
-  if (runtime.runnerMap !== undefined) files.set('assets/runner.js.map', enc.encode(runtime.runnerMap))
-  files.set('assets/embed.js', enc.encode(runtime.embedJs))
-  files.set('assets/theme.css', enc.encode(buildThemeCss(config)))
+  files.set(assets.boot, enc.encode(bootJs))
+  files.set(assets.runner, enc.encode(runtime.runnerJs))
+  files.set(assets.embed, enc.encode(runtime.embedJs))
+  files.set(assets.theme, themeCss)
   for (const [name, source] of await shimsFor(runtime.embedJs)) files.set(`shims/${name}`, enc.encode(source))
   for (const [file, bytes] of [...modules].sort((a, b) => (a[0] < b[0] ? -1 : 1))) files.set(file, bytes)
   files.set('blocks/manifest.json', json(blockManifest))
   files.set('engines/manifest.json', json(engineManifest))
 
-  files.set('pwpack/project.json', json(buildProjectJson({ id: identity.id, title, entry, pages: routes, notFound: notFoundPage, auth: authDoc, ...(locale !== undefined ? { locale } : {}) })))
+  files.set(
+    'pwpack/project.json',
+    json({
+      ...buildProjectJson({ id: identity.id, title, entry, pages: routes, notFound: notFoundPage, auth: authDoc, ...(locale !== undefined ? { locale } : {}) }),
+      ...(appDescription !== undefined ? { description: appDescription } : {}),
+    })
+  )
   for (const page of pages) files.set(`pwpack/surfaces/${page.key}.receipt.json`, page.bytes)
   files.set('pwpack/navigation.json', json(isRecord(navigationDoc) ? navigationDoc : deriveNavigation(routes, entry)))
   if (appearance) files.set('pwpack/appearance.json', json(appearance))
@@ -376,6 +421,14 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const media = collectMedia(app.folder, diagnostics)
   for (const [file, bytes] of media.files) files.set(`pwpack/${file}`, bytes)
   mergeEnvelopeEntries(files, options.envelopeEntries, diagnostics)
+  // An identity without an `auth.json` has no door: say so, so the runner
+  // does not ask for a file that is not there (session-protocol §2).
+  if (!files.has('pwpack/auth.json')) {
+    const project = JSON.parse(new TextDecoder().decode(files.get('pwpack/project.json'))) as Record<string, unknown>
+    if (isRecord(project['identity'])) {
+      files.set('pwpack/project.json', json({ ...project, identity: { ...project['identity'], door: false } }))
+    }
+  }
   // After the host's entries, so a receipt the host rewrote gets its media too.
   for (const page of pages) {
     const path = `pwpack/surfaces/${page.key}.receipt.json`
@@ -402,11 +455,13 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     envelopeAuth: envelopeAuthBytes ? JSON.parse(new TextDecoder().decode(envelopeAuthBytes)) : undefined,
     authDefinition: authDoc,
     media: media.records,
-    webfontHref: webfontStylesheetHref(themeWebfonts(config)),
+    webfontHref,
     blocks: placedBlocks,
   })
+  // Written last: the shell preloads only boot files the folder has.
   files.set('index.html', shell(csp.meta))
   files.set('_headers', enc.encode(headersFile(csp.header)))
+  files.set('robots.txt', enc.encode(robotsTxt()))
 
   const publishedAtoms = atoms
     .filter((a) => used.has(a))

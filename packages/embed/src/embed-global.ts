@@ -31,6 +31,7 @@ export {
   createOfflineNavigationProvider,
   staticPersistenceCapability,
   grantsToDescriptors,
+  loadBlocks,
 } from './index.js'
 
 // ============================================================
@@ -113,6 +114,12 @@ if (typeof globalThis !== 'undefined') {
   const g = globalThis as Record<string, unknown>
   g.__pwfabric_react = React
   g.__pwfabric_jsx_runtime = ReactJsxRuntime
+  // Every global a block may import is seeded here, so the page needs no
+  // second script before the first block loads (the shell used to seed these
+  // two from the vendor table in `seed.js`, a render-blocking request of its
+  // own). Both are in this bundle already.
+  g.__pwfabric_react_dom = ReactDom
+  g.__pwfabric_core = Core
   // The authoring kit: a block written the documented way imports
   // `defineBlock` from `@pwfabric/authoring` and calls it when its bundle
   // loads, so a page that renders shipped blocks must seed it — every

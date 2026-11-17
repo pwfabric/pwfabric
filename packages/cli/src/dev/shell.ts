@@ -14,6 +14,7 @@
  * time, so the list has to be complete — and reading it from the bundle that
  * serves it is the only way it stays complete.
  */
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import vm from 'node:vm'
@@ -27,13 +28,14 @@ import { webfontStylesheetHref, themeWebfonts } from './theme.js'
 
 const require = createRequire(import.meta.url)
 
-/** The runner and renderer bundles a pwapp ships. */
+/**
+ * The runner and renderer bundles a pwapp ships. No source map: a published
+ * app serves its visitors no `.map` files (pwapp-format §1).
+ */
 export interface RuntimeAssets {
-  /** `assets/runner.js` — the ES module exporting `runApp`. */
+  /** `assets/runner.<hash>.js` — the ES module exporting `runApp`. */
   readonly runnerJs: string
-  /** Its source map, when the build has one. */
-  readonly runnerMap?: string
-  /** `assets/embed.js` — the classic script that defines `window.PWFabric`. */
+  /** `assets/embed.<hash>.js` — the classic script that defines `window.PWFabric`. */
   readonly embedJs: string
 }
 
@@ -44,12 +46,9 @@ export function loadRuntimeAssets(): Promise<RuntimeAssets> {
   cachedAssets ??= (async () => {
     const runnerPath = require.resolve('@pwfabric/runner')
     const embedPath = require.resolve('@pwfabric/embed/embed.js')
-    const [runnerJs, embedJs, runnerMap] = await Promise.all([
-      readFile(runnerPath, 'utf8'),
-      readFile(embedPath, 'utf8'),
-      readFile(`${runnerPath}.map`, 'utf8').catch(() => undefined),
-    ])
-    return { runnerJs, embedJs, ...(runnerMap !== undefined ? { runnerMap } : {}) }
+    const [runnerJs, embedJs] = await Promise.all([readFile(runnerPath, 'utf8'), readFile(embedPath, 'utf8')])
+    // The bundle names its map in a trailing comment; the map does not ship.
+    return { runnerJs: runnerJs.replace(/\n?\/\/# sourceMappingURL=\S+\s*$/, '\n'), embedJs }
   })()
   cachedAssets.catch(() => {
     cachedAssets = null
@@ -61,17 +60,10 @@ export function loadRuntimeAssets(): Promise<RuntimeAssets> {
 const VENDOR_GLOBAL = '__PW_VENDOR__'
 
 /**
- * Globals the renderer bundle does not seed itself, and the vendor-table key
- * the shell seeds each from (see {@link buildShellHtml}), so blocks that reach
- * for these get the renderer's own instance instead of `undefined`.
- *
- * The renderer bundle (`@pwfabric/embed`'s `embed.js`) carries `react-dom`
- * and `@pwfabric/core` in its `__PW_VENDOR__` table but does not seed these
- * globals itself, so a block that uses a VALUE from core (as opposed to a
- * type) reads the renderer's instance here instead of `undefined`. The
- * authoring kit (`__pwfabric_sdk`) the renderer seeds itself.
+ * The vendor-table entry (`__PW_VENDOR__`) a global's names can be read from
+ * when a renderer carries the package there without seeding the global.
  */
-export const SHELL_SEEDED_GLOBALS: Readonly<Record<string, string>> = {
+const VENDOR_KEYS: Readonly<Record<string, string>> = {
   __pwfabric_react_dom: 'react-dom',
   __pwfabric_core: '@pwfabric/core',
 }
@@ -123,8 +115,8 @@ export function shimGlobal(shim: string): string {
 /**
  * Every shim file the import map can point at, with its source.
  *
- * Names come from, in order: the global the renderer seeds; the vendor table
- * entry the shell seeds the global from; the package itself (for globals no
+ * Names come from, in order: the global the renderer seeds; the renderer's
+ * vendor table entry for that package; the package itself (for globals no
  * standalone page seeds — their exports resolve to `undefined`, which keeps a
  * block linking instead of failing at load).
  */
@@ -137,7 +129,7 @@ export async function buildShims(embedJs: string): Promise<Map<string, string>> 
     let names: string[] | null = null
     const value = seeded[global]
     if (value && typeof value === 'object') names = Object.keys(value)
-    const vendorKey = SHELL_SEEDED_GLOBALS[global]
+    const vendorKey = VENDOR_KEYS[global]
     if (!names && vendorKey && vendor[vendorKey] && typeof vendor[vendorKey] === 'object') {
       names = Object.keys(vendor[vendorKey] as object)
     }
@@ -169,8 +161,55 @@ export function scriptJson(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c')
 }
 
+/**
+ * A served file's content-hashed name: `assets/embed.js` → `assets/embed.<8 hex>.js`.
+ * The name changes exactly when the bytes do, so a host can serve it as
+ * immutable (`_headers`, see csp.ts) and a new build never meets a stale copy.
+ */
+export function hashedName(path: string, bytes: Uint8Array | string): string {
+  const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 8)
+  const dot = path.lastIndexOf('.')
+  return dot > path.lastIndexOf('/') ? `${path.slice(0, dot)}.${hash}${path.slice(dot)}` : `${path}.${hash}`
+}
+
+/** Where the shell finds its four runtime files, relative to the folder root. */
+export interface ShellAssets {
+  /** The renderer, `assets/embed.<hash>.js`. */
+  readonly embed: string
+  /** The runner, `assets/runner.<hash>.js`. */
+  readonly runner: string
+  /** The boot module, `assets/boot.<hash>.js`. */
+  readonly boot: string
+  /** The token stylesheet, `assets/theme.<hash>.css`. */
+  readonly theme: string
+}
+
+/** The names a build without hashes would use (tests, and a shell built before its files). */
+export const PLAIN_ASSETS: ShellAssets = {
+  embed: 'assets/embed.js',
+  runner: 'assets/runner.js',
+  boot: 'assets/boot.js',
+  theme: 'assets/theme.css',
+}
+
+/**
+ * Envelope files every runner reads on boot (envelope §1), asked for by the
+ * shell itself (`<link rel="preload" as="fetch">`) so they are in flight while
+ * the runner is still downloading.
+ */
+export const BOOT_FILES = [
+  'pwpack/project.json',
+  'pwpack/navigation.json',
+  'pwpack/appearance.json',
+  'pwpack/connections.json',
+  'blocks/manifest.json',
+  'engines/manifest.json',
+] as const
+
 export interface ShellOptions {
   readonly title: string
+  /** `<meta name="description">`: the app's description, or its entry page's. */
+  readonly description?: string
   /** `<html lang>`; default `en`. */
   readonly lang?: string
   /** The app's appearance configuration (its webfonts are linked). */
@@ -179,6 +218,16 @@ export interface ShellOptions {
   readonly bodyExtra?: string
   /** The policy for the shell's `<meta http-equiv="Content-Security-Policy">`; none when absent. */
   readonly csp?: string
+  /** The runtime files' served names; default {@link PLAIN_ASSETS}. */
+  readonly assets?: ShellAssets
+  /**
+   * Start the renderer with the page (`<script async>`). True for an app a
+   * visitor sees at once; false for one behind a sign-in wall, whose visitor
+   * may never need it (the runner adds it when it draws a page).
+   */
+  readonly preloadRenderer?: boolean
+  /** Envelope files to preload; default {@link BOOT_FILES}. Only files the folder has. */
+  readonly bootFiles?: readonly string[]
 }
 
 /** The exact text of the shell's inline import map (the CSP hashes this). */
@@ -186,28 +235,37 @@ export function importMapText(): string {
   return scriptJson(importMap())
 }
 
-/**
- * `assets/seed.js`: seeds the globals the renderer does not seed itself from
- * its vendor table (a file, not an inline script, so the policy needs no hash).
- */
-export function seedScript(): string {
-  const seeds = Object.entries(SHELL_SEEDED_GLOBALS)
-    .map(([global, key]) => `  g.${global} = g.${global} || v[${JSON.stringify(key)}];`)
-    .join('\n')
-  return `// Generated by pwf: globals the renderer carries in ${VENDOR_GLOBAL} but does not seed.
-(function (g) {
-  var v = g.${VENDOR_GLOBAL} || {};
-${seeds}
-})(globalThis)
-`
+export interface BootOptions {
+  /** The runner's content locale. */
+  readonly locale?: 'en' | 'tr'
+  /** The runtime files' served names; default {@link PLAIN_ASSETS}. */
+  readonly assets?: ShellAssets
+  /** The webfont stylesheet the theme names, linked by the boot module so it never holds the first paint. */
+  readonly webfontHref?: string | null
 }
 
-/** `assets/boot.js`: the module that starts the runner. */
-export function bootScript(locale: 'en' | 'tr' = 'en'): string {
+/** `assets/boot.<hash>.js`: the module that starts the runner. */
+export function bootScript(options: BootOptions = {}): string {
+  const assets = options.assets ?? PLAIN_ASSETS
+  const locale = options.locale ?? 'en'
+  // boot sits in assets/ beside the runner; the renderer's address is the
+  // document's (the runner adds it as a <script src>).
+  const runner = `./${assets.runner.slice(assets.runner.lastIndexOf('/') + 1)}`
+  const fonts = options.webfontHref
+    ? `
+// The theme's webfonts: linked from here, not from <head>, so the stylesheet
+// does not hold the first paint (font-display: swap and the metric-matched
+// fallbacks in the theme stylesheet keep the text from moving when they land).
+const fonts = document.createElement('link')
+fonts.rel = 'stylesheet'
+fonts.href = ${JSON.stringify(options.webfontHref)}
+document.head.appendChild(fonts)
+`
+    : ''
   return `// Generated by pwf: starts the app.
-import { runApp } from './runner.js'
-
-runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', router: 'hash', locale: '${locale}' })
+import { runApp } from ${JSON.stringify(runner)}
+${fonts}
+runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', renderer: ${JSON.stringify(`./${assets.embed}`)}, router: 'hash', locale: '${locale}' })
 `
 }
 
@@ -223,40 +281,68 @@ export function runnerLocaleOf(locale: string | undefined): 'en' | 'tr' {
 }
 
 /**
- * `index.html`, in the order the pwapp format requires: import map, the
- * renderer (a classic script that seeds the shared globals) and `seed.js`,
- * the mount element, then `boot.js`, which starts the runner. The import map
- * is the only inline script, so a Content Security Policy needs one hash.
+ * `index.html`. Nothing in it holds the first paint but the token
+ * stylesheet: the import map (the only inline script, so a Content Security
+ * Policy needs one hash); the renderer as an `async` script and preloads that
+ * start the runner, the shims and the envelope files the runner reads on
+ * boot, all at once; the mount element; then `boot.js`, which starts the
+ * runner. An app that requires sign-in does not name the renderer: the runner
+ * adds it when it draws a page (pwapp-format §2), so a visitor held at the
+ * gate never downloads it.
+ *
  * Every address is relative, so the folder works at a host root, under a
  * sub-path, or from disk behind any static server.
  */
 export function buildShellHtml(options: ShellOptions): string {
+  const assets = options.assets ?? PLAIN_ASSETS
   const href = webfontStylesheetHref(themeWebfonts(options.appearance))
   const fonts = href
     ? `
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="${escapeHtml(href)}" />`
+    <link rel="preload" as="style" href="${escapeHtml(href)}" />`
     : ''
   const csp = options.csp
     ? `
     <meta http-equiv="Content-Security-Policy" content="${escapeHtml(options.csp)}" />`
     : ''
+  const description = options.description?.trim()
+    ? `
+    <meta name="description" content="${escapeHtml(options.description.trim())}" />`
+    : ''
+  // `async`: downloaded with the page and run the moment it arrives, holding
+  // neither the parser nor the first paint, and not waiting for the runner
+  // (which waits for this element when it needs the renderer).
+  const renderer =
+    options.preloadRenderer === false
+      ? ''
+      : `
+    <script async src="./${escapeHtml(assets.embed)}"></script>`
+  // The shims every block imports: fetched and compiled with the page (a
+  // module preload does not evaluate them), not one round trip after the
+  // first block module is imported.
+  const shims = [...new Set(Object.values(importMap().imports))]
+    .map((f) => `
+    <link rel="modulepreload" href="${escapeHtml(f)}" />`)
+    .join('')
+  const boot = (options.bootFiles ?? BOOT_FILES)
+    .map((f) => `
+    <link rel="preload" as="fetch" href="./${escapeHtml(f)}" crossorigin />`)
+    .join('')
   return `<!doctype html>
 <html lang="${escapeHtml(htmlLangOf(options.lang))}">
   <head>
     <meta charset="UTF-8" />${csp}
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(options.title)}</title>
+    <title>${escapeHtml(options.title)}</title>${description}
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="./assets/theme.css" />${fonts}
+    <link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />${fonts}
     <script type="importmap">${importMapText()}</script>
-    <script src="./assets/embed.js"></script>
-    <script src="./assets/seed.js"></script>
+    <link rel="modulepreload" href="./${escapeHtml(assets.runner)}" />${renderer}${shims}${boot}
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="./assets/boot.js"></script>${options.bodyExtra ?? ''}
+    <script type="module" src="./${escapeHtml(assets.boot)}"></script>${options.bodyExtra ?? ''}
   </body>
 </html>
 `

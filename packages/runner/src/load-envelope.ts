@@ -6,8 +6,8 @@
  *
  * `auth.json` exists only when the app has a way in (envelope §1), and the
  * publisher writes `project.identity` whenever it writes `auth.json`. So the
- * file is asked for only when `project.json` declares an identity: an app
- * without sign-in makes no request that is bound to 404.
+ * file is asked for only when `project.json` declares an identity that has a
+ * door: an app without one makes no request that is bound to 404.
  *
  * @module @pwfabric/runner/load-envelope
  */
@@ -45,9 +45,13 @@ export interface LoadedEnvelope {
   readonly engineManifest: PwappEngineManifest | null
 }
 
-/** Whether the runner should ask for `auth.json`: only when the app declares an identity. */
+/**
+ * Whether the runner should ask for `auth.json`: only when the app declares an
+ * identity, and not when that identity says it has no door (`door: false` —
+ * an app that wants a signed-in visitor, built with no host to sign in at).
+ */
 export function wantsAuthJson(project: Pick<PwappProject, 'identity'>): boolean {
-  return project.identity !== undefined && project.identity !== null
+  return project.identity !== undefined && project.identity !== null && project.identity.door !== false
 }
 
 export async function loadEnvelope(at: EnvelopeLocations, fetchJson: JsonFetcher): Promise<LoadedEnvelope> {

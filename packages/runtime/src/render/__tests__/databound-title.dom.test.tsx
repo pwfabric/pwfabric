@@ -90,3 +90,23 @@ describe('a surface title with expressions', () => {
     await waitFor(() => expect(onTitle).toHaveBeenLastCalledWith('About'))
   })
 })
+
+describe('a surface description with expressions', () => {
+  it('reports the page’s description once its record has loaded, like the title', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: 'd1', name: 'Granola' }] }) })) as never
+    )
+    const onDescription = vi.fn()
+    const surface = { ...(dishPage('Dish') as object), description: '{{dish.0.name}} with yoghurt and fruit.' } as never
+    render(<DataBoundSurfaceRenderer surface={surface} components={components} onDescription={onDescription} />)
+    await waitFor(() => expect(onDescription).toHaveBeenLastCalledWith('Granola with yoghurt and fruit.'))
+  })
+
+  it('reports a literal description of a page with nothing dynamic', async () => {
+    const onDescription = vi.fn()
+    const plain = { id: 'p', description: 'About us.', blocks: [{ id: 'h', type: 'text', layout: L, props: { text: 'Hi' } }] } as never
+    render(<DataBoundSurfaceRenderer surface={plain} components={components} onDescription={onDescription} />)
+    await waitFor(() => expect(onDescription).toHaveBeenLastCalledWith('About us.'))
+  })
+})

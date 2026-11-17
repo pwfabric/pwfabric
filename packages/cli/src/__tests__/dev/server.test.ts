@@ -52,6 +52,13 @@ function sse(url: string): { next: (name: string) => Promise<string>; close: () 
   }
 }
 
+/** A content-hashed runtime file the shell names: `assets/runner.<8 hex>.js`. */
+function assetIn(html: string, name: 'runner' | 'theme' | 'embed' | 'boot'): string {
+  const hit = new RegExp(`assets/${name}\\.[0-9a-f]{8}\\.(js|css)`).exec(html)?.[0]
+  if (!hit) throw new Error(`the shell names no assets/${name}.<hash>`)
+  return hit
+}
+
 describe('dev server', () => {
   it('serves the app, rebuilds on change and tells the page to reload', async () => {
     const root = await app()
@@ -69,7 +76,7 @@ describe('dev server', () => {
     expect(await (await get('/_pwf/reload.js')).text()).toContain('/_pwf/events')
     const map = JSON.parse(/<script type="importmap">(.*?)<\/script>/.exec(html)?.[1] ?? '{}') as { imports: Record<string, string> }
 
-    const runner = await get('/assets/runner.js')
+    const runner = await get(`/${assetIn(html, 'runner')}`)
     expect(runner.status).toBe(200)
     expect(runner.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
     expect(await runner.text()).toContain('runApp')
@@ -83,7 +90,7 @@ describe('dev server', () => {
     expect(block.status).toBe(200)
     expect(block.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
     expect((await get('/pwpack/project.json')).headers.get('content-type')).toBe('application/json; charset=utf-8')
-    expect((await get('/assets/theme.css')).headers.get('content-type')).toBe('text/css; charset=utf-8')
+    expect((await get(`/${assetIn(html, 'theme')}`)).headers.get('content-type')).toBe('text/css; charset=utf-8')
 
     // Edit a page: the watcher rebuilds, the page hears `reload`, the envelope changed.
     const events = sse(new URL('/_pwf/events', server.url).href)
@@ -138,6 +145,7 @@ describe('dev server', () => {
     const root = await app()
     const lines: string[] = []
     const server = track(await createDevServer({ root, port: 0, log: (l) => lines.push(l) }, { watch: false }))
+    const good = await (await fetch(server.url)).text()
     await writeFile(join(root, 'app/surfaces/home.receipt.json'), JSON.stringify({ blocks: [{ type: 'missing-block' }] }))
     const failed = await server.rebuild()
     expect(failed.ok).toBe(false)
@@ -154,11 +162,11 @@ describe('dev server', () => {
     expect(status.ok).toBe(false)
     // Deep links get the overlay too; assets keep serving.
     expect(await (await fetch(new URL('/some/page', server.url))).text()).toContain('Build failed')
-    expect((await fetch(new URL('/assets/runner.js', server.url))).status).toBe(200)
+    expect((await fetch(new URL(`/${assetIn(good, 'runner')}`, server.url))).status).toBe(200)
 
     await writeFile(join(root, 'app/surfaces/home.receipt.json'), JSON.stringify({ blocks: [{ type: 'title' }] }))
     expect((await server.rebuild()).ok).toBe(true)
-    expect(await (await fetch(server.url)).text()).toContain('./assets/boot.js')
+    expect(await (await fetch(server.url)).text()).toMatch(/\.\/assets\/boot\.[0-9a-f]{8}\.js/)
   })
 
   it('answers 404, 400, 405, HEAD and the SPA fallback', async () => {
@@ -172,17 +180,17 @@ describe('dev server', () => {
     expect((await at('/%E0%A4%A')).status).toBe(400)
     expect((await at('/..%2Fsecret')).status).toBe(400)
     expect((await at('/', { method: 'POST' })).status).toBe(405)
-    const head = await at('/assets/runner.js', { method: 'HEAD' })
+    const head = await at(`/${assetIn(await (await at('/')).text(), 'runner')}`, { method: 'HEAD' })
     expect(head.status).toBe(200)
     expect(Number(head.headers.get('content-length'))).toBeGreaterThan(1000)
     expect(await head.text()).toBe('')
     const deep = await at('/about')
     expect(deep.headers.get('content-type')).toBe('text/html; charset=utf-8')
-    expect(await deep.text()).toContain('./assets/boot.js')
+    expect(await deep.text()).toMatch(/\.\/assets\/boot\.[0-9a-f]{8}\.js/)
     // A dotted page id is a page, not a file of an unknown type.
     const dotted = await at('/layout.two-pane')
     expect(dotted.status).toBe(200)
-    expect(await dotted.text()).toContain('./assets/boot.js')
+    expect(await dotted.text()).toMatch(/\.\/assets\/boot\.[0-9a-f]{8}\.js/)
   })
 
   it('mounts a local host: forwards its requests and carries its envelope entries', async () => {
@@ -230,7 +238,8 @@ describe('dev server', () => {
     )
     expect(made).toEqual([{ root, prefix: '/_host' }])
     const project = (await (await fetch(new URL('/pwpack/project.json', server.url))).json()) as { identity: unknown }
-    expect(project.identity).toEqual({ required: true, topology: 'app', methods: ['password'] })
+    // This host adds no auth.json, so the identity says it has no door.
+    expect(project.identity).toEqual({ required: true, topology: 'app', methods: ['password'], door: false })
   })
 
   it('mounts the host on a later build when the app gains its first entity while running', async () => {

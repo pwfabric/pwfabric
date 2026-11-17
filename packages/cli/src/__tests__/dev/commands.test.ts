@@ -60,7 +60,7 @@ describe('pwf build', () => {
     const c = capture(root)
     expect(await main(['build'], c.io)).toBe(0)
     const out = join(root, '.pwf', 'out')
-    expect((await readdir(out)).sort()).toEqual(['_headers', 'assets', 'blocks', 'engines', 'index.html', 'publish.json', 'pwpack', 'shims'])
+    expect((await readdir(out)).sort()).toEqual(['_headers', 'assets', 'blocks', 'engines', 'index.html', 'publish.json', 'pwpack', 'robots.txt', 'shims'])
     expect(c.out.at(-2)).toMatch(/^built 1 page, 2 block types, 2 engines — 4\/5 atoms compiled/)
     expect(c.out.at(-1)?.startsWith('wrote ')).toBe(true)
     expect(c.out.at(-1)?.endsWith(` files to ${join('.pwf', 'out')}`)).toBe(true)
@@ -83,7 +83,7 @@ describe('pwf build', () => {
     expect(await main(['build', '--out', 'file-out'], capture(root).io)).toBe(1)
     expect(await main(['build', '--out'], capture(root).io)).toBe(2)
     expect(await main(['build', '--out', 'fresh'], capture(root).io)).toBe(0)
-    expect(await readFile(join(root, 'fresh', 'index.html'), 'utf8')).toContain('./assets/boot.js')
+    expect(await readFile(join(root, 'fresh', 'index.html'), 'utf8')).toMatch(/\.\/assets\/boot\.[0-9a-f]{8}\.js/)
   })
 
   it('fails with the errors and writes nothing', async () => {

@@ -602,9 +602,8 @@ async function cspProbe(browser, s) {
 }
 
 // L2 with one more app block written the documented way: `defineBlock` from
-// `@pwfabric/authoring`, exporting only the definition. The built shell's
-// `seed.js` is emptied, so the page is what a host running only the renderer
-// and the runner gives a block — a published app is one.
+// `@pwfabric/authoring`, exporting only the definition, on a page that runs
+// only the renderer and the runner — as every published app does.
 const SDK_BLOCK = `import { defineBlock } from '@pwfabric/authoring'
 import { z } from 'zod'
 
@@ -636,7 +635,6 @@ async function sdkBlock(browser, s) {
       `${JSON.stringify({ id: 'custom.quote-card', kind: 'block', version: '1.0.0', category: 'custom', name: 'quote-card', state: 'stable', knowledge: { purpose: 'Quotes a customer', useCases: [], composesWith: [], antiPatterns: [] }, definition: { props: [{ name: 'quote', type: 'string', required: false, default: 'A great product to work with.', bindable: true }], defaultProps: { quote: 'A great product to work with.' }, canHaveChildren: false, traits: [] } }, null, 2)}\n`
     )
     if (!(await validateAndBuild(s, app.root))) return
-    await writeFile(join(app.root, '.pwf', 'out', 'assets', 'seed.js'), '// emptied by the e2e: no shell seeding\n')
     const { server, page } = await openBuilt(s, browser, app.root, textOf('[data-block-type="quote-card"]'))
     try {
       s.check('the defineBlock() block renders', (await page.evaluate(textOf('[data-block-type="quote-card"]'))) === 'It just rendered.')

@@ -31,6 +31,12 @@ export interface PwappProject {
    * Absent: the visitor's.
    */
   readonly locale?: string
+  /**
+   * What the app is, in a sentence, for a visitor's search result or link
+   * preview: the document's `<meta name="description">` wherever a page
+   * states none of its own (envelope §2).
+   */
+  readonly description?: string
   readonly entrySurfaceId: string
   readonly surfaceOrder: readonly string[]
   readonly surfaceReceiptFiles?: Readonly<Record<string, string>>
@@ -53,6 +59,12 @@ export interface PwappProject {
     readonly required: boolean
     readonly topology?: 'app' | 'external'
     readonly methods?: readonly string[]
+    /**
+     * `false` when the envelope ships no `auth.json` — the app declares who
+     * may enter but has no way in (a build no host serves). The runner then
+     * asks for no `auth.json`, which would only 404. Absent: it has one.
+     */
+    readonly door?: boolean
   }
 }
 
@@ -287,6 +299,8 @@ export interface SurfaceBlockNode {
 /** `surfaces/<key>.receipt.json` — the per-page render input. */
 export interface SurfaceReceipt {
   readonly title?: string
+  /** The page in a sentence: its `<meta name="description">` (receipt §1). */
+  readonly description?: string
   readonly blocks: SurfaceBlockNode[]
   readonly appearance?: unknown
   readonly capabilities?: readonly {
@@ -308,8 +322,9 @@ export type BlockManifest = readonly DynamicBlockDescriptor[]
 // ============================================================
 
 /**
- * The page loads embed.js which defines `window.PWFabric.render`. The runner
- * only calls it — the render engine is never bundled here.
+ * embed.js defines `window.PWFabric.render`. The runner only calls it — the
+ * render engine is never bundled here — and loads it itself, the first time a
+ * page is drawn ({@link RunAppOptions.renderer}).
  */
 export interface PWFabricGlobal {
   render(
@@ -317,6 +332,11 @@ export interface PWFabricGlobal {
     source: { surface: { blocks: unknown; appearance?: unknown; capabilities?: unknown } },
     options: Record<string, unknown>
   ): Promise<unknown> | unknown
+  /**
+   * Loads the modules of every block type `blocks` places, all at once, and
+   * settles when they are in (or a cap has passed); never rejects.
+   */
+  loadBlocks(blocks: unknown, descriptors: BlockManifest): Promise<void>
 }
 
 declare global {
@@ -349,6 +369,14 @@ export interface RunAppOptions {
    * the addresses carry no version, as before.
    */
   readonly version?: string | number
+  /**
+   * The renderer (`embed.js`, a classic script defining `window.PWFabric`),
+   * relative to the document. The runner adds it to the page the first time it
+   * draws one, so a visitor held at the sign-in gate never downloads it; a
+   * page that has loaded it already (`window.PWFabric` is defined) keeps its
+   * own. Default `'./assets/embed.js'`.
+   */
+  readonly renderer?: string
   /** Folder containing `manifest.json`. Default `'./blocks/'`. */
   readonly blocks?: string
   /** Folder containing the connector-engine `manifest.json`.

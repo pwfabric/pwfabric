@@ -11,7 +11,9 @@
  * @module @pwfabric/runner/entity-facade
  */
 
-import { z } from 'zod'
+// `zod` is imported when a facade is built, not when this module loads: the
+// runner must load before the renderer that seeds it (see renderer.ts).
+import type { z as Z } from 'zod'
 import type { EntityConnector, EntityDefinition, EntityFacade, EntityTypeId } from '@pwfabric/runtime'
 
 /**
@@ -169,7 +171,7 @@ export function extractEntityTypes(surface: {
 // FACADE BUILDER (adapted from useEntityFacade.ts)
 // ============================================================
 
-function minimalEntityDefinition(entityType: string): EntityDefinition {
+function minimalEntityDefinition(entityType: string, z: typeof Z): EntityDefinition {
   return {
     id: entityType as EntityTypeId,
     name: entityType,
@@ -404,10 +406,11 @@ export async function buildEntityFacade(
   }
 
   let any = false
+  const { z } = await import('zod')
   for (const { entityType, connector } of bindings) {
     if (!registered.has(connector)) continue
     try {
-      facade.registerEntity(minimalEntityDefinition(entityType), connector)
+      facade.registerEntity(minimalEntityDefinition(entityType, z), connector)
       any = true
     } catch (err) {
       console.warn(`[pwapp] "${entityType}" → "${connector}" could not be bound — anonymous fallback: ${String(err)}`)

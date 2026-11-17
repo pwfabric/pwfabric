@@ -1,4 +1,5 @@
 import { defineConfig } from 'tsup'
+import { visitorBundlePlugins } from './visitor-bundle'
 
 /**
  * Two build outputs:
@@ -58,6 +59,9 @@ export default defineConfig([
     // Bundle EVERYTHING — React, react-dom, runtime, contracts — so the
     // emitted file has no external dependency whatsoever.
     noExternal: [/.*/],
+    // What no visitor needs (zod's message locales, next/image); see
+    // visitor-bundle.ts.
+    esbuildPlugins: visitorBundlePlugins,
     define: {
       'process.env.NODE_ENV': '"production"',
     },

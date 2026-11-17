@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { deriveCsp, engineHostOrigin, headersFile, originOf, scriptHash, serializeCsp } from '../../dev/csp.js'
+import { deriveCsp, engineHostOrigin, headersFile, originOf, robotsTxt, scriptHash, serializeCsp } from '../../dev/csp.js'
+import { headerPatternMatches, parseHeadersFile } from '../../commands/lib/static-server.js'
 
 const base = { importMapText: '{"imports":{}}', receipts: new Map<string, unknown>(), engines: [], media: [] }
 
@@ -136,9 +137,36 @@ describe('content security policy', () => {
   })
 
   it('writes the header file and leaves header-only directives out of a meta policy', () => {
-    expect(headersFile("default-src 'none'")).toBe("/*\n  Content-Security-Policy: default-src 'none'\n")
+    const headers = headersFile("default-src 'none'")
+    expect(headers.startsWith("/*\n  Content-Security-Policy: default-src 'none'\n")).toBe(true)
     expect(serializeCsp({ 'default-src': ["'none'"], 'frame-ancestors': ["'none'"], sandbox: ['allow-scripts'] }, { meta: true })).toBe(
       "default-src 'none'"
     )
+  })
+
+  it('says how long each part of the folder may be kept, one Cache-Control per path', () => {
+    const rules = parseHeadersFile(headersFile("default-src 'none'"))
+    // A static host applies every matching rule and joins a header two set,
+    // honouring `! Name` (detach) in file order.
+    const cacheOf = (path: string): string[] => {
+      let values: string[] = []
+      for (const r of rules) {
+        if (!headerPatternMatches(r.pattern, path)) continue
+        for (const [name, value] of r.headers) {
+          if (name === '! Cache-Control') values = []
+          else if (name === 'Cache-Control') values.push(value)
+        }
+      }
+      return values
+    }
+    const immutable = ['public, max-age=31536000, immutable']
+    expect(cacheOf('/assets/embed.1a2b3c4d.js')).toEqual(immutable)
+    expect(cacheOf('/blocks/card.1a2b3c4d.mjs')).toEqual(immutable)
+    expect(cacheOf('/engines/Graph.1a2b3c4d.mjs')).toEqual(immutable)
+    for (const p of ['/', '/index.html', '/blocks/manifest.json', '/engines/manifest.json', '/shims/react.mjs', '/pwpack/project.json']) {
+      expect(cacheOf(p), p).toEqual(['no-cache'])
+    }
+    expect(cacheOf('/pwpack/media/logo.svg')).toEqual(['public, max-age=3600'])
+    expect(robotsTxt()).toBe('User-agent: *\nAllow: /\n')
   })
 })

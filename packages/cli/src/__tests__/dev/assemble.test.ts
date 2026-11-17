@@ -19,6 +19,13 @@ async function app(withPack = true): Promise<string> {
   return a.root
 }
 const codes = (r: { diagnostics: readonly { code: string }[] }): string[] => r.diagnostics.map((d) => d.code)
+/** The served name of a content-hashed runtime file: `assets/runner.<8 hex>.js`. */
+const asset = (r: { files: Map<string, Uint8Array> }, name: 'runner' | 'embed' | 'boot' | 'theme'): string => {
+  const ext = name === 'theme' ? 'css' : 'js'
+  const hit = [...r.files.keys()].find((k) => new RegExp(`^assets/${name}\\.[0-9a-f]{8}\\.${ext}$`).test(k))
+  if (!hit) throw new Error(`no assets/${name}.<hash>.${ext}`)
+  return hit
+}
 
 describe('assemblePwapp', () => {
   it('lays out a static pwapp from the app and its pinned pack', async () => {
@@ -29,9 +36,11 @@ describe('assemblePwapp', () => {
     const paths = [...r.files.keys()]
     for (const p of [
       'index.html',
-      'assets/runner.js',
-      'assets/embed.js',
-      'assets/theme.css',
+      asset(r, 'runner'),
+      asset(r, 'embed'),
+      asset(r, 'theme'),
+      asset(r, 'boot'),
+      'robots.txt',
       'shims/react.mjs',
       'blocks/manifest.json',
       'engines/manifest.json',
@@ -45,6 +54,10 @@ describe('assemblePwapp', () => {
       expect(paths).toContain(p)
     }
     expect(text(r.files.get('index.html'))).not.toContain('/_pwf/events')
+    // No source map is served to a visitor, and no seed script is needed.
+    expect(paths.filter((p) => p.endsWith('.map'))).toEqual([])
+    expect(paths).not.toContain('assets/seed.js')
+    expect(text(r.files.get('robots.txt'))).toBe('User-agent: *\nAllow: /\n')
 
     const blocks = parse(r.files.get('blocks/manifest.json')) as { blockType: string; moduleUrl: string; integrity: string }[]
     expect(blocks.map((b) => b.blockType)).toEqual(['stack', 'title'])
@@ -60,11 +73,13 @@ describe('assemblePwapp', () => {
     expect(parse(r.files.get('pwpack/project.json'))).toMatchObject({ id: '@pwpack/k/demo', title: 'K Demo', entrySurfaceId: 'home', surfaceOrder: ['home'] })
     expect(parse(r.files.get('pwpack/navigation.json'))).toEqual({ navbar: { links: [{ label: 'Home', href: '/' }] } })
     expect(parse(r.files.get('pwpack/appearance.json'))).toEqual({
-      theme: { colors: { primary: '#7c2d12', background: '#fffbeb', text: '#1c1917', accent: '#b45309' }, typography: { fontFamily: 'Inter, system-ui, sans-serif' } },
+      // The webfont's metric-matched stand-in is named right after it (pwapp-format §2.3).
+      theme: { colors: { primary: '#7c2d12', background: '#fffbeb', text: '#1c1917', accent: '#b45309' }, typography: { fontFamily: 'Inter, "Inter Fallback", system-ui, sans-serif' } },
     })
     expect(text(r.files.get('pwpack/connections.json'))).not.toContain('do-not-ship')
     expect(codes(r)).toContain('CREDENTIAL_DROPPED')
-    expect(text(r.files.get('assets/theme.css'))).toContain('--pw-color-primary: #7c2d12')
+    expect(text(r.files.get(asset(r, 'theme')))).toContain('--pw-color-primary: #7c2d12')
+    expect(text(r.files.get(asset(r, 'theme')))).toContain('font-family: "Inter Fallback";')
     const publish = parse(r.files.get('publish.json')) as Record<string, unknown>
     expect(publish).toMatchObject({
       formatVersion: '1.0',
@@ -87,12 +102,24 @@ describe('assemblePwapp', () => {
     expect(csp.policy).toContain("frame-ancestors 'none'")
     // The compiled engine's reach is not declared, so it is listed, not guessed.
     expect(csp.unresolved?.map((u) => u.source)).toEqual(['engine:Echo'])
-    expect(text(r.files.get('_headers'))).toBe(`/*\n  Content-Security-Policy: ${csp.policy}\n`)
+    expect(text(r.files.get('_headers')).startsWith(`/*\n  Content-Security-Policy: ${csp.policy}\n`)).toBe(true)
+    expect(text(r.files.get('_headers'))).toContain('/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n')
     const html = text(r.files.get('index.html'))
     const meta = /<meta http-equiv="Content-Security-Policy" content="([^"]*)" \/>/.exec(html)?.[1]
     expect(meta).toBe(csp.policy.replace(/; frame-ancestors 'none'/, ''))
-    expect(text(r.files.get('assets/seed.js'))).toContain('__pwfabric_core')
-    expect(text(r.files.get('assets/boot.js'))).toContain('runApp(')
+    const boot = text(r.files.get(asset(r, 'boot')))
+    expect(boot).toContain('runApp(')
+    expect(boot).toContain(`from "./${asset(r, 'runner').slice('assets/'.length)}"`)
+    expect(boot).toContain(`renderer: "./${asset(r, 'embed')}"`)
+    // The shell names the hashed files and starts the renderer without holding the page.
+    expect(html).toContain(`<script type="module" src="./${asset(r, 'boot')}"></script>`)
+    expect(html).toContain(`<script async src="./${asset(r, 'embed')}"></script>`)
+    expect(html).toContain(`<link rel="stylesheet" href="./${asset(r, 'theme')}" />`)
+    expect(html).not.toMatch(/<script src=/)
+    // A hashed name is the hash of the bytes.
+    const { createHash } = await import('node:crypto')
+    const runner = asset(r, 'runner')
+    expect(runner).toContain(createHash('sha256').update(r.files.get(runner) as Uint8Array).digest('hex').slice(0, 8))
   })
 
   it('reads the app as its pack content: dotfiles and tooling are neither read nor reported', async () => {
@@ -114,6 +141,36 @@ describe('assemblePwapp', () => {
     expect(r.stats.fromCache).toBe(r.stats.compiled)
     expect(text(r.files.get('index.html'))).toContain('<!--x-->')
     expect(parse(r.files.get('pwpack/auth.json'))).toEqual({ provider: 'password' })
+  })
+
+  it('an app that requires sign-in: no renderer preload, and without auth.json the identity says it has no door', async () => {
+    const root = await app()
+    await writeFile(join(root, 'app', 'definitions', 'auth.json'), JSON.stringify({ required: true, topology: 'external' }))
+    const bare = await assemblePwapp(root, { cacheDir: null })
+    const project = parse(bare.files.get('pwpack/project.json')) as { identity?: Record<string, unknown> }
+    // No auth.json ships, so the runner must not ask for it (it would 404).
+    expect(bare.files.has('pwpack/auth.json')).toBe(false)
+    expect(project.identity).toMatchObject({ required: true, door: false })
+    // The gate's visitor may never need the renderer.
+    expect(text(bare.files.get('index.html'))).not.toContain('assets/embed')
+    const hosted = await assemblePwapp(root, { cacheDir: null, envelopeEntries: { 'auth.json': { provider: 'oauth2-pkce', issuer: 'https://id.example.com', clientId: 'c' } } })
+    expect((parse(hosted.files.get('pwpack/project.json')) as { identity?: Record<string, unknown> }).identity?.['door']).toBeUndefined()
+  })
+
+  it('describes the app: the plan’s description, else the entry page’s', async () => {
+    const root = await app()
+    const receiptPath = join(root, 'app', 'surfaces', 'home.receipt.json')
+    const receipt = JSON.parse(await readFile(receiptPath, 'utf8')) as Record<string, unknown>
+    await writeFile(receiptPath, JSON.stringify({ ...receipt, description: 'The home page.' }))
+    const fromPage = await assemblePwapp(root, { cacheDir: null })
+    expect(text(fromPage.files.get('index.html'))).toContain('<meta name="description" content="The home page." />')
+    expect((parse(fromPage.files.get('pwpack/project.json')) as Record<string, unknown>)['description']).toBeUndefined()
+    const planPath = join(root, 'app', 'plan.json')
+    const plan = JSON.parse(await readFile(planPath, 'utf8').catch(() => '{}')) as Record<string, unknown>
+    await writeFile(planPath, JSON.stringify({ ...plan, description: 'A demo app.' }))
+    const fromPlan = await assemblePwapp(root, { cacheDir: null })
+    expect(text(fromPlan.files.get('index.html'))).toContain('<meta name="description" content="A demo app." />')
+    expect((parse(fromPlan.files.get('pwpack/project.json')) as Record<string, unknown>)['description']).toBe('A demo app.')
   })
 
   it('says which command fills a missing pack cache', async () => {
