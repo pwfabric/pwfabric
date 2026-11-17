@@ -18,6 +18,8 @@ import { ATOM_KINDS,
   AtomBlockDefinitionMetadataSchema,
   AtomManifestConfigSchema,
   AtomFileManifestSchema,
+  CONNECTOR_ENTITY_FIELD_TYPES,
+  connectorEntityFields,
   DEFAULT_APPEARANCE_THEME,
 } from '../../index.js'
 import type { AtomRef } from '../../index.js'
@@ -704,5 +706,83 @@ describe('AtomFileManifest.engine — a declaration, not code', () => {
   it('refuses an unknown key at the declaration root too', () => {
     const engine = { ...GRAPH_LISTS, apiKey: 'nope' }
     expect(AtomFileManifestSchema.safeParse({ ...connectorManifest, engine }).success).toBe(false)
+  })
+})
+
+/**
+ * A connector or provider declares the entities it serves and the fields of
+ * their rows, in the shape an app entity's fields have.
+ */
+describe('AtomFileManifest.entities — the row fields a connector serves', () => {
+  const provider = {
+    id: 'microsoft.tasks',
+    kind: 'provider' as const,
+    version: '1.0.0',
+    name: 'tasks',
+    state: 'stable' as const,
+    connection: 'graph-tasks',
+    knowledge: {
+      purpose: 'Microsoft To Do and Planner tasks',
+      useCases: ['a my-open-tasks list'],
+      composesWith: [],
+      antiPatterns: ['updating a Planner task'],
+    },
+  }
+  const TODO_TASKS = {
+    entityType: 'TodoTasks',
+    displayName: 'To Do tasks',
+    fields: [
+      { name: 'title', type: 'text', required: true },
+      { name: 'isCompleted', type: 'boolean' },
+      { name: 'dueDate', type: 'date', label: 'Due' },
+      { name: 'listId', type: 'relation', targetTypeId: 'TodoLists' },
+    ],
+  }
+  const parse = (entities: unknown) => AtomFileManifestSchema.safeParse({ ...provider, entities })
+
+  it('accepts declared entities with every field type', () => {
+    const result = parse([TODO_TASKS, { entityType: 'TodoLists', fields: [{ name: 'size', type: 'number' }] }])
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.entities?.[0]?.fields[3]).toEqual(TODO_TASKS.fields[3])
+  })
+
+  it('the field types are the five an app entity uses', () => {
+    expect(CONNECTOR_ENTITY_FIELD_TYPES).toEqual(['text', 'number', 'boolean', 'date', 'relation'])
+  })
+
+  it('a manifest without entities stays valid — the row fields are just unknown', () => {
+    expect(AtomFileManifestSchema.safeParse(provider).success).toBe(true)
+  })
+
+  it('accepts a relation without a target, as an app entity does', () => {
+    expect(parse([{ entityType: 'T', fields: [{ name: 'owner', type: 'relation' }] }]).success).toBe(true)
+  })
+
+  it('refuses a type outside the five', () => {
+    expect(parse([{ entityType: 'T', fields: [{ name: 'tags', type: 'list' }] }]).success).toBe(false)
+  })
+
+  it('refuses targetTypeId on a field that is not a relation', () => {
+    expect(parse([{ entityType: 'T', fields: [{ name: 'x', type: 'text', targetTypeId: 'U' }] }]).success).toBe(false)
+  })
+
+  it('refuses an entity without fields, without entityType, or with an unknown member', () => {
+    expect(parse([{ entityType: 'T' }]).success).toBe(false)
+    expect(parse([{ fields: [] }]).success).toBe(false)
+    expect(parse([{ entityType: 'T', fields: [], rowsPath: 'value' }]).success).toBe(false)
+    expect(parse([{ entityType: 'T', fields: [{ name: 'x', type: 'text', format: 'email' }] }]).success).toBe(false)
+  })
+
+  it('connectorEntityFields gives id, then the declared names, per entity type', () => {
+    const fields = connectorEntityFields({
+      entities: [TODO_TASKS, { entityType: 'TodoLists', fields: [{ name: 'id', type: 'text' }, { name: 'displayName', type: 'text' }] }],
+    } as Parameters<typeof connectorEntityFields>[0])
+    expect(fields.get('TodoTasks')).toEqual(['id', 'title', 'isCompleted', 'dueDate', 'listId'])
+    expect(fields.get('TodoLists')).toEqual(['id', 'displayName'])
+    expect(fields.has('PlannerTasks')).toBe(false)
+  })
+
+  it('connectorEntityFields of a manifest that declares none is empty', () => {
+    expect(connectorEntityFields({}).size).toBe(0)
   })
 })
