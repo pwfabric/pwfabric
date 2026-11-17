@@ -242,6 +242,32 @@ describe('validatePack — atoms', () => {
   })
 })
 
+describe('validatePack — block origins', () => {
+  const manifest = (origins: unknown): string =>
+    JSON.stringify({ id: 'media.map', kind: 'block', definition: { props: [], defaultProps: {}, canHaveChildren: false, origins } })
+
+  it('accepts a block that declares exact origins', () => {
+    const v = withIdentity(
+      { id: 'x', version: '1' },
+      { 'atoms/blocks/media/map/component.tsx': 'x', 'atoms/blocks/media/map/manifest.json': manifest({ frame: ['https://www.openstreetmap.org'] }) }
+    )
+    expect(v.issues).toEqual([])
+  })
+
+  it('reports a malformed declaration as BLOCK_ORIGIN_INVALID on the manifest', () => {
+    const v = withIdentity(
+      { id: 'x', version: '1' },
+      {
+        'atoms/blocks/media/map/component.tsx': 'x',
+        'atoms/blocks/media/map/manifest.json': manifest({ frame: ['https://www.openstreetmap.org/export/embed.html'], script: ['https://cdn.example.com'] }),
+      }
+    )
+    expect(codes(v, 'error')).toEqual(['BLOCK_ORIGIN_INVALID', 'BLOCK_ORIGIN_INVALID'])
+    expect(v.issues[0]?.path).toBe('atoms/blocks/media/map/manifest.json')
+    expect(v.issues.map((i) => i.message).join(' ')).toMatch(/definition\.origins — frame\.0:.*"https:\/\/www\.openstreetmap\.org"/)
+  })
+})
+
 describe('validatePack — media', () => {
   const hero = 'RIFF....WEBP'
   const heroHash = `sha256:${createHash('sha256').update(hero).digest('hex')}`

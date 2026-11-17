@@ -19,7 +19,7 @@
  *                attributes. Neither can be hashed ahead of time.
  *   img-src      'self' data: blob: [+ media origins]
  *   media-src    'self' data: blob: [+ media origins]
- *   frame-src    [media origins] — only when there are any
+ *   frame-src    [media origins + declared frame origins] — only when there are any
  *   font-src     'self' [+ the webfont file origin]
  *   connect-src  'self' [+ every origin the app's data and sign-in reach]
  *   base-uri     'self'  — a host that serves the app under a sub-path
@@ -31,13 +31,17 @@
  * Origins come from: absolute `rest` endpoints in the receipts; declared
  * engines' `host` templates filled from `connections.json` config;
  * the envelope `auth.json` addresses and an external issuer; `publish.json`
- * media and absolute media URLs in receipt props. A template that cannot be
+ * media and absolute media URLs in receipt props; and the `definition.origins`
+ * of every block type a page places (block-manifest), each added to the
+ * directive it names — the addresses a block's own code builds, which no
+ * prop carries. A template that cannot be
  * resolved at build time, and a compiled engine (whose code may reach any
  * origin), is listed in `unresolved` instead of being guessed.
  *
  * @module @pwfabric/cli/dev/csp
  */
 import { createHash } from 'node:crypto'
+import type { BlockOrigins } from '@pwfabric/contracts'
 import { isRecord } from './sources.js'
 
 /** Directive name → its sources, in the order they are written. */
@@ -78,6 +82,8 @@ export interface CspInputs {
   readonly media: readonly { readonly url: string }[]
   /** The webfont stylesheet the shell links, when any. */
   readonly webfontHref?: string | null
+  /** The block types the pages place, with their manifest's validated `definition.origins`. */
+  readonly blocks?: readonly { readonly atomId: string; readonly origins?: BlockOrigins }[]
 }
 
 /** Directives a `<meta http-equiv="Content-Security-Policy">` cannot carry (CSP3 §3.3). */
@@ -187,6 +193,9 @@ export function deriveCsp(input: CspInputs): AppCsp {
   const media = new Set<string>()
   const style = new Set<string>()
   const font = new Set<string>()
+  const img = new Set<string>()
+  const mediaOnly = new Set<string>()
+  const frame = new Set<string>()
 
   const addConnect = (value: string, source: string): void => {
     const o = originOf(value)
@@ -261,14 +270,23 @@ export function deriveCsp(input: CspInputs): AppCsp {
     if (o === 'https://fonts.googleapis.com') font.add('https://fonts.gstatic.com')
   }
 
-  const sorted = (s: Set<string>): string[] => [...s].sort()
+  // Placed blocks: what their own code reaches, by the directive it names.
+  const byDirective = { connect, frame, img, media: mediaOnly, font, style }
+  for (const block of input.blocks ?? []) {
+    for (const [directive, origins] of Object.entries(block.origins ?? {})) {
+      for (const o of origins ?? []) byDirective[directive as keyof typeof byDirective].add(o)
+    }
+  }
+
+  const sorted = (...sets: Set<string>[]): string[] => [...new Set(sets.flatMap((s) => [...s]))].sort()
+  const frames = sorted(media, frame)
   const directives: CspDirectives = {
     'default-src': ["'none'"],
     'script-src': ["'self'", 'blob:', scriptHash(input.importMapText)],
     'style-src': ["'self'", "'unsafe-inline'", ...sorted(style)],
-    'img-src': ["'self'", 'data:', 'blob:', ...sorted(media)],
-    'media-src': ["'self'", 'data:', 'blob:', ...sorted(media)],
-    ...(media.size > 0 ? { 'frame-src': sorted(media) } : {}),
+    'img-src': ["'self'", 'data:', 'blob:', ...sorted(media, img)],
+    'media-src': ["'self'", 'data:', 'blob:', ...sorted(media, mediaOnly)],
+    ...(frames.length > 0 ? { 'frame-src': frames } : {}),
     'font-src': ["'self'", ...sorted(font)],
     'connect-src': ["'self'", ...sorted(connect)],
     'base-uri': ["'self'"],

@@ -91,6 +91,23 @@ describe('content security policy', () => {
     ])
   })
 
+  it('adds the origins a placed block declares to their directives', () => {
+    const csp = deriveCsp({
+      ...base,
+      blocks: [
+        { atomId: 'media.interactive-map', origins: { frame: ['https://www.openstreetmap.org'], img: ['https://tile.openstreetmap.org'] } },
+        { atomId: 'data.feed', origins: { connect: ['https://api.example.com'], media: ['https://cdn.example.com'], font: ['https://f.example.com'], style: ['https://s.example.com'] } },
+        { atomId: 'text.title' },
+      ],
+    })
+    expect(csp.directives['frame-src']).toEqual(['https://www.openstreetmap.org'])
+    expect(csp.directives['img-src']).toEqual(["'self'", 'data:', 'blob:', 'https://tile.openstreetmap.org'])
+    expect(csp.directives['media-src']).toEqual(["'self'", 'data:', 'blob:', 'https://cdn.example.com'])
+    expect(csp.directives['connect-src']).toEqual(["'self'", 'https://api.example.com'])
+    expect(csp.directives['font-src']).toEqual(["'self'", 'https://f.example.com'])
+    expect(csp.directives['style-src']).toEqual(["'self'", "'unsafe-inline'", 'https://s.example.com'])
+  })
+
   it('resolves engine hosts the way a reader does: https, except explicit http on loopback', () => {
     expect(engineHostOrigin('{baseUrl}', { baseUrl: 'api.example.com/v1' })).toBe('https://api.example.com')
     expect(engineHostOrigin('http://api.example.com', {})).toBe('https://api.example.com')

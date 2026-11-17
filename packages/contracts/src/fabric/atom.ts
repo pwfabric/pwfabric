@@ -901,6 +901,76 @@ export interface AtomBlockDefinitionMetadata {
    * container accepts any child.
    */
   readonly allowedChildTraits?: readonly string[]
+  /**
+   * The origins the block's own code reaches, by CSP directive (see
+   * {@link BlockOrigins}). Absent: the block reaches only what its props and
+   * the app already name.
+   */
+  readonly origins?: BlockOrigins
+}
+
+/**
+ * The CSP directives a block may name origins for, as the short names a
+ * manifest writes (`frame` is `frame-src`). `script` is not one: block and
+ * engine code is verified and loaded by the runtime, never fetched by a block.
+ */
+export const BLOCK_ORIGIN_DIRECTIVES = ['connect', 'frame', 'img', 'media', 'font', 'style'] as const
+export type BlockOriginDirective = (typeof BLOCK_ORIGIN_DIRECTIVES)[number]
+
+/**
+ * What a block's code reaches that no prop or app declaration names — an
+ * address it builds itself, like a map embed. A host adds these origins to the
+ * app's Content Security Policy for every block type placed on a page
+ * (pwapp-format §2.1). Exact origins only: `scheme://host[:port]`, http(s),
+ * lower case, no path, no wildcard.
+ */
+export type BlockOrigins = { readonly [D in BlockOriginDirective]?: readonly string[] }
+
+/** The issue code (`params.code`) of a declared origin that is not an exact origin. */
+export const BLOCK_ORIGIN_INVALID = 'BLOCK_ORIGIN_INVALID'
+
+/** Why `value` is not an exact http(s) origin, or `null` when it is one. */
+export function blockOriginProblem(value: string): string | null {
+  if (value.includes('*')) return 'a wildcard is not an exact origin'
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return 'not an absolute address'
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return 'only http and https origins are allowed'
+  if (url.origin !== value) return `write the origin alone, exactly as "${url.origin}" (no path, query or trailing slash)`
+  return null
+}
+
+const blockOriginSchema = z.string().superRefine((value, ctx) => {
+  const problem = blockOriginProblem(value)
+  if (problem) {
+    ctx.addIssue({
+      code: 'custom',
+      params: { code: BLOCK_ORIGIN_INVALID },
+      message: `${BLOCK_ORIGIN_INVALID}: "${value}" — ${problem}`,
+    })
+  }
+})
+
+export const BlockOriginsSchema = z
+  .object(Object.fromEntries(BLOCK_ORIGIN_DIRECTIVES.map((d) => [d, z.array(blockOriginSchema).optional()])) as {
+    [D in BlockOriginDirective]: z.ZodOptional<z.ZodArray<typeof blockOriginSchema>>
+  })
+  .strict()
+
+export type BlockOriginsValidation =
+  { readonly ok: true; readonly value: BlockOrigins } | { readonly ok: false; readonly issues: readonly string[] }
+
+/** Validate a block's `definition.origins` without throwing. Issues read `path: message`. */
+export function safeParseBlockOrigins(input: unknown): BlockOriginsValidation {
+  const parsed = BlockOriginsSchema.safeParse(input)
+  if (parsed.success) return { ok: true, value: parsed.data as BlockOrigins }
+  return {
+    ok: false,
+    issues: parsed.error.issues.map((i) => (i.path.length ? `${i.path.map(String).join('.')}: ${i.message}` : i.message)),
+  }
 }
 
 const traitNameSchema = z.string().regex(/^[a-z][a-z0-9-]*$/, 'trait names must be kebab-case')
@@ -914,6 +984,7 @@ export const AtomBlockDefinitionMetadataSchema = z
     icon: z.string().optional(),
     traits: z.array(traitNameSchema).optional(),
     allowedChildTraits: z.array(traitNameSchema).optional(),
+    origins: BlockOriginsSchema.optional(),
   })
   .strict()
 
