@@ -16,7 +16,7 @@ import type { Block } from '@pwfabric/core'
 import { BREAKPOINT_ORDER } from '@pwfabric/core'
 import { evaluate, interpolate, createExpressionContext } from '../surface/expression.js'
 import type { ExpressionContext } from '../surface/expression.js'
-import { isExpressionLink, isLinkMember, type LinkHref } from './links.js'
+import { isExpressionLink, isLinkMember, safeDataLink, type LinkHref } from './links.js'
 
 /**
  * The expression scope plus how this page writes an in-app link. Carried in
@@ -104,17 +104,20 @@ function resolveValue(value: unknown, context: ResolveContext): unknown {
       resolved[key] = resolveValue(val, context)
       // A link whose page is an expression (`href: "{{item.url}}"`) was left
       // as written by the host; now that its value is known, it is written in
-      // the active router's form. A link that did not resolve stays as it is.
+      // the active router's form. Its value came from DATA, so it must be a
+      // link and nothing else: `javascript:alert(1)` in a row is dropped and
+      // the link has no href (safeDataLink). A link that did not resolve
+      // stays as it is.
       const href = resolved[key]
       if (
-        context.linkHref &&
         typeof val === 'string' &&
         typeof href === 'string' &&
         href !== val &&
         isExpressionLink(val) &&
         isLinkMember(key, value as Record<string, unknown>)
       ) {
-        resolved[key] = context.linkHref(href)
+        const safe = safeDataLink(href)
+        resolved[key] = safe === undefined ? undefined : context.linkHref ? context.linkHref(safe) : safe
       }
     }
     return resolved

@@ -22,7 +22,7 @@
 import * as React from 'react'
 import { SurfaceRenderer } from './renderer.js'
 import { resolveBlockExpressions } from './resolve-expressions.js'
-import type { LinkHref } from './links.js'
+import { readableUrl, urlSchemeOf, type LinkHref } from './links.js'
 import { endpointMissingPathValue, resolveEndpoint } from './endpoint.js'
 import { resolveQueryState } from './query-state.js'
 import { dataSourceCacheKey, type SurfaceDataCache } from './data-cache.js'
@@ -953,11 +953,9 @@ export function isSurfaceAction(value: unknown): value is SurfaceAction {
  */
 export function isSafeNavigateUrl(url: unknown): url is string {
   if (typeof url !== 'string') return false
-  const stripped = url.replace(/[^!-~]/g, '')
-  if (stripped === '') return false
-  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(stripped)
-  if (!scheme) return true // relative path / query / hash / protocol-relative
-  const s = (scheme[1] ?? '').toLowerCase()
+  if (readableUrl(url) === '') return false
+  const s = urlSchemeOf(url)
+  if (s === null) return true // relative path / query / hash / protocol-relative
   return s === 'http' || s === 'https'
 }
 

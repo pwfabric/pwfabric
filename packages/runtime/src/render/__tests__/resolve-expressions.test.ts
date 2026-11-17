@@ -410,3 +410,41 @@ describe('resolveBlockExpressions — linkHref', () => {
     expect(rowProps(out).href).toBe('/session?id=4')
   })
 })
+
+describe('resolveBlockExpressions — a link from data is a link or nothing', () => {
+  const L = DEFAULT_BLOCK_LAYOUT
+  const hrefOf = (url: string, linkHref?: (h: string) => string): unknown => {
+    const blocks: Block[] = [
+      {
+        id: 'list',
+        type: 'container',
+        layout: L,
+        repeat: '{{rows}}',
+        props: {},
+        children: [{ id: 'row', type: 'link', layout: L, props: { href: '{{item.url}}', action: { type: 'navigate', url: '{{item.url}}' } } }],
+      } as Block,
+    ]
+    const out = resolveBlockExpressions(blocks, { rows: [{ url }] }, undefined, linkHref ? { linkHref } : {})
+    const props = (at(out, 0).children?.[0]?.props ?? {}) as Record<string, unknown>
+    expect((props.action as Record<string, unknown>).url).toBe(props.href)
+    return props.href
+  }
+  const linkHref = (h: string): string => (h.startsWith('/') ? `#${h}` : h)
+
+  for (const bad of ['javascript:alert(1)', 'JAVASCRIPT:alert(1)', 'java\tscript:alert(1)', ' javascript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'vbscript:x', '//evil.example/x', '/\\evil.example/x', 'session?id=4']) {
+    it(`drops ${JSON.stringify(bad)} — with and without a router`, () => {
+      expect(hrefOf(bad, linkHref)).toBeUndefined()
+      expect(hrefOf(bad)).toBeUndefined()
+    })
+  }
+
+  it('keeps root-relative paths (for the router), fragments and http/https/mailto/tel', () => {
+    expect(hrefOf('/session?id=4', linkHref)).toBe('#/session?id=4')
+    expect(hrefOf('#speakers', linkHref)).toBe('#speakers')
+    expect(hrefOf('https://example.com/x', linkHref)).toBe('https://example.com/x')
+    expect(hrefOf('HTTP://example.com', linkHref)).toBe('HTTP://example.com')
+    expect(hrefOf('mailto:hello@example.com', linkHref)).toBe('mailto:hello@example.com')
+    expect(hrefOf('tel:+15550100', linkHref)).toBe('tel:+15550100')
+    expect(hrefOf('/café', linkHref)).toBe('#/café')
+  })
+})

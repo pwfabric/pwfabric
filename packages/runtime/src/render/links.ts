@@ -40,3 +40,44 @@ export function isLinkMember(key: string, owner: Readonly<Record<string, unknown
 export function isExpressionLink(value: string): boolean {
   return value.startsWith('{{')
 }
+
+/**
+ * The scheme a browser will read from `url`, lower-cased, or null when it has
+ * none. A browser's URL parser DELETES tabs, newlines and other control
+ * characters before it reads the scheme, so `java\tscript:` is a `javascript:`
+ * URL; the scheme is judged on the string with them removed (`readableUrl`).
+ */
+export function urlSchemeOf(url: string): string | null {
+  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(readableUrl(url))
+  return scheme ? (scheme[1] ?? '').toLowerCase() : null
+}
+
+/** `url` as the browser parses it: without whitespace and control characters. */
+export function readableUrl(url: string): string {
+  return url.replace(/[^!-~]/g, '')
+}
+
+/** The schemes a link resolved from data may carry. */
+const LINK_SCHEMES: ReadonlySet<string> = new Set(['http', 'https', 'mailto', 'tel'])
+
+/**
+ * What a link whose value came from data may be: a root-relative path (`/x`,
+ * which the host then writes for its router), a fragment (`#x`), or an
+ * absolute URL with an allowed scheme. Anything else — `javascript:`,
+ * `data:`, a protocol-relative `//host` or `/\host`, a bare relative path — is
+ * `undefined`, and the link gets no href. Data is not the author: an author's
+ * literal link is checked when the page is validated; a row's value never is.
+ */
+export function safeDataLink(href: string): string | undefined {
+  // Judged on what the browser reads; the value itself is kept (a path may
+  // carry characters `readableUrl` removes, such as `/café`).
+  const url = readableUrl(href)
+  if (url === '') return undefined
+  const kept = href.trim()
+  const scheme = urlSchemeOf(url)
+  if (scheme !== null) return LINK_SCHEMES.has(scheme) ? kept : undefined
+  if (url.startsWith('#')) return kept
+  // `//host` and `/\host` (browsers read `\` as `/`) leave the origin.
+  if (url.startsWith('/') && !url.startsWith('//') && !url.startsWith('/\\')) return kept
+  return undefined
+}
