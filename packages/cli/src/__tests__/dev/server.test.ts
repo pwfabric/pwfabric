@@ -1,5 +1,5 @@
 import { request } from 'node:http'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LocalHost } from '../../host/types.js'
@@ -98,6 +98,40 @@ describe('dev server', () => {
     const receipt = (await (await get('/pwpack/surfaces/home.receipt.json')).json()) as { blocks: { props: { text: string } }[] }
     expect(receipt.blocks[0]?.props.text).toBe('Edited')
     expect(((await (await get('/blocks/manifest.json')).json()) as unknown[]).length).toBe(1)
+  })
+
+  it('does not reload the page for a file the app does not read', async () => {
+    // A screenshot saved into the app folder rebuilt the app and reloaded the
+    // open page — every piece of page state (a removed cart line, a chosen
+    // filter) went back to `initialState`, which looked like a resize bug.
+    const root = await app()
+    const lines: string[] = []
+    const server = track(await createDevServer({ root, port: 0, log: (l) => lines.push(l) }, { watch: { debounceMs: 50 } }))
+    const events = sse(new URL('/_pwf/events', server.url).href)
+    cleanups.push(async () => events.close())
+    await new Promise((r) => setTimeout(r, 200))
+    let reloads = 0
+    const count = (): void => {
+      void events.next('reload').then(() => {
+        reloads++
+        count()
+      })
+    }
+    count()
+    const builds = (): number => lines.filter((l) => /^built in/.test(l)).length
+    const before = builds()
+    await mkdir(join(root, 'shots'), { recursive: true })
+    await writeFile(join(root, 'shots/x.png'), new Uint8Array([0x89, 0x50, 0x4e, 0x47]))
+    await vi.waitFor(() => expect(builds()).toBeGreaterThan(before), { timeout: 30_000 })
+    await new Promise((r) => setTimeout(r, 300))
+    expect(reloads).toBe(0)
+
+    // A change the app does read still reloads it.
+    await writeFile(
+      join(root, 'app/surfaces/home.receipt.json'),
+      JSON.stringify({ title: 'Home', blocks: [{ id: 'hello', type: 'title', props: { text: 'Edited' } }] })
+    )
+    await vi.waitFor(() => expect(reloads).toBe(1), { timeout: 30_000 })
   })
 
   it('shows an overlay while the build has errors, and recovers', async () => {
