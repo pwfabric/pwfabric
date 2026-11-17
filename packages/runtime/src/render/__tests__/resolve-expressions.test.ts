@@ -454,6 +454,17 @@ describe('resolveBlockExpressions — a link from data is a link or nothing', ()
     expect(hrefOf('tel:+15550100', linkHref)).toBe('tel:+15550100')
     expect(hrefOf('/café', linkHref)).toBe('#/café')
   })
+
+  it('keeps a link to the app’s own media as a file link, relative to the shell', () => {
+    // A billing row's "Receipt (PDF)": the value is `pwpack/media/<file>`.
+    // Dropped as a bare relative path, the link block drew a bare <span>.
+    expect(hrefOf('pwpack/media/receipt-2026-11.pdf', linkHref)).toBe('pwpack/media/receipt-2026-11.pdf')
+    expect(hrefOf('pwpack/media/receipt-2026-11.pdf')).toBe('pwpack/media/receipt-2026-11.pdf')
+    expect(hrefOf('/pwpack/media/export.csv', linkHref)).toBe('pwpack/media/export.csv')
+    expect(hrefOf('./pwpack/media/export.csv')).toBe('pwpack/media/export.csv')
+    // …and nothing that climbs out of the media folder.
+    expect(hrefOf('pwpack/media/../project.json', linkHref)).toBeUndefined()
+  })
 })
 
 // ============================================================

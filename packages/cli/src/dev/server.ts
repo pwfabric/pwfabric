@@ -17,7 +17,7 @@
 import { createHash } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { extname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { CreateLocalHost, LocalHost } from '../host/index.js'
 import { assemblePwapp, type AssembleOptions, type AssembleResult } from './assemble.js'
 import { createCompileCache } from './compile.js'
@@ -28,6 +28,9 @@ import { withBaseHref } from './shell.js'
 import { PWF_DIR, type PackMemo } from './sources.js'
 import type { DevBuildResult, DevServer, DevServerOptions, StartDevServer } from './types.js'
 import { watchFolder, type WatchOptions, type Watcher } from './watcher.js'
+import { CONTENT_TYPES, contentTypeOf, isPagePath } from './content-types.js'
+
+export { contentTypeOf, isPagePath }
 
 export const DEFAULT_PORT = 4600
 export const DEFAULT_HOSTNAME = '127.0.0.1'
@@ -42,34 +45,6 @@ export interface DevServerInternals {
   readonly createHost?: CreateLocalHost
   /** Assembly options (runtime bundles, cache folder). */
   readonly assemble?: Pick<AssembleOptions, 'runtime' | 'cacheDir' | 'publishedAt'>
-}
-
-const CONTENT_TYPES: Readonly<Record<string, string>> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.map': 'application/json; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.avif': 'image/avif',
-  '.ico': 'image/x-icon',
-  '.woff2': 'font/woff2',
-  '.txt': 'text/plain; charset=utf-8',
-}
-
-export function contentTypeOf(path: string): string {
-  return CONTENT_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream'
-}
-
-/** A page path, not a file: no extension this server serves (a page id may carry a dot). */
-export function isPagePath(rel: string): boolean {
-  return !(extname(rel).toLowerCase() in CONTENT_TYPES)
 }
 
 function isLocalHost(value: unknown): value is LocalHost {

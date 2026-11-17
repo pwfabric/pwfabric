@@ -169,6 +169,8 @@ export {
   isHrefKey,
   isLinkMember,
   isExpressionLink,
+  isMediaLink,
+  mediaLinkOf,
   surfaceThemeToCSS,
 } from './render/index.js'
 // legacy first-party `*Block` component re-exports +
