@@ -38,6 +38,20 @@ its release, and no ordinary range (`^1.0.0`) picks one up.
    (`npm install @pwfabric/runtime@rc`); the channels the workflow knows are
    `alpha`, `beta`, `rc`, `next` and `canary`.
 4. A re-run after a partial failure publishes only what is not on npm yet.
+5. A green workflow does not mean every tarball can be downloaded yet: npm
+   can take about ten minutes after that before it serves all of them. On
+   2.1.0, `@pwfabric/core-2.1.0.tgz` answered 404 for about ten minutes after
+   the workflow succeeded, and installs failed. `npm view` shows the version
+   before its tarball is served, so before a downstream repository (the
+   foundation, the examples, a consumer) installs the release, check the
+   tarballs themselves:
+
+   ```sh
+   v=2.1.0
+   for p in contracts core runtime runner embed authoring pack compiler cli; do
+     curl -sfI -o /dev/null "https://registry.npmjs.org/@pwfabric/$p/-/$p-$v.tgz" && echo "ok $p" || echo "MISSING $p"
+   done
+   ```
 
 The first version npm ever sees of a package also becomes its `latest`,
 even when it is a release candidate; the first stable release takes `latest`

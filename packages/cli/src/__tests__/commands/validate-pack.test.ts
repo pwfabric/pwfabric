@@ -104,6 +104,50 @@ describe('pwf validate', () => {
     ])
   })
 
+  it('warns about a {{…}} in a bindable: false prop, nested too, and not in a bindable one', async () => {
+    const { root } = await created()
+    const sample = join(root, 'atoms', 'blocks', 'custom', 'sample')
+    await mkdir(sample, { recursive: true })
+    await writeFile(join(sample, 'component.tsx'), 'export default function Sample() { return null }')
+    await writeFile(
+      join(sample, 'manifest.json'),
+      JSON.stringify({
+        id: 'custom.sample',
+        kind: 'block',
+        version: '1.0.0',
+        name: 'sample',
+        state: 'stable',
+        knowledge: { purpose: 'p', useCases: ['u'], composesWith: [], antiPatterns: ['a'] },
+        definition: {
+          props: [
+            { name: 'code', bindable: false, jsonSchema: { type: 'string' } },
+            { name: 'steps', bindable: false, jsonSchema: { type: 'array' } },
+            { name: 'title', jsonSchema: { type: 'string' } },
+          ],
+          defaultProps: {},
+          canHaveChildren: false,
+        },
+      })
+    )
+    const receiptPath = join(root, 'app', 'surfaces', 'home.receipt.json')
+    const receipt = JSON.parse(await readFile(receiptPath, 'utf8'))
+    receipt.blocks.push(
+      { id: 's1', type: 'sample', props: { code: 'Hello {{state.name}}', title: '{{state.title}}' } },
+      { id: 's2', type: 'sample', props: { code: 'plain', steps: [{ say: 'no braces' }, { say: '{{ item.x }}' }] } },
+      { id: 's3', type: 'sample', props: { code: 'plain', steps: ['{a}'], title: 'x {{state.t}}' } }
+    )
+    await writeFile(receiptPath, JSON.stringify(receipt))
+
+    const c = capture(root)
+    expect(await main(['validate'], c.io)).toBe(0)
+    expect(c.out[0]).toBe('Warnings (2):')
+    expect(c.out[1]).toContain(
+      'BLOCK_PROP_NOT_BINDABLE app/surfaces/home.receipt.json: blocks[3] (sample "s1") sets code to "Hello {{state.name}}", but custom.sample declares code bindable: false; the {{…}} is not resolved and renders as written'
+    )
+    expect(c.out[2]).toContain('BLOCK_PROP_NOT_BINDABLE app/surfaces/home.receipt.json: blocks[4] (sample "s2") sets steps[1].say to "{{ item.x }}"')
+    expect(c.out.at(-1)).toContain('valid (0 errors, 2 warnings;')
+  })
+
   it('checks the receipts of a pack that is not an app, and nothing without an identity', async () => {
     const cwd = await tempDir()
     const receipt = JSON.stringify({ blocks: [{ type: 'pill', props: { nope: 1 } }] })

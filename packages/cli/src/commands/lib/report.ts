@@ -184,7 +184,8 @@ export function checkAccess(root: string): PackIssue[] {
 
 /**
  * Block props in the folder's receipts (`app/surfaces/*.receipt.json`) that do not fit the blocks' manifests
- * (`BLOCK_PROP_UNKNOWN`, `BLOCK_PROP_ENUM`, `BLOCK_PROP_TYPE`; warnings, as the
+ * (`BLOCK_PROP_UNKNOWN`, `BLOCK_PROP_ENUM`, `BLOCK_PROP_TYPE`,
+ * `BLOCK_PROP_NOT_BINDABLE`; warnings, as the
  * runtime renders them anyway). Block types resolve as `pwf dev` resolves them:
  * the app's own blocks first, then its pinned packs from `.pwf/packs/` in pin
  * order. A pack that is not cached contributes nothing (its pin is reported).

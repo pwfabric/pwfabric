@@ -8,6 +8,7 @@ import {
   checkBlockProps,
   checkReceiptBlockProps,
   isBinding,
+  isTemplate,
   packFromRecord,
   type BlockPropsCatalog,
 } from '../index.js'
@@ -33,6 +34,10 @@ const button = {
       { name: 'both', jsonSchema: { allOf: [{ type: 'string' }, { enum: ['a', 'b'] }] } },
       { name: 'shape', jsonSchema: { type: 'object', const: { a: 1 } } },
       { name: 'whatever', jsonSchema: { description: 'anything' } },
+      { name: 'code', bindable: false, jsonSchema: { type: 'string' } },
+      { name: 'sample', bindable: false },
+      { name: 'variant', bindable: false, jsonSchema: { enum: ['a', 'b'] } },
+      { name: 'caption', bindable: true },
     ],
   },
 }
@@ -115,6 +120,44 @@ describe('checkReceiptBlockProps', () => {
     expect(isBinding('a {{b}} c')).toBe(true)
     expect(isBinding('{a}')).toBe(false)
     expect(isBinding(3)).toBe(false)
+  })
+
+  it('warns about a template on a bindable: false prop, which renders as written', () => {
+    const [issue, ...rest] = check({ code: 'x = {{state.x}}' })
+    expect(rest).toEqual([])
+    expect(issue).toMatchObject({ severity: 'warning', code: 'BLOCK_PROP_NOT_BINDABLE', path: 'app/surfaces/home.receipt.json' })
+    expect(issue?.message).toBe(
+      'blocks[0] (button "b") sets code to "x = {{state.x}}", but control.button declares code bindable: false; the {{…}} is not resolved and renders as written'
+    )
+  })
+
+  it('finds a template nested in a bindable: false prop, and names where it is', () => {
+    const [issue] = check({ sample: { lines: ['plain', { text: '{{ item.name }}' }] } })
+    expect(issue?.code).toBe('BLOCK_PROP_NOT_BINDABLE')
+    expect(issue?.message).toContain('sets sample.lines[1].text to "{{ item.name }}"')
+    expect(check({ sample: [['{{a}}', '{{b}}']] })).toHaveLength(1)
+  })
+
+  it('leaves bindable props, literal values and non-templates alone', () => {
+    expect(check({ caption: '{{a}}', label: '{{a}}', code: 'no braces', sample: { a: ['{a}', 3, null, true] } })).toEqual([])
+    // Not a template for the runtime either: nothing between the braces, or a line break in an interpolation.
+    expect(check({ code: '{{}}' })).toEqual([])
+    expect(check({ code: 'a {{b\n}} c' })).toEqual([])
+  })
+
+  it('judges a bindable: false value as the literal it is', () => {
+    expect(codes({ variant: '{{state.v}}' })).toEqual(['BLOCK_PROP_NOT_BINDABLE', 'BLOCK_PROP_ENUM'])
+    expect(codes({ variant: 'a' })).toEqual([])
+  })
+
+  it('tells a template as the runtime does', () => {
+    expect(isTemplate('{{a}}')).toBe(true)
+    expect(isTemplate('a {{ b }} c')).toBe(true)
+    expect(isTemplate('{{\n  a\n}}')).toBe(true)
+    expect(isTemplate('{{}}')).toBe(false)
+    expect(isTemplate('a {{b\n}} c')).toBe(false)
+    expect(isTemplate('{a}')).toBe(false)
+    expect(isTemplate(3)).toBe(false)
   })
 
   it('walks children and skips unknown types and nodes without props', () => {

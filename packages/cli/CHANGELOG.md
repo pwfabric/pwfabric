@@ -1,5 +1,9 @@
 # @pwfabric/cli
 
+## Unreleased
+
+- Added: `pwf validate` (and `pwf pack`) warn `BLOCK_PROP_NOT_BINDABLE` about a `{{…}}` in a prop the block's manifest declares `bindable: false`, nested values included: since 2.1.0 the runtime leaves such a prop as written, so the mistake used to show only at render, as raw braces.
+
 ## 2.1.0
 
 - Fixed: `pwf run` and `pwf dev` answer a page path that contains a dot (`/layout.two-pane`) with the app shell; only a path ending in a file type the server serves is an asset, and a missing asset of a known type is still a 404.
