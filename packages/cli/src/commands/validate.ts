@@ -31,6 +31,10 @@ export const validate: Command = {
 
 Every packs[] pin is looked up in .pwf/packs/<id>@<version>/: a build that is
 not there is a warning, one whose content hash differs from the pin is an
-error. Exit code 1 when there is any error, 0 otherwise.`,
+error. Every block in app/surfaces/*.receipt.json is checked
+against its block's manifest (definition.props[].jsonSchema): an undeclared
+prop (BLOCK_PROP_UNKNOWN), a value outside the prop's enum (BLOCK_PROP_ENUM)
+or of the wrong JSON type (BLOCK_PROP_TYPE) is a warning; {{…}} bindings are
+not checked. Exit code 1 when there is any error, 0 otherwise.`,
   run: (args, io) => guard('validate', io, () => runValidate(args, io)),
 }

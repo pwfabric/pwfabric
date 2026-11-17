@@ -4,6 +4,7 @@
 
 - Added (minor): `pwpack.json` is written with `name`, `description` and `category` after `formatVersion`, and `tokens` after `requires` (key order `id, version, formatVersion, name, description, category, engines, requires, tokens, license, app, packs`).
 - Changed: `pwf create` writes `formatVersion` `1.1`.
+- Added: `pwf validate` (and `pwf pack`) warn about block props in the receipts (`app/surfaces/*.receipt.json`) that do not fit the block's manifest: `BLOCK_PROP_UNKNOWN`, `BLOCK_PROP_ENUM` (names the allowed values), `BLOCK_PROP_TYPE`. Block types resolve as in `pwf dev`: the app's own blocks first, then its pinned packs from `.pwf/packs/`. A button with `size: "sm"` used to render as `medium` without a word.
 
 ## 2.0.0
 

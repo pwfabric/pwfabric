@@ -12,7 +12,7 @@
  * be pinned). Nothing is fetched; every input is on disk.
  */
 import { join } from 'node:path'
-import { hashPack } from '@pwfabric/pack'
+import { blockTypeNames, hashPack } from '@pwfabric/pack'
 import { atomKindMeta } from '@pwfabric/contracts'
 import { compileSources, createCompileCache, type CompileCache, type CompiledAtom } from './compile.js'
 import { hasErrors, sortDiagnostics, type AssembleDiagnostic } from './diagnostics.js'
@@ -97,15 +97,9 @@ const enc = new TextEncoder()
 const json = (value: unknown): Uint8Array => enc.encode(JSON.stringify(value, null, 2))
 const hexOf = (hash: string): string => hash.replace(/^sha256:/, '')
 
-/** Every name a block atom answers to in a receipt: its id, its manifest name, and its short forms. */
+/** Every name a block atom answers to in a receipt: its id, its manifest name, and its short forms (`blockTypeNames`). */
 export function blockNames(atom: Pick<CompiledAtom, 'id' | 'manifest'>): string[] {
-  const names = new Set<string>([atom.id])
-  const name = atom.manifest?.['name']
-  if (typeof name === 'string' && name) names.add(name)
-  const dot = atom.id.indexOf('.')
-  if (dot >= 0) names.add(atom.id.slice(dot + 1))
-  names.add(atom.id.slice(atom.id.lastIndexOf('.') + 1))
-  return [...names]
+  return blockTypeNames(atom.id, atom.manifest)
 }
 
 function titleOf(plan: unknown, id: string): string {
