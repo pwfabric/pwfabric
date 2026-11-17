@@ -20,6 +20,8 @@ import { ATOM_KINDS,
   AtomFileManifestSchema,
   CONNECTOR_ENTITY_FIELD_TYPES,
   connectorEntityFields,
+  BLOCK_ORIGIN_INVALID,
+  safeParseBlockOrigins,
   DEFAULT_APPEARANCE_THEME,
 } from '../../index.js'
 import type { AtomRef } from '../../index.js'
@@ -784,5 +786,85 @@ describe('AtomFileManifest.entities — the row fields a connector serves', () =
 
   it('connectorEntityFields of a manifest that declares none is empty', () => {
     expect(connectorEntityFields({}).size).toBe(0)
+  })
+})
+
+// ============================================================
+// definition.origins — what a block's own code reaches
+// ============================================================
+
+describe('block definition origins', () => {
+  const valid = {
+    props: [],
+    defaultProps: {},
+    canHaveChildren: false,
+  }
+
+  it('accepts exact origins by directive', () => {
+    const r = AtomBlockDefinitionMetadataSchema.safeParse({
+      ...valid,
+      origins: {
+        frame: ['https://www.openstreetmap.org'],
+        img: ['https://tile.openstreetmap.org'],
+        connect: ['https://api.example.com:8443'],
+        media: ['https://cdn.example.com'],
+        font: ['https://fonts.example.com'],
+        style: ['https://css.example.com'],
+      },
+    })
+    expect(r.success).toBe(true)
+  })
+
+  it('rejects an address that is not an exact origin, with the BLOCK_ORIGIN_INVALID code', () => {
+    for (const bad of [
+      'https://www.openstreetmap.org/export/embed.html',
+      'https://www.openstreetmap.org/',
+      'https://*.openstreetmap.org',
+      '*',
+      'www.openstreetmap.org',
+      'javascript:alert(1)',
+      'ftp://files.example.com',
+      'HTTPS://WWW.OPENSTREETMAP.ORG',
+      'https://example.com?x=1',
+      'https://example.com:443',
+      "'self'",
+    ]) {
+      const r = AtomBlockDefinitionMetadataSchema.safeParse({ ...valid, origins: { frame: [bad] } })
+      expect(r.success, bad).toBe(false)
+      const issue = r.error?.issues[0] as { path: PropertyKey[]; params?: { code?: string }; message: string }
+      expect(issue.params?.code, bad).toBe(BLOCK_ORIGIN_INVALID)
+      expect(issue.path).toEqual(['origins', 'frame', 0])
+    }
+  })
+
+  it('rejects a directive it does not know (script code is verified, never allowed in)', () => {
+    expect(
+      AtomBlockDefinitionMetadataSchema.safeParse({ ...valid, origins: { script: ['https://cdn.example.com'] } }).success
+    ).toBe(false)
+  })
+
+  it('reads a declaration with safeParseBlockOrigins', () => {
+    expect(safeParseBlockOrigins({ frame: ['https://www.openstreetmap.org'] })).toEqual({
+      ok: true,
+      value: { frame: ['https://www.openstreetmap.org'] },
+    })
+    const bad = safeParseBlockOrigins({ frame: ['https://www.openstreetmap.org/export'] })
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) expect(bad.issues[0]).toMatch(/^frame\.0: /)
+  })
+
+  it('is accepted on a whole block manifest', () => {
+    expect(
+      AtomFileManifestSchema.safeParse({
+        id: 'media.interactive-map',
+        kind: 'block',
+        version: '0.1.0',
+        name: 'interactive-map',
+        state: 'experimental',
+        category: 'media',
+        knowledge: { purpose: 'A map', useCases: ['Offices'], composesWith: [], antiPatterns: ['Routing'] },
+        definition: { ...valid, origins: { frame: ['https://www.openstreetmap.org'] } },
+      }).success
+    ).toBe(true)
   })
 })

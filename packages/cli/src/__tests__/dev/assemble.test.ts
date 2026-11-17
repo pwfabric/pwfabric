@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -162,6 +162,36 @@ describe('assemblePwapp', () => {
     r = await assemblePwapp(root, { cacheDir: null })
     expect(r.ok, codes(r).join()).toBe(true)
     expect(r.diagnostics.find((d) => d.code === 'NON_HOST_IMPORT')?.severity).toBe('warning')
+  })
+
+  it('allows the origins a placed block declares, and not those of a block no page places', async () => {
+    const root = await app()
+    const kit = join(root, ...PACK_REL)
+    const withOrigins = async (rel: string, origins: unknown): Promise<void> => {
+      const m = JSON.parse(await readFile(join(kit, rel), 'utf8')) as { definition: Record<string, unknown> }
+      await writeFile(join(kit, rel), JSON.stringify({ ...m, definition: { ...m.definition, origins } }))
+    }
+    // Placed on home: its origin is allowed.
+    await withOrigins('atoms/blocks/text/title/manifest.json', { frame: ['https://www.openstreetmap.org'] })
+    // Installed but placed nowhere: its origin is not.
+    await mkdir(join(kit, 'atoms/blocks/media/map'), { recursive: true })
+    await cp(join(kit, 'atoms/blocks/text/title/component.tsx'), join(kit, 'atoms/blocks/media/map/component.tsx'))
+    const title = JSON.parse(await readFile(join(kit, 'atoms/blocks/text/title/manifest.json'), 'utf8')) as Record<string, unknown>
+    await writeFile(
+      join(kit, 'atoms/blocks/media/map/manifest.json'),
+      JSON.stringify({ ...title, id: 'media.map', category: 'media', name: 'map', definition: { ...(title['definition'] as object), origins: { connect: ['https://tiles.example.com'] } } })
+    )
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const policy = (parse(r.files.get('publish.json')) as { csp: { policy: string } }).csp.policy
+    expect(policy).toContain('frame-src https://www.openstreetmap.org')
+    expect(policy).not.toContain('tiles.example.com')
+
+    // A malformed declaration on a placed block fails the build with its code.
+    await withOrigins('atoms/blocks/text/title/manifest.json', { frame: ['https://www.openstreetmap.org/export/embed.html'] })
+    const bad = await assemblePwapp(root, { cacheDir: null })
+    expect(bad.ok).toBe(false)
+    expect(bad.diagnostics.find((d) => d.code === 'BLOCK_ORIGIN_INVALID')).toMatchObject({ severity: 'error' })
   })
 
   it('refuses a folder that is not an app, or not a pwpack at all', async () => {

@@ -13,7 +13,7 @@
  */
 import { join } from 'node:path'
 import { blockTypeNames, hashPack } from '@pwfabric/pack'
-import { atomKindMeta } from '@pwfabric/contracts'
+import { atomKindMeta, safeParseBlockOrigins, type BlockOrigins } from '@pwfabric/contracts'
 import { compileSources, createCompileCache, type CompileCache, type CompiledAtom } from './compile.js'
 import { hasErrors, sortDiagnostics, type AssembleDiagnostic } from './diagnostics.js'
 import {
@@ -100,6 +100,27 @@ const hexOf = (hash: string): string => hash.replace(/^sha256:/, '')
 /** Every name a block atom answers to in a receipt: its id, its manifest name, and its short forms (`blockTypeNames`). */
 export function blockNames(atom: Pick<CompiledAtom, 'id' | 'manifest'>): string[] {
   return blockTypeNames(atom.id, atom.manifest)
+}
+
+/**
+ * A placed block's `definition.origins` (block-manifest): the origins its own
+ * code reaches. A malformed declaration is an error, not a guess.
+ */
+function declaredOrigins(atom: CompiledAtom, diagnostics: AssembleDiagnostic[]): { origins?: BlockOrigins } {
+  const definition = atom.manifest?.['definition']
+  const origins = isRecord(definition) ? definition['origins'] : undefined
+  if (origins === undefined) return {}
+  const result = safeParseBlockOrigins(origins)
+  if (result.ok) return { origins: result.value }
+  for (const issue of result.issues) {
+    diagnostics.push({
+      severity: 'error',
+      code: 'BLOCK_ORIGIN_INVALID',
+      message: `${atomLabel(atom)}: definition.origins — ${issue}`,
+      path: atom.relPath,
+    })
+  }
+  return {}
 }
 
 function titleOf(plan: unknown, id: string): string {
@@ -214,6 +235,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     }
   }
   const used = new Set<CompiledAtom>()
+  const placedBlocks: { atomId: string; origins?: BlockOrigins }[] = []
   const blockManifest: BlockManifestEntry[] = []
   const modules = new Map<string, Uint8Array>()
   const firstUse = new Map<string, Page>()
@@ -230,6 +252,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       })
       continue
     }
+    if (!used.has(atom)) placedBlocks.push({ atomId: atom.id, ...declaredOrigins(atom, diagnostics) })
     used.add(atom)
     if (candidates.length > 1) {
       diagnostics.push({
@@ -364,6 +387,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     authDefinition: authDoc,
     media: media.records,
     webfontHref: webfontStylesheetHref(themeWebfonts(config)),
+    blocks: placedBlocks,
   })
   files.set('index.html', shell(csp.meta))
   files.set('_headers', enc.encode(headersFile(csp.header)))

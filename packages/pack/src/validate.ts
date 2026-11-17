@@ -6,6 +6,7 @@
  */
 import {
   classifyPackPath,
+  safeParseBlockOrigins,
   safeParsePwpackIdentity,
   type AtomRef,
   type PwpackIdentity,
@@ -105,7 +106,8 @@ function parseJson(bytes: Uint8Array): { ok: true; value: unknown } | { ok: fals
  * has no provenance entry (see `mediaDeclarations`); an `app/content/<typeId>.json`
  * for an undeclared entity, not shaped
  * `{ data: [...] }`, or with a record whose `id` is missing, not a UUID or
- * repeated.
+ * repeated; a block manifest whose `definition.origins` is not a map of
+ * known directives to exact origins (`BLOCK_ORIGIN_INVALID`).
  *
  * Warnings: two paths that collide on a case-insensitive file system;
  * unknown top-level entries; unknown families under `atoms/`; the
@@ -362,12 +364,29 @@ export function validatePack(pack: PackFolder): PackValidation {
 
   // ---- atoms ----
   const firstDir = new Map<string, string>()
+  const blockDirs = new Set<string>()
   for (const { ref, dir } of atomOccurrences(pack)) {
     const key = `${ref.kind}:${ref.id}`
+    if (ref.kind === 'block') blockDirs.add(dir)
     const seenDir = firstDir.get(key)
     if (seenDir === undefined) firstDir.set(key, dir)
     else if (seenDir !== dir) {
       add('error', 'DUPLICATE_ATOM', `${key} comes from both ${seenDir} and ${dir}`, ref.relPath)
+    }
+  }
+  // A block's declared origins go into every app's Content Security Policy
+  // that places it; a malformed one would open the policy wider than meant,
+  // or not at all.
+  for (const dir of blockDirs) {
+    const path = `${dir}manifest.json`
+    const bytes = pack.files.get(path)
+    const parsed = bytes ? parseJson(bytes) : undefined
+    if (!parsed?.ok || !isRecord(parsed.value) || !isRecord(parsed.value['definition'])) continue
+    const origins = parsed.value['definition']['origins']
+    if (origins === undefined) continue
+    const result = safeParseBlockOrigins(origins)
+    if (!result.ok) {
+      for (const issue of result.issues) add('error', 'BLOCK_ORIGIN_INVALID', `${path} definition.origins — ${issue}`, path)
     }
   }
 
