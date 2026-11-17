@@ -176,7 +176,6 @@ export const DEFAULT_HELPERS: Record<string, (...args: unknown[]) => unknown> = 
   upper: (s: unknown) => String(s).toUpperCase(),
   lower: (s: unknown) => String(s).toLowerCase(),
   trim: (s: unknown) => String(s).trim(),
-  length: (s: unknown) => (Array.isArray(s) ? s.length : String(s).length),
   concat: (...args: unknown[]) => args.map(String).join(''),
 
   // Number helpers

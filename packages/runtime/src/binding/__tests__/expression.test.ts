@@ -476,6 +476,12 @@ describe('evaluateExpression - helpers', () => {
     }
   })
 
+  it('length of something that is not a list or a string is 0', () => {
+    expect(evaluateExpression('length(data.missing)', context)).toEqual({ success: true, value: 0 })
+    expect(evaluateExpression('length(null)', context)).toEqual({ success: true, value: 0 })
+    expect(evaluateExpression("length('ab')", context)).toEqual({ success: true, value: 2 })
+  })
+
   it('should call type check helpers', () => {
     expect(evaluateExpression('isArray(data.items)', context)).toEqual({
       success: true,
