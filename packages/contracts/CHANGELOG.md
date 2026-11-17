@@ -1,5 +1,16 @@
 # @pwfabric/contracts
 
+## 2.2.0
+
+- Changed (behaviour, documented meaning): a data source's `fallback` is sample data for a source **nothing is connected** to serve (no registered connector, no entity facade, no records base). A real failure binds no rows, whatever `fallback` says (data-protocol §2.5; see `@pwfabric/runtime`).
+- Added (minor): `prepareRecordWrite(input)` — the record write contract every server that hosts an app's records runs on a create and an update: envelope members (`id`, `entityType`, `createdAt`, `updatedAt`) are dropped; a field the entity does not declare is refused; a field declared `server` (`"owner"`, `"createdAt"`, `"updatedAt"` or `{ "default": v }`) is set by the server, and a client value for it is refused, not dropped (a `default` field may be changed by an update); declared types are checked and stored as their type (`text`, `number`, `boolean`, `date`, `relation`, and new `enum` with `values`; a number or boolean sent as a string is accepted, a blank non-text value means no value); a `required` field must have a value and an update may not clear it. Every refusal is one `400 VALIDATION_FAILED` whose message lists `<field>: <reason>` joined with `; `. Also exported: `RECORD_SERVER_ROLES`, `RECORD_ENVELOPE_MEMBERS`, `isRecordServerField`, `readRecordFieldValue` and the types `RecordServerRole`, `RecordServerField`, `RecordFieldDeclaration`, `RecordWriteInput`, `RecordWriteResult`. A platform record backend implements the same contract.
+- Added (minor): the `write` action in `surfaceActionSchema` — `{ type: "write", sourceId, op: "create" | "update" | "delete", id?, values?, statusKeys?: { loading, success, error, message, detail } }`.
+- Added (minor): `pwpack.json` `app.notFound` (`PwpackIdentityApp.notFound`) — the key of the app's own not-found surface; it is not a route and stays out of `surfaceOrder`.
+- Added (minor): `notFoundWhenEmpty` on a data source (`dataSourceSchema`) — the source is the record the page shows; settled with no record, the page is not found.
+- Added (minor): `urlState` in the persistence capability config (`persistenceCapabilityConfigSchema`) — state keys that live in the page's address query.
+- Added (minor): a theme may carry block colours the cascade has no name for (`codeSurface`, `codeHeader`, `codeText`, `codeMuted`, `codeBorder`, or any other camelCase name). `surfaceThemeToCSS` emits them as `--pw-color-<kebab>` (`--pw-color-code-surface`), they cascade like any colour, and their dark values come from `darkTheme.colors`. A name that is not camelCase, a value that could leave its declaration, or a token the cascade emits or derives itself is not taken. New export: `extraColorVars(colors)`; `SurfaceThemeColors` accepts the extra names.
+- Added (minor): every allow-listed webfont carries metric-matched fallback metrics (`AllowedWebfont.fallback`, type `WebfontFallback`: `local` Arial / Times New Roman / Courier New, `sizeAdjust`, `ascent`, `descent`, `lineGap`), so a host can declare a `"<Family> Fallback"` face and the text does not move when the webfont arrives.
+
 ## 2.1.0
 
 - Added (minor): `definition.origins` on a block manifest — the exact origins a block's own code reaches, by CSP directive (`connect`, `frame`, `img`, `media`, `font`, `style`); `BlockOriginsSchema`, `safeParseBlockOrigins`, `BLOCK_ORIGIN_INVALID`.

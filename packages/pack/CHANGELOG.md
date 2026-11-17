@@ -1,9 +1,10 @@
 # @pwfabric/pack
 
-## Unreleased
+## 2.2.0
 
 - Added: `checkBlockProps` / `checkReceiptBlockProps` warn `BLOCK_PROP_NOT_BINDABLE` when a receipt puts a `{{…}}` template on a prop its block manifest declares `bindable: false` — anywhere in the value, nested lists and objects included. The runtime leaves such a prop as written, so the braces would render. The message names the block, the prop (with the path inside its value) and the template; a prop with no `bindable` declaration is bindable. A `bindable: false` value is now also checked against its schema as the literal it is (a template there is no longer skipped as a binding).
 - Added: `isTemplate(value)` — whether a string is a template the runtime resolves; the runtime's own test, mirrored. `BlockPropDescriptor` carries `bindable`.
+- Added: `validatePack` knows `pwpack.json` `app.notFound`: its receipt must exist like the entry's and the routes', it is not reported as a surface outside `surfaceOrder`, and listing it in `surfaceOrder` too is a warning (`APP_NOT_FOUND_IS_A_ROUTE`).
 
 ## 2.1.0
 

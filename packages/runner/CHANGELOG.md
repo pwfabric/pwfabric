@@ -1,5 +1,18 @@
 # @pwfabric/runner
 
+## 2.2.0
+
+- Fixed: under the hash router, an in-page anchor (`href: "#rsvp"`, a button's `location.href = "#rsvp"`, a `navigate` to `#rsvp`) keeps the page in the address — `#/session?id=1#rsvp` — so a reload or a shared link lands on the same page at the anchor (it opened the entry page). A link click adds one history entry; `#` alone goes to the top of the page shown. Under the path router an anchor stays on the current path and query instead of resolving against `<base href>`. A jump within the page scrolls smoothly (instantly under `prefers-reduced-motion: reduce`).
+- Added (minor): the page title follows a title with expressions (`onTitle`): `document.title` is the app title while the record loads or is missing, then `<App> — <Page>`. Likewise each page's `<meta name="description">` (`onDescription`); `PwappProject.description` is the app's own, used wherever a page states none.
+- Added (minor): `PwappProject.locale` is passed to the renderer as `locale`.
+- Added (minor): the app's own not-found page — `PwappProject.notFoundSurfaceId` — is drawn like any page, inside the app's shell, when the address names no page or a `notFoundWhenEmpty` source finds no record (same address). The runner's own not-found page is the fallback only.
+- Added: a split shell's selection and the `urlState` keys are read from and written to the route's query (`#/reference?endpoint=x`), and the selection is seeded as page state.
+- Fixed: a link to `pwpack/media/<file>` is not rewritten as a route; an anchor lookup falls back to `[data-block-id]`.
+- Changed: the fallback session pill is a bar docked in the page flow after the app; it no longer covers content.
+- Changed (behaviour, hosts that serve a pwapp must act on it): the runner loads the renderer itself, the first time it draws a page — `runApp({ renderer })`, default `'./assets/embed.js'`; a page that defines `window.PWFabric` already keeps its own. A visitor held at the sign-in gate never downloads it. `runner.js` has no static import of a shimmed specifier (link rules are bundled from `@pwfabric/runtime/render/links`; `createConnectorEngineRegistry` and `zod` are dynamic imports; the preview bridge checks its message shapes by hand). Before taking the previous page down it waits for the next page's block modules (`PWFabric.loadBlocks`).
+- Changed: the runner asks for `pwpack/auth.json` only when `project.json` `identity.door` is not `false` (no more 404 for an app built without a sign-in host).
+- Changed: `runner.js` is minified (119 KB → 86 KB) and ships no source map (`sourceMappingURL` stripped).
+
 ## 2.1.0
 
 - Fixed: `rewriteHrefs` leaves a link that starts with an expression as written; `linkHrefFor(entry, toHref)` rewrites it once resolved, the same way.
