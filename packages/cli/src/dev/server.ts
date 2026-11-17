@@ -65,6 +65,11 @@ export function contentTypeOf(path: string): string {
   return CONTENT_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream'
 }
 
+/** A page path, not a file: no extension this server serves (a page id may carry a dot). */
+export function isPagePath(rel: string): boolean {
+  return !(extname(rel).toLowerCase() in CONTENT_TYPES)
+}
+
 function isLocalHost(value: unknown): value is LocalHost {
   return (
     value !== null &&
@@ -237,7 +242,7 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
       return
     }
     const current = state
-    const isPage = rel === 'index.html' || extname(rel) === ''
+    const isPage = rel === 'index.html' || isPagePath(rel)
     if (isPage && current && !current.ok) {
       send(res, 200, CONTENT_TYPES['.html'] as string, overlayHtml(current.diagnostics), head)
       return
@@ -246,7 +251,7 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
     const file =
       rel === '_headers'
         ? undefined
-        : (current?.files.get(rel) ?? (extname(rel) === '' ? current?.files.get('index.html') : undefined))
+        : (current?.files.get(rel) ?? (isPagePath(rel) ? current?.files.get('index.html') : undefined))
     if (!file) {
       send(res, 404, CONTENT_TYPES['.txt'] as string, `not found: /${rel}`, head)
       return

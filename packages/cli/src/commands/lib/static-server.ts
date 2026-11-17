@@ -79,11 +79,21 @@ async function load(source: StaticSource, rel: string): Promise<Uint8Array | nul
   return new Uint8Array(await readFile(abs))
 }
 
+/**
+ * Whether a request path names a page rather than a file: its last segment
+ * does not end in an extension this server serves. A page id may carry a dot
+ * (`layout.two-pane`), so "has no extension" is not the test — only a known
+ * file type makes a path an asset, and a missing asset stays a 404.
+ */
+export function isPagePath(rel: string): boolean {
+  return !(extname(rel).toLowerCase() in CONTENT_TYPES)
+}
+
 /** Resolves a request to a file: the path itself, `<path>/index.html`, then the SPA fallback for page paths. */
 export async function resolveRequest(source: StaticSource, rel: string): Promise<{ path: string; body: Uint8Array } | null> {
   const candidates = rel === '' ? ['index.html'] : [rel, `${rel}/index.html`]
-  // A path whose last segment has no extension is a page path: answer it with the shell.
-  if (rel !== '' && extname(rel) === '') candidates.push('index.html')
+  // A page path is answered with the shell.
+  if (rel !== '' && isPagePath(rel)) candidates.push('index.html')
   for (const path of candidates) {
     const body = await load(source, path)
     if (body) return { path, body }
