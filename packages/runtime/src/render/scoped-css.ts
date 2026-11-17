@@ -98,6 +98,22 @@ export function collectScopedCss(
  */
 export const FLEX_HOIST_KEYS = ['flex', 'flexGrow', 'flexShrink', 'flexBasis'] as const
 
+/**
+ * Where a block sits in its parent's grid. The grid item is the WRAPPER the
+ * renderer draws (it carries the `layout.span` column too); on the component
+ * root, one level down, `gridColumn: {xs: 'span 12', md: 'span 4'}` placed
+ * nothing — the root is the wrapper's only child, not a grid item.
+ */
+export const GRID_PLACEMENT_KEYS = [
+  'gridColumn',
+  'gridColumnStart',
+  'gridColumnEnd',
+  'gridRow',
+  'gridRowStart',
+  'gridRowEnd',
+  'gridArea',
+] as const
+
 export const LAYOUT_HOIST_KEYS = [
   'margin',
   'marginTop',
@@ -107,6 +123,7 @@ export const LAYOUT_HOIST_KEYS = [
   'maxWidth',
   'minWidth',
   ...FLEX_HOIST_KEYS,
+  ...GRID_PLACEMENT_KEYS,
 ] as const
 
 /** The attribute that tells the wrapper from the component root (the same marker states-css uses). */

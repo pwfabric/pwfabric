@@ -112,6 +112,26 @@ describe('responsive-style-css', () => {
     expect(css).not.toContain(':not([data-block-wrapper]){margin-top')
   })
 
+  it('writes a responsive gridColumn / gridRow / gridArea to the WRAPPER — the grid item', () => {
+    const block: Block = {
+      id: 'cell-1',
+      type: 'card',
+      layout: DEFAULT_BLOCK_LAYOUT,
+      props: {},
+      style: {
+        gridColumn: { xs: 'span 12', md: 'span 4' },
+        gridRow: { md: 'span 2' },
+        gridArea: { lg: 'side' },
+      },
+    } as unknown as Block
+
+    const css = collectResponsiveStyleCss([block])
+
+    expect(css).toContain('[data-block-id="cell-1"][data-block-wrapper]{grid-column:span 12 !important;grid-row:span 2 !important;grid-area:side !important}')
+    expect(css).toContain('@media (min-width:768px){[data-pw-surface] [data-block-id="cell-1"][data-block-wrapper]{grid-column:span 4 !important}}')
+    expect(css).not.toContain(':not([data-block-wrapper]){grid-')
+  })
+
   it('recurses into children', () => {
     const tree: Block = {
       id: 'parent',
