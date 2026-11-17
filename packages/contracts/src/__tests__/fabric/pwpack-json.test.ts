@@ -16,20 +16,20 @@ import {
 import * as contracts from '../../index.js'
 
 const full: PwpackIdentity = {
-  id: '@pwpack/acme/shop',
+  id: '@pwpack/example/shop',
   version: '1.2.0',
   formatVersion: '1.0',
   engines: { pwfabric: '>=1.0.0 <2' },
   requires: ['records'],
   license: { fork: true, redistribute: false },
   app: { entry: 'home', surfaceOrder: ['home', 'about'] },
-  packs: [{ id: '@pwpack/acme/base', version: '2.0.0', hash: 'sha256:abc' }],
+  packs: [{ id: '@pwpack/example/base', version: '2.0.0', hash: 'sha256:abc' }],
 }
 
 describe('PwpackIdentitySchema — valid', () => {
   it('accepts the minimal identity (id + version)', () => {
-    expect(parsePwpackIdentity({ id: '@pwpack/acme/shop', version: '1.0.0' })).toEqual({
-      id: '@pwpack/acme/shop',
+    expect(parsePwpackIdentity({ id: '@pwpack/example/shop', version: '1.0.0' })).toEqual({
+      id: '@pwpack/example/shop',
       version: '1.0.0',
     })
   })

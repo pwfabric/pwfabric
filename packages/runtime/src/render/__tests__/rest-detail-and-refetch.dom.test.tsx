@@ -33,13 +33,13 @@ import type { BlockComponentRegistry } from '../types.js'
 
 const L = DEFAULT_BLOCK_LAYOUT
 
-// ---- DummyJSON, as measured ---------------------------------------------
+// ---- DummyJSON's response shape, as measured (product names are ours) ----
 
 const CART_1 = {
   id: 1,
   products: [
-    { id: 168, title: 'Charger SXT RWD', price: 32999.99, quantity: 3 },
-    { id: 78, title: 'Apple MacBook Pro 14 Inch Space Grey', price: 1999.99, quantity: 2 },
+    { id: 168, title: 'Example Roadster', price: 32999.99, quantity: 3 },
+    { id: 78, title: 'Example Laptop 14', price: 1999.99, quantity: 2 },
   ],
   total: 103774.85,
   discountedTotal: 89686.65,
@@ -47,9 +47,9 @@ const CART_1 = {
   totalProducts: 2,
   totalQuantity: 5,
 }
-const CART_2 = { ...CART_1, id: 2, products: [{ id: 144, title: 'Cricket Helmet', price: 44.99, quantity: 4 }], total: 179.96 }
+const CART_2 = { ...CART_1, id: 2, products: [{ id: 144, title: 'Cricket helmet', price: 44.99, quantity: 4 }], total: 179.96 }
 const PRODUCTS_PAGE = {
-  products: [{ id: 1, title: 'Essence Mascara' }, { id: 2, title: 'Eyeshadow Palette' }],
+  products: [{ id: 1, title: 'Mascara' }, { id: 2, title: 'Eyeshadow palette' }],
   total: 194,
   skip: 0,
   limit: 30,
@@ -167,7 +167,7 @@ describe('a detail endpoint with an empty path parameter stays idle', () => {
     )
     await waitFor(() => expect(screen.queryByTestId('find-1')).not.toBeNull())
     await click('find-1')
-    await waitFor(() => expect(textOf('probe')).toContain('first=Charger SXT RWD'))
+    await waitFor(() => expect(textOf('probe')).toContain('first=Example Roadster'))
     expect(calls).toEqual(['https://dummyjson.com/carts/1'])
     expect(textOf('probe')).toContain('idle=false err= status=200 nf=false')
     expect(textOf('probe')).toContain('total=103774.85')
@@ -184,7 +184,7 @@ describe('a detail endpoint with an empty path parameter stays idle', () => {
     )
     await waitFor(() => expect(screen.queryByTestId('find-1')).not.toBeNull())
     await click('find-1')
-    await waitFor(() => expect(textOf('probe')).toContain('first=Charger SXT RWD'))
+    await waitFor(() => expect(textOf('probe')).toContain('first=Example Roadster'))
     await click('find-999')
     await waitFor(() => expect(textOf('probe')).toContain('status=404'))
     expect(textOf('probe')).toContain('nf=true')
@@ -221,7 +221,7 @@ describe('a detail endpoint with an empty path parameter stays idle', () => {
     )
     await waitFor(() => expect(screen.queryByTestId('find-1')).not.toBeNull())
     await click('find-1')
-    await waitFor(() => expect(textOf('probe')).toContain('first=Charger SXT RWD'))
+    await waitFor(() => expect(textOf('probe')).toContain('first=Example Roadster'))
     await click('clear')
     await waitFor(() => expect(textOf('probe')).toContain('idle=true'))
     expect(textOf('probe')).toContain('first= ')
@@ -243,11 +243,11 @@ describe('a detail endpoint with an empty path parameter stays idle', () => {
     )
     await waitFor(() => expect(screen.queryByTestId('find-1')).not.toBeNull())
     await click('find-1')
-    await waitFor(() => expect(textOf('probe')).toContain('first=Charger SXT RWD'))
+    await waitFor(() => expect(textOf('probe')).toContain('first=Example Roadster'))
     fail = true
     await click('r')
     await waitFor(() => expect(textOf('probe')).toContain('err=Failed to fetch'))
-    expect(textOf('probe')).toContain('first=Charger SXT RWD')
+    expect(textOf('probe')).toContain('first=Example Roadster')
   })
 
   it('endpointMissingPathValue: path placeholders are required, query-string ones are not', () => {

@@ -8,13 +8,13 @@ const json = (v: unknown): string => JSON.stringify(v, null, 2) + '\n'
 /** A canonical app folder: identity with an app, declaration, atoms of several kinds, shared code. */
 export const CANONICAL_APP: Record<string, string> = {
   'pwpack.json': json({
-    id: '@pwpack/acme/clinic',
+    id: '@pwpack/example/clinic',
     version: '1.2.0',
     formatVersion: '1.0',
     engines: { pwfabric: '>=4.17 <5' },
     license: { fork: true, redistribute: false },
     app: { entry: 'home', surfaceOrder: ['home', 'book'] },
-    packs: [{ id: '@pwpack/acme/base', version: '2.0.0', hash: 'sha256:abc' }],
+    packs: [{ id: '@pwpack/example/base', version: '2.0.0', hash: 'sha256:abc' }],
   }),
   'app/plan.json': json({ title: 'Clinic' }),
   'app/definitions/navigation.json': json({ navbar: { links: [] } }),
@@ -40,7 +40,7 @@ export const CANONICAL_APP: Record<string, string> = {
 
 /** A plain pack (no app) in the canonical layout. */
 export const CANONICAL_PACK: Record<string, string> = {
-  'pwpack.json': json({ id: '@pwpack/acme/widgets', version: '0.3.0', requires: [] }),
+  'pwpack.json': json({ id: '@pwpack/example/widgets', version: '0.3.0', requires: [] }),
   'atoms/blocks/control/button/component.tsx': 'export default function Button() { return null }\n',
   'atoms/blocks/control/button/manifest.json': json({ id: 'control.button' }),
   'atoms/lib/_shared-theme.ts': 'export const t = 1\n',
@@ -48,7 +48,7 @@ export const CANONICAL_PACK: Record<string, string> = {
 
 /** Text with Windows line endings — must survive every round trip byte-for-byte. */
 export const CRLF_PACK: Record<string, string> = {
-  'pwpack.json': '{\r\n  "id": "@pwpack/acme/crlf",\r\n  "version": "1.0.0"\r\n}\r\n',
+  'pwpack.json': '{\r\n  "id": "@pwpack/example/crlf",\r\n  "version": "1.0.0"\r\n}\r\n',
   'atoms/blocks/text/note/component.tsx': 'export default function Note() {\r\n  return null\r\n}\r\n',
   'atoms/patterns/mixed.json': '{\n  "a": 1\r\n}\n',
 }
@@ -56,7 +56,7 @@ export const CRLF_PACK: Record<string, string> = {
 /** A media export: files under media/ with their provenance. */
 export function mediaPack(heroBytes: string, heroHash: string): Record<string, string> {
   return {
-    'pwpack.json': json({ id: '@pwpack/acme/export', version: '1.0.0' }),
+    'pwpack.json': json({ id: '@pwpack/example/export', version: '1.0.0' }),
     'media/hero.webp': heroBytes,
     'media/provenance.json': json({
       formatVersion: '1.0',

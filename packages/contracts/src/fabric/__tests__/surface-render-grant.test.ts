@@ -62,7 +62,7 @@ describe('SurfaceRenderGrant shape', () => {
     const grant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=eyJ0eXBlIjoic2cifQ',
       integrity: 'sha256-abc123def456abc123def456abc123def456abc123def456abc123def456abc1',
@@ -72,7 +72,7 @@ describe('SurfaceRenderGrant shape', () => {
     // Act & Assert — runtime shape verification mirrors the compile-time check
     expect(grant.surfaceId).toBe('surf_abc123')
     expect(grant.blockType).toBe('hero-block')
-    expect(grant.artifactName).toBe('@acme/hero-block')
+    expect(grant.artifactName).toBe('@example/hero-block')
     expect(grant.artifactVersion).toBe('1.2.3')
     expect(grant.moduleUrl).toContain('?sg=')
     expect(grant.integrity).toMatch(/^sha256-/)
@@ -83,7 +83,7 @@ describe('SurfaceRenderGrant shape', () => {
     const grant: SurfaceRenderGrant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=token',
       integrity: 'sha256-deadbeef',
@@ -131,7 +131,7 @@ describe('SurfaceRenderGrant vs DynamicBlockDescriptor distinction', () => {
     const grant: SurfaceRenderGrant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=token',
       integrity: 'sha256-deadbeef',
@@ -147,7 +147,7 @@ describe('SurfaceRenderGrant vs DynamicBlockDescriptor distinction', () => {
     const grant: SurfaceRenderGrant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=token',
       integrity: 'sha256-deadbeef',
@@ -162,7 +162,7 @@ describe('SurfaceRenderGrant vs DynamicBlockDescriptor distinction', () => {
     const grant: SurfaceRenderGrant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=token',
       integrity: 'sha256-deadbeef',
@@ -180,7 +180,7 @@ describe('SurfaceRenderGrant vs DynamicBlockDescriptor distinction', () => {
       blockType: 'hero-block',
       moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs',
       integrity: 'sha256-deadbeef',
-      publisher: 'acme',
+      publisher: 'example',
       publisherVerified: true,
       definition: { name: 'Hero Block' },
       // Missing: surfaceId, artifactName, artifactVersion, expiresAt
@@ -200,7 +200,7 @@ describe('SurfaceRenderGrant.expiresAt', () => {
     const grant: SurfaceRenderGrant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=token',
       integrity: 'sha256-deadbeef',
@@ -214,7 +214,7 @@ describe('SurfaceRenderGrant.expiresAt', () => {
     const grant: SurfaceRenderGrant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=token',
       integrity: 'sha256-deadbeef',
@@ -229,7 +229,7 @@ describe('SurfaceRenderGrant.expiresAt', () => {
     const invalidGrant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=token',
       integrity: 'sha256-deadbeef',
@@ -244,7 +244,7 @@ describe('SurfaceRenderGrant.expiresAt', () => {
     const grant: SurfaceRenderGrant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=token',
       integrity: 'sha256-deadbeef',
@@ -266,7 +266,7 @@ describe('SurfaceRenderGrant.moduleUrl', () => {
     const grant: SurfaceRenderGrant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=eyJ0eXBlIjoic2cifQ',
       integrity: 'sha256-deadbeef',
@@ -281,7 +281,7 @@ describe('SurfaceRenderGrant.moduleUrl', () => {
     const grant: SurfaceRenderGrant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       moduleUrl: `https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=${sgToken}`,
       integrity: 'sha256-deadbeef',
@@ -297,14 +297,14 @@ describe('SurfaceRenderGrant.moduleUrl', () => {
     // The type is `string`, not a branded URL type — any string value is valid
     const variants: string[] = [
       'https://cdn.example.com/blocks/hero@1.0.0/index.mjs?sg=token1',
-      'https://private-cdn.acme.com/pwfabric/hero@1.0.0/esm/index.js?sg=token2',
+      'https://private-cdn.example.com/pwfabric/hero@1.0.0/esm/index.js?sg=token2',
     ]
 
     for (const moduleUrl of variants) {
       const grant: SurfaceRenderGrant = {
         surfaceId: 'surf_abc123',
         blockType: 'hero-block',
-        artifactName: '@acme/hero-block',
+        artifactName: '@example/hero-block',
         artifactVersion: '1.0.0',
         moduleUrl,
         integrity: 'sha256-deadbeef',
@@ -320,7 +320,7 @@ describe('SurfaceRenderGrant.moduleUrl', () => {
     const invalidGrant = {
       surfaceId: 'surf_abc123',
       blockType: 'hero-block',
-      artifactName: '@acme/hero-block',
+      artifactName: '@example/hero-block',
       artifactVersion: '1.2.3',
       // moduleUrl intentionally omitted
       integrity: 'sha256-deadbeef',
@@ -371,7 +371,7 @@ describe('isSurfaceRenderGrant individual field guards', () => {
   const base = {
     surfaceId: 'surf_abc123',
     blockType: 'hero-block',
-    artifactName: '@acme/hero-block',
+    artifactName: '@example/hero-block',
     artifactVersion: '1.2.3',
     moduleUrl: 'https://cdn.example.com/blocks/hero-block@1.2.3/index.mjs?sg=token',
     integrity: 'sha256-deadbeef',
@@ -399,7 +399,7 @@ describe('isSurfaceRenderGrant individual field guards', () => {
   })
 
   it('should return false when publisher field is present', () => {
-    expect(isSurfaceRenderGrant({ ...base, publisher: 'acme' })).toBe(false)
+    expect(isSurfaceRenderGrant({ ...base, publisher: 'example' })).toBe(false)
   })
 
   it('should return false when publisherVerified field is present', () => {

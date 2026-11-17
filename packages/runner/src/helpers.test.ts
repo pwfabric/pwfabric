@@ -335,7 +335,7 @@ describe('assembleFooter', () => {
 
   it('a shell copyright strip that holds links is the page drawing its footer', () => {
     const page = shellPage()
-    page[0]!.children![2]!.children!.push({ id: 'shell-foot-l', type: 'link', props: { text: 'Instagram', href: 'https://instagram.com/x' } })
+    page[0]!.children![2]!.children!.push({ id: 'shell-foot-l', type: 'link', props: { text: 'Our social page', href: 'https://example.com/social' } })
     expect(band(assembleFooter(page, navigation, 'home', ENTRY, hashHref))).toBeUndefined()
   })
 

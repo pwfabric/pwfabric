@@ -82,7 +82,7 @@ describe('shared grammar — arithmetic and precedence', () => {
 
 describe('shared grammar — safe methods', () => {
   it('string, array and number methods on the allow-list run', () => {
-    expect(ok("'Ada Lovelace'.split(' ').join('-')")).toBe('Ada-Lovelace')
+    expect(ok("'Jane Doe'.split(' ').join('-')")).toBe('Jane-Doe')
     expect(ok("data.user.name.padStart(5, '*')")).toBe('**Ada')
     expect(ok('(3.14159).toFixed(2)')).toBe('3.14')
     expect(ok('items.slice(1).join(",")')).toBe('2,3')

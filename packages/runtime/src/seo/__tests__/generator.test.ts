@@ -173,17 +173,17 @@ describe('DefaultSeoCapability', () => {
         name: 'Article',
         publisher: {
           type: 'Organization',
-          name: 'Acme Inc',
-          logo: 'https://acme.com/logo.png',
+          name: 'Example Inc',
+          logo: 'https://example.com/logo.png',
         },
       })
 
       const publisher = output.data.publisher as Record<string, unknown>
       expect(publisher['@type']).toBe('Organization')
-      expect(publisher.name).toBe('Acme Inc')
+      expect(publisher.name).toBe('Example Inc')
       const logo = publisher.logo as Record<string, unknown>
       expect(logo['@type']).toBe('ImageObject')
-      expect(logo.url).toBe('https://acme.com/logo.png')
+      expect(logo.url).toBe('https://example.com/logo.png')
     })
 
     it('should generate breadcrumb structured data', () => {

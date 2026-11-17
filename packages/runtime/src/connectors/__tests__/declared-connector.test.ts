@@ -47,7 +47,7 @@ const GRAPH_LISTS = {
   transforms: [{ field: 'Icon', use: 'hosted-file-url' }],
 }
 
-const CONFIG = { siteHostname: 'contoso.sharepoint.com', sitePath: '/sites/dev' }
+const CONFIG = { siteHostname: 'example.sharepoint.com', sitePath: '/sites/dev' }
 
 const BODY = {
   value: [
@@ -81,7 +81,7 @@ describe('createDeclaredConnector', () => {
       { id: '1', webUrl: 'https://x/1', Title: 'Elif', Department: 'Engineering' },
       { id: '2', Title: 'Kaan' },
     ])
-    expect(calls[0]?.url).toContain('/sites/contoso.sharepoint.com:/sites/dev')
+    expect(calls[0]?.url).toContain('/sites/example.sharepoint.com:/sites/dev')
     expect(calls[1]?.url).toContain('/sites/site-abc/lists/Adaylar/items')
   })
 
@@ -187,7 +187,7 @@ describe('createDeclaredConnector', () => {
     stubFetch(BODY)
     await engine().query('Clubs' as EntityTypeId, { sitePath: '/sites/social' } as never)
 
-    expect(calls[0]?.url).toContain('/sites/contoso.sharepoint.com:/sites/social')
+    expect(calls[0]?.url).toContain('/sites/example.sharepoint.com:/sites/social')
   })
 
   it('INHERITS retry from the base — a 429 then a 200 succeeds, and no retry is written here', async () => {

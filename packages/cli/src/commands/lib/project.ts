@@ -53,7 +53,7 @@ export async function readPackSource(path: string): Promise<PackFolder> {
 
 /**
  * Relative folder of one pack build in the cache: `.pwf/packs/<id>@<version>`.
- * A scoped id (`@pwpack/acme/cards`) nests the way npm scopes do. Throws when
+ * A scoped id (`@pwpack/example/cards`) nests the way npm scopes do. Throws when
  * the id or version could escape the cache.
  */
 export function cacheRelDir(id: string, version: string): string {

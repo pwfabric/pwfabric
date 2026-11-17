@@ -49,7 +49,7 @@ describe('readFolder', () => {
     await put('atoms/.DS_Store', 'x')
     await put('atoms/blocks/a/b/Thumbs.db', 'x')
     await put('atoms/blocks/a/b/desktop.ini', 'x')
-    await put('acme-1.0.0.pwpack', 'x')
+    await put('example-1.0.0.pwpack', 'x')
     await put('media/inner.pwpack', 'kept')
     const pack = await readFolder(root)
     expect([...pack.files.keys()].sort()).toEqual(['media/inner.pwpack', 'pwpack.json'])

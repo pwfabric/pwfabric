@@ -276,12 +276,12 @@ describe('dataSourceSchema — dialect unification', () => {
       kind: 'entity',
       entityType: 'Task',
       connector: 'graph-lists',
-      authProviderRef: 'contoso-entra',
+      authProviderRef: 'example-entra',
     })
     expect(result.success).toBe(true)
     if (result.success) {
       expect(result.data.connector).toBe('graph-lists')
-      expect(result.data.authProviderRef).toBe('contoso-entra')
+      expect(result.data.authProviderRef).toBe('example-entra')
     }
   })
 

@@ -11,7 +11,7 @@ function navbar(greeting: string): { blocks: SurfaceBlockNode[] } {
         id: 'nav-1',
         type: 'navbar',
         props: {
-          logoText: 'Acme',
+          logoText: 'Example',
           rightInfo: [
             { label: 'weather', value: '24°C' },
             { label: 'greeting', value: greeting },

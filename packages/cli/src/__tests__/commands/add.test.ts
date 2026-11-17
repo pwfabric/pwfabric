@@ -13,7 +13,7 @@ async function created(): Promise<{ cwd: string; root: string }> {
 }
 
 const cards = (version: string, extra = ''): Record<string, string> => ({
-  'pwpack.json': JSON.stringify({ id: '@pwpack/acme/cards', version }),
+  'pwpack.json': JSON.stringify({ id: '@pwpack/example/cards', version }),
   'atoms/blocks/content/card/component.tsx': `export default 1${extra}\n`,
 })
 
@@ -26,14 +26,14 @@ describe('pwf add', () => {
 
     const c = capture(root)
     expect(await main(['add', archive], c.io)).toBe(0)
-    expect(c.out[0]).toBe('Added @pwpack/acme/cards@2.1.0')
+    expect(c.out[0]).toBe('Added @pwpack/example/cards@2.1.0')
     const text = await readFile(join(root, 'pwpack.json'), 'utf8')
     const doc = JSON.parse(text)
     expect(Object.keys(doc)).toEqual(['id', 'version', 'formatVersion', 'engines', 'requires', 'license', 'app', 'packs'])
     expect(text).toBe(`${JSON.stringify(doc, null, 2)}\n`)
-    expect(doc.requires[1]).toEqual({ id: '@pwpack/acme/cards', range: '^2.0.0' })
-    expect(doc.packs[1]).toEqual({ id: '@pwpack/acme/cards', version: '2.1.0', hash: hashPack(pack) })
-    const cached = await readFolder(join(root, '.pwf', 'packs', '@pwpack', 'acme', 'cards@2.1.0'))
+    expect(doc.requires[1]).toEqual({ id: '@pwpack/example/cards', range: '^2.0.0' })
+    expect(doc.packs[1]).toEqual({ id: '@pwpack/example/cards', version: '2.1.0', hash: hashPack(pack) })
+    const cached = await readFolder(join(root, '.pwf', 'packs', '@pwpack', 'example', 'cards@2.1.0'))
     expect(hashPack(cached)).toBe(hashPack(pack))
 
     const v = capture(root)
@@ -53,7 +53,7 @@ describe('pwf add', () => {
       await writeFile(join(folder, ...path.split('/')), text)
     }
     expect(await main(['add', folder], capture(root).io)).toBe(0)
-    const cached = await readFolder(join(root, '.pwf', 'packs', '@pwpack', 'acme', 'cards@2.2.0'))
+    const cached = await readFolder(join(root, '.pwf', 'packs', '@pwpack', 'example', 'cards@2.2.0'))
     expect([...cached.files.keys()].sort()).toEqual(['atoms/blocks/content/card/component.tsx', 'pwpack.json'])
     const doc = JSON.parse(await readFile(join(root, 'pwpack.json'), 'utf8'))
     expect(doc.packs[1].hash).toBe(hashPack(packFromRecord(cards('2.2.0'))))
@@ -64,8 +64,8 @@ describe('pwf add', () => {
     const { cwd, root } = await created()
     const identityPath = join(root, 'pwpack.json')
     const doc = JSON.parse(await readFile(identityPath, 'utf8'))
-    doc.requires.push('@pwpack/acme/cards')
-    doc.packs.push({ id: '@pwpack/acme/cards', version: '1.0.0', hash: 'sha256:old' })
+    doc.requires.push('@pwpack/example/cards')
+    doc.packs.push({ id: '@pwpack/example/cards', version: '1.0.0', hash: 'sha256:old' })
     doc.extra = { kept: true }
     await writeFile(identityPath, JSON.stringify(doc))
 
@@ -79,10 +79,10 @@ describe('pwf add', () => {
     const next = JSON.parse(await readFile(identityPath, 'utf8'))
     expect(next.requires).toEqual([
       { id: '@pwpack/fixture/foundation', range: '^1.0.0' },
-      { id: '@pwpack/acme/cards', range: '^3.0.0' },
+      { id: '@pwpack/example/cards', range: '^3.0.0' },
     ])
     expect(next.packs).toHaveLength(2)
-    expect(next.packs[1]).toMatchObject({ id: '@pwpack/acme/cards', version: '3.0.0' })
+    expect(next.packs[1]).toMatchObject({ id: '@pwpack/example/cards', version: '3.0.0' })
     expect(Object.keys(next).at(-1)).toBe('extra')
   })
 
@@ -93,7 +93,7 @@ describe('pwf add', () => {
     await writeFile(archive, await writePwpack(packFromRecord(cards('1.4.2'))))
     expect(await main(['add', archive], capture(cwd).io)).toBe(0)
     const doc = JSON.parse(await readFile(join(cwd, 'pwpack.json'), 'utf8'))
-    expect(doc.requires).toEqual([{ id: '@pwpack/acme/cards', range: '^1.0.0' }])
+    expect(doc.requires).toEqual([{ id: '@pwpack/example/cards', range: '^1.0.0' }])
     expect(doc.packs).toHaveLength(1)
   })
 

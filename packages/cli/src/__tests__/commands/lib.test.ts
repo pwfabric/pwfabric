@@ -53,7 +53,7 @@ describe('identity helpers', () => {
 
 describe('project helpers', () => {
   it('nests scoped ids and refuses ids that escape the cache', () => {
-    expect(cacheRelDir('@pwpack/acme/cards', '1.0.0')).toBe('.pwf/packs/@pwpack/acme/cards@1.0.0')
+    expect(cacheRelDir('@pwpack/example/cards', '1.0.0')).toBe('.pwf/packs/@pwpack/example/cards@1.0.0')
     expect(() => cacheRelDir('../x', '1.0.0')).toThrow('not usable')
     expect(() => cacheRelDir('a:b', '1.0.0')).toThrow('not usable')
   })

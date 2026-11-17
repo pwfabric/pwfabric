@@ -388,7 +388,7 @@ const SAMPLE_EMPLOYEES: Employee[] = [
   {
     id: 'e1',
     name: 'Alice Johnson',
-    email: 'alice@company.com',
+    email: 'alice@example.com',
     department: 'Engineering',
     title: 'Senior Developer',
     manager: null,
@@ -400,7 +400,7 @@ const SAMPLE_EMPLOYEES: Employee[] = [
   {
     id: 'e2',
     name: 'Bob Smith',
-    email: 'bob@company.com',
+    email: 'bob@example.com',
     department: 'Marketing',
     title: 'Marketing Manager',
     manager: null,
@@ -412,7 +412,7 @@ const SAMPLE_EMPLOYEES: Employee[] = [
   {
     id: 'e3',
     name: 'Carol Williams',
-    email: 'carol@company.com',
+    email: 'carol@example.com',
     department: 'Engineering',
     title: 'Junior Developer',
     manager: 'e1',
@@ -424,7 +424,7 @@ const SAMPLE_EMPLOYEES: Employee[] = [
   {
     id: 'e4',
     name: 'David Brown',
-    email: 'david@company.com',
+    email: 'david@example.com',
     department: 'HR',
     title: 'HR Specialist',
     manager: null,
@@ -436,7 +436,7 @@ const SAMPLE_EMPLOYEES: Employee[] = [
   {
     id: 'e5',
     name: 'Eve Davis',
-    email: 'eve@company.com',
+    email: 'eve@example.com',
     department: 'Engineering',
     title: 'Tech Lead',
     manager: null,
@@ -504,12 +504,12 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
     it('should complete full employee directory workflow', async () => {
       // Step 1: User authenticates
       const loginResult = await app.login({
-        email: 'manager@company.com',
+        email: 'manager@example.com',
         password: 'secure123',
       })
 
       expect(loginResult.success).toBe(true)
-      expect(loginResult.user?.email).toBe('manager@company.com')
+      expect(loginResult.user?.email).toBe('manager@example.com')
       expect(app.getState('isAuthenticated')).toBe(true)
 
       // Step 2: Validate session
@@ -544,7 +544,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
     })
 
     it('should track search state changes', async () => {
-      await app.login({ email: 'user@company.com', password: 'pass' })
+      await app.login({ email: 'user@example.com', password: 'pass' })
       await app.loadEmployeeDirectory(SAMPLE_EMPLOYEES)
 
       const searchTerms: string[] = []
@@ -561,7 +561,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
     })
 
     it('should update collection when employee added', async () => {
-      await app.login({ email: 'admin@company.com', password: 'admin' })
+      await app.login({ email: 'admin@example.com', password: 'admin' })
       await app.loadEmployeeDirectory(SAMPLE_EMPLOYEES)
 
       const collection = app.getEmployeeCollection()
@@ -571,7 +571,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
       const newEmployee: Employee = {
         id: 'e6',
         name: 'Frank Miller',
-        email: 'frank@company.com',
+        email: 'frank@example.com',
         department: 'Engineering',
         title: 'DevOps Engineer',
         manager: 'e5',
@@ -592,7 +592,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
     it('should complete document creation workflow', async () => {
       // Step 1: Authenticate
       const loginResult = await app.login({
-        email: 'writer@company.com',
+        email: 'writer@example.com',
         password: 'write123',
       })
       expect(loginResult.success).toBe(true)
@@ -622,7 +622,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
     })
 
     it('should reject invalid document submission', async () => {
-      await app.login({ email: 'user@company.com', password: 'pass' })
+      await app.login({ email: 'user@example.com', password: 'pass' })
       await app.loadDocuments([])
 
       // Try to create document with invalid data
@@ -640,7 +640,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
     })
 
     it('should filter documents by status', async () => {
-      await app.login({ email: 'user@company.com', password: 'pass' })
+      await app.login({ email: 'user@example.com', password: 'pass' })
       await app.loadDocuments(SAMPLE_DOCUMENTS)
 
       const collection = app.getDocumentCollection()
@@ -657,7 +657,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
   describe('Scenario: Dashboard with Live Data', () => {
     it('should render dashboard with metrics', async () => {
       // Authenticate
-      await app.login({ email: 'manager@company.com', password: 'manage' })
+      await app.login({ email: 'manager@example.com', password: 'manage' })
 
       // Load data
       await app.loadEmployeeDirectory(SAMPLE_EMPLOYEES)
@@ -673,7 +673,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
     })
 
     it('should render personalized dashboard summary', async () => {
-      await app.login({ email: 'john.doe@company.com', password: 'pass' })
+      await app.login({ email: 'john.doe@example.com', password: 'pass' })
       await app.loadEmployeeDirectory(SAMPLE_EMPLOYEES)
       await app.loadDocuments(SAMPLE_DOCUMENTS)
 
@@ -686,7 +686,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
     })
 
     it('should update metrics when data changes', async () => {
-      await app.login({ email: 'admin@company.com', password: 'admin' })
+      await app.login({ email: 'admin@example.com', password: 'admin' })
       await app.loadEmployeeDirectory(SAMPLE_EMPLOYEES)
 
       // Initial count
@@ -699,7 +699,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
       empCollection?.add({
         id: 'e7',
         name: 'New Employee',
-        email: 'new@company.com',
+        email: 'new@example.com',
         department: 'Sales',
         title: 'Sales Rep',
         manager: null,
@@ -720,7 +720,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
 
   describe('Scenario: Logout and Cleanup', () => {
     it('should cleanup state on logout', async () => {
-      await app.login({ email: 'user@company.com', password: 'pass' })
+      await app.login({ email: 'user@example.com', password: 'pass' })
       await app.loadEmployeeDirectory(SAMPLE_EMPLOYEES)
       await app.loadDocuments(SAMPLE_DOCUMENTS)
 
@@ -741,7 +741,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
 
   describe('Scenario: Complex Search and Filter', () => {
     it('should combine search and department filter', async () => {
-      await app.login({ email: 'user@company.com', password: 'pass' })
+      await app.login({ email: 'user@example.com', password: 'pass' })
       await app.loadEmployeeDirectory(SAMPLE_EMPLOYEES)
 
       // Search within filtered department
@@ -756,7 +756,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
     })
 
     it('should sort employees by different criteria', async () => {
-      await app.login({ email: 'user@company.com', password: 'pass' })
+      await app.login({ email: 'user@example.com', password: 'pass' })
       await app.loadEmployeeDirectory(SAMPLE_EMPLOYEES)
 
       const collection = app.getEmployeeCollection()
@@ -780,7 +780,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
 
   describe('Scenario: Form State Persistence', () => {
     it('should preserve form progress across validation attempts', async () => {
-      await app.login({ email: 'user@company.com', password: 'pass' })
+      await app.login({ email: 'user@example.com', password: 'pass' })
       await app.loadDocuments([])
 
       // First attempt - fails validation
@@ -803,7 +803,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
 
   describe('Scenario: Expression-Based UI Updates', () => {
     it('should evaluate conditional display expressions', async () => {
-      await app.login({ email: 'admin@company.com', password: 'admin' })
+      await app.login({ email: 'admin@example.com', password: 'admin' })
 
       const evaluator = app.expressionEvaluator
       const user = app.getState<User>('currentUser')
@@ -824,7 +824,7 @@ describe('Full Capability Integration - Intranet Scenarios', () => {
     })
 
     it('should format display values with helpers', async () => {
-      await app.login({ email: 'user@company.com', password: 'pass' })
+      await app.login({ email: 'user@example.com', password: 'pass' })
       await app.loadEmployeeDirectory(SAMPLE_EMPLOYEES)
 
       const evaluator = app.expressionEvaluator
