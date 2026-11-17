@@ -162,6 +162,56 @@ describe('pwf validate', () => {
     expect(d.out.join('\n')).not.toContain('FIELD_UNKNOWN')
   })
 
+  it('knows a connector-served source by the entities its engine declares', async () => {
+    const { root } = await created()
+    await mkdir(join(root, 'app', 'definitions'), { recursive: true })
+    await mkdir(join(root, 'atoms', 'connectors'), { recursive: true })
+    await writeFile(join(root, 'app', 'definitions', 'connections.json'), JSON.stringify({ connections: [{ name: 'tasks', connector: 'graph-tasks' }] }))
+    const engine = (entities: unknown) =>
+      JSON.stringify({
+        id: 'Tasks',
+        kind: 'connector',
+        version: '1.0.0',
+        name: 'Tasks',
+        state: 'stable',
+        knowledge: { summary: 'Tasks.' },
+        connection: 'graph-tasks',
+        ...(entities !== undefined ? { entities } : {}),
+      })
+    await writeFile(join(root, 'atoms', 'connectors', 'Tasks.knowledge.json'), engine([{ entityType: 'TodoTasks', fields: [{ name: 'title', type: 'text' }] }]))
+    const home = JSON.parse(await readFile(join(root, 'app', 'surfaces', 'home.receipt.json'), 'utf8'))
+    const receipt = (field: string, connector = 'tasks') => ({
+      ...home,
+      blocks: [
+        ...home.blocks,
+        { id: 'list', type: 'repeater', repeat: '{{todo}}', children: [{ id: 'n', type: 'text', props: { content: `{{item.${field}}}` } }] },
+      ],
+      capabilities: [{ capability: 'platform/persistence', config: { dataSources: [{ id: 'todo', kind: 'entity', entityType: 'TodoTasks', connector }] } }],
+    })
+    const findings = async (): Promise<string[]> => {
+      const c = capture(root)
+      await main(['validate'], c.io)
+      return c.out.filter((l) => l.includes('FIELD_UNKNOWN'))
+    }
+    const write = (r: unknown) => writeFile(join(root, 'app', 'surfaces', 'home.receipt.json'), JSON.stringify(r))
+
+    await write(receipt('title'))
+    expect(await findings()).toEqual([])
+    await write(receipt('dueDate'))
+    expect(await findings()).toEqual([
+      expect.stringContaining(
+        'reads field "dueDate" of source "todo", whose rows have no such field (known from the entity "TodoTasks" of connection "tasks" (atoms/connectors/Tasks.knowledge.json): id, title)'
+      ),
+    ])
+    // A connector the app does not declare as a connection: not checked.
+    await write(receipt('dueDate', 'graph-tasks'))
+    expect(await findings()).toEqual([])
+    // An engine that declares no entities: its row fields are unknown.
+    await write(receipt('dueDate'))
+    await writeFile(join(root, 'atoms', 'connectors', 'Tasks.knowledge.json'), engine([]))
+    expect(await findings()).toEqual([])
+  })
+
   it('names the folder when there is no identity, and fails on a missing folder', async () => {
     const cwd = await tempDir()
     const c = capture(cwd)

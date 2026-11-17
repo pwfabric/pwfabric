@@ -17,6 +17,7 @@
  *   mediaDeclarations()  PackFolder      → media declarations + bytes + provenance
  *   checkBlockProps(...) PackFolder      → receipt props that do not fit the block manifests (warnings)
  *   checkRowFields(pack) PackFolder      → row fields receipts read that their sources lack
+ *   connectionFieldSets  PackFolder      → the row fields each connection's engine declares
  *
  * @module @pwfabric/pack
  */
@@ -84,8 +85,11 @@ export {
 export {
   checkReceiptRowFields,
   checkRowFields,
+  connectionFieldSets,
   entityFieldSets,
   RECORD_ENVELOPE_FIELDS,
   rowFieldSets,
+  type ConnectionFieldSets,
+  type ConnectionRowFields,
   type RowFieldSets,
 } from './row-fields.js'
