@@ -112,6 +112,21 @@ describe('createApiOutput', () => {
     expect(result.output.headers).toEqual({ 'Content-Type': 'application/json' })
   })
 
+  // zod 3 → 4 regression: a `z.unknown()` member was implicitly optional in
+  // zod 3, so 1.x accepted data without `json` (e.g. a 204 from JS callers).
+  it('should accept data without json, as 1.x did', () => {
+    const result = createApiOutput({
+      data: { status: 204 } as unknown as { json: unknown; status: number },
+      status: 204,
+    })
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+
+    expect(result.output.data.json).toBeUndefined()
+    expect(result.output.data.status).toBe(204)
+  })
+
   it('should include optional body', () => {
     const result = createApiOutput({
       data: { json: { id: 1 }, status: 200 },

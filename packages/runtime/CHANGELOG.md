@@ -1,5 +1,9 @@
 # @pwfabric/runtime
 
+## Unreleased
+
+- Fixed: `createApiOutput` accepts `data` without `json` again, as in 1.x (zod 4 made the `z.unknown()` member required; it is now `.optional()`).
+
 ## 2.0.0
 
 - Changed (breaking): `zod` is a peer dependency at `^4.6.6` (was `^3.23.0`). zod 3 has no fix for GHSA “Zod can exhaust memory while validating oversized constrained collections”. A project on zod 3 stays on 1.x.
