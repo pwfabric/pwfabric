@@ -3,9 +3,10 @@
  *
  * One `node:http` server on 127.0.0.1 (port 4600 by default). It assembles
  * the app into memory (see ./assemble.ts), serves the files from there,
- * watches the folder, reassembles on change and tells the open page to reload
- * through Server-Sent Events. While the last build has errors the page is an
- * overlay listing them; the terminal gets the same list.
+ * watches the folder, reassembles on change and, when what it serves changed,
+ * tells the open page to reload through Server-Sent Events. While the last
+ * build has errors the page is an overlay listing them; the terminal gets the
+ * same list.
  *
  * When the app declares sign-in or records it needs a local host. A host
  * passed in `localHost` is mounted on the same server: requests it claims go
@@ -13,6 +14,7 @@
  * This module never constructs a host itself (it depends on the host's
  * interface only); a caller that can make one passes `createHost`.
  */
+import { createHash } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { extname, join, resolve } from 'node:path'
@@ -110,6 +112,20 @@ export function logLines(diagnostics: readonly AssembleDiagnostic[]): string[] {
   return own
 }
 
+/**
+ * What the open page would get: every served file, and the findings the
+ * overlay shows. Two builds with the same signature serve the same app.
+ */
+export function servedSignature(result: Pick<AssembleResult, 'ok' | 'files' | 'diagnostics'>): string {
+  const h = createHash('sha256')
+  h.update(JSON.stringify({ ok: result.ok, diagnostics: result.diagnostics.map(formatDiagnostic) }))
+  for (const path of [...result.files.keys()].sort()) {
+    h.update(`\n${path}\n`)
+    h.update(result.files.get(path) ?? new Uint8Array())
+  }
+  return h.digest('hex')
+}
+
 /** Starts the dev server with the internal seams. {@link startDevServer} is the public entry. */
 export async function createDevServer(options: DevServerOptions, internals: DevServerInternals = {}): Promise<DevServer> {
   const root = resolve(options.root)
@@ -151,6 +167,16 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
   let state: AssembleResult | null = null
   const packMemo: PackMemo = new Map()
   const clients = new Set<ServerResponse>()
+  /**
+   * RELOAD ONLY WHEN THE SERVED APP CHANGED. The watcher sees every file in
+   * the folder — a screenshot, a log, a scratch script — and rebuilding for
+   * one is cheap. Reloading for one is not: a reload remounts the page and
+   * every piece of page state goes back to `initialState`. So a build tells
+   * the page to reload only when what it serves differs from the last build.
+   * `publishedAt` is pinned for the session, the one clock in the output.
+   */
+  const publishedAt = internals.assemble?.publishedAt ?? new Date().toISOString()
+  let servedSig: string | null = null
 
   const broadcast = (event: string, data: unknown): void => {
     const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
@@ -163,6 +189,7 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
     try {
       result = await assemblePwapp(root, {
         ...internals.assemble,
+        publishedAt,
         cache,
         packMemo,
         shellExtra: RELOAD_CLIENT,
@@ -193,7 +220,11 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
       })`
     )
     for (const line of logLines(result.diagnostics)) log(`  ${line}`)
-    broadcast('reload', { ok: result.ok })
+    const sig = servedSignature(result)
+    if (sig !== servedSig) {
+      servedSig = sig
+      broadcast('reload', { ok: result.ok })
+    }
     return { ok: result.ok, compiled: stats.compiled, diagnostics: result.diagnostics.map(formatDiagnostic), ms: result.ms }
   }
 
