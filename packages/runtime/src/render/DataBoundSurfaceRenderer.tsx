@@ -484,8 +484,8 @@ function useSurfaceData(
         // host-provided engine registry when that connection is registered
         // there. Registered-but-failed surfaces the reason as an honest
         // per-source error (`__errors.<id>`), never a crash; an unregistered
-        // connection (or no registry at all) falls through to today's
-        // default facade path.
+        // connection (or no registry at all) falls through to the
+        // host's entity facade path.
         // `{{state.x}}` inside the query resolves against CURRENT state, so
         // a pagination block writing `state.page` or a segmented-control
         // writing `state.severity` reaches `query.pagination` / `query.filter`.

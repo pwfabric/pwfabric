@@ -73,20 +73,17 @@ export interface EntityBinding {
 }
 
 /**
- * The connection a source falls back to when it names none.
- *
- * A NAME, not an engine: since the runner holds no vendor code at all,
- * and this string only says which declared connection to look for.
- */
-const DEFAULT_CONNECTOR = 'graph-lists'
-
-/**
  * Reads which real entityTypes a surface needs from its native
  * `platform/persistence` capability's `config.dataSources` (READ side) and
  * its `platform/entities` capability's `config.formBindings` (WRITE side —
  * form-only pages declare no read dataSources but EntityStore.create refuses
- * unregistered types). `connector` is a free-form extra field on the config;
- * missing defaults to `graph-lists`.
+ * unregistered types).
+ *
+ * ONLY A SOURCE THAT NAMES ITS `connector` IS BOUND. A connector-less entity
+ * source is the app's own records of its type (data-protocol §2.2): `run-app`
+ * serves it from the app's record endpoints when it knows the app's API base
+ * (see own-records.ts), and otherwise it draws its `fallback`. There is no
+ * default connection — a neutral engine never guesses one.
  */
 /**
  * Does this entry name that capability, however it spelled itself?
@@ -134,7 +131,7 @@ export function extractEntityTypes(surface: {
 
   for (const d of dataSources) {
     if (d.kind !== 'entity' || !d.entityType) continue
-    add(d.entityType, d.connector ?? DEFAULT_CONNECTOR)
+    if (d.connector) add(d.entityType, d.connector)
   }
 
   /**
@@ -161,7 +158,8 @@ export function extractEntityTypes(surface: {
     if (!fb.sourceId) continue
     const source = sourceById.get(fb.sourceId)
     if (source?.kind !== 'entity') continue
-    add(source.entityType, fb.connector ?? source.connector ?? DEFAULT_CONNECTOR)
+    const connector = fb.connector || source.connector
+    if (connector) add(source.entityType, connector)
   }
 
   return bindings

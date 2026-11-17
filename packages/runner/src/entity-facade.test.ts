@@ -55,10 +55,42 @@ describe('extractEntityTypes', () => {
         },
       ],
     })
-    expect(bindings).toEqual([
-      { entityType: 'Announcements', connector: 'graph-lists' },
-      { entityType: 'People', connector: 'graph-users' },
-    ])
+    // A connector-less source is the app's own records — no connection is
+    // guessed for it, so it binds nothing here.
+    expect(bindings).toEqual([{ entityType: 'People', connector: 'graph-users' }])
+  })
+
+  it('binds graph-lists only when the source names it', () => {
+    const bindings = extractEntityTypes({
+      capabilities: [
+        {
+          capability: 'platform/persistence',
+          config: {
+            dataSources: [
+              { kind: 'entity', entityType: 'Announcements', connector: 'graph-lists' },
+              { kind: 'entity', entityType: 'Product' },
+            ],
+          },
+        },
+      ],
+    })
+    expect(bindings).toEqual([{ entityType: 'Announcements', connector: 'graph-lists' }])
+  })
+
+  it('a form binding may name the connection its connector-less source lacks', () => {
+    const bindings = extractEntityTypes({
+      capabilities: [
+        {
+          capability: 'platform/persistence',
+          config: { dataSources: [{ id: 'Ideas', kind: 'entity', entityType: 'Ideas' }] },
+        },
+        {
+          capability: 'platform/entities',
+          config: { formBindings: [{ sourceId: 'Ideas', connector: 'graph-lists' }] },
+        },
+      ],
+    })
+    expect(bindings).toEqual([{ entityType: 'Ideas', connector: 'graph-lists' }])
   })
 
   it('resolves a WRITE binding through the source it names', () => {
@@ -82,10 +114,7 @@ describe('extractEntityTypes', () => {
         },
       ],
     })
-    expect(bindings).toEqual([
-      { entityType: 'Ideas', connector: 'graph-lists' },
-      { entityType: 'Todos', connector: 'graph-tasks' },
-    ])
+    expect(bindings).toEqual([{ entityType: 'Todos', connector: 'graph-tasks' }])
   })
 
   it('registers NOTHING for a form that writes to a rest source', () => {
@@ -115,8 +144,8 @@ describe('extractEntityTypes', () => {
           capability: 'platform/persistence',
           config: {
             dataSources: [
-              { kind: 'entity', entityType: 'Announcements' },
-              { kind: 'entity', entityType: 'Announcements' },
+              { kind: 'entity', entityType: 'Announcements', connector: 'graph-lists' },
+              { kind: 'entity', entityType: 'Announcements', connector: 'graph-lists' },
             ],
           },
         },

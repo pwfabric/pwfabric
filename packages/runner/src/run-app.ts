@@ -51,6 +51,7 @@ import { loadEnvelope } from './load-envelope.js'
 import { authErrorMessage } from './copy.js'
 import { renderNotFound } from './not-found.js'
 import { isOwnApiRef, ownApiBaseOf } from './api-base.js'
+import { ownRecordsReceipt } from './own-records.js'
 import { receiptSurfaceId, startPreviewSession, type PreviewPage, type PreviewSession } from './preview-session.js'
 import type { PreviewSurface } from './preview-bridge.js'
 
@@ -152,6 +153,17 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
    * so a session from either reaches the app's records.
    */
   const ownApiBase = ownApiBaseOf(auth)
+
+  /**
+   * AN `entity` SOURCE WITH NO `connector` IS THE APP'S OWN RECORDS of its
+   * `entityType` (data-protocol §2.2). With a base in hand it is served from
+   * `<base>/records/<T>` as a `rest` source carrying `authProviderRef: <base>`
+   * — the same rewrite `pwf dev` applies (see own-records.ts). Without one it
+   * is left alone: no facade is built for it and it draws its `fallback`.
+   * A connection serves a source only when the source names it.
+   */
+  const withOwnRecords = <R extends { capabilities?: unknown }>(receipt: R): R =>
+    ownApiBase ? ownRecordsReceipt(receipt, ownApiBase) : receipt
 
   const pages = project.surfaceOrder
   const entry = project.entrySurfaceId
@@ -283,8 +295,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   if (initialError && !appSession && !isGated(project, bridge, false)) showDialog(initialError)
   let pill: ReturnType<typeof mountSessionPill> | null = null
 
-  // graph-lists connector instance survives route changes per login session
-  // (its site-id cache is the point); cleared on logout/login.
+  // A connection's connector instance survives route changes per login session
+  // (an engine's own caches — e.g. a site-id lookup — are the point); cleared
+  // on logout/login.
   const connectorCache = new Map<string, EntityConnector>()
 
   // The surface CONNECTIONS CONTEXT for connector/provider
@@ -436,9 +449,11 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // itself; an issuer's visitor presents the token minted for THIS app
     // (see AuthBridge.getDoorToken) — never the data token, whose audience
     // is the data provider and which the door rightly refuses.
-    const receipt = await fetchJson<SurfaceReceipt>(
-      withVersion(`${source}/${file}`, opts.version),
-      doorHeaders({ appSession: appSession?.token, doorToken: await bridge?.getDoorToken() })
+    const receipt = withOwnRecords(
+      await fetchJson<SurfaceReceipt>(
+        withVersion(`${source}/${file}`, opts.version),
+        doorHeaders({ appSession: appSession?.token, doorToken: await bridge?.getDoorToken() })
+      )
     )
     if (seq !== routeSeq) return
 
@@ -611,7 +626,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // The same pipeline a fetched receipt goes through, and the same query
       // seeding — the pushed page behaves like the built one would.
       prepare: (pushed: PreviewSurface) => {
-        const receipt = pushed as unknown as SurfaceReceipt
+        const receipt = withOwnRecords(pushed as unknown as SurfaceReceipt)
         const seeded = seedStateFromQuery(receipt, new URLSearchParams(router.query()))
         return {
           blocks: pageBlocks(receipt.blocks, router.current() ?? entry),
