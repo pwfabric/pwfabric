@@ -194,6 +194,27 @@ describe('assemblePwapp', () => {
     expect(bad.diagnostics.find((d) => d.code === 'BLOCK_ORIGIN_INVALID')).toMatchObject({ severity: 'error' })
   })
 
+  it("carries each placed block's prop names and bindable into blocks/manifest.json", async () => {
+    const root = await app()
+    const rel = join(root, ...PACK_REL, 'atoms/blocks/text/title/manifest.json')
+    const m = JSON.parse(await readFile(rel, 'utf8')) as { definition: { props: Record<string, unknown>[] } }
+    m.definition.props = [
+      { name: 'text', type: 'string', jsonSchema: { type: 'string' } },
+      { name: 'level', type: 'number', bindable: false },
+      { name: 'note', type: 'string', bindable: true },
+      { name: 'broken', bindable: 'no' },
+    ]
+    await writeFile(rel, JSON.stringify(m))
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const blocks = parse(r.files.get('blocks/manifest.json')) as { blockType: string; definition: unknown }[]
+    expect(blocks.find((b) => b.blockType === 'title')?.definition).toEqual({
+      name: 'title',
+      props: [{ name: 'text' }, { name: 'level', bindable: false }, { name: 'note', bindable: true }, { name: 'broken' }],
+    })
+    expect(blocks.find((b) => b.blockType === 'stack')?.definition).toEqual({ name: 'stack', props: [{ name: 'gap' }] })
+  })
+
   it('refuses a folder that is not an app, or not a pwpack at all', async () => {
     const root = await app()
     await writeFile(join(root, 'pwpack.json'), JSON.stringify({ id: '@pwpack/k/demo', version: '0.1.0' }))

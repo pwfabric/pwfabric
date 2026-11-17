@@ -3,6 +3,8 @@
  * `navigation.json`, `connections.json`, the two module manifests), built
  * from the app folder's declaration.
  */
+import type { DynamicBlockProp } from '@pwfabric/contracts'
+import { blockPropDescriptors } from '@pwfabric/pack'
 import type { AssembleDiagnostic } from './diagnostics.js'
 import { isRecord } from './sources.js'
 
@@ -144,7 +146,25 @@ export interface BlockManifestEntry {
   readonly integrity: string
   readonly publisher: string
   readonly publisherVerified: boolean
-  readonly definition: { readonly name: string }
+  /**
+   * `props`: the props the block's manifest declares, name and `bindable`
+   * only — the renderer leaves a `bindable: false` prop as written. Absent
+   * when the manifest declares no props.
+   */
+  readonly definition: { readonly name: string; readonly props?: readonly DynamicBlockProp[] }
+}
+
+/**
+ * The props a block manifest declares, as `blocks/manifest.json` carries
+ * them. `bindable` is copied only when it is a boolean; a descriptor without
+ * a name is skipped (the validator reports it). `undefined` when the manifest
+ * declares no props.
+ */
+export function manifestProps(manifest: unknown): DynamicBlockProp[] | undefined {
+  return blockPropDescriptors(manifest)?.map((p) => {
+    const bindable = (p as { bindable?: unknown }).bindable
+    return typeof bindable === 'boolean' ? { name: p.name, bindable } : { name: p.name }
+  })
 }
 
 /** One entry of `engines/manifest.json`. */

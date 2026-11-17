@@ -8,11 +8,15 @@
  * - Whole-value: "{{items}}" returns raw value (array, object, etc.)
  * - String interpolation: "Total: {{count}}" returns interpolated string
  * - Recursively walks block tree and nested objects/arrays in props
+ * - A prop the block's manifest declares `bindable: false` is a literal: it is
+ *   left exactly as written, nested values included (block-manifest, "Prop
+ *   descriptor"). A prop with no declaration is bindable.
  *
  * @module @pwfabric/runtime/render/resolve-expressions
  */
 
 import type { Block } from '@pwfabric/core'
+import type { DynamicBlockDescriptor } from '@pwfabric/contracts'
 import { BREAKPOINT_ORDER } from '@pwfabric/core'
 import { evaluate, interpolate, createExpressionContext } from '../surface/expression.js'
 import type { ExpressionContext } from '../surface/expression.js'
@@ -22,7 +26,28 @@ import { isExpressionLink, isLinkMember, safeDataLink, type LinkHref } from './l
  * The expression scope plus how this page writes an in-app link. Carried in
  * the context so a repeat's per-row context (`{ ...context, data }`) keeps it.
  */
-type ResolveContext = ExpressionContext & { readonly linkHref?: LinkHref }
+type ResolveContext = ExpressionContext & {
+  readonly linkHref?: LinkHref
+  readonly literalProps?: LiteralProps
+}
+
+/** Block type → the names of its props that take a literal only (`bindable: false`). */
+export type LiteralProps = ReadonlyMap<string, ReadonlySet<string>>
+
+/**
+ * The literal props of each block type, read from the descriptors the host
+ * hands the renderer (`blocks/manifest.json` entries): every prop whose
+ * `definition.props` entry says `bindable: false`. A type with none is left
+ * out, so its props all resolve.
+ */
+export function literalPropsOf(descriptors: Iterable<DynamicBlockDescriptor>): Map<string, ReadonlySet<string>> {
+  const out = new Map<string, ReadonlySet<string>>()
+  for (const d of descriptors) {
+    const names = (d.definition.props ?? []).filter((p) => p.bindable === false).map((p) => p.name)
+    if (names.length > 0) out.set(d.blockType, new Set(names))
+  }
+  return out
+}
 
 // ============================================================
 // WHOLE-VALUE PATTERN
@@ -142,17 +167,20 @@ function resolveValue(value: unknown, context: ResolveContext): unknown {
  * @param helpers - Optional additional helper functions
  * @param options.linkHref - Writes a resolved in-app link in the host's router
  *   form; applied to links whose page is an expression (see links.ts)
+ * @param options.literalProps - Per block type, the props left as written
+ *   (`bindable: false`; see literalPropsOf)
  * @returns New block array with resolved prop values
  */
 export function resolveBlockExpressions(
   blocks: readonly Block[],
   data: Record<string, unknown>,
   helpers?: Record<string, (...args: unknown[]) => unknown>,
-  options: { readonly linkHref?: LinkHref } = {}
+  options: { readonly linkHref?: LinkHref; readonly literalProps?: LiteralProps } = {}
 ): Block[] {
   const context: ResolveContext = {
     ...createExpressionContext(data, helpers),
     ...(options.linkHref ? { linkHref: options.linkHref } : {}),
+    ...(options.literalProps && options.literalProps.size > 0 ? { literalProps: options.literalProps } : {}),
   }
   return blocks
     .map((block) => resolveBlock(block, context, false))
@@ -286,9 +314,7 @@ function resolveBlock(block: Block, context: ResolveContext, insideForm: boolean
 }
 
 function resolveVisibleBlock(block: Block, context: ResolveContext, insideForm: boolean): Block {
-  const resolvedProps = block.props
-    ? (resolveValue(block.props, context) as Record<string, unknown>)
-    : block.props
+  const resolvedProps = block.props ? resolveProps(block, block.props, context) : block.props
 
   // Item-template expansion (repeat + {{item.*}} scope): a block carrying a
   // block-level `repeat` expression treats its authored children as a PER-ITEM
@@ -335,6 +361,22 @@ function resolveVisibleBlock(block: Block, context: ResolveContext, insideForm: 
     ...block,
     props: resolvedProps,
   }
+}
+
+/**
+ * A block's props, resolved — except those its manifest declares
+ * `bindable: false`, which are copied as written: a code sample that shows
+ * `{{state.x}}` must show those braces, not the value.
+ */
+function resolveProps(block: Block, props: Record<string, unknown>, context: ResolveContext): Record<string, unknown> {
+  const literal = context.literalProps?.get(block.type)
+  if (!literal) return resolveValue(props, context) as Record<string, unknown>
+  const bound: Record<string, unknown> = {}
+  for (const [key, val] of Object.entries(props)) if (!literal.has(key)) bound[key] = val
+  const resolved = resolveValue(bound, context) as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const [key, val] of Object.entries(props)) out[key] = literal.has(key) ? val : resolved[key]
+  return out
 }
 
 /**

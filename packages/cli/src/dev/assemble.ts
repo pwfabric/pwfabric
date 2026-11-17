@@ -21,6 +21,7 @@ import {
   buildConnections,
   buildProjectJson,
   deriveNavigation,
+  manifestProps,
   mergeEnvelopeEntries,
   moduleFileName,
   publisherOf,
@@ -273,13 +274,14 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     }
     const file = `blocks/${moduleFileName(type, hexOf(atom.hash))}`
     modules.set(file, enc.encode(atom.code))
+    const props = manifestProps(atom.manifest)
     blockManifest.push({
       blockType: type,
       moduleUrl: file,
       integrity: hexOf(atom.hash),
       publisher: publisherOf(atom.source.id),
       publisherVerified: false,
-      definition: { name: type },
+      definition: props ? { name: type, props } : { name: type },
     })
   }
 

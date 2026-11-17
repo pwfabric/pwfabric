@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import type { Block } from '@pwfabric/core'
 import { DEFAULT_BLOCK_LAYOUT } from '@pwfabric/core'
-import { resolveBlockExpressions, resolveString } from '../resolve-expressions.js'
+import { literalPropsOf, resolveBlockExpressions, resolveString } from '../resolve-expressions.js'
 import { createExpressionContext } from '../../surface/expression.js'
 
 /** Safe accessor that throws in tests if index is out of bounds */
@@ -453,5 +453,69 @@ describe('resolveBlockExpressions — a link from data is a link or nothing', ()
     expect(hrefOf('mailto:hello@example.com', linkHref)).toBe('mailto:hello@example.com')
     expect(hrefOf('tel:+15550100', linkHref)).toBe('tel:+15550100')
     expect(hrefOf('/café', linkHref)).toBe('#/café')
+  })
+})
+
+// ============================================================
+// bindable: false — a literal prop is left exactly as written
+// ============================================================
+
+describe('resolveBlockExpressions — props the manifest declares bindable: false', () => {
+  const literalProps = literalPropsOf([
+    {
+      blockType: 'code',
+      moduleUrl: 'blocks/code.mjs',
+      integrity: 'x',
+      publisher: 'p',
+      publisherVerified: false,
+      definition: {
+        name: 'code',
+        props: [{ name: 'code', bindable: false }, { name: 'sample', bindable: false }, { name: 'filename' }, { name: 'caption', bindable: true }],
+      },
+    },
+  ])
+  const data = { state: { x: 'RESOLVED' }, rows: [{ n: 'a' }, { n: 'b' }] }
+
+  it('renders a bindable:false prop with {{state.x}} as the literal', () => {
+    const blocks: Block[] = [
+      { id: 'c', type: 'code', layout: DEFAULT_BLOCK_LAYOUT, props: { code: 'const x = {{state.x}}', filename: '{{state.x}}.ts', caption: '{{state.x}}' } },
+    ]
+    const props = at(resolveBlockExpressions(blocks, data, undefined, { literalProps }), 0).props ?? {}
+    expect(props.code).toBe('const x = {{state.x}}')
+    // Undeclared and bindable:true props still resolve.
+    expect(props.filename).toBe('RESOLVED.ts')
+    expect(props.caption).toBe('RESOLVED')
+  })
+
+  it('leaves every value nested in a bindable:false object or list as written', () => {
+    const sample = { title: '{{state.x}}', lines: ['{{state.x}}', { v: '{{rows}}' }] }
+    const blocks: Block[] = [{ id: 'c', type: 'code', layout: DEFAULT_BLOCK_LAYOUT, props: { sample } }]
+    const props = at(resolveBlockExpressions(blocks, data, undefined, { literalProps }), 0).props ?? {}
+    expect(props.sample).toEqual(sample)
+  })
+
+  it('keeps the literal on a repeated block and on another block type the prop name is bindable', () => {
+    const blocks: Block[] = [
+      {
+        id: 'list',
+        type: 'stack',
+        layout: DEFAULT_BLOCK_LAYOUT,
+        repeat: '{{rows}}',
+        children: [{ id: 'c', type: 'code', layout: DEFAULT_BLOCK_LAYOUT, props: { code: '{{item.n}}', filename: '{{item.n}}' } }],
+      } as Block,
+      { id: 't', type: 'text', layout: DEFAULT_BLOCK_LAYOUT, props: { code: '{{state.x}}' } },
+    ]
+    const out = resolveBlockExpressions(blocks, data, undefined, { literalProps })
+    const clones = at(out, 0).children ?? []
+    expect(clones.map((c) => c.props?.code)).toEqual(['{{item.n}}', '{{item.n}}'])
+    expect(clones.map((c) => c.props?.filename)).toEqual(['a', 'b'])
+    expect(at(out, 1).props?.code).toBe('RESOLVED')
+  })
+
+  it('resolves every prop of a block whose descriptor declares no props', () => {
+    const none = literalPropsOf([{ blockType: 'code', moduleUrl: 'm', integrity: 'x', publisher: 'p', publisherVerified: false, definition: { name: 'code' } }])
+    const blocks: Block[] = [{ id: 'c', type: 'code', layout: DEFAULT_BLOCK_LAYOUT, props: { code: '{{state.x}}' } }]
+    expect(at(resolveBlockExpressions(blocks, data, undefined, { literalProps: none }), 0).props?.code).toBe('RESOLVED')
+    expect(none.size).toBe(0)
   })
 })

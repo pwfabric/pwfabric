@@ -143,6 +143,7 @@ export type {
   ShellSelectionOptions,
   ShellSelectionProviderProps,
 } from './render/index.js'
+export type { LiteralProps } from './render/index.js'
 export {
   ShellSelectionContext,
   ShellSelectionProvider,
@@ -163,6 +164,7 @@ export {
   blockActionsOf,
   resolveEndpoint,
   resolveBlockExpressions,
+  literalPropsOf,
   resolveString,
   isHrefKey,
   isLinkMember,
