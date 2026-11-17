@@ -22,6 +22,10 @@ its release, and no ordinary range (`^1.0.0`) picks one up.
 
 1. Every package in `packages/` carries the version being released (the
    `version` field), on a commit of `main` whose `ci` is green.
+   Each BSL package's `LICENSE` names that version (`Licensed Work`) and a
+   `Change Date` four years after the day the release is published;
+   `node scripts/check-licences.mjs --release <YYYY-MM-DD>` checks both, and
+   the release workflow runs it with the day it publishes.
 2. Create a GitHub Release with the tag `v<version>` (for example
    `v1.0.0-rc.0`) on that commit and publish it. Tick **Pre-release** for a
    prerelease version, and only then: the workflow refuses a mismatch either
