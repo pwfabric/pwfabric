@@ -1,5 +1,9 @@
 # @pwfabric/authoring
 
+## 2.2.0
+
+- No changes; released with the other packages at 2.2.0.
+
 ## 2.1.0
 
 - No changes; released with the other packages at 2.1.0.

@@ -1,8 +1,24 @@
 # @pwfabric/cli
 
-## Unreleased
+## 2.2.0
 
 - Added: `pwf validate` (and `pwf pack`) warn `BLOCK_PROP_NOT_BINDABLE` about a `{{…}}` in a prop the block's manifest declares `bindable: false`, nested values included: since 2.1.0 the runtime leaves such a prop as written, so the mistake used to show only at render, as raw braces.
+- Changed (behaviour, the record host): the `pwf dev` record host runs `prepareRecordWrite` (`@pwfabric/contracts`) on every create and update. A field the entity does not declare is refused; a field declared `server` is set by the host and a client value for it is refused; declared types are checked (new `enum` with `values`); a `required` field must have a value. One `400 VALIDATION_FAILED` lists every problem. **The owner-name heuristic is removed:** `ownerId`, `createdBy` and similar names no longer fill themselves — declare the owner field `server: "owner"`, and do not send fields the entity does not declare. `EntityField` carries `values` and `server`.
+- Added (minor): `project.json` `locale`, written by `pwf dev`/`pwf build` from `app/plan.json` `locale`.
+- Added (minor): an app's own not-found page — `pwpack.json` `app.notFound`: `pwf dev` and `pwf build` serve its receipt and write `project.json` `notFoundSurfaceId`.
+- Added (minor): `pwf run <app>` (or `<app>/.pwf/out`) serves the app's records read-only — the same store and query path as `pwf dev`, the built receipts pointed at it; a create, update or delete is refused `403 READ_ONLY` with a sentence. `createLocalHost` takes `readOnly`.
+- Changed: the dev record host lists rows in file order (seed order, then creation order; an update keeps the row's position); it no longer sorts them.
+- Fixed: `pwf dev` and `pwf run` share one content-type table (csv, pdf, md, xml, ics, zip, audio, video, fonts); a path to a CSV is no longer answered with the app shell.
+- Added: the app's policy carries `frame-src 'self'` when a page frames a document of its own media (`pwpack/media/*.pdf`, `.html`, `.htm`, `.txt`).
+- Changed (behaviour, pwapp shell format — a host that serves or rewrites a build must act on it):
+  - `seed.js` is gone: `embed.js` seeds every global.
+  - The shell has no render-blocking script. The renderer is `<script async>` (none at all for an app behind a sign-in gate) and the runner loads it when it draws a page; the shell modulepreloads the runner and every shim and preloads the boot envelope files.
+  - The runtime files are content-hashed: `assets/{embed,runner,boot,theme}.<hash8>.*`. Read their names from the shell; do not assume `assets/embed.js`.
+  - `_headers` carries cache rules on disjoint paths: `/`, `/index.html`, `/shims/*`, the two manifests and `/pwpack/*` `no-cache`; `/assets/*`, `/blocks/*.mjs` and `/engines/*.mjs` `public, max-age=31536000, immutable`; `/pwpack/media/*` one hour. No source map ships to visitors.
+  - `<meta name="description">` from `app/plan.json` `description` (new, optional) or the entry page's receipt `description`; `robots.txt` in the build.
+  - A build whose identity has no `auth.json` writes `identity.door: false` in `project.json`.
+  - Fonts: only the styles the theme draws (body weight plus 500/600/700, heading weight, mono regular, no italics); the stylesheet is preloaded and linked by the boot module; `theme.css` declares a metric-matched `"<Family> Fallback"` face and the theme stacks name it after each webfont.
+- Added: `pwf run`'s `_headers` matcher takes a splat anywhere in a pattern (`/blocks/*.mjs`) and `! Name` (detach a header).
 
 ## 2.1.0
 

@@ -1,5 +1,12 @@
 # @pwfabric/embed
 
+## 2.2.0
+
+- Added (minor): render options `onTitle`, `onDescription`, `locale` and `address`, passed through to the runtime.
+- Added (minor): `loadBlocks(blocks, descriptors)` (also `window.PWFabric.loadBlocks`), `surfaceBlockTypes` and `BLOCK_WAIT_MS`: the modules of every block type a page places are loaded all at once and the fat `render` waits for them (capped at 3 s), so a page is drawn in one commit instead of one wave per nesting level.
+- Changed: `embed.js` seeds every global a block may import (`__pwfabric_react_dom` and `__pwfabric_core` too), so a page needs no `seed.js` before it.
+- Changed (behaviour): `embed.js` ships zod's English messages only (`z.locales.en`) and a stand-in for `next/image`: 999 KB → 731 KB (258 → 217 KB gzip). A block that set another zod locale gets English messages.
+
 ## 2.1.0
 
 - Added (minor): a `linkHref` option on the render entry points, passed through to the runtime: how the host writes an in-app link whose page was an expression (`href: "{{item.url}}"`), rewritten for its router once the value is known. The runner sets it; a host that renders receipts itself sets it the same way.
