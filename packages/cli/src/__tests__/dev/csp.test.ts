@@ -91,6 +91,19 @@ describe('content security policy', () => {
     ])
   })
 
+  it("allows framing the app's own media document, and only that", () => {
+    // An embed showing the app's own PDF was refused: there was no frame-src at all.
+    const page = (props: Record<string, unknown>): Map<string, unknown> =>
+      new Map([['report', { blocks: [{ type: 'container', props: {}, children: [{ type: 'embed', props }] }] }]])
+    expect(deriveCsp({ ...base, receipts: page({ src: 'pwpack/media/sprint-25.pdf' }) }).directives['frame-src']).toEqual(["'self'"])
+    expect(deriveCsp({ ...base, receipts: page({ src: '/pwpack/media/terms.html' }) }).directives['frame-src']).toEqual(["'self'"])
+    // An image of its own is not a frame; a link to the PDF is navigation, not a frame.
+    expect(deriveCsp({ ...base, receipts: page({ src: 'pwpack/media/logo.svg' }) }).directives['frame-src']).toBeUndefined()
+    expect(deriveCsp({ ...base, receipts: page({ href: 'pwpack/media/sprint-25.pdf' }) }).directives['frame-src']).toBeUndefined()
+    // Nothing outside the media folder.
+    expect(deriveCsp({ ...base, receipts: page({ src: 'pwpack/media/../project.html' }) }).directives['frame-src']).toBeUndefined()
+  })
+
   it('adds the origins a placed block declares to their directives', () => {
     const csp = deriveCsp({
       ...base,

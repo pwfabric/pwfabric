@@ -19,7 +19,10 @@
  *                attributes. Neither can be hashed ahead of time.
  *   img-src      'self' data: blob: [+ media origins]
  *   media-src    'self' data: blob: [+ media origins]
- *   frame-src    [media origins + declared frame origins] — only when there are any
+ *   frame-src    [media origins + declared frame origins] — only when there are any;
+ *                'self' when a page frames a document of the app's OWN media
+ *                (a block prop holding `pwpack/media/<file>.pdf|.html|.htm|.txt`),
+ *                so a receipt or a report can be shown in place
  *   font-src     'self' [+ the webfont file origin]
  *   connect-src  'self' [+ every origin the app's data and sign-in reach]
  *   base-uri     'self'  — a host that serves the app under a sub-path
@@ -161,6 +164,27 @@ function collectUrls(value: Record<string, unknown> | unknown[], out: string[]):
   }
 }
 
+/**
+ * A document of the app's own media that a frame can show: `pwpack/media/…`
+ * (as a block's `src` is written, `./` or `/` before it naming the same file)
+ * ending in a document type. An image, a sound or a video is not framed — it
+ * has its own element and directive.
+ */
+const OWN_FRAMED_DOCUMENT = /^(?:\.?\/)?pwpack\/media\/(?!.*\.\.)[^?#]+\.(?:pdf|html?|txt)(?:[?#].*)?$/i
+
+/** Whether any non-link prop of the receipt's blocks holds a document of the app's own media. */
+function framesOwnMedia(blocks: unknown): boolean {
+  if (!Array.isArray(blocks)) return false
+  const inValue = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(inValue)
+    if (!isRecord(value)) return false
+    return Object.entries(value).some(([key, v]) =>
+      typeof v === 'string' ? !LINK_PROP.test(key) && OWN_FRAMED_DOCUMENT.test(v.trim()) : inValue(v)
+    )
+  }
+  return blocks.some((block) => isRecord(block) && (inValue(block['props']) || framesOwnMedia(block['children'])))
+}
+
 /** `rest` data sources of a receipt's persistence capability. */
 function restEndpointsOf(receipt: unknown): string[] {
   if (!isRecord(receipt) || !Array.isArray(receipt['capabilities'])) return []
@@ -196,6 +220,7 @@ export function deriveCsp(input: CspInputs): AppCsp {
   const img = new Set<string>()
   const mediaOnly = new Set<string>()
   const frame = new Set<string>()
+  let ownFrames = false
 
   const addConnect = (value: string, source: string): void => {
     const o = originOf(value)
@@ -208,6 +233,7 @@ export function deriveCsp(input: CspInputs): AppCsp {
     for (const endpoint of restEndpointsOf(receipt)) addConnect(endpoint, `page:${key}`)
     const urls: string[] = []
     if (isRecord(receipt)) mediaUrlsOf(receipt['blocks'], urls)
+    if (isRecord(receipt) && framesOwnMedia(receipt['blocks'])) ownFrames = true
     for (const url of urls) {
       const o = originOf(url)
       if (o) media.add(o)
@@ -279,7 +305,7 @@ export function deriveCsp(input: CspInputs): AppCsp {
   }
 
   const sorted = (...sets: Set<string>[]): string[] => [...new Set(sets.flatMap((s) => [...s]))].sort()
-  const frames = sorted(media, frame)
+  const frames = [...(ownFrames ? ["'self'"] : []), ...sorted(media, frame)]
   const directives: CspDirectives = {
     'default-src': ["'none'"],
     'script-src': ["'self'", 'blob:', scriptHash(input.importMapText)],
