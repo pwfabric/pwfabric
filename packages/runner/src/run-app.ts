@@ -480,7 +480,12 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     const blocks = pageBlocks(receipt.blocks, key)
     const session = bridge?.session
 
-    const title = composeTitle(project.title, receipt.title)
+    // A PER-RECORD TITLE (`{{dish.0.name}}`) is known only once its record
+    // has loaded: until then the tab shows the app's title, and the renderer
+    // reports the resolved page title through `onTitle` (receipt §1).
+    const titleTemplate = typeof receipt.title === 'string' ? receipt.title : undefined
+    const titleIsExpression = titleTemplate?.includes('{{') === true
+    const title = composeTitle(project.title, titleIsExpression ? undefined : titleTemplate)
     if (title) document.title = title
 
     // Token-backed entity facade (only with a live session and declared
@@ -527,7 +532,12 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // capabilities MUST travel: DataBound derives its dataSources from
     // surface.capabilities — omitting them leaves every `{{source}}`
     // expression unresolved and data blocks stuck in their error state.
-    const surface = { blocks, appearance: receipt.appearance, capabilities: seededCapabilities ?? [] }
+    const surface = {
+      blocks,
+      appearance: receipt.appearance,
+      capabilities: seededCapabilities ?? [],
+      ...(titleTemplate !== undefined ? { title: titleTemplate } : {}),
+    }
     const renderOptions: Record<string, unknown> = {
       mode: 'fat',
       blocks: blockManifest,
@@ -543,6 +553,12 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // A link whose page is an expression is written for the router once its
       // value is known (rewriteHrefs left it as written).
       linkHref: linkHrefFor(entry, router.toHref),
+      ...(typeof project.locale === 'string' && project.locale ? { locale: project.locale } : {}),
+      onTitle: (resolved: string | undefined) => {
+        if (seq !== routeSeq) return
+        const next = composeTitle(project.title, resolved)
+        if (next) document.title = next
+      },
       ...(entityFacade ? { entityFacade } : {}),
       // The account control's two actions. The renderer forwards every block
       // event here; the runtime's own dispatcher ignores these types.

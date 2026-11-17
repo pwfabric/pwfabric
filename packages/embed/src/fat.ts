@@ -77,6 +77,10 @@ export interface RenderFatOptions {
   readonly dataCache?: SurfaceDataCache
   /** How the host writes an in-app link whose page was an expression; see the runtime's render/links.ts. */
   readonly linkHref?: LinkHref
+  /** Told the page title once its expressions resolve (`undefined` while they resolve to nothing). */
+  readonly onTitle?: (title: string | undefined) => void
+  /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
+  readonly locale?: string
 
   /** Inline appearance ref; overrides `surface.appearance` when given. */
   readonly appearance?: RenderableSurface['appearance']
@@ -186,6 +190,8 @@ export function fatCoreOptions(opts: RenderFatOptions): RenderCoreOptions {
     ...(opts.loadingStrategy !== undefined ? { loadingStrategy: opts.loadingStrategy } : {}),
     ...(opts.dataCache !== undefined ? { dataCache: opts.dataCache } : {}),
     ...(opts.linkHref !== undefined ? { linkHref: opts.linkHref } : {}),
+    ...(opts.onTitle !== undefined ? { onTitle: opts.onTitle } : {}),
+    ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
     ...(opts.theme !== undefined ? { theme: opts.theme } : {}),
     ...(opts.viewport !== undefined ? { viewport: opts.viewport } : {}),
     ...(opts.interactionMode !== undefined ? { interactionMode: opts.interactionMode } : {}),

@@ -216,11 +216,13 @@ export const dataSourceSchema = z.object({
   // never carries credential values (auth law).
   authProviderRef: z.string().optional(),
   /**
-   * Fallback payload used when the source cannot be served — connector
-   * unregistered / failed / 403. The runtime binds `fallback` as the source
-   * data AND keeps `__errors.<id>` populated, so a pattern shipped without
-   * its connection still renders honestly (a host can mark it "sample data").
-   * Shape mirrors the live payload: an array for list sources.
+   * Sample payload for a source NOTHING IS CONNECTED to serve — a connector
+   * the host did not register, no entity facade, no records base (a pack
+   * gallery, a preview). The runtime binds it with the source's `query`
+   * applied, and `__errorCodes.<id>` is `"unconnected"`. A REAL failure — a
+   * refused read, a not-found, a server error, a network failure — binds no
+   * rows, whatever `fallback` says (data-protocol §2.5). Shape mirrors the
+   * live payload: an array for list sources.
    */
   fallback: z.unknown().optional(),
   /**
@@ -258,6 +260,30 @@ export const surfaceActionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('showBlock'), blockId: z.string().min(1) }),
   z.object({ type: z.literal('hideBlock'), blockId: z.string().min(1) }),
   z.object({ type: z.literal('navigate'), url: z.string().min(1) }),
+  /**
+   * Write ONE record of a source — create, update or delete (data-protocol
+   * §1.3). `id` names the record of an update or a delete; `values` are the
+   * fields of a create or an update. Both are resolved like the rest of the
+   * action. Who may write is the server's access rules; after a successful
+   * write every source is fetched again (`refreshAll`). `statusKeys` drives
+   * page state like a form binding's (§4.2).
+   */
+  z.object({
+    type: z.literal('write'),
+    sourceId: z.string().min(1),
+    op: z.enum(['create', 'update', 'delete']),
+    id: z.union([z.string(), z.number()]).optional(),
+    values: z.record(z.string(), z.unknown()).optional(),
+    statusKeys: z
+      .object({
+        loading: z.string().min(1).optional(),
+        success: z.string().min(1).optional(),
+        error: z.string().min(1).optional(),
+        message: z.string().min(1).optional(),
+        detail: z.string().min(1).optional(),
+      })
+      .optional(),
+  }),
 ])
 export type SurfaceActionDecl = z.infer<typeof surfaceActionSchema>
 

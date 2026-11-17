@@ -58,6 +58,10 @@ describe('navigation and project.json', () => {
       surfaceReceiptFiles: { home: 'surfaces/home.receipt.json', menu: 'surfaces/menu.receipt.json' },
     })
   })
+  it('carries the locale the plan declares, for the dates and numbers the runtime writes (#8)', () => {
+    expect(buildProjectJson({ id: 'x', title: 'X', entry: 'home', pages, locale: 'en-GB' })['locale']).toBe('en-GB')
+    expect('locale' in buildProjectJson({ id: 'x', title: 'X', entry: 'home', pages })).toBe(false)
+  })
   it('carries the identity the app declares', () => {
     expect(buildProjectJson({ id: 'x', title: 'X', entry: 'home', pages, auth: { required: true, methods: ['password', 3] } })['identity']).toEqual({
       required: true,

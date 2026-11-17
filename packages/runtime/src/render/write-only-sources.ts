@@ -14,8 +14,16 @@
  *  - its id is referenced NOWHERE else: no block (props, expressions, actions,
  *    repeat), no behavior, no other source, no other capability config.
  *
- * The reference check is a whole-word search of every string, which errs on
- * the side of fetching: a stray word equal to the id keeps today's behaviour.
+ * WHAT COUNTS AS A READ. A page reads a source through an expression
+ * (`{{orders}}`, `{{__errors.orders}}`, `{{length(orders)}}`) or by naming it
+ * whole as a value (`{ "type": "refresh", "sourceId": "orders" }`). So a
+ * string reads `<id>` when it IS the id, or when one of its `{{ … }}`
+ * expressions names the id as a whole word. Plain text does not: the check
+ * used to search every string for the word, and the shop's own nav link
+ * `/orders` (label "Orders" aside) made the checkout's write-only `orders`
+ * source read — a 401 on every visit to a page that only creates orders.
+ * Inside an expression the search still errs on the side of fetching. A
+ * `write` action names its source to write it, not to read it.
  * A write-only source stays declared and registered — it is still the write
  * target — it is just never asked for its rows.
  *
@@ -42,6 +50,10 @@ export interface WriteOnlySourceInput {
 }
 
 function collectStrings(value: unknown, out: string[], seen: Set<object>): void {
+  collectInto(value, out, seen)
+}
+
+function collectInto(value: unknown, out: string[], seen: Set<object>): void {
   if (typeof value === 'string') {
     out.push(value)
     return
@@ -50,13 +62,15 @@ function collectStrings(value: unknown, out: string[], seen: Set<object>): void 
   if (seen.has(value)) return
   seen.add(value)
   if (Array.isArray(value)) {
-    for (const v of value) collectStrings(v, out, seen)
+    for (const v of value) collectInto(v, out, seen)
     return
   }
+  const isWrite = (value as Record<string, unknown>)['type'] === 'write'
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (isWrite && k === 'sourceId') continue
     // A key can be a reference too (`{ records: … }` maps).
     out.push(k)
-    collectStrings(v, out, seen)
+    collectInto(v, out, seen)
   }
 }
 
@@ -101,11 +115,23 @@ export function writeOnlySourceIds(input: WriteOnlySourceInput): ReadonlySet<str
 
   const result = new Set<string>()
   for (const id of candidates) {
-    const word = new RegExp(`(^|[^A-Za-z0-9_$])${escapeRegExp(id)}([^A-Za-z0-9_$]|$)`)
     const others: string[] = []
     for (const s of input.dataSources) if (s.id !== id) collectStrings(s, others, new Set())
-    const read = strings.some((s) => word.test(s)) || others.some((s) => word.test(s))
+    const read = strings.some((s) => readsSource(s, id)) || others.some((s) => readsSource(s, id))
     if (!read) result.add(id)
   }
   return result
+}
+
+const EXPRESSION = /\{\{([\s\S]*?)\}\}/g
+
+/** Does `text` read the source `id` — is it the id, or does an expression in it name the id? */
+function readsSource(text: string, id: string): boolean {
+  if (text.trim() === id) return true
+  if (!text.includes('{{')) return false
+  const word = new RegExp(`(^|[^A-Za-z0-9_$])${escapeRegExp(id)}([^A-Za-z0-9_$]|$)`)
+  for (const m of text.matchAll(EXPRESSION)) {
+    if (word.test(m[1] ?? '')) return true
+  }
+  return false
 }

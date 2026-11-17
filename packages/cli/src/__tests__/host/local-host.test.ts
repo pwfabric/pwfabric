@@ -401,9 +401,37 @@ describe('records', () => {
     const s = await start('l-shop')
     const missing = await fetch(`${s.base}/records/Product`, json({ price: 1 }))
     expect(missing.status).toBe(400)
-    expect(await missing.json()).toEqual({ error: { code: 'VALIDATION_FAILED', message: 'Missing required field(s): name.' } })
+    expect(await missing.json()).toEqual({ error: { code: 'VALIDATION_FAILED', message: 'name: is required' } })
     const cleared = await fetch(`${s.base}/records/Product/p1`, { ...json({ name: '' }), method: 'PATCH' })
     expect(cleared.status).toBe(400)
+  })
+
+  it('D2: sets the server-owned fields, refuses a client value for them, an undeclared field and a wrong type', async () => {
+    const s = await start('l-shop')
+    const token = await signIn(s.base)
+    const code = async (res: Response) => ({ status: res.status, body: (await res.json()) as { error?: { code: string; message: string } } })
+
+    const created = await fetch(`${s.base}/records/Order`, withSession(token, json({ item: 'A40', qty: '2', finish: 'sand', gift: 'on' })))
+    expect(created.status).toBe(201)
+    const order = ((await created.json()) as { data: Record<string, unknown> }).data
+    expect(order).toMatchObject({ item: 'A40', qty: 2, finish: 'sand', gift: true, buyer: 'dev-user', status: 'placed' })
+    expect(order['placedAt']).toBe(order['createdAt'])
+
+    const forged = await code(await fetch(`${s.base}/records/Order`, withSession(token, json({ item: 'A40', status: 'shipped', buyer: 'eve' }))))
+    expect(forged).toEqual({
+      status: 400,
+      body: { error: { code: 'VALIDATION_FAILED', message: 'status: is set by the server; buyer: is set by the server' } },
+    })
+    const undeclared = await code(await fetch(`${s.base}/records/Order`, withSession(token, json({ item: 'A40', total: 698 }))))
+    expect(undeclared.body.error?.message).toBe('total: is not a field of this record')
+    const typed = await code(await fetch(`${s.base}/records/Order`, withSession(token, json({ item: 'A40', qty: 'two', finish: 'red' }))))
+    expect(typed.body.error?.message).toBe('qty: must be a number; finish: must be one of "graphite", "sand"')
+
+    // An update may move a default field on, never the owner or the creation time.
+    const moved = await fetch(`${s.base}/records/Order/${String(order['id'])}`, withSession(token, { ...json({ status: 'shipped' }), method: 'PATCH' }))
+    expect(((await moved.json()) as { data: Record<string, unknown> }).data).toMatchObject({ status: 'shipped', buyer: 'dev-user' })
+    const stolen = await fetch(`${s.base}/records/Order/${String(order['id'])}`, withSession(token, { ...json({ buyer: 'eve' }), method: 'PATCH' }))
+    expect(stolen.status).toBe(400)
   })
 
   it('counts and aggregates', async () => {

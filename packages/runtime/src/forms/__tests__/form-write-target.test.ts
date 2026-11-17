@@ -45,16 +45,16 @@ describe('toFormWriteError — the server speaks, the form does not guess', () =
       message: 'name: Required; email: Invalid email',
     })
     expect(err.type).toBe('validation')
-    expect(err.message).toMatch(/^Check the highlighted fields/)
-    expect(err.message).toContain('name: Required')
+    expect(err.message).toBe('Check the highlighted fields: name, email.')
     expect(err.details).toEqual({
       status: 400,
       code: 'VALIDATION_FAILED',
       fields: ['name', 'email'],
+      detail: 'name: Required; email: Invalid email',
     })
   })
 
-  it('a 404 is NOT a validation error — it is the server refusing, in its own words', () => {
+  it('a 404 is NOT a validation error — the server refusing; its words are the detail, not the message', () => {
     const err = toFormWriteError({
       type: 'network',
       status: 404,
@@ -62,14 +62,15 @@ describe('toFormWriteError — the server speaks, the form does not guess', () =
       message: 'Route not found',
     })
     expect(err.type).toBe('not_found')
-    expect(err.message).toBe('The server could not save this record (404): Route not found')
-    expect(err.message).not.toMatch(/highlighted/)
+    expect(err.message).toBe('This could not be saved.')
+    expect((err.details as { detail: string }).detail).toBe('404 NOT_FOUND: Route not found')
   })
 
   it('a 5xx is a connector error with the status in the message', () => {
     const err = toFormWriteError({ type: 'network', status: 503, message: 'HTTP 503: Service Unavailable' })
     expect(err.type).toBe('connector')
-    expect(err.message).toBe('The server could not save this record (503): HTTP 503: Service Unavailable')
+    expect(err.message).toBe('The server could not save this. Try again later.')
+    expect((err.details as { detail: string }).detail).toBe('503: HTTP 503: Service Unavailable')
   })
 
   it('401/403 is unauthorized', () => {
@@ -84,6 +85,7 @@ describe('toFormWriteError — the server speaks, the form does not guess', () =
   it('no status at all (timeout, DNS) is a connector error that says the server was not reached', () => {
     const err = toFormWriteError({ type: 'timeout', message: 'Request was aborted' })
     expect(err.type).toBe('connector')
-    expect(err.message).toBe('Could not reach the server: Request was aborted')
+    expect(err.message).toBe('The server could not be reached. Check your connection and try again.')
+    expect((err.details as { detail: string }).detail).toBe('Could not reach the server: Request was aborted')
   })
 })

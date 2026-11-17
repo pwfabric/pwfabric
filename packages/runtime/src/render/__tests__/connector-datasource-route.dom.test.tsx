@@ -178,7 +178,7 @@ describe('entity dataSource connector routing', () => {
     )
 
     await waitFor(() =>
-      expect(screen.getByTestId('err').textContent).toContain('Integrity check failed')
+      expect(screen.getByTestId('err').textContent).toBe('This could not be loaded.')
     )
     // Registered-but-broken must NOT silently fall back to the default
     // facade — that would render data the surface author didn't wire.
@@ -187,7 +187,7 @@ describe('entity dataSource connector routing', () => {
 
   it('propagates an engine query error into __errors', async () => {
     const engine: ConnectorEngine = {
-      query: async () => ({ success: false as const, error: 'Graph 403: insufficient scope' }),
+      query: async () => ({ success: false as const, error: 'Graph 403: insufficient scope', code: 403 }),
     }
     const connections: SurfaceConnectionsValue = {
       connections: [{ name: 'graph-lists' }],
@@ -203,7 +203,7 @@ describe('entity dataSource connector routing', () => {
       />
     )
 
-    await waitFor(() => expect(screen.getByTestId('err').textContent).toContain('Graph 403'))
+    await waitFor(() => expect(screen.getByTestId('err').textContent).toBe('You do not have access to this.'))
   })
 })
 

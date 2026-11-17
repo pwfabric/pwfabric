@@ -95,6 +95,10 @@ export interface RenderCoreOptions {
   readonly dataCache?: SurfaceDataCache
   /** How the host writes an in-app link whose page was an expression; see the runtime's render/links.ts. */
   readonly linkHref?: LinkHref
+  /** Told the page title once its expressions resolve (`undefined` while they resolve to nothing). */
+  readonly onTitle?: (title: string | undefined) => void
+  /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
+  readonly locale?: string
 
 
   /** `live` (default) or `inert` (no auto-refresh, no dispatched actions). */
@@ -196,6 +200,8 @@ function buildRendererProps(opts: RenderCoreOptions): Record<string, unknown> {
   if (opts.loadingStrategy !== undefined) props.loadingStrategy = opts.loadingStrategy
   if (opts.dataCache !== undefined) props.dataCache = opts.dataCache
   if (opts.linkHref !== undefined) props.linkHref = opts.linkHref
+  if (opts.onTitle !== undefined) props.onTitle = opts.onTitle
+  if (opts.locale !== undefined) props.locale = opts.locale
   if (opts.interactionMode !== undefined) props.interactionMode = opts.interactionMode
   if (opts.basePath !== undefined) props.basePath = opts.basePath
   if (opts.imageAdapter !== undefined) props.imageAdapter = opts.imageAdapter

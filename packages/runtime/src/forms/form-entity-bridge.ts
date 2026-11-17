@@ -13,6 +13,7 @@
 
 import type { SurfaceEventBus } from '@pwfabric/contracts'
 import type { EntityMutationResult, EntityOperationError } from '../entity/types.js'
+import { writeFailureSentence } from './form-write-target.js'
 
 // Re-export Unsubscribe from contracts for convenience
 export type { Unsubscribe } from '@pwfabric/contracts'
@@ -45,6 +46,10 @@ export interface FormEntityBridgeConfig {
   /**
    * Optional path to navigate to after success.
    * Uses window.location.assign (client-side only).
+   *
+   * It may carry expressions (`/confirmation?id={{result.id}}`), resolved
+   * after the write against the page scope plus `result`, the record the
+   * write returned (data-protocol §4.4) — see `resolveRedirect` below.
    */
   successRedirect?: string
   /**
@@ -58,13 +63,19 @@ export interface FormEntityBridgeConfig {
     success?: string
     error?: string
     /**
-     * Where the writer's OWN WORDS go on failure — the server's status and
-     * message, or the validation sentence naming the fields. Cleared (`''`)
-     * when an attempt starts and on success, so a toast bound to it never
-     * shows yesterday's refusal. Without it a page can only say "it failed"
-     * and has to invent why.
+     * Where the VISITOR'S sentence goes on failure — "Check the highlighted
+     * fields: email.", "You are not allowed to save this." — never the
+     * server's or the runtime's internal words (writeFailureSentence).
+     * Cleared (`''`) when an attempt starts and on success, so a toast bound
+     * to it never shows yesterday's refusal.
      */
     message?: string
+    /**
+     * Where the writer's OWN WORDS go on failure — the server's status, code
+     * and message (`403 FORBIDDEN: You may not create Order records.`), for
+     * a developer or a details disclosure. Cleared like `message`.
+     */
+    detail?: string
   }
 }
 
@@ -102,7 +113,13 @@ export function attachFormEntityBridge(
    * the host adds the named controls `FormData` cannot see (a control drawn
    * from buttons has no native field; see forms/named-control-values).
    */
-  completeValues?: (formId: string, values: Record<string, unknown>) => Record<string, unknown>
+  completeValues?: (formId: string, values: Record<string, unknown>) => Record<string, unknown>,
+  /**
+   * Resolves `successRedirect` against the page scope plus `result` (the
+   * written record) and writes it in the router's form. Without it the
+   * address is followed as written.
+   */
+  resolveRedirect?: (template: string, result: Record<string, unknown>) => string | undefined
 ): () => void {
   // Drive a surface-state boolean via setState on the bus → handleEvent
   // (DataBoundInner) applies it. Lets the UI reflect the REAL create lifecycle.
@@ -131,6 +148,7 @@ export function attachFormEntityBridge(
     if (sk?.success) setState(descriptor.surfaceId, descriptor.blockId, sk.success, false)
     if (sk?.error) setState(descriptor.surfaceId, descriptor.blockId, sk.error, false)
     if (sk?.message) setState(descriptor.surfaceId, descriptor.blockId, sk.message, '')
+    if (sk?.detail) setState(descriptor.surfaceId, descriptor.blockId, sk.detail, '')
 
     const result = await writer.write(config.sourceId, mapped, config.method ?? 'POST')
 
@@ -154,16 +172,23 @@ export function attachFormEntityBridge(
         timestamp: Date.now(),
       })
       if (config.successRedirect) {
-        // Client-side navigation — safe to call in browser context
-        if (typeof window !== 'undefined') {
-          window.location.assign(config.successRedirect)
+        const written = { ...((result.data ?? {}) as Record<string, unknown>), id: result.id }
+        const target = resolveRedirect ? resolveRedirect(config.successRedirect, written) : config.successRedirect
+        // Client-side navigation — safe to call in browser context. A target
+        // that resolved to nothing (a refused `javascript:` from data) stays.
+        if (target && typeof window !== 'undefined') {
+          window.location.assign(target)
         }
       }
     } else {
       config.onError?.(result.error)
       // Failure is bound to the API result — and so are its words.
       if (sk?.error) setState(descriptor.surfaceId, descriptor.blockId, sk.error, true)
-      if (sk?.message) setState(descriptor.surfaceId, descriptor.blockId, sk.message, result.error.message)
+      if (sk?.message) setState(descriptor.surfaceId, descriptor.blockId, sk.message, writeFailureSentence(result.error))
+      if (sk?.detail) {
+        const detail = (result.error.details as { detail?: unknown } | undefined)?.detail
+        setState(descriptor.surfaceId, descriptor.blockId, sk.detail, typeof detail === 'string' ? detail : result.error.message)
+      }
     }
   })
 }

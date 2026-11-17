@@ -158,21 +158,16 @@ describe('form write when the bound source has no record', () => {
     expect(url).toBe(`${ENDPOINT}/att-7`)
   })
 
-  it('a server 404 surfaces as its own message, not a field-validation one', async () => {
+  it('a server 404 is not a field-validation message — and the visitor reads a sentence, not the route', async () => {
     serve([], answer({ error: { code: 'NOT_FOUND', message: 'Route not found' } }, 404))
     await mountAndSave('PATCH')
-    await waitFor(() =>
-      expect(screen.getByTestId('msg').textContent).toBe(
-        'The server could not save this record (404): Route not found'
-      )
-    )
+    await waitFor(() => expect(screen.getByTestId('msg').textContent).toBe('This could not be saved.'))
   })
 
   it('a server 400 validation refusal names the fields', async () => {
     serve([], answer({ error: { code: 'VALIDATION_FAILED', message: 'name: Required' } }, 400))
     await mountAndSave('POST')
-    await waitFor(() => expect(screen.getByTestId('msg').textContent).toMatch(/^Check the highlighted fields/))
-    expect(screen.getByTestId('msg').textContent).toContain('name: Required')
+    await waitFor(() => expect(screen.getByTestId('msg').textContent).toBe('Check the highlighted fields: name.'))
   })
 })
 

@@ -194,9 +194,7 @@ export class HttpEntityConnector implements EntityConnector {
     const fullUrl = params ? `${url}?${params}` : url
 
     const result = await this.request('GET', fullUrl)
-    if (!result.success) {
-      return { success: false, error: result.error }
-    }
+    if (!result.success) return result
 
     // A vendor shape is mapped BEFORE the built-in schema runs — the mapper
     // exists precisely for bodies this schema would reject, so validating first
@@ -274,7 +272,7 @@ export class HttpEntityConnector implements EntityConnector {
     const qs = params.toString()
 
     const result = await this.request('GET', qs ? `${url}?${qs}` : url)
-    if (!result.success) return { success: false, error: result.error }
+    if (!result.success) return result
 
     const envelope = result.data
     const body = envelope.data && typeof envelope.data === 'object' ? envelope.data : envelope
@@ -408,7 +406,7 @@ export class HttpEntityConnector implements EntityConnector {
 
           const errorBody = await response.text().catch(() => '')
           lastError = `HTTP ${response.status}: ${errorBody || response.statusText}`
-          return { success: false, error: lastError }
+          return { success: false, error: lastError, code: response.status }
         }
 
         if (method === 'DELETE' && response.status === 204) {
@@ -429,7 +427,9 @@ export class HttpEntityConnector implements EntityConnector {
       }
     }
 
-    return { success: false, error: lastError }
+    // Every attempt threw before an answer arrived: a network failure (or a
+    // timeout, which is one to the visitor).
+    return { success: false, error: lastError, code: 'network' }
   }
 
   private sleep(ms: number): Promise<void> {

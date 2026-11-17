@@ -173,6 +173,32 @@ describe('writeOnlySourceIds', () => {
     expect(viaBehavior.size).toBe(0)
   })
 
+  it('#15: a nav link or a word equal to the id is not a read — only an expression or the id itself is', () => {
+    // headphone-shop checkout: the shell's nav links to `/orders`, the
+    // checkout form only creates an Order; the page asked GET /records/Order
+    // on load and logged the 401 of a create-only model.
+    const blocks = [
+      { id: 'nav', type: 'navbar', props: { links: [{ label: 'Orders', href: '/orders' }], activeHref: '/orders' } },
+      { id: 't', type: 'text', props: { content: 'Your orders arrive in two days.' } },
+    ]
+    const dataSources = [{ id: 'orders' }, { id: 'other', endpoint: '/api/orders/summary' }]
+    expect([
+      ...writeOnlySourceIds({ blocks, dataSources, capabilities: caps([{ sourceId: 'orders' }]) }),
+    ]).toEqual(['orders'])
+    // …while an expression naming it still reads it.
+    const read = [...blocks, { id: 'n', type: 'text', props: { content: 'You have {{length(orders)}} orders' } }]
+    expect(writeOnlySourceIds({ blocks: read, dataSources, capabilities: caps([{ sourceId: 'orders' }]) }).size).toBe(0)
+  })
+
+  it('a write action names its source to write it, not to read it', () => {
+    const blocks = [
+      { id: 'like', type: 'button', props: { action: { type: 'write', sourceId: 'records', op: 'create', values: { x: 1 } } } },
+    ]
+    expect([
+      ...writeOnlySourceIds({ blocks, dataSources: sources, capabilities: caps([{ sourceId: 'records' }]) }),
+    ]).toEqual(['records'])
+  })
+
   it('does not treat a longer identifier as a reference', () => {
     const blocks = [{ id: 'b', type: 'text', props: { content: '{{recordsTotal}}' } }]
     expect([
