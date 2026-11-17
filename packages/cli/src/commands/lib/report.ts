@@ -4,7 +4,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { blockPropsCatalog, checkBlockProps, hashPack, validatePack, type PackFolder, type PackIssue, type PackValidation } from '@pwfabric/pack'
+import { blockPropsCatalog, checkBlockProps, checkRowFields, hashPack, validatePack, type PackFolder, type PackIssue, type PackValidation } from '@pwfabric/pack'
 import type { CommandIO } from '../types.js'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { pinsOf } from './identity.js'
@@ -186,12 +186,17 @@ export async function checkProps(root: string, identity: PackValidation['identit
   return checkBlockProps(sources.app.folder, catalog)
 }
 
-/** `validatePack` plus {@link checkPins}, {@link checkSeeds}, {@link checkEntities}, {@link checkAccess} and {@link checkProps}, as one result. */
+/**
+ * `validatePack` plus {@link checkPins}, {@link checkSeeds}, {@link checkEntities},
+ * {@link checkAccess}, {@link checkProps} and the pack library's `checkRowFields`
+ * (`FIELD_UNKNOWN` warnings: a receipt reading a row field its data source's rows
+ * do not have), as one result.
+ */
 export async function validateProject(root: string, pack: PackFolder): Promise<PackValidation> {
   const result = validatePack(pack)
   const pinIssues = await checkPins(root, result.identity)
   const propIssues = await checkProps(root, result.identity)
-  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...propIssues]
+  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...propIssues, ...checkRowFields(pack)]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 
