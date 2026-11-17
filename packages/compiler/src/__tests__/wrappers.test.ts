@@ -43,7 +43,7 @@ describe('wrapper names — validation', () => {
   it('emits every name-derived specifier and key through JSON string literals', () => {
     expect(buildWrapperSource('block', { sourceBase: 'component' })).toContain('from "./component.js"')
     expect(buildWrapperSource('capability', { sourceBase: 'handler' })).toBe('export * from "./handler.js"\n')
-    expect(buildWrapperSource('connector', { engineName: 'Acme' })).toContain('from "./Acme"')
+    expect(buildWrapperSource('connector', { engineName: 'Example' })).toContain('from "./Example"')
     const provider = buildWrapperSource('provider', { engineName: 'orders' })
     expect(provider).toContain('from "./orders"')
     expect(provider).toContain('m["orders"]')
@@ -66,8 +66,8 @@ describe('wrapper names — compileAtom refuses, never throws, never emits', () 
   for (const name of HOSTILE.filter((n) => n !== '')) {
     it(`connector engineName ${JSON.stringify(name)} → INVALID_INPUT`, async () => {
       const r = await compileAtom({
-        files: { 'connectors/Acme.ts': 'export const nothing = 1' },
-        entry: 'connectors/Acme.__engine__.ts',
+        files: { 'connectors/Example.ts': 'export const nothing = 1' },
+        entry: 'connectors/Example.__engine__.ts',
         kind: 'connector',
         engineName: name,
       })

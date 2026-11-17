@@ -106,7 +106,7 @@ export function foundationTgz(record: Record<string, string>): Buffer {
   wire.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   const identity = record['pwpack.json']
   if (identity) wire.push({ path: 'pwpack.json', content: Buffer.from(identity) })
-  wire.push({ path: 'package.json', content: Buffer.from('{"name":"@pwpack/acme/widgets","version":"0.3.0","private":true}\n') })
+  wire.push({ path: 'package.json', content: Buffer.from('{"name":"@pwpack/example/widgets","version":"0.3.0","private":true}\n') })
   const chunks: Buffer[] = []
   for (const e of wire) {
     if (Buffer.byteLength(e.path) > 100) throw new Error(`Path too long for USTAR (>100 bytes): ${e.path}`)

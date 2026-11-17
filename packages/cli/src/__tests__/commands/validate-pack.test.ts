@@ -231,7 +231,7 @@ describe('pwf pack', () => {
   })
 
   it('names archives after the last id segment', () => {
-    expect(archiveName('@pwpack/acme/cards', '1.2.0')).toBe('cards-1.2.0.pwpack')
+    expect(archiveName('@pwpack/example/cards', '1.2.0')).toBe('cards-1.2.0.pwpack')
     expect(archiveName('@solo', '1.0.0')).toBe('solo-1.0.0.pwpack')
     expect(archiveName('', '1.0.0')).toBe('pack-1.0.0.pwpack')
   })

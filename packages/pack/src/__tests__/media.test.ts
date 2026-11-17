@@ -20,7 +20,7 @@ const codesOf = (issues: readonly { severity: string; code: string }[]): string[
 
 /** A valid app's media. */
 const MEDIA: Record<string, string> = {
-  'pwpack.json': json({ id: '@pwpack/acme/media', version: '1.0.0', formatVersion: '1.0' }),
+  'pwpack.json': json({ id: '@pwpack/example/media', version: '1.0.0', formatVersion: '1.0' }),
   'app/media/hero.json': json({ kind: 'image', purpose: 'A loaf', origin: 'uploaded', status: 'ready', slots: [slot], file: 'media/hero.png' }),
   'app/media/logo.json': json({ kind: 'image', origin: 'generated', status: 'pending', url: 'https://cdn.example.com/logo.svg' }),
   'media/hero.png': 'png-bytes',

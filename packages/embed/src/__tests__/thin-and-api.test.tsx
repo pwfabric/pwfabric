@@ -67,14 +67,14 @@ describe('loadThin', () => {
       ({ ok: true, status: 200, json: async () => makeApiResponse() }) as unknown as Response
     )
     const result = await loadThin(
-      { tenantSlug: 'acme', surfaceSlug: 'home' },
+      { tenantSlug: 'example', surfaceSlug: 'home' },
       { apiBaseUrl: 'https://api.test', fetchImpl, auth: { accessToken: 'tok' } }
     )
 
     // Correct by-slug endpoint + bearer header.
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('https://api.test/api/surfaces/by-slug/acme/home')
+    expect(url).toBe('https://api.test/api/surfaces/by-slug/example/home')
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer tok')
 
     expect(result.surface.blocks).toHaveLength(1)
@@ -134,7 +134,7 @@ describe('render() dispatcher', () => {
     const onReady = vi.fn()
     const handle = await render(
       container,
-      { tenantSlug: 'acme', surfaceSlug: 'home' },
+      { tenantSlug: 'example', surfaceSlug: 'home' },
       { mode: 'thin', apiBaseUrl: 'https://api.test', fetchImpl, onReady }
     )
     expect(onReady).toHaveBeenCalledOnce()

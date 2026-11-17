@@ -46,7 +46,7 @@ function binding(overrides: Partial<ConnectorConnectionBinding> = {}): Connector
       bundleUrl: 'https://cdn.example.com/bundles/connector/graph-lists.bundle.mjs',
       integrity,
     },
-    config: { siteHostname: 'contoso.sharepoint.com', sitePath: '/sites/intranet' },
+    config: { siteHostname: 'example.sharepoint.com', sitePath: '/sites/intranet' },
     ...overrides,
   }
 }
@@ -96,7 +96,7 @@ describe('ConnectorEngineRegistry', () => {
       expect(engine2).toBe(engine1)
       expect(factory).toHaveBeenCalledTimes(1)
       expect(factory.mock.calls[0]?.[1]).toEqual({
-        siteHostname: 'contoso.sharepoint.com',
+        siteHostname: 'example.sharepoint.com',
         sitePath: '/sites/intranet',
       })
       expect(registry.getStatus('graph-lists')).toEqual({ state: 'ready' })

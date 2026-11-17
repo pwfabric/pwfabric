@@ -318,7 +318,7 @@ export const PwpackPackRequirementSchema = z
       .max(200)
       .regex(
         // A bare name (`records`) or a scoped id: `@pwpack/records`,
-        // `@pwpack/acme/cards`, or a pack under its own npm scope
+        // `@pwpack/example/cards`, or a pack under its own npm scope
         // (`@pwfabric/foundation`).
         /^(@[A-Za-z0-9][A-Za-z0-9._-]*\/)?[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/,
         'requires.packs[].id must be a pack name (`records`) or a scoped id (`@pwpack/records`, `@pwfabric/foundation`)'

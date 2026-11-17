@@ -61,7 +61,7 @@ describe('first-party pack exporter (rootless wire, identity appended unsorted)'
   it('accepts the object form of requires the first-party packs write', async () => {
     const record = {
       ...CANONICAL_PACK,
-      'pwpack.json': JSON.stringify({ id: '@pwpack/acme/identity', version: '1.1.2', requires: [{ id: '@pwpack/acme/base', range: '^1.0.0' }] }),
+      'pwpack.json': JSON.stringify({ id: '@pwpack/example/identity', version: '1.1.2', requires: [{ id: '@pwpack/example/base', range: '^1.0.0' }] }),
     }
     const v = validatePack(await readPwpack(foundationTgz(record)))
     expect(codes(v, 'error')).toEqual([])
@@ -72,10 +72,10 @@ describe('app generator delivery (canonical folder, LF-normalised, OS byte pinne
   const delivery = {
     ...CANONICAL_APP,
     'pwpack.json': JSON.stringify({
-      id: '@pwpack/acme/clinic',
+      id: '@pwpack/example/clinic',
       version: '1.0.0',
       app: { title: 'Clinic', description: 'Bookings', entry: 'home', surfaceOrder: ['home', 'book'], icon: '/assets/brief/icon.svg' },
-      packs: [{ id: '@pwpack/acme/base', version: '2.0.0', hash: 'abc123' }],
+      packs: [{ id: '@pwpack/example/base', version: '2.0.0', hash: 'abc123' }],
     }),
   }
 
@@ -133,7 +133,7 @@ describe("hosting platform's project export (manifest first, app envelope at the
   it('reads it, including a 140-byte file name carried in a PAX record, and says what it is not', async () => {
     const longReceipt = `surfaces/${'p'.repeat(140)}.receipt.json`
     const files = entries({
-      'pwfabric.manifest.json': '{"id":"@pwpack/acme/site","version":"1.0.0","atoms":[]}',
+      'pwfabric.manifest.json': '{"id":"@pwpack/example/site","version":"1.0.0","atoms":[]}',
       'blocks/custom/hero/component.tsx': 'x',
       'blocks/custom/hero/manifest.json': '{}',
       [longReceipt]: '{}',

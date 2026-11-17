@@ -115,7 +115,7 @@ describe('packRefKey', () => {
   it('names a pack the same by bare name and by full id', () => {
     expect(packRefKey('@pwpack/records')).toBe('records')
     expect(packRefKey('records')).toBe('records')
-    expect(packRefKey(' @pwpack/acme/tools ')).toBe('acme/tools')
+    expect(packRefKey(' @pwpack/example/tools ')).toBe('example/tools')
   })
 })
 
@@ -133,7 +133,7 @@ describe('PwpackRequirementsSchema', () => {
     // `pwf create --foundation` writes the foundation's own id here.
     const ok = (id: string) => PwpackRequirementsSchema.safeParse({ packs: [{ id, range: '^1.0.0' }] }).success
     expect(ok('@pwfabric/foundation')).toBe(true)
-    expect(ok('@pwpack/acme/cards')).toBe(true)
+    expect(ok('@pwpack/example/cards')).toBe(true)
     expect(ok('records')).toBe(true)
     expect(ok('@/foundation')).toBe(false)
     expect(ok('@pwfabric/')).toBe(false)

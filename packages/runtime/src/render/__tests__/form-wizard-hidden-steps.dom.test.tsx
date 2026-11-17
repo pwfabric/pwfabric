@@ -171,7 +171,7 @@ describe('hidden wizard steps inside a form stay mounted', () => {
     render(<DataBoundSurfaceRenderer surface={rsvpWizard()} components={components} interactionMode="live" />)
     await waitFor(() => expect(screen.queryByTestId('full-name')).not.toBeNull())
 
-    fireEvent.change(screen.getByTestId('full-name'), { target: { value: 'Ada Lovelace' } })
+    fireEvent.change(screen.getByTestId('full-name'), { target: { value: 'Jane Doe' } })
     fireEvent.change(screen.getByTestId('e-posta'), { target: { value: 'ayse@example.com' } })
     await click('step-one-next')
 
@@ -188,7 +188,7 @@ describe('hidden wizard steps inside a form stay mounted', () => {
       fireEvent.submit(screen.getByTestId('rsvp-form'))
     })
     expect(submitted).toEqual({
-      fullName: 'Ada Lovelace',
+      fullName: 'Jane Doe',
       email: 'ayse@example.com',
       menuPreference: 'vegan',
       note: 'We are coming\nTwo people',
@@ -247,7 +247,7 @@ describe('the resolver: hide inside a form, unmount outside', () => {
       [
         {
           id: 'f2',
-          type: 'acme-base/form',
+          type: 'example-base/form',
           layout: L,
           props: {},
           children: [{ id: 'x', type: 'text', layout: L, props: {} }],

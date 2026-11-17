@@ -146,7 +146,7 @@ describe('PwpackManifest.license and AtomFileManifest.forkedFrom (optional)', ()
     },
   }
   const forkedFrom = {
-    pack: '@pwpack/acme/base',
+    pack: '@pwpack/example/base',
     version: '2.0.0',
     atomId: 'ui.button',
     hash: 'sha256-abc',
@@ -156,7 +156,7 @@ describe('PwpackManifest.license and AtomFileManifest.forkedFrom (optional)', ()
     const original: AtomFileManifest = base
     const forked: AtomFileManifest = { ...base, forkedFrom }
     const pack: PwpackManifest = {
-      id: '@pwpack/acme/kit',
+      id: '@pwpack/example/kit',
       version: '1.0.0',
       atoms: [],
       contentHash: 'x',

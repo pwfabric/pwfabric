@@ -85,10 +85,10 @@ describe('deriveManifest', () => {
     const m = deriveManifest(pack, { archive })
     const hex = sha(archive)
     expect(m).toMatchObject({
-      id: '@pwpack/acme/clinic',
+      id: '@pwpack/example/clinic',
       version: '1.2.0',
       contentHash: `sha256:${hex}`,
-      storageRef: `pwpacks/pwpack-acme-clinic/1.2.0/${hex.slice(0, 12)}.tgz`,
+      storageRef: `pwpacks/pwpack-example-clinic/1.2.0/${hex.slice(0, 12)}.tgz`,
       license: { fork: true, redistribute: false },
     })
     expect(m.atoms).toHaveLength(9)

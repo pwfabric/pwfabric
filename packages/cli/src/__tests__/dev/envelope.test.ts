@@ -99,12 +99,12 @@ describe('buildConnections', () => {
 describe('module names', () => {
   it('names a module by type and hash, replacing unsafe characters', () => {
     expect(moduleFileName('heading', 'abcdef0123456789')).toBe('heading.abcdef01.mjs')
-    expect(moduleFileName('@acme/cards.badge', 'ff00ff00ff')).toBe('_acme_cards.badge.ff00ff00.mjs')
+    expect(moduleFileName('@example/cards.badge', 'ff00ff00ff')).toBe('_example_cards.badge.ff00ff00.mjs')
     expect(moduleFileName('', '12345678')).toBe('module.12345678.mjs')
     expect(moduleFileName('..x', '12345678')).toBe('_x.12345678.mjs')
   })
   it('attributes an atom to the pack publisher', () => {
-    expect(publisherOf('@pwpack/acme/cards')).toBe('acme')
+    expect(publisherOf('@pwpack/example/cards')).toBe('example')
     expect(publisherOf('local-pack')).toBe('local-pack')
   })
 })

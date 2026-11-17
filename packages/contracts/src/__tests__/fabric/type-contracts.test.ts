@@ -154,7 +154,7 @@ describe('DynamicArtifact contract types', () => {
       blockType: 'hero-block',
       moduleUrl: 'https://cdn.example.com/hero@1.0.0/index.mjs',
       integrity: 'sha256-abc123',
-      publisher: 'acme',
+      publisher: 'example',
       publisherVerified: true,
       definition: { name: 'Hero Block', category: 'marketing' },
     }
@@ -366,11 +366,11 @@ describe('SurfaceDoc contract types', () => {
       kind: 'entity',
       entityType: 'Task',
       connector: 'graph-lists',
-      authProviderRef: 'contoso-entra',
+      authProviderRef: 'example-entra',
     }
     const withoutEngine: SurfaceDataSource = { id: 'ds-1', kind: 'state' }
     expect(withEngine.connector).toBe('graph-lists')
-    expect(withEngine.authProviderRef).toBe('contoso-entra')
+    expect(withEngine.authProviderRef).toBe('example-entra')
     expect(withoutEngine.connector).toBeUndefined()
     expect(withoutEngine.authProviderRef).toBeUndefined()
   })

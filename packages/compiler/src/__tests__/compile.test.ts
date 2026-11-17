@@ -398,16 +398,16 @@ export default navigationCapability`,
   })
 
   it('connector: needs engineName', async () => {
-    const r = await compileAtom({ files: {}, entry: 'connectors/Acme.__engine__.ts', kind: 'connector' })
+    const r = await compileAtom({ files: {}, entry: 'connectors/Example.__engine__.ts', kind: 'connector' })
     expect(codes(r)).toEqual(['INVALID_INPUT'])
   })
 
   it('connector: refuses a tree that already holds the generated wrapper', async () => {
     const r = await compileAtom({
-      files: { 'connectors/Acme.__engine__.ts': 'export {}', 'connectors/Acme.ts': 'export {}' },
-      entry: 'connectors/Acme.__engine__.ts',
+      files: { 'connectors/Example.__engine__.ts': 'export {}', 'connectors/Example.ts': 'export {}' },
+      entry: 'connectors/Example.__engine__.ts',
       kind: 'connector',
-      engineName: 'Acme',
+      engineName: 'Example',
     })
     expect(codes(r)).toEqual(['INVALID_INPUT'])
   })
@@ -415,19 +415,19 @@ export default navigationCapability`,
   it('connector: the generated adapter constructs an engine class', async () => {
     const r = await compileAtom({
       files: {
-        'connectors/Acme.ts': `export class AcmeEngine {
+        'connectors/Example.ts': `export class AcmeEngine {
   constructor(private t: unknown, private c: Record<string, unknown>) {}
-  query() { return 'acme:' + String(this.c.region) }
+  query() { return 'example:' + String(this.c.region) }
 }`,
       },
-      entry: 'connectors/Acme.__engine__.ts',
+      entry: 'connectors/Example.__engine__.ts',
       kind: 'connector',
-      engineName: 'Acme',
+      engineName: 'Example',
     })
     expect(r.ok, JSON.stringify(r.diagnostics)).toBe(true)
     const mod = await load(r.code)
     const engine = (mod.createConnector as (t: unknown, c: unknown) => { query(): string })(async () => null, { region: 'eu' })
-    expect(engine.query()).toBe('acme:eu')
+    expect(engine.query()).toBe('example:eu')
     expect(mod.default).toBe(mod.createConnector)
   })
 
@@ -465,13 +465,13 @@ export default navigationCapability`,
   it('provider: binds the domain entity map into the shared vendor engine', async () => {
     const r = await compileAtom({
       files: {
-        'providers/acme/index.ts': `export class AcmeVendor {
+        'providers/example/index.ts': `export class AcmeVendor {
   constructor(private t: unknown, private map: Record<string, unknown>) {}
   query() { return Object.keys(this.map).join(',') }
 }`,
-        'providers/acme/entities/orders.ts': `export const orders = { order: { table: 'orders' }, line: { table: 'lines' } }`,
+        'providers/example/entities/orders.ts': `export const orders = { order: { table: 'orders' }, line: { table: 'lines' } }`,
       },
-      entry: 'providers/acme/entities/orders.__engine__.ts',
+      entry: 'providers/example/entities/orders.__engine__.ts',
       kind: 'provider',
       engineName: 'orders',
     })
