@@ -107,11 +107,11 @@ describe('shims', () => {
 })
 
 describe('shell', () => {
-  it('declares the import map, preloads what the first page needs, and boots; it loads no renderer itself', () => {
+  it('declares the import map, starts what the first page needs at once, and boots; nothing holds the first paint', () => {
     const html = buildShellHtml({ title: 'A <b>', description: 'A "café".', bodyExtra: '<!--dev-->', appearance: { theme: { typography: { fontFamily: 'Inter' } } } })
     const map = html.indexOf('type="importmap"')
     const runner = html.indexOf('<link rel="modulepreload" href="./assets/runner.js" />')
-    const renderer = html.indexOf('<link rel="preload" as="script" href="./assets/embed.js" />')
+    const renderer = html.indexOf('<script async src="./assets/embed.js"></script>')
     const root = html.indexOf('<div id="root">')
     const boot = html.indexOf('<script type="module" src="./assets/boot.js">')
     expect(map).toBeGreaterThan(0)
@@ -119,8 +119,8 @@ describe('shell', () => {
     expect(runner).toBeLessThan(root)
     expect(renderer).toBeGreaterThan(map)
     expect(root).toBeLessThan(boot)
-    // No script but the import map and the boot module; the renderer is not one.
-    expect(html.match(/<script\b[^>]*>/g)).toEqual(['<script type="importmap">', '<script type="module" src="./assets/boot.js">'])
+    // Nothing that holds the parser: the import map, the renderer (async), the boot module.
+    expect(html.match(/<script\b[^>]*>/g)).toEqual(['<script type="importmap">', '<script async src="./assets/embed.js">', '<script type="module" src="./assets/boot.js">'])
     expect(html).toContain(`<script type="importmap">${importMapText()}</script>`)
     for (const shim of new Set(Object.values(importMap().imports))) expect(html).toContain(`<link rel="modulepreload" href="${shim}" />`)
     for (const f of BOOT_FILES) expect(html).toContain(`<link rel="preload" as="fetch" href="./${f}" crossorigin />`)
@@ -136,8 +136,8 @@ describe('shell', () => {
     expect(plain).not.toContain('fonts.googleapis.com')
     expect(plain).not.toContain('name="description"')
     expect(plain).toContain('<html lang="tr-TR">')
-    // A gated app's visitor may never need the renderer: not preloaded.
-    expect(plain).not.toContain('as="script"')
+    // A gated app's visitor may never need the renderer: not named.
+    expect(plain).not.toContain('embed')
     expect(plain.match(/as="fetch"/g)).toHaveLength(1)
     // The policy comes before anything it governs.
     const meta = plain.indexOf(`<meta http-equiv="Content-Security-Policy" content="default-src 'none'" />`)

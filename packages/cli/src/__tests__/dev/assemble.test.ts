@@ -111,9 +111,9 @@ describe('assemblePwapp', () => {
     expect(boot).toContain('runApp(')
     expect(boot).toContain(`from "./${asset(r, 'runner').slice('assets/'.length)}"`)
     expect(boot).toContain(`renderer: "./${asset(r, 'embed')}"`)
-    // The shell names the hashed files, preloads the renderer, and loads no script but the boot module.
+    // The shell names the hashed files and starts the renderer without holding the page.
     expect(html).toContain(`<script type="module" src="./${asset(r, 'boot')}"></script>`)
-    expect(html).toContain(`<link rel="preload" as="script" href="./${asset(r, 'embed')}" />`)
+    expect(html).toContain(`<script async src="./${asset(r, 'embed')}"></script>`)
     expect(html).toContain(`<link rel="stylesheet" href="./${asset(r, 'theme')}" />`)
     expect(html).not.toMatch(/<script src=/)
     // A hashed name is the hash of the bytes.
@@ -152,7 +152,7 @@ describe('assemblePwapp', () => {
     expect(bare.files.has('pwpack/auth.json')).toBe(false)
     expect(project.identity).toMatchObject({ required: true, door: false })
     // The gate's visitor may never need the renderer.
-    expect(text(bare.files.get('index.html'))).not.toContain('as="script"')
+    expect(text(bare.files.get('index.html'))).not.toContain('assets/embed')
     const hosted = await assemblePwapp(root, { cacheDir: null, envelopeEntries: { 'auth.json': { provider: 'oauth2-pkce', issuer: 'https://id.example.com', clientId: 'c' } } })
     expect((parse(hosted.files.get('pwpack/project.json')) as { identity?: Record<string, unknown> }).identity?.['door']).toBeUndefined()
   })

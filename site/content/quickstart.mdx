@@ -77,16 +77,16 @@ the same way. The shell the export writes is, in essence:
 <link rel="stylesheet" href="./assets/theme.3248118d.css" />
 <script type="importmap">{ "imports": { … } }</script>
 <link rel="modulepreload" href="./assets/runner.9094f562.js" />
-<link rel="preload" as="script" href="./assets/embed.4f99b147.js" />
+<script async src="./assets/embed.4f99b147.js"></script>
 <div id="root"></div>
 <script type="module" src="./assets/boot.7838adfe.js"></script>
 ```
 
 and the boot module calls
 `runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', renderer: './assets/embed.4f99b147.js', router: 'hash', locale: 'en' })`.
-The runner adds the renderer to the page when it draws the first page, so
-nothing large holds the first paint and a visitor stopped at a sign-in gate
-never downloads it. The runtime files carry a hash of their content in their
+The renderer loads `async`, so nothing large holds the first paint; an app
+that requires sign-in does not name it at all, and the runner adds it only
+when it draws a page, so a visitor stopped at the gate never downloads it. The runtime files carry a hash of their content in their
 names, and `_headers` lets a host keep them for a year.
 The import map is the only inline script, so the app's Content Security
 Policy can allow it by hash; start-up code of your own goes in a file too.

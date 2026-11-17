@@ -221,9 +221,9 @@ export interface ShellOptions {
   /** The runtime files' served names; default {@link PLAIN_ASSETS}. */
   readonly assets?: ShellAssets
   /**
-   * Start downloading the renderer with the page. True for an app a visitor
-   * sees at once; false for one behind a sign-in wall, whose visitor may
-   * never need it (the runner asks for it when it draws a page).
+   * Start the renderer with the page (`<script async>`). True for an app a
+   * visitor sees at once; false for one behind a sign-in wall, whose visitor
+   * may never need it (the runner adds it when it draws a page).
    */
   readonly preloadRenderer?: boolean
   /** Envelope files to preload; default {@link BOOT_FILES}. Only files the folder has. */
@@ -283,11 +283,12 @@ export function runnerLocaleOf(locale: string | undefined): 'en' | 'tr' {
 /**
  * `index.html`. Nothing in it holds the first paint but the token
  * stylesheet: the import map (the only inline script, so a Content Security
- * Policy needs one hash); preloads that start the runner, the renderer and the
- * envelope files the runner reads on boot, all at once; the mount element;
- * then `boot.js`, which starts the runner. The runner adds the renderer when
- * it draws the first page (pwapp-format §2) — a visitor held at a sign-in
- * gate never downloads it, and nobody waits for it before the page paints.
+ * Policy needs one hash); the renderer as an `async` script and preloads that
+ * start the runner, the shims and the envelope files the runner reads on
+ * boot, all at once; the mount element; then `boot.js`, which starts the
+ * runner. An app that requires sign-in does not name the renderer: the runner
+ * adds it when it draws a page (pwapp-format §2), so a visitor held at the
+ * gate never downloads it.
  *
  * Every address is relative, so the folder works at a host root, under a
  * sub-path, or from disk behind any static server.
@@ -309,11 +310,14 @@ export function buildShellHtml(options: ShellOptions): string {
     ? `
     <meta name="description" content="${escapeHtml(options.description.trim())}" />`
     : ''
+  // `async`: downloaded with the page and run the moment it arrives, holding
+  // neither the parser nor the first paint, and not waiting for the runner
+  // (which waits for this element when it needs the renderer).
   const renderer =
     options.preloadRenderer === false
       ? ''
       : `
-    <link rel="preload" as="script" href="./${escapeHtml(assets.embed)}" />`
+    <script async src="./${escapeHtml(assets.embed)}"></script>`
   // The shims every block imports: fetched and compiled with the page (a
   // module preload does not evaluate them), not one round trip after the
   // first block module is imported.

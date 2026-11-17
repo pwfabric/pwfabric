@@ -6,9 +6,9 @@
  * runtime, zod) before the browser drew anything, and a visitor of an app
  * behind sign-in downloaded all of it to be shown one button. The runner
  * itself needs nothing the renderer seeds until it draws a page, so it asks
- * for the renderer then, once. A shell that wants it early says so with
- * `<link rel="preload" as="script">`, which starts the download without
- * holding the page.
+ * for the renderer then, once. A shell that wants it early names it as
+ * `<script async>` — downloaded with the page, run when it arrives, holding
+ * nothing — and the runner waits for that element instead of adding one.
  *
  * A page that has the renderer already (`window.PWFabric` — a host that loads
  * it its own way) keeps its own; nothing is added.
@@ -31,15 +31,23 @@ export function loadRenderer(url: string, doc: Document = document): Promise<PWF
   if (present) return Promise.resolve(present)
   if (loading && loading.url === url) return loading.promise
   const promise = new Promise<PWFabricGlobal>((resolve, reject) => {
-    const script = doc.createElement('script')
-    script.src = url
+    // The shell may name it already (`<script async>`): wait for that one
+    // rather than ask twice.
+    const wanted = new URL(url, doc.baseURI).href
+    const named = [...doc.querySelectorAll<HTMLScriptElement>('script[src]')].find((s) => s.src === wanted)
+    const script = named ?? doc.createElement('script')
+    if (!named) script.src = url
     script.addEventListener('load', () => {
       const fabric = win?.PWFabric
       if (fabric) resolve(fabric)
       else reject(new Error(`[pwapp] the renderer at ${url} loaded but defined no window.PWFabric`))
     })
-    script.addEventListener('error', () => reject(new Error(`[pwapp] the renderer could not be loaded from ${url}`)))
-    doc.head.appendChild(script)
+    script.addEventListener('error', () => {
+      // A failed element is not waited on again: the next call adds a fresh one.
+      script.remove()
+      reject(new Error(`[pwapp] the renderer could not be loaded from ${url}`))
+    })
+    if (!named) doc.head.appendChild(script)
   })
   loading = { url, promise }
   promise.catch(() => {

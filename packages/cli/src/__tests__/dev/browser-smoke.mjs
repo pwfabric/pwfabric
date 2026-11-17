@@ -79,7 +79,7 @@ const named = (re) => {
   if (!hit) throw new Error(`the shell names no ${re}`)
   return hit
 }
-const embedPath = named(/<link rel="preload" as="script" href="\.\/(assets\/embed\.[0-9a-f]{8}\.js)"/)
+const embedPath = named(/<script async src="\.\/(assets\/embed\.[0-9a-f]{8}\.js)"/)
 const runnerPath = named(/<link rel="modulepreload" href="\.\/(assets\/runner\.[0-9a-f]{8}\.js)"/)
 ;(0, eval)(await get(`/${embedPath}`))
 dom.window.PWFabric = globalThis.PWFabric

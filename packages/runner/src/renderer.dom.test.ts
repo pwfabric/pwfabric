@@ -39,12 +39,25 @@ describe('loadRenderer', () => {
     await expect(b).resolves.toBe(fake)
   })
 
+  it('waits for the renderer the shell already names, rather than adding a second', async () => {
+    const named = document.createElement('script')
+    named.src = './assets/embed.abc.js'
+    named.async = true
+    document.head.appendChild(named)
+    const p = loadRenderer('./assets/embed.abc.js')
+    expect(document.head.querySelectorAll('script')).toHaveLength(1)
+    win.PWFabric = fake
+    named.dispatchEvent(new Event('load'))
+    await expect(p).resolves.toBe(fake)
+  })
+
   it('rejects when the script fails, and tries again on the next call', async () => {
     const first = loadRenderer('./assets/embed.js')
     document.head.querySelector('script')?.dispatchEvent(new Event('error'))
     await expect(first).rejects.toThrow(/could not be loaded/)
     void loadRenderer('./assets/embed.js').catch(() => undefined)
-    expect(document.head.querySelectorAll('script')).toHaveLength(2)
+    // The failed element is gone; a fresh one is asking.
+    expect(document.head.querySelectorAll('script')).toHaveLength(1)
   })
 
   it('rejects when the script loads but defines no renderer', async () => {
