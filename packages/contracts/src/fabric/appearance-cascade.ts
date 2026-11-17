@@ -612,19 +612,35 @@ function contrastOf(a: string, b: string): number | null {
  * So: keep hue and saturation, move LIGHTNESS until the pair clears `min`
  * (3:1, the WCAG floor for UI components). Walk in steps rather than jumping to
  * white so a colour that only just fails moves only just enough.
+ *
+ * `ground` may be several grounds — the page AND the raised surfaces drawn on
+ * it (a card is one elevation step lighter in dark). The colour must clear
+ * `min` on EVERY one of them: a primary lifted to 3.09:1 on the dark page was
+ * 2.75:1 on the card its buttons sit on. The direction is taken from the first
+ * ground (the page); the ratio checked is the worst across all of them.
  */
-function ensureSeparation(colour: string, ground: string, min = 3): string {
-  const current = contrastOf(colour, ground)
+function ensureSeparation(colour: string, ground: string | readonly string[], min = 3): string {
+  const grounds: readonly string[] = typeof ground === 'string' ? [ground] : ground
+  const worst = (c: string): number | null => {
+    let w: number | null = null
+    for (const g of grounds) {
+      const r = contrastOf(c, g)
+      if (r === null) continue
+      w = w === null ? r : Math.min(w, r)
+    }
+    return w
+  }
+  const current = worst(colour)
   if (current === null || current >= min) return colour
   const hsl = toHsl(colour)
-  const groundL = lightnessOf(ground, 0.1)
+  const groundL = lightnessOf(grounds[0] ?? '', 0.1)
   if (!hsl) return colour
   // Move AWAY from the ground: lighter on a dark ground, darker on a light one.
   const up = groundL < 0.5
   for (let step = 1; step <= 20; step++) {
     const l = clamp(up ? hsl.l + step * 0.05 : hsl.l - step * 0.05, 0, 1)
     const candidate = hslToHex(hsl.h, hsl.s, l)
-    const ratio = contrastOf(candidate, ground)
+    const ratio = worst(candidate)
     if (ratio !== null && ratio >= min) return candidate
     if (l === 0 || l === 1) break
   }
@@ -731,11 +747,17 @@ export function deriveDarkTheme(light: SurfaceTheme): SurfaceTheme {
   const cardStepL = clamp(bgL + 0.05, 0, 1)
   const borderL = clamp(bgL + 0.14, 0, 1)
 
-  // Brand hues are kept — but a control has to stay visible on the new ground.
-  // See `ensureSeparation`: only colours that actually fail the 3:1 UI floor
-  // move, and they move by lightness alone, so the hue survives.
-  const primaryDark = c.primary !== undefined ? ensureSeparation(c.primary, bgDark) : undefined
-  const accentDark = c.accent !== undefined ? ensureSeparation(c.accent, bgDark) : undefined
+  // The dark grounds controls and text are drawn on: the page, and the card
+  // one elevation step above it when the theme has one.
+  const cardSource = c.card
+  const darkGrounds = [bgDark, ...(cardSource !== undefined ? [withLightness(cardSource, cardStepL)] : [])]
+
+  // Brand hues are kept — but a control has to stay visible on the new grounds.
+  // See `ensureSeparation`: only colours that actually fail the 3:1 UI floor on
+  // the page OR the card move, and they move by lightness alone, so the hue
+  // survives. Buttons, links and focus rings sit on cards as often as on the page.
+  const primaryDark = c.primary !== undefined ? ensureSeparation(c.primary, darkGrounds) : undefined
+  const accentDark = c.accent !== undefined ? ensureSeparation(c.accent, darkGrounds) : undefined
   // If primary was re-targeted, the ink that sat on it may now be on the wrong
   // side — a light primary with light text is the same defect one layer in.
   const textOnPrimaryDark =
@@ -744,8 +766,6 @@ export function deriveDarkTheme(light: SurfaceTheme): SurfaceTheme {
   // Text is measured against BOTH dark grounds. The lightness bands below were
   // tuned on light palettes; re-deriving an already-dark theme (midnight) put
   // textMuted at 4.02:1 on its card. Only a value under 4.5 moves.
-  const cardSource = c.card
-  const darkGrounds = [bgDark, ...(cardSource !== undefined ? [withLightness(cardSource, cardStepL)] : [])]
 
   const colors: SurfaceThemeColors = {
     ...c, // brand + semantic kept unless separation forced a move

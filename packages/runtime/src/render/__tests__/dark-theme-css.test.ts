@@ -123,8 +123,10 @@ describe('resolveAppearanceDarkVars — project theme layer', () => {
   it('derives the dark variant from the project palette when the surface sets no brand of its own', () => {
     const darkVars = resolveAppearanceDarkVars({ config: { theme: {} } }, projectTheme)
     // Brand hues are KEPT by deriveDarkTheme — only neutrals flip — so the
-    // project's brand must survive into dark.
-    expect(darkVars['--pw-color-primary']?.toLowerCase()).toBe('#c8102e')
+    // project's brand must survive into dark. #C8102E is under 3:1 on the
+    // derived dark card, so its lightness is lifted one step: still the
+    // project's red, not the platform default indigo.
+    expect(darkVars['--pw-color-primary']?.toLowerCase()).toBe('#e01233')
     expect(darkVars['--pw-color-accent']?.toLowerCase()).toBe('#ffb81c')
   })
 
