@@ -188,6 +188,11 @@ export interface DataBoundSurface {
    * the renderer reports the result through `onTitle`.
    */
   readonly title?: string
+  /**
+   * The page in a sentence (receipt `description`), resolved like `title` and
+   * reported through `onDescription` — a page's `<meta name="description">`.
+   */
+  readonly description?: string
 }
 
 // ============================================================
@@ -211,6 +216,8 @@ export interface DataBoundSurfaceRendererProps extends Omit<SurfaceRendererProps
    * decides what to do with it (a runner sets `document.title`).
    */
   readonly onTitle?: (title: string | undefined) => void
+  /** Like `onTitle`, for the surface's `description`. */
+  readonly onDescription?: (description: string | undefined) => void
   /**
    * Intercept a `navigate` action before the default `window.location.assign`
    * fallback runs. Return `true` to signal the host handled it (e.g. swapped

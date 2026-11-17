@@ -1,11 +1,11 @@
 // Browser smoke: boots an assembled pwapp's real module graph in a jsdom
 // document and prints what rendered as one JSON line.
 //
-//   node browser-smoke.mjs <app url> [--no-seed] [--expect <selector>]
+//   node browser-smoke.mjs <app url> [--expect <selector>]
 //
-// --no-seed leaves out the shell's `assets/seed.js`, so the page is what a
-// host that runs only the renderer and the runner gives a block (a published
-// PhiWebs app is one). --expect waits for one more element and reports its text.
+// The page runs only what the shell names: the renderer and the runner (the
+// renderer seeds every global a block imports; there is no seed script).
+// --expect waits for one more element and reports its text.
 //
 // Runs as a plain Node process (the test runner's module sandbox has no
 // dynamic import for evaluated code). jsdom has no import maps and Node cannot
@@ -18,7 +18,6 @@ import { JSDOM } from 'jsdom'
 
 const base = process.argv[2]
 const flags = process.argv.slice(3)
-const noSeed = flags.includes('--no-seed')
 const expectSelector = flags.includes('--expect') ? flags[flags.indexOf('--expect') + 1] : null
 const nodeFetch = globalThis.fetch
 const get = async (p) => (await nodeFetch(new URL(p, base))).text()
@@ -72,9 +71,17 @@ console.error = (...a) => errors.push(a.map(String).join(' ').slice(0, 400))
 console.warn = () => undefined
 console.info = () => undefined
 
-// The shell, in order: renderer, the seeding file, then the runner (boot.js calls runApp as below).
-;(0, eval)(await get('/assets/embed.js'))
-if (!noSeed) (0, eval)(await get('/assets/seed.js'))
+// The files the shell names (content-hashed). The runner adds the renderer as
+// a <script> when it draws the first page; jsdom does not run external
+// scripts, so the renderer is evaluated here first and the runner keeps it.
+const named = (re) => {
+  const hit = re.exec(html)?.[1]
+  if (!hit) throw new Error(`the shell names no ${re}`)
+  return hit
+}
+const embedPath = named(/<link rel="preload" as="script" href="\.\/(assets\/embed\.[0-9a-f]{8}\.js)"/)
+const runnerPath = named(/<link rel="modulepreload" href="\.\/(assets\/runner\.[0-9a-f]{8}\.js)"/)
+;(0, eval)(await get(`/${embedPath}`))
 dom.window.PWFabric = globalThis.PWFabric
 const seeded = [
   '__pwfabric_react',
@@ -91,11 +98,12 @@ const values = {
   defineBlock: typeof globalThis.__pwfabric_sdk?.defineBlock,
   coreExports: Object.keys(globalThis.__pwfabric_core ?? {}).length,
 }
-const runner = await import(dataUrl(link(await get('/assets/runner.js'))))
+const runner = await import(dataUrl(link(await get(`/${runnerPath}`))))
 await runner.runApp({
   source: new URL('pwpack', base).href,
   blocks: new URL('blocks/', base).href,
   engines: new URL('engines', base).href,
+  renderer: `./${embedPath}`,
   router: 'hash',
 })
 const deadline = Date.now() + 20_000

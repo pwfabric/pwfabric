@@ -589,7 +589,10 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     const titleIsExpression = titleTemplate?.includes('{{') === true
     const title = composeTitle(project.title, titleIsExpression ? undefined : titleTemplate)
     if (title) document.title = title
-    applyDescription(document, receipt.description, project.description)
+    // The description the same way: a template is never shown, the app's
+    // stands in until the renderer reports it resolved (`onDescription`).
+    const descriptionTemplate = typeof receipt.description === 'string' ? receipt.description : undefined
+    applyDescription(document, descriptionTemplate, project.description)
 
     // Token-backed entity facade (only with a live session and declared
     // entity bindings) — otherwise omitted so embed's offline stubs apply.
@@ -644,6 +647,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       appearance: receipt.appearance,
       capabilities: seededCapabilities ?? [],
       ...(titleTemplate !== undefined ? { title: titleTemplate } : {}),
+      ...(descriptionTemplate !== undefined ? { description: descriptionTemplate } : {}),
     }
     const renderOptions: Record<string, unknown> = {
       mode: 'fat',
@@ -665,6 +669,10 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
         if (seq !== routeSeq) return
         const next = composeTitle(project.title, resolved)
         if (next) document.title = next
+      },
+      onDescription: (resolved: string | undefined) => {
+        if (seq !== routeSeq) return
+        applyDescription(document, resolved ?? descriptionTemplate, project.description)
       },
       // The page's address: its `urlState` and a split shell's selection live
       // in the route's query, and a record source that finds nothing reports

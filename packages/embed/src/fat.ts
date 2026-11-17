@@ -80,6 +80,8 @@ export interface RenderFatOptions {
   readonly linkHref?: LinkHref
   /** Told the page title once its expressions resolve (`undefined` while they resolve to nothing). */
   readonly onTitle?: (title: string | undefined) => void
+  /** Like `onTitle`, for the surface's `description`. */
+  readonly onDescription?: (description: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
   /**
@@ -198,6 +200,7 @@ export function fatCoreOptions(opts: RenderFatOptions): RenderCoreOptions {
     ...(opts.dataCache !== undefined ? { dataCache: opts.dataCache } : {}),
     ...(opts.linkHref !== undefined ? { linkHref: opts.linkHref } : {}),
     ...(opts.onTitle !== undefined ? { onTitle: opts.onTitle } : {}),
+    ...(opts.onDescription !== undefined ? { onDescription: opts.onDescription } : {}),
     ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
     ...(opts.address !== undefined ? { address: opts.address } : {}),
     ...(opts.theme !== undefined ? { theme: opts.theme } : {}),

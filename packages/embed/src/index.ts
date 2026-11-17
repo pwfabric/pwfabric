@@ -118,6 +118,8 @@ export interface EmbedOptions {
   readonly linkHref?: LinkHref
   /** Told the page title once its expressions resolve (`undefined` while they resolve to nothing). */
   readonly onTitle?: (title: string | undefined) => void
+  /** Like `onTitle`, for the surface's `description`. */
+  readonly onDescription?: (description: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
   /**
@@ -179,6 +181,7 @@ function passthrough(options?: EmbedOptions): Partial<RenderCoreOptions> {
     ...(o.dataCache !== undefined ? { dataCache: o.dataCache } : {}),
     ...(o.linkHref !== undefined ? { linkHref: o.linkHref } : {}),
     ...(o.onTitle !== undefined ? { onTitle: o.onTitle } : {}),
+    ...(o.onDescription !== undefined ? { onDescription: o.onDescription } : {}),
     ...(o.locale !== undefined ? { locale: o.locale } : {}),
     ...(o.address !== undefined ? { address: o.address } : {}),
     ...(o.placeholderMissingBlocks !== undefined ? { placeholderMissingBlocks: o.placeholderMissingBlocks } : {}),

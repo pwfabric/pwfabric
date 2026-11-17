@@ -40,10 +40,11 @@ engine in it and is not runnable by itself.)
 **2. Unzip it.** You get:
 
 ```text
-index.html      ← the shell: import map, renderer, mount point
+index.html      ← the shell: import map, preloads, mount point
 _headers        ← the app's Content Security Policy, for hosts that read it
 publish.json    ← what was built: atoms, hashes, the policy
-assets/         ← runner.js, boot.js (calls runApp()), seed.js, embed.js, theme.css
+assets/         ← runner, boot (calls runApp()), embed (the renderer), theme.css — content-hashed names
+robots.txt      ← lets search engines read the app
 shims/          ← import-map targets the block bundles resolve against
 pwpack/         ← project.json, surfaces/*.receipt.json, navigation, appearance…
 blocks/         ← manifest.json + one hash-pinned bundle per block type
@@ -73,16 +74,20 @@ folder is plain static files, and any static file server or host serves it
 the same way. The shell the export writes is, in essence:
 
 ```html
-<link rel="stylesheet" href="./assets/theme.css" />
+<link rel="stylesheet" href="./assets/theme.3248118d.css" />
 <script type="importmap">{ "imports": { … } }</script>
-<script src="./assets/embed.js"></script>
-<script src="./assets/seed.js"></script>
+<link rel="modulepreload" href="./assets/runner.9094f562.js" />
+<link rel="preload" as="script" href="./assets/embed.4f99b147.js" />
 <div id="root"></div>
-<script type="module" src="./assets/boot.js"></script>
+<script type="module" src="./assets/boot.7838adfe.js"></script>
 ```
 
-and `assets/boot.js` calls
-`runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', router: 'hash', locale: 'en' })`.
+and the boot module calls
+`runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', renderer: './assets/embed.4f99b147.js', router: 'hash', locale: 'en' })`.
+The runner adds the renderer to the page when it draws the first page, so
+nothing large holds the first paint and a visitor stopped at a sign-in gate
+never downloads it. The runtime files carry a hash of their content in their
+names, and `_headers` lets a host keep them for a year.
 The import map is the only inline script, so the app's Content Security
 Policy can allow it by hash; start-up code of your own goes in a file too.
 

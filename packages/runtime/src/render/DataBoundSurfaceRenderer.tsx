@@ -44,7 +44,6 @@ import type {
 import type { Block } from '@pwfabric/core'
 import type { DataSourceDefinition } from '../data/types.js'
 import { createEntityDataSource } from '../entity/entity-datasource.js'
-import { applyEntityQuery } from '../entity/apply-query.js'
 import { aggregateThrough } from '../entity/aggregate.js'
 import { SurfaceDataContext, SurfaceLinkHrefContext } from './surface-data-context.js'
 import { createSourceWriter } from './source-writer.js'
@@ -1042,8 +1041,8 @@ export function isSafeNavigateUrl(url: unknown): url is string {
  * fetches data, manages state, resolves expressions, and intercepts events.
  */
 export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): React.ReactElement {
-  const { surface, onEvent, behaviors: hostBehaviors, onNavigateAction, onTitle, dataServiceConfig, ...rest } = props
-  const { blocks, appearance, capabilities, title } = surface
+  const { surface, onEvent, behaviors: hostBehaviors, onNavigateAction, onTitle, onDescription, dataServiceConfig, ...rest } = props
+  const { blocks, appearance, capabilities, title, description } = surface
   // dataSources + initialState + declared behaviors live under platform/persistence config
   const { dataSources, initialState, behaviors: declaredBehaviors } = extractPersistenceSeeds(surface)
   // Declared (JSON) first, host (its store) after — same id in both: host wins.
@@ -1063,6 +1062,11 @@ export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): 
   React.useEffect(() => {
     if (!dataBound) onTitle?.(literalTitle)
   }, [dataBound, literalTitle, onTitle])
+  const literalDescription =
+    !dataBound && typeof description === 'string' && description.trim() && !description.includes('{{') ? description : undefined
+  React.useEffect(() => {
+    if (!dataBound) onDescription?.(literalDescription)
+  }, [dataBound, literalDescription, onDescription])
 
   // Nothing dynamic — no sources, no state, no behaviors, no form bindings, no
   // block action: pass through directly (zero overhead). Write-only surfaces
@@ -1103,6 +1107,8 @@ export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): 
           {...(onNavigateAction !== undefined ? { onNavigateAction } : {})}
           {...(title !== undefined ? { title } : {})}
           {...(onTitle !== undefined ? { onTitle } : {})}
+          {...(description !== undefined ? { description } : {})}
+          {...(onDescription !== undefined ? { onDescription } : {})}
           onEvent={onEvent}
           rendererProps={rest}
         />
@@ -1118,6 +1124,8 @@ export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): 
           {...(onNavigateAction !== undefined ? { onNavigateAction } : {})}
           {...(title !== undefined ? { title } : {})}
           {...(onTitle !== undefined ? { onTitle } : {})}
+          {...(description !== undefined ? { description } : {})}
+          {...(onDescription !== undefined ? { onDescription } : {})}
           rendererProps={rest}
         />
       )}
@@ -1145,6 +1153,8 @@ interface DataBoundInnerProps {
   onNavigateAction?: (url: string) => boolean
   title?: string
   onTitle?: (title: string | undefined) => void
+  description?: string
+  onDescription?: (description: string | undefined) => void
   rendererProps: Omit<SurfaceRendererProps, 'surface' | 'onEvent'>
 }
 
@@ -1160,6 +1170,8 @@ function DataBoundInner({
   onNavigateAction,
   title,
   onTitle,
+  description,
+  onDescription,
   rendererProps,
 }: DataBoundInnerProps): React.ReactElement {
   const interactionMode = rendererProps.interactionMode ?? 'live'
@@ -1195,16 +1207,25 @@ function DataBoundInner({
   // has loaded; until then (or when it resolves to nothing) the host shows
   // its own. A title an expression could not resolve stays unreported rather
   // than putting braces in the tab.
-  const resolvedTitle = React.useMemo(() => {
-    if (typeof title !== 'string' || !title.trim()) return undefined
-    const value = resolveValueIn(title, expressionData, locale ? { locale } : {})
-    if (value === undefined || value === null) return undefined
-    const text = String(value).trim()
-    return text === '' || text.includes('{{') ? undefined : text
-  }, [title, expressionData, locale])
+  const resolveText = React.useCallback(
+    (template: string | undefined): string | undefined => {
+      if (typeof template !== 'string' || !template.trim()) return undefined
+      const value = resolveValueIn(template, expressionData, locale ? { locale } : {})
+      if (value === undefined || value === null) return undefined
+      const text = String(value).trim()
+      return text === '' || text.includes('{{') ? undefined : text
+    },
+    [expressionData, locale]
+  )
+  const resolvedTitle = React.useMemo(() => resolveText(title), [resolveText, title])
   React.useEffect(() => {
     onTitle?.(resolvedTitle)
   }, [resolvedTitle, onTitle])
+  // The page's description, the same way (its <meta name="description">).
+  const resolvedDescription = React.useMemo(() => resolveText(description), [resolveText, description])
+  React.useEffect(() => {
+    onDescription?.(resolvedDescription)
+  }, [resolvedDescription, onDescription])
 
   // The `write` action's way to a source — the same one a form binding uses.
   const dataService = useDataService()

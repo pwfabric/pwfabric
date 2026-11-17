@@ -98,6 +98,8 @@ export interface RenderCoreOptions {
   readonly linkHref?: LinkHref
   /** Told the page title once its expressions resolve (`undefined` while they resolve to nothing). */
   readonly onTitle?: (title: string | undefined) => void
+  /** Like `onTitle`, for the surface's `description`. */
+  readonly onDescription?: (description: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
   /**
@@ -208,6 +210,7 @@ function buildRendererProps(opts: RenderCoreOptions): Record<string, unknown> {
   if (opts.dataCache !== undefined) props.dataCache = opts.dataCache
   if (opts.linkHref !== undefined) props.linkHref = opts.linkHref
   if (opts.onTitle !== undefined) props.onTitle = opts.onTitle
+  if (opts.onDescription !== undefined) props.onDescription = opts.onDescription
   if (opts.locale !== undefined) props.locale = opts.locale
   if (opts.address !== undefined) props.address = opts.address
   if (opts.interactionMode !== undefined) props.interactionMode = opts.interactionMode

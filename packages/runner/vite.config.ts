@@ -1,9 +1,10 @@
 import { defineConfig, transformWithEsbuild, type Plugin } from 'vite'
 
 /**
- * Vite leaves whitespace in a library's ES output (it keeps the pure-call annotations
- * for a consumer's bundler). runner.js is served to visitors as it is,
- * so it is minified in full once the chunk is final; the source map follows.
+ * Vite leaves whitespace in a library's ES output (it keeps the pure-call
+ * annotations for a consumer's bundler). runner.js is served to visitors as
+ * it is, so it is minified in full once the chunk is final; the source map
+ * follows.
  */
 const minifyChunk: Plugin = {
   name: 'pwfabric-minify-runner',
@@ -12,7 +13,6 @@ const minifyChunk: Plugin = {
     return { code: out.code, map: out.map }
   },
 }
-
 
 /**
  * Vite lib-mode build → a single browser ES module at `dist/runner.js`.

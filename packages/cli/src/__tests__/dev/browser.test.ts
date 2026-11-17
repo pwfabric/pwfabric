@@ -57,7 +57,7 @@ describe('the assembled page in a document', () => {
 
 /**
  * The documented authoring path, on a page that only runs the renderer and
- * the runner — no `seed.js`, as a published app's host gives it. The block
+ * the runner, as every published app does. The block
  * imports `defineBlock` from `@pwfabric/authoring` and exports nothing but
  * the definition it returns, the way the quickstart writes one.
  */
@@ -114,7 +114,7 @@ describe('a defineBlock() block under the renderer and the runner alone', () => 
   it('renders: the renderer seeds the authoring kit and the block resolves its component from the definition', async () => {
     const { stdout } = await promisify(execFile)(
       process.execPath,
-      [SMOKE, sdkServer.url, '--no-seed', '--expect', '[data-k="quote"]'],
+      [SMOKE, sdkServer.url, '--expect', '[data-k="quote"]'],
       { timeout: 60_000 }
     )
     const result = JSON.parse(stdout.trim().split('\n').pop() as string) as Record<string, unknown>
