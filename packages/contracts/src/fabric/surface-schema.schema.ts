@@ -211,6 +211,17 @@ export const dataSourceSchema = z.object({
    */
   notFoundWhenEmpty: z.boolean().optional(),
   /**
+   * ONLY A SIGNED-IN VISITOR CAN BE ANSWERED FOR THIS SOURCE (data-protocol
+   * §2.6): the app's access rules grant a visitor who is not signed in no
+   * read of it (a `read own` model, an app that requires sign-in). While the
+   * host says nobody is signed in, a runtime does not ask it — the answer
+   * could only be a 401 — and binds that refusal: no rows,
+   * `__errors.<id>` "unauthenticated". A sign-in asks it. A builder writes it
+   * onto an own-records `entity` source from the declared access rules; an
+   * author MAY write it on any source.
+   */
+  requiresSession: z.boolean().optional(),
+  /**
    * THE RECORD'S FIELDS, name → declared type (`entities.json` "Field
    * types"). A write to this source — a form binding, the `write` action —
    * sends only these, each as its type (a number field's `"10"` goes as

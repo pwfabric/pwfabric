@@ -12,7 +12,8 @@
  * is a singleton, and one app's blocks must not reach another's render).
  *
  * The first frame is what the browser draws before anything arrives: the
- * receipt's own content and static sources, every fetched source loading, no
+ * receipt's own content and static sources, every fetched source loading
+ * (one settled without a request — idle, or needing a session — settled), no
  * visitor signed in, nothing read from the address. Nothing is fetched here.
  *
  * A block whose render needs a browser (it reads `window` or `document`

@@ -34,6 +34,14 @@ describe('ownRecordsSource — a connector-less entity source reads the app\'s o
     })
   })
 
+  it('carries requiresSession, the build’s mark of a source only a session can be answered for (data-protocol §2.6)', () => {
+    const source = { id: 'mine', kind: 'entity', entityType: 'Rsvp', requiresSession: true }
+    expect(ownRecordsSource(source, BASE)).toMatchObject({ kind: 'rest', endpoint: '/_host/records/Rsvp', requiresSession: true })
+    const receipt = { capabilities: [persistence([source])] }
+    const declared = new Set(['Rsvp'])
+    expect(ownRecordsReceipt(receipt, BASE, declared)).toEqual(rewriteEntitySources(receipt, BASE, declared))
+  })
+
   it('encodes the type into the path', () => {
     expect(ownRecordsSource({ kind: 'entity', entityType: 'a b' }, BASE)).toMatchObject({
       endpoint: '/_host/records/a%20b',

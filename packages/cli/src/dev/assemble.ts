@@ -33,6 +33,8 @@ import {
 } from './envelope.js'
 import { collectMedia, fillMediaSlots } from './media.js'
 import { declaredRecordFields, withRecordFields } from '../host/record-fields.js'
+import { withSessionSources } from '../host/session-sources.js'
+import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
 import { deriveCsp, headersFile, robotsTxt } from './csp.js'
 import { firstPaintData, paintPages, staticPageFile, staticRootHtml, type PaintedPage } from './static-paint.js'
 import {
@@ -291,7 +293,12 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const authDoc = definition('auth')
   // Each own-records source carries its type's field names, so a write sends
   // those only (host/record-fields.ts).
-  const recordFields = declaredRecordFields(definition('entities'))
+  const entitiesDoc = definition('entities')
+  const recordFields = declaredRecordFields(entitiesDoc)
+  // ...and says whether only a session can be answered for it, from the
+  // declared access rules (host/session-sources.ts).
+  const entityDeclarations = entityDeclarationsOf(entitiesDoc)
+  const authDeclaration = authDeclarationOf(authDoc)
   const plan = jsonOf(app.folder, 'app/plan.json')
 
   // ── compile ──────────────────────────────────────────────────────
@@ -529,7 +536,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     })
   )
   for (const page of pages) {
-    const declared = withRecordFields(page.receipt, recordFields)
+    const declared = withSessionSources(withRecordFields(page.receipt, recordFields), entityDeclarations, authDeclaration)
     files.set(`pwpack/surfaces/${page.key}.receipt.json`, declared === page.receipt ? page.bytes : json(declared))
   }
   files.set('pwpack/navigation.json', json(isRecord(navigationDoc) ? navigationDoc : deriveNavigation(routes, entry)))

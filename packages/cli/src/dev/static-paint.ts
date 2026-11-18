@@ -15,7 +15,8 @@
  *
  * WHAT A FIRST FRAME IS: the receipt's own content and its static sources;
  * every fetched source loading (nothing is fetched here — build-time data
- * never reaches a visitor's HTML); nobody signed in; nothing read from the
+ * never reaches a visitor's HTML), and every source settled without a
+ * request settled (idle; `requiresSession` refused); nobody signed in; nothing read from the
  * address; the phone layout. An app that requires sign-in has no first frame
  * the build can know (who is signed in decides what is drawn): it is not
  * painted. A record page (`notFoundWhenEmpty`) is: its first frame is the

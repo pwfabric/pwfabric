@@ -15,7 +15,7 @@
  *    carries React's fiber, so a check that saw nothing cannot pass).
  *
  * The app's records are held — every `<host>/records/…` request stays
- * unanswered — so each source is still loading when the page is checked: a
+ * unanswered — so each fetched source is still loading when the page is checked: a
  * loading frame that data replaces later is not a hydration fault.
  *
  * Needs a Chromium for Playwright (`pnpm exec playwright install chromium`).

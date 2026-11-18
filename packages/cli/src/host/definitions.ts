@@ -77,7 +77,11 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
 
 /** `undefined` when the app declares no `auth.json` (or an empty one). */
 export function readAuth(root: string): AuthDeclaration | undefined {
-  const raw = readJson(join(root, 'app', 'definitions', 'auth.json'))
+  return authDeclarationOf(readJson(join(root, 'app', 'definitions', 'auth.json')))
+}
+
+/** `app/definitions/auth.json` as written, read; `undefined` when it is absent or empty. */
+export function authDeclarationOf(raw: unknown): AuthDeclaration | undefined {
   if (!isObject(raw) || Object.keys(raw).length === 0) return undefined
   const topology = raw.topology === 'external' ? 'external' : 'app'
   const iss = isObject(raw.issuer) ? raw.issuer : undefined
@@ -105,7 +109,11 @@ export function readAuth(root: string): AuthDeclaration | undefined {
 }
 
 export function readEntities(root: string): EntityDeclaration[] {
-  const raw = readJson(join(root, 'app', 'definitions', 'entities.json'))
+  return entityDeclarationsOf(readJson(join(root, 'app', 'definitions', 'entities.json')))
+}
+
+/** `app/definitions/entities.json` as written, read. */
+export function entityDeclarationsOf(raw: unknown): EntityDeclaration[] {
   const list = isObject(raw) && Array.isArray(raw.entities) ? raw.entities : []
   return list.filter(isObject).flatMap((e) => {
     if (typeof e.typeId !== 'string' || !e.typeId) return []
