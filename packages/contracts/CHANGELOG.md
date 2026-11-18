@@ -1,5 +1,22 @@
 # @pwfabric/contracts
 
+## 3.0.0
+
+Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
+
+### Breaking
+
+- The package root is zod-free. zod schemas and zod-based parsers moved to `@pwfabric/contracts/schemas` (`AtomFileManifestSchema`, `surfaceDocumentSchema`, `safeParsePwpackIdentity`, `resolvePackClosure`, `SURFACE_EVENT_PAYLOAD_SCHEMAS` …); the root re-exports their types as types (#53).
+- The root no longer exports the **values** of the atom, `requires.packs`, record-write and webfont modules. They are on `@pwfabric/contracts/pack` (`classifyAtom`, `ATOM_KINDS`, `satisfiesSemverRange` …), `/record-write` (`prepareRecordWrite`, `isRecordServerField` …) and `/webfonts` (`WEBFONT_ALLOW_LIST`, `findAllowedWebfont`, `parseFontStack`). Every type stays on the root (#55).
+- `statusKeys.message` is replaced by `statusKeys.reason` and `statusKeys.fields` in `surfaceActionSchema` and form bindings (#49).
+- `prepareRecordWrite` is strict: a numeral is refused for a `number` and `"on"`/`1` for a `boolean`. New field rules `email` type, `min`/`max`/`integer` and `mustBe`; a `relation` must name a record the caller can read; an entity's `unique` keys refuse a duplicate with `409 CONFLICT` (#51).
+
+### Other changes
+
+- Added: `fabric/block-prop` — the manifest's prop shape (`PropShape`, a JSON-Schema subset) and `applyBlockProps`, `checkPropValue`, `coercePropValue`, `propDefault`, `propShapeProblems`. A block's `manifest.json` `definition.props` is its only prop definition; a value that does not fit is kept as written (#53, #54).
+- Added: `auth:signIn`, `auth:register` and `auth:signOut` actions in `surfaceActionSchema`; `pwpack.json` `app.signIn`; `auth.json` `registration` (`open | invite | closed`, `registrationOf`); the `ownerName` server role (#50).
+- Added: a data source's `fields` (name → declared type) (#51) and `requiresSession` (#58).
+
 ## 2.2.0
 
 - Changed (behaviour, documented meaning): a data source's `fallback` is sample data for a source **nothing is connected** to serve (no registered connector, no entity facade, no records base). A real failure binds no rows, whatever `fallback` says (data-protocol §2.5; see `@pwfabric/runtime`).

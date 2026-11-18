@@ -1,0 +1,287 @@
+---
+title: Upgrading to 3.0
+description: What a block author, an app author and a host change to move from PWFabric 2.x to 3.0 — manifest props without zod, app-written words and codes, auth as state, stricter records, and the static first paint.
+---
+
+# Upgrading to 3.0
+
+3.0 changes three contracts at once. A **block** declares its props in its
+manifest only and imports no validation library. An **app** writes every word
+a visitor reads, and the engine hands it codes and state instead of sentences.
+A **build** paints each page at build time, and the browser hydrates that HTML
+instead of drawing the page again.
+
+Work through it in this order: move the engine range, fix the blocks, fix the
+app, then the host. `pwf validate` names almost every item below; run it after
+each step. The per-package details are in each package's `CHANGELOG.md`.
+
+## 1. The engine range
+
+An app or a pack that declares an `engines.pwfabric` range excluding the running
+engine no longer validates or builds (`ENGINE_RANGE_EXCLUDED`). Move it:
+
+```json
+{ "engines": { "pwfabric": ">=3.0.0 <4" } }
+```
+
+A prerelease (`3.0.0-rc.1`) is judged as the release it leads to.
+
+## 2. Blocks
+
+### Props live in the manifest; no zod
+
+A block's `manifest.json` `definition.props` is its only prop definition: each
+prop's `name`, `default`, `required`, `bindable`, `copy` and its shape in
+`jsonSchema` (a JSON-Schema subset). The block module has no schema.
+
+- `defineBlock<TProps>({ type, name, props, defaultProps?, component })` takes
+  no `schema`. `TProps` is an interface you write; `z.infer<…>` goes.
+- A block that imports `zod` is refused: `pwf validate` reports
+  `BLOCK_IMPORTS_ZOD` with the file and line, the compiler `ZOD_IMPORT`.
+  Type-only imports and a pack's own tests are allowed.
+- The renderer applies the declarations before the block renders: a missing
+  prop gets its default, `"24"` becomes `24`, nested members get their
+  defaults. A value that still does not fit is **kept as written** and
+  reported under `pwf dev`; `pwf build` and `pwf validate` report it as
+  `BLOCK_PROP_SHAPE`. Your component reads `props.size` already defaulted, so
+  `?? 'md'` is not needed for a declared default.
+
+Migrate with the CLI first, then edit the code:
+
+```bash
+pwf migrate blocks ./my-pack --check   # report only
+pwf migrate blocks ./my-pack           # writes definition.props
+```
+
+It reads the schema and the component's own literal fallbacks
+(`props.gap ?? '1rem'`) and writes what a visitor actually saw on 2.x: the code's
+fallback first, then the manifest's default, then the schema's. Every
+disagreement is in the report; review it. Then delete the zod import, the
+schema constants and `schema:`, and turn enum helpers (`variantSchema.options`)
+into plain `as const` arrays. In tests, build props as plain objects; to test
+defaults, use `applyBlockProps(props, manifest.definition.props)` from
+`@pwfabric/contracts`.
+
+See [`defineBlock()`](/authoring/define-block) and block-manifest "Prop shape"
+in the [specification](/specification).
+
+### Render must be pure
+
+The build renders each page's first frame outside a browser, and the browser
+hydrates it. A block's render must give the same output wherever it runs:
+
+- browser APIs (`window`, `document`, `matchMedia`, storage, measuring),
+  `new Date()`, `Date.now()` and random values belong in effects and event
+  handlers, never in render or a `useState` initializer;
+- the first frame should not depend on a measured size;
+- a block that is not pure still works, but the browser draws it again after
+  the static paint, and the page may move.
+
+### `context.locale` and `context.appHref`
+
+- **`context.locale`** is the app's locale (BCP 47). Format numbers, prices
+  and dates with it. Never read `<html lang>`: the build has no document, and a
+  price painted as "249 €" at build and "€249" in the browser is a hydration
+  mismatch.
+- **`context.appHref(path)`** writes an app page's address in the host's
+  router form: `#/webhooks?x=1` under the hash router, `<base>/webhooks?x=1`
+  under the path router. Use it for links a block builds itself (markdown
+  links in prose, table cells from a template). A `href` prop needs nothing;
+  the host has rewritten it.
+
+### Words a block draws
+
+A block's own words (a "Loading…", an empty state) come from the app:
+`useAppMessage('ui.<id>', fallback, vars)` from `@pwfabric/runtime`. A prop
+the block already has still wins.
+
+### Imports that moved
+
+On a page that `embed.js` seeds, `@pwfabric/authoring` gives a block the
+runtime plus `defineBlock`, `isCustomBlockDefinition`, `createBlockInstance`
+and `validateBlockDefinition` (`@pwfabric/authoring/block`). It no longer
+gives `defineFactory`, the custom-block registry or the props validators.
+
+## 3. Apps
+
+### `messages`: the app writes every word
+
+`app/plan.json` `messages` is a flat map from id to string, written in the
+plan's `locale`. The runner reads every word it draws there first (`gate.*`,
+`pill.*`, `account.*`, `notFound.*`, `session.*`, `bridge.*`, `auth.error.*`),
+then a neutral English fallback; blocks read `ui.*`. Placeholders are `{name}`,
+`{code}` and `{n}`.
+
+- `pwf validate` reports `MESSAGES_MISSING` for the ids your app can reach
+  and does not set: an error when the locale is not English, a warning
+  otherwise.
+- There is no Turkish runner copy and no `runApp({ locale })` any more.
+- With no title the app has no `<title>` text, and with no `locale` the shell
+  has no `lang`. The engine no longer makes either up.
+- The navbar greeting is not rewritten. Write your own with `{{me.name}}`.
+
+### Codes, not sentences
+
+The engine says *what happened*; the page decides what to say.
+
+- `{{__errors.<id>}}` is one of `unauthenticated`, `forbidden`, `not_found`,
+  `conflict`, `server`, `network`, `unconnected`, `error`. Branch on it; do not
+  show it (`ERROR_BOUND_AS_TEXT`). `{{__errorCodes.<id>}}` still holds the HTTP
+  status.
+- Forms and the `write` action write `statusKeys.reason` (`validation`,
+  `unauthenticated`, `forbidden`, `conflict`, `server`, `network`, `error`) and
+  `statusKeys.fields` (the refused field names). `statusKeys.message` is gone
+  (`STATUS_KEY_UNKNOWN`). `statusKeys.detail` is for the developer, never for
+  the page.
+- A 409 is `conflict`, with `fields` naming the unique key. Give it its own
+  words ("You have already replied to this session").
+
+### Auth as state and actions
+
+- The page scope has **`__auth`** (`signedIn`, `user`, `methods`,
+  `registration`, `error`) and **`me`** (`__auth.user`, `null` signed out).
+  Neither carries a token.
+- Any block can start sign-in: `action: { type: 'auth:signIn', method? }`,
+  `auth:register`, `auth:signOut`. A form whose `onSubmitAction` is
+  `auth:signIn` or `auth:register` sends its `email`, `password`, `name` and
+  `invitation` inputs.
+- **`app.signIn`** in `pwpack.json` names the app's own sign-in page. The
+  runner draws it inside the shell, in front of every page of an app that
+  requires sign-in, and when an `auth:*` action has nothing to send.
+  `__auth.error` is a code (`refused`, `exists`, `invalid`, `server`,
+  `network`, `unavailable`): branch on it, never show it.
+- **`registration`** in `auth.json` is `open`, `invite` or `closed`. The
+  default is `closed` when the app requires sign-in and `open` otherwise.
+  "Sign up" is offered only when it is `open`. A team app should be `invite`
+  or `closed`, with its data granted to a declared role, not to every member.
+- Query values may read `{{me.*}}` (`owner eq {{me.id}}`). Signed out, such a
+  source is idle and lists nothing; signing in asks again.
+- `me` and every `__*` name are reserved source ids (`SOURCE_ID_RESERVED`).
+
+### The record rules
+
+The record host (`pwf dev`, `pwf run`, and any platform backend that follows
+the spec) checks every write:
+
+- types are strict: `"10"` is refused for a `number`, `"on"` or `1` for a
+  `boolean`. Forms send the record's declared fields only, each converted to
+  its type, so an OTP helper input never reaches the record;
+- new field rules: type `email`; `min`, `max`, `integer` on numbers;
+  `mustBe` (a consent box declares `"required": true, "mustBe": true`);
+- a `relation` must name a record the writer can read;
+- an entity's `unique` keys (`"unique": [["owner", "sessionId"]]`) refuse a
+  duplicate with `409 CONFLICT`;
+- the server role `ownerName` stores the writer's display name; show it as the
+  author and compare `owner` with `me.id`;
+- a file input in a form is refused before sending, with the field named,
+  instead of being dropped.
+
+### Data that behaves differently
+
+- A source that fails for a real reason binds no rows, also after a refresh
+  or a poll.
+- A record key that resolves to nothing (`id eq {{state.id}}` with no `id`)
+  asks for nothing: the source is idle from the first render, and a
+  `notFoundWhenEmpty` page shows the not-found page.
+- A source the access rules close to a visitor without a session carries
+  `requiresSession`. Signed out it is not asked: no rows, `__errors.<id>`
+  `unauthenticated`. Design the signed-out state of those pages.
+- A behavior on a block inside a `repeat` resolves `{{item.*}}` and
+  `{{index}}`, so a per-row "Remove" can send `{{item.id}}`.
+- A click runs the manifest's default `action` when the receipt sets none.
+
+### Smaller changes
+
+- `href: ""` is no longer a link to the entry page; write `/`.
+- `date(v)` writes `18 Nov 2026`; `time(v)` writes `14:30`, without seconds.
+  Both take a style: `date(v, 'long')`. A value that is not a date writes
+  nothing.
+- `style.maxWidth` no longer centres a block; add `margin: '0 auto'`.
+- `find(list, field, value)` picks one row from a list.
+- `frame-src 'self'` opens only for your own `.pdf` and `.txt` media, never
+  `.html`.
+
+## 4. Hosts
+
+A host that serves `pwf build` output as it is needs nothing new. A host that
+serves, rewrites or publishes builds itself follows these.
+
+### The session probe answers 200 signed out
+
+`GET /_auth/session` answers a visitor with no session
+`200 { "data": { "signedIn": false } }`, not 401. A live session answers
+`{ signedIn: true, token, … }`. 401 stays the answer of the endpoints that need
+a session. See [Sessions](/self-host/session).
+
+### The static first paint shell
+
+`pwf build` renders each page's first frame (signed out, phone width, the
+app's locale, every fetched source loading) and the runner hydrates it.
+
+- The entry page's HTML is in `<template id="pw-entry-frame">`, after an
+  empty `#root`. Every other painted page is in `pwpack/surfaces/<key>.html`.
+  Serve them, and cache them like the rest of `pwpack/`.
+- The shell carries two JSON blocks: `pw-first-paint` (which pages are painted
+  and which query keys change them) and `pw-page-hints` (per page: its receipt,
+  block modules, first image and frame).
+- **Three inline scripts** are allowed by hash in `script-src`: the import map,
+  the first-paint script and the page-hints script. A host that rewrites the
+  shell must keep their text byte for byte, or recompute the hashes.
+- The shell writes no static per-page preload links: the page-hints script
+  preloads the opened page only. Block modules are preloaded `as="fetch"` and
+  fetched with default credentials (`same-origin`).
+- Not painted: an app that requires sign-in, and the `app.signIn` page.
+  A record page is painted as its loading frame.
+- `project.json` gains `messages`, `signInSurfaceId` and
+  `identity.registration`. The first frame's sign-in control comes from that
+  declaration, not from `auth.json`.
+
+See pwapp-format §2.5 in the [specification](/specification) and
+[the envelope](/self-host/envelope).
+
+### Sign-in and records
+
+- Write `registration`, resolved, into `auth.json`; omit `registerUrl` when it
+  is `closed`; refuse sign-up with `403 REGISTRATION_CLOSED` or
+  `INVITATION_REQUIRED`.
+- Serve the `signInSurfaceId` receipt without a session.
+- Answer `principal.roles`.
+- Implement the record rules above (`prepareRecordWrite`, now on
+  `@pwfabric/contracts/record-write`), including `ownerName` and `409 CONFLICT`.
+- A source marked `requiresSession` must be answerable with a session.
+
+### Imports that moved
+
+The package roots carry what a visitor's page runs; tooling moved to subpaths.
+
+| Was on | Now |
+|---|---|
+| `@pwfabric/contracts` zod schemas (`surfaceDocumentSchema`, `safeParsePwpackIdentity` …) | `@pwfabric/contracts/schemas` |
+| `@pwfabric/contracts` atom and `requires.packs` values (`classifyAtom`, `satisfiesSemverRange` …) | `@pwfabric/contracts/pack` |
+| `@pwfabric/contracts` `prepareRecordWrite`, `isRecordServerField` | `@pwfabric/contracts/record-write` |
+| `@pwfabric/contracts` `WEBFONT_ALLOW_LIST`, `findAllowedWebfont`, `parseFontStack` | `@pwfabric/contracts/webfonts` |
+| `@pwfabric/core` zod schemas (`blockLayoutSchema` …) | `@pwfabric/core/schemas` |
+| `@pwfabric/core` `BLOCK_HOST_IMPORTS`, `blockImportMap`, `shimSource` … | `@pwfabric/core/host-imports` |
+| `@pwfabric/core` `defineConfigSchema` and its builders | `@pwfabric/core/config-schema` |
+| `@pwfabric/core` `observe*`, `DEFAULT_BUDGET`, `getRating` | `@pwfabric/core/monitoring` |
+| `@pwfabric/runtime` zod schemas (`surfaceJsonSchema` …) | `@pwfabric/runtime/schemas` |
+| `@pwfabric/runtime` `PostgresEntityConnector`, `createPostgresConnector` | `@pwfabric/runtime/entity/postgres` |
+| `@pwfabric/runtime` SEO, analytics, Graph, perf | `@pwfabric/runtime/seo`, `/analytics`, `/graph`, `/perf` |
+| `@pwfabric/runtime` (and `/capability`) platform capability declarations | `@pwfabric/runtime/platform-capabilities` |
+
+Types stay on the package roots. The runner's `doorOf` and `declaresBridge`
+are replaced by `firstFrameDoorOf(project)`; `runApp({ locale })` and the
+runner copy exports are replaced by `RUNNER_MESSAGES` and `runnerMessages`.
+
+## Checking the result
+
+```bash
+pwf validate      # ENGINE_RANGE_EXCLUDED, BLOCK_IMPORTS_ZOD, MESSAGES_MISSING,
+                  # STATUS_KEY_UNKNOWN, ERROR_BOUND_AS_TEXT, BLOCK_PROP_SHAPE …
+pwf build && pwf run .pwf/out
+```
+
+Open each page at phone width with the network throttled: the page should
+appear before the scripts arrive and must not redraw when they do. In the
+engine repository, `pnpm check:hydration <app>` does this for every painted
+page of an app.

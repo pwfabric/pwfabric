@@ -74,8 +74,9 @@ export const priceTag = defineBlock<PriceTagProps>({
 })
 ```
 
-These packages are at **2.2.0**, published on npm
-(`npm install @pwfabric/authoring`). They are ES
+These packages are at **3.0.0**, published on npm
+(`npm install @pwfabric/authoring`). Coming from 2.x? See
+[Upgrading to 3.0](https://pwfabric.com/upgrading-to-3). They are ES
 modules only: a project that imports them sets `"type": "module"`. A block
 needs no validation library, and a block that imports `zod` is refused.
 

@@ -1,5 +1,18 @@
 # @pwfabric/compiler
 
+## 3.0.0
+
+Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
+
+### Breaking
+
+- A block that imports `zod` fails to compile (`ZOD_IMPORT`) (#53).
+
+### Other changes
+
+- Added: `toCommonJs`, used by the build's static first paint (#52).
+- Changed: the block wrapper recognises a definition without `schema` (#53).
+
 ## 2.2.0
 
 - No changes; released with the other packages at 2.2.0.

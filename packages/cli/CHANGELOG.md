@@ -1,5 +1,29 @@
 # @pwfabric/cli
 
+## 3.0.0
+
+Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
+
+### Breaking
+
+- **Shell format** (a host that serves or rewrites a build must follow): `pwf build` paints each page's first frame. The entry frame is in `<template id="pw-entry-frame">` and `#root` is empty; other pages are `pwpack/surfaces/<key>.html`; the shell carries `pw-first-paint` and `pw-page-hints` JSON and two more inline scripts, so `script-src` has three hashes; no static per-page preload links; boot.js carries no deep-link hints. Not painted: an app that requires sign-in, and `app.signIn` (#52, #57).
+- The gateway session endpoint of `pwf dev` / `pwf run` answers a visitor with no session `200 { data: { signedIn: false } }`, not 401 (#57).
+- `project.json` gains `messages`, `signInSurfaceId` and `identity.registration`; it has no `title` when the plan has none, and the shell has no `lang` when the plan has no locale (#49, #50, #57).
+- The dev host's auth error codes: `method_unavailable` (was `provider_unavailable`), `invalid_state` (was `invalid_transaction`). Its principal answers carry `roles`. Registration follows `auth.json` `registration` (`403 REGISTRATION_CLOSED` / `INVITATION_REQUIRED`) (#49, #50).
+- The record host is strict (types, `email`, bounds, `mustBe`, readable relations, `unique` → `409 CONFLICT`); a 409 message names each key field (#51, #56).
+- `pwf validate` and `pwf build` refuse `ENGINE_RANGE_EXCLUDED`: an app or pinned pack whose `engines.pwfabric` excludes the running engine. `me` and `__*` are reserved source ids (`SOURCE_ID_RESERVED`). `frame-src 'self'` opens only for `.pdf` / `.txt`. `LocalHost` implementations add `reseed()` (#50, #51, #56).
+
+### Other changes
+
+- Added: `app/plan.json` `messages` copied into `project.json` (`MESSAGES_INVALID`); `pwf validate` `MESSAGES_MISSING`; `pwf create` writes `locale` and its `notFound.*` messages (#49, #56).
+- Added: `pwf build` writes `fields` and `requiresSession` on own-records sources; the `ownerName` role (#50, #51, #58). `cli/host` exports `withRecordFields` and `withSessionSources`.
+- Added: `pwf migrate blocks [dir] [--check] [--json]` — writes a block's props into its manifest from its zod schema and its code's fallbacks, and reports every disagreement (#53, #54).
+- Added: `pwf build` checks every receipt's props (`BLOCK_PROP_*`), and `pwf validate` warns `STATUS_KEY_UNKNOWN` (#53, #56).
+- Added: `pwf run` serves a sign-in app's local identity provider, br/gzip, and the build's `_headers` cache rules (#50, #51).
+- Added: `pwf dev` reseeds the records when `app/content/`, `app/data/` or `entities.json` change, keeping the sessions (#56).
+- Added: `pnpm check:hydration <app>…` (repository script): opens every painted page in a browser and fails on any hydration error or redrawn node (#57).
+- Changed: `MESSAGES_MISSING` lists `auth.error.*` only when a provider or issuer can send the visitor back; the "unsupported provider, falling back to anonymous" line is gone (#56).
+
 ## 2.2.0
 
 - Added: `pwf validate` (and `pwf pack`) warn `BLOCK_PROP_NOT_BINDABLE` about a `{{…}}` in a prop the block's manifest declares `bindable: false`, nested values included: since 2.1.0 the runtime leaves such a prop as written, so the mistake used to show only at render, as raw braces.
