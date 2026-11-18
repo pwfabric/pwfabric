@@ -58,7 +58,9 @@ export * from './surface-theme.js'
 // Appearance cascade — the single theme→CSS implementation.
 // Consumed by the renderer, the theme exporter and the composer.
 export * from './appearance-cascade.js'
-export * from './webfonts.js'
+// The webfont allow-list is data the publish path and an editor's font picker
+// read, not a visitor's page: its values are `@pwfabric/contracts/webfonts`.
+export type * from './webfonts.js'
 
 // Canonical block type
 export * from './block.js'
@@ -80,7 +82,8 @@ export * from './surface-schema.js'
 
 // The record write contract: server-owned fields, declared types, undeclared
 // fields refused — one function for every server that hosts an app's records.
-export * from './record-write.js'
+// A server's, so its functions are `@pwfabric/contracts/record-write`.
+export type * from './record-write.js'
 
 // Validation types
 export * from './validation.js'
@@ -94,10 +97,13 @@ export * from './block-manifest-schema.js'
 // Interaction rule types
 export * from './interaction-rules.js'
 
-// Pwpack atom types
-export * from './atom.js'
-// Pack-level dependencies (requires.packs): validation + install closure
-export * from './pack-requires.js'
+// Pwpack atom types, and pack-level dependencies (requires.packs). What reads a
+// pack's files — the compiler, the pack tools, an install — imports their
+// functions from `@pwfabric/contracts/pack`; a visitor's page never reads a
+// pack, and this root is what every page carries whole (embed.js exposes it
+// to blocks). The types stay here.
+export type * from './atom.js'
+export type * from './pack-requires.js'
 // pwpack.json — the identity file at a pwpack folder's root
 export * from './pwpack-json.js'
 // media/provenance.json — where each exported media file came from

@@ -10,23 +10,19 @@ import { AppearanceConfigSchema } from '../../schemas.js'
 import {
   DEFAULT_APPEARANCE_THEME,
   THEME_STATUS_TOKENS,
-  allowedWebfontsIn,
   brandInk,
   deriveDarkTheme,
-  findAllowedWebfont,
   hexToRgb,
-  isAllowedWebfont,
   mergeSurfaceThemes,
-  parseFontStack,
   relativeLuminance,
   resolveAppearanceMode,
   resolveDarkTheme,
   surfaceThemeToCSS,
   themeContrastFindings,
   themeContrastLines,
-  WEBFONT_ALLOW_LIST,
   type SurfaceTheme,
 } from '../../fabric/index.js'
+import { allowedWebfontsIn, findAllowedWebfont, isAllowedWebfont, parseFontStack, WEBFONT_ALLOW_LIST } from '../../fabric/webfonts.js'
 
 function ratio(a: string, b: string): number {
   const ra = hexToRgb(a)!

@@ -22,6 +22,21 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./pack": {
+      "types": "./dist/pack.d.ts",
+      "import": "./dist/pack.js",
+      "default": "./dist/pack.js"
+    },
+    "./record-write": {
+      "types": "./dist/fabric/record-write.d.ts",
+      "import": "./dist/fabric/record-write.js",
+      "default": "./dist/fabric/record-write.js"
+    },
+    "./webfonts": {
+      "types": "./dist/fabric/webfonts.d.ts",
+      "import": "./dist/fabric/webfonts.js",
+      "default": "./dist/fabric/webfonts.js"
+    },
     "./schemas": {
       "types": "./dist/schemas.d.ts",
       "import": "./dist/schemas.js",

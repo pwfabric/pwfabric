@@ -22,7 +22,7 @@
  * ceremony is what would recreate the drift it exists to prevent. It lives here,
  * where an additive export is an ordinary minor.
  *
- * @module @pwfabric/core/blocks/host-imports
+ * @module @pwfabric/core/host-imports
  */
 
 // ============================================================

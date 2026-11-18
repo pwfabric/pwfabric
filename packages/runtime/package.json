@@ -47,6 +47,36 @@
       "import": "./dist/data/index.js",
       "default": "./dist/data/index.js"
     },
+    "./platform-capabilities": {
+      "types": "./dist/capability/platform-capabilities.d.ts",
+      "import": "./dist/capability/platform-capabilities.js",
+      "default": "./dist/capability/platform-capabilities.js"
+    },
+    "./seo": {
+      "types": "./dist/seo/index.d.ts",
+      "import": "./dist/seo/index.js",
+      "default": "./dist/seo/index.js"
+    },
+    "./analytics": {
+      "types": "./dist/analytics/index.d.ts",
+      "import": "./dist/analytics/index.js",
+      "default": "./dist/analytics/index.js"
+    },
+    "./graph": {
+      "types": "./dist/graph/index.d.ts",
+      "import": "./dist/graph/index.js",
+      "default": "./dist/graph/index.js"
+    },
+    "./perf": {
+      "types": "./dist/perf/index.d.ts",
+      "import": "./dist/perf/index.js",
+      "default": "./dist/perf/index.js"
+    },
+    "./entity/postgres": {
+      "types": "./dist/entity/postgres-connector.d.ts",
+      "import": "./dist/entity/postgres-connector.js",
+      "default": "./dist/entity/postgres-connector.js"
+    },
     "./schemas": {
       "types": "./dist/schemas.d.ts",
       "import": "./dist/schemas.js",

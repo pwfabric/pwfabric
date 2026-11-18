@@ -4,7 +4,8 @@
  *
  * @module @pwfabric/pack/manifest
  */
-import { classifyAtom, type AtomRef, type PwpackManifest } from '@pwfabric/contracts'
+import type { AtomRef, PwpackManifest } from '@pwfabric/contracts'
+import { classifyAtom } from '@pwfabric/contracts/pack'
 import { safeParsePwpackIdentity } from '@pwfabric/contracts/schemas'
 import { PackError, type PackFolder } from './types.js'
 import { compareBytes, sortedPaths } from './paths.js'

@@ -13,7 +13,7 @@
  *
  * Every family here is served by Google Fonts under the SIL Open Font Licence.
  *
- * @module @pwfabric/contracts/fabric/webfonts
+ * @module @pwfabric/contracts/webfonts
  */
 
 export type WebfontCategory = 'sans' | 'serif' | 'display' | 'mono'

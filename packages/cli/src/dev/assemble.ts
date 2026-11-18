@@ -13,7 +13,8 @@
  */
 import { join } from 'node:path'
 import { blockPropDescriptors, blockTypeNames, checkReceiptBlockProps, hashPack } from '@pwfabric/pack'
-import { atomKindMeta, type BlockOrigins } from '@pwfabric/contracts'
+import type { BlockOrigins } from '@pwfabric/contracts'
+import { atomKindMeta } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins } from '@pwfabric/contracts/schemas'
 import { compileSources, createCompileCache, type CompileCache, type CompiledAtom } from './compile.js'
 import { hasErrors, sortDiagnostics, type AssembleDiagnostic } from './diagnostics.js'

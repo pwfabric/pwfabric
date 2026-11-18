@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { BLOCK_HOST_IMPORTS } from '@pwfabric/core'
+import { BLOCK_HOST_IMPORTS } from '@pwfabric/core/host-imports'
 
 const ROOT = '@pwfabric/runtime'
 

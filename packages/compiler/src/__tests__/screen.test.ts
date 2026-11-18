@@ -7,7 +7,7 @@
  * rejects one, the screen is wrong, not the block.
  */
 import { describe, it, expect } from 'vitest'
-import { blockBundleExternals } from '@pwfabric/core'
+import { blockBundleExternals } from '@pwfabric/core/host-imports'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { screenSource, maskSource, SCREEN_IMPORT_ALLOWLIST, screenBlockSource, BLOCK_SOURCE_IMPORT_ALLOWLIST } from '../screen.js'

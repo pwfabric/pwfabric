@@ -22,7 +22,8 @@
  *
  * @module @pwfabric/compiler/wrappers
  */
-import { atomKindMeta, type AtomKind } from '@pwfabric/contracts'
+import type { AtomKind } from '@pwfabric/contracts'
+import { atomKindMeta } from '@pwfabric/contracts/pack'
 
 /**
  * Context passed to the wrapper registry. `identity` kinds supply `sourceBase`

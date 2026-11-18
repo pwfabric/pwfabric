@@ -21,6 +21,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./block": {
+      "types": "./dist/block.d.ts",
+      "import": "./dist/block.js",
+      "default": "./dist/block.js"
     }
   },
   "files": [

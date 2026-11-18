@@ -31,7 +31,7 @@
  * @module @pwfabric/compiler/screen
  */
 
-import { blockBundleExternals } from '@pwfabric/core'
+import { blockBundleExternals } from '@pwfabric/core/host-imports'
 
 /**
  * Module specifiers a screened source may import at VALUE level.

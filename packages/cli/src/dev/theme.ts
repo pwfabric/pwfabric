@@ -5,15 +5,13 @@
  */
 import {
   DEFAULT_APPEARANCE_THEME,
-  findAllowedWebfont,
   mergeSurfaceThemes,
-  parseFontStack,
   resolveAppearanceMode,
   resolveDarkTheme,
   surfaceThemeToCSS,
-  type AllowedWebfont,
   type SurfaceTheme,
 } from '@pwfabric/contracts'
+import { findAllowedWebfont, parseFontStack, type AllowedWebfont } from '@pwfabric/contracts/webfonts'
 import type { AssembleDiagnostic } from './diagnostics.js'
 import { isRecord } from './sources.js'
 

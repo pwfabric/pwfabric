@@ -4,7 +4,7 @@ The PWFabric atom compiler. A block's `component.tsx` (or a capability's
 `handler.ts`, or a connector/provider engine) plus the companion files it
 imports go in; one ES module the runtime can load comes out. The imports the
 host provides — `react`, the PWFabric packages; the list lives in
-`@pwfabric/core` (`BLOCK_HOST_IMPORTS`) — stay external. A block that imports
+`@pwfabric/core/host-imports` (`BLOCK_HOST_IMPORTS`) — stay external. A block that imports
 `zod` is refused (`ZOD_IMPORT`): its props are declared in its manifest.
 
 The compiler is pure: it works on an in-memory file map, writes nothing and

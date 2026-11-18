@@ -32,7 +32,8 @@
  *
  * @module @pwfabric/pack/row-fields
  */
-import { connectorEntityFields, type ConnectorEntityDeclaration } from '@pwfabric/contracts'
+import type { ConnectorEntityDeclaration } from '@pwfabric/contracts'
+import { connectorEntityFields } from '@pwfabric/contracts/pack'
 import { ConnectorEntityDeclarationSchema } from '@pwfabric/contracts/schemas'
 import type { BlockSource } from './block-props.js'
 import type { PackFolder, PackIssue } from './types.js'
