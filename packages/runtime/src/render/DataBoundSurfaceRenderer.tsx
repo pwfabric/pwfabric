@@ -607,6 +607,26 @@ function useSurfaceData(
     return plain
   })
 
+  // ADDRESS SEED APPLIED AFTER HYDRATION (data-protocol §1.1 / pwapp-format §2.5).
+  //
+  // `useState` is initialized only once — the hydrating render starts with the
+  // build's inputs (empty params, `initialState.id = ""`). After React adopts the
+  // HTML the runner calls `update({ surface })` where `surface` now carries the
+  // address-seeded `initialState` (e.g. `id: "bed81691-..."`). Without this block
+  // that seed never reaches `surfaceState`, the record source stays idle, and
+  // `useNotFoundReport` calls `address.notFound()` → the not-found page shows.
+  //
+  // React "adjusting state during render" pattern: calling `setState` during
+  // render (not in an effect) causes React to immediately re-render with the new
+  // value and never commit the intermediate state to the DOM.
+  //
+  // Precondition: only apply keys that CHANGED in `initialState` AND whose
+  // current value still matches what the PREVIOUS `initialState` had — meaning
+  // the visitor has not yet overridden them (e.g. by typing in a form).
+  // The render-time adjustment body is below, after `sourceData` is declared,
+  // so that `setSourceData` is in scope when clearing stale idle entries.
+  const [lastAppliedInitialState, setLastAppliedInitialState] = React.useState(initialState)
+
   // Source data store — seeded from the host's cache when it has yesterday's
   // rows for a source, so the first frame is not an empty table. The seed is
   // marked loading: the fetch that follows is what makes it today's.
@@ -653,6 +673,66 @@ function useSurfaceData(
     }
     return seeded
   })
+  // ADDRESS SEED APPLIED AFTER HYDRATION — render-time adjustment body.
+  //
+  // `useState` for `lastAppliedInitialState` is declared above; the if-body
+  // lives here (after `sourceData`) so `setSourceData` is in scope.
+  if (lastAppliedInitialState !== initialState) {
+    setLastAppliedInitialState(initialState)
+    const prevIS = lastAppliedInitialState ?? {}
+    const nextIS = initialState ?? {}
+    const iseDerivedKeys = new Set(Object.keys(derivedSeedsOf(nextIS)))
+    // Collect keys that changed in initialState (non-derived only).
+    const isChangedEntries: Array<[string, unknown]> = []
+    for (const [k, v] of Object.entries(nextIS)) {
+      if (!iseDerivedKeys.has(k) && prevIS[k] !== v) isChangedEntries.push([k, v])
+    }
+    // Apply state changes — only where the user has not already overridden.
+    setSurfaceState((current) => {
+      const updates: Record<string, unknown> = {}
+      for (const [k, v] of isChangedEntries) {
+        if (current[k] === prevIS[k]) updates[k] = v
+      }
+      return Object.keys(updates).length > 0 ? { ...current, ...updates } : current
+    })
+    // RACE-FREE IDLE CLEARING.
+    //
+    // After the `setSurfaceState` above, the fetch effect will transition idle
+    // sources to loading. But `useNotFoundReport` fires in the SAME effects
+    // pass — before that `setSourceData({ loading: true })` is committed —
+    // and therefore sees the stale `{ idle: true }` entry as "missing". When a
+    // real address has just arrived (address changed from undefined), it calls
+    // `address.notFound()` immediately — before the record is even requested.
+    //
+    // Fix: also clear stale idle entries here (render-time, like the state
+    // adjustment). By the time effects fire, `sourceData[id]` is `undefined`
+    // (which the expression context treats as loading = true), not `{ idle: true }`.
+    // The fetch effect then transitions from "loading" to "loaded" or "missing"
+    // normally. Only sources that will become ACTIVE under the new approximate
+    // state are cleared — sources still idle under the new state are untouched,
+    // and loaded/loading sources are unaffected by the `idle !== true` guard.
+    if (isChangedEntries.length > 0 && dataSources && dataSources.length > 0) {
+      const approxNewState = { ...prevIS, ...Object.fromEntries(isChangedEntries) }
+      setSourceData((prevSrc) => {
+        let anyChanged = false
+        const result: typeof prevSrc = {}
+        for (const [id, entry] of Object.entries(prevSrc)) {
+          if (entry.idle !== true) {
+            result[id] = entry
+            continue
+          }
+          const srcDef = dataSources.find((s) => s.id === id)
+          if (!srcDef || isIdleSource(srcDef, approxNewState, me)) {
+            result[id] = entry  // still idle under new state — keep
+            continue
+          }
+          // Source will become active — omit its entry so it shows as loading.
+          anyChanged = true
+        }
+        return anyChanged ? result : prevSrc
+      })
+    }
+  }
   // Track whether initial fetch is complete. A page whose every fetched
   // source came out of the cache counts as loaded: the gate has nothing to
   // wait for that the visitor has not already seen.
@@ -1544,7 +1624,17 @@ function DataBoundInner({
   const ownAddress = React.useMemo(() => hostAddress ?? documentAddress(), [hostAddress])
   const urlState = React.useMemo(() => extractPersistenceSeeds({ capabilities }).urlState, [capabilities])
   useUrlStateSync(urlState, surfaceState, ownAddress, interactionMode)
-  useNotFoundReport(dataSources, expressionData, ownAddress, interactionMode)
+  // NOT-FOUND IS REPORTED TO THE HOST'S ADDRESS, not the document fallback.
+  //
+  // When the host omits `address` (e.g. the runner's hydrating render, which
+  // must start without an address seed so the HTML is adopted cleanly), the
+  // guard `!address` inside `useNotFoundReport` suppresses both the premature
+  // not-found call AND the `reported` flag — leaving the flag clear so the
+  // real address, once it arrives in the post-hydration update, can still
+  // report a genuinely missing record. Using `ownAddress` here (the
+  // documentAddress() fallback) would call a no-op `notFound()` AND set
+  // `reported = true`, permanently silencing the real report.
+  useNotFoundReport(dataSources, expressionData, hostAddress, interactionMode)
 
   // The props each block's manifest declares `bindable: false` stay as
   // written; the descriptors the host handed the renderer carry them.
