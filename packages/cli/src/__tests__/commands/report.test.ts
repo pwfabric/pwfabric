@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { checkAccess, checkEntities, checkSeeds } from '../../commands/lib/report.js'
+import { checkAccess, checkEntities, checkMessages, checkSeeds, reachableMessageIds } from '../../commands/lib/report.js'
 import { tempDir } from './helpers.js'
 
 async function project(files: Record<string, unknown>): Promise<string> {
@@ -130,5 +130,67 @@ describe('checkAccess', () => {
     expect(checkAccess(noAccess)[0]!.message).toContain('has no access rules')
     const noAuth = await project({ 'app/definitions/entities.json': entities })
     expect(checkAccess(noAuth).map((i) => i.message.match(/model "(\w+)"/)?.[1])).toEqual(['Product', 'Order'])
+  })
+})
+
+describe('MESSAGES_MISSING', () => {
+  const plan = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({ title: 'Manav', locale: 'tr-TR', ...extra })
+
+  it('an app with no sign-in reaches only the runner’s not-found page, and none with its own', async () => {
+    expect(reachableMessageIds(await project({ 'app/plan.json': plan() }))).toEqual(['notFound.title', 'notFound.body', 'notFound.home'])
+    const own = await project({ 'app/plan.json': plan(), 'pwpack.json': { app: { notFound: 'missing' } } })
+    expect(reachableMessageIds(own)).toEqual([])
+    expect(checkMessages(own)).toEqual([])
+  })
+
+  it('a password app with an account slot reaches the gate, the door, the account control and the auth errors', async () => {
+    const root = await project({
+      'app/plan.json': plan(),
+      'app/definitions/auth.json': { required: true, methods: ['password', 'google'] },
+      'app/definitions/navigation.json': { account: { placement: 'navbar' } },
+    })
+    const ids = reachableMessageIds(root)
+    for (const id of ['gate.email', 'gate.or', 'gate.provider.google', 'session.refused', 'account.greeting', 'auth.error.expired', 'auth.error.unknown']) {
+      expect(ids).toContain(id)
+    }
+    // The plan has a title, the slot replaces the pill, no issuer, no profile link.
+    for (const id of ['gate.title', 'pill.signIn', 'bridge.exchangeFailed', 'account.profile', 'gate.provider.github']) {
+      expect(ids).not.toContain(id)
+    }
+  })
+
+  it('the app’s own sign-in screen (app.signIn) takes the gate’s words with it; no slot brings the pill', async () => {
+    const root = await project({
+      'app/plan.json': plan({ title: '' }),
+      'pwpack.json': { app: { signIn: 'sign-in' } },
+      'app/definitions/auth.json': { topology: 'external', methods: [], issuer: { issuer: 'https://login.example', clientId: 'c' } },
+    })
+    const ids = reachableMessageIds(root)
+    expect(ids.some((id) => id.startsWith('gate.'))).toBe(false)
+    expect(ids).toContain('pill.signIn')
+    expect(ids).toContain('bridge.invalidCallback')
+  })
+
+  it('an auth.json with access rules only is no way in: no sign-in words are reachable', async () => {
+    const root = await project({
+      'app/plan.json': plan(),
+      'app/definitions/auth.json': { access: { rules: [{ subject: 'public', model: 'Dish', rule: 'read' }] } },
+    })
+    expect(reachableMessageIds(root)).toEqual(['notFound.title', 'notFound.body', 'notFound.home'])
+  })
+
+  it('is an error in a non-English app, a warning in an English one, and quiet when every id is set', async () => {
+    const files = { 'app/plan.json': plan() }
+    const tr = checkMessages(await project(files))
+    expect(tr.map((i) => [i.code, i.severity])).toEqual([['MESSAGES_MISSING', 'error']])
+    expect(tr[0]?.message).toContain('notFound.title, notFound.body, notFound.home')
+    const en = checkMessages(await project({ 'app/plan.json': plan({ locale: 'en-GB' }) }))
+    expect(en.map((i) => i.severity)).toEqual(['warning'])
+    const done = checkMessages(
+      await project({
+        'app/plan.json': plan({ messages: { 'notFound.title': 'Sayfa yok', 'notFound.body': 'Böyle bir sayfa yok.', 'notFound.home': 'Ana sayfa' } }),
+      })
+    )
+    expect(done).toEqual([])
   })
 })

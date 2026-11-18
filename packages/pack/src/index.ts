@@ -17,6 +17,7 @@
  *   mediaDeclarations()  PackFolder      → media declarations + bytes + provenance
  *   checkBlockProps(...) PackFolder      → receipt props that do not fit the block manifests (warnings)
  *   checkRowFields(pack) PackFolder      → row fields receipts read that their sources lack
+ *   checkDefaultCopy / checkErrorsAsText → words the app did not write; codes shown as text (warnings)
  *   connectionFieldSets  PackFolder      → the row fields each connection's engine declares
  *
  * @module @pwfabric/pack
@@ -84,6 +85,14 @@ export {
   type BlockPropsEntry,
   type BlockSource,
 } from './block-props.js'
+export {
+  BLOCK_DEFAULT_COPY,
+  ERROR_BOUND_AS_TEXT,
+  checkDefaultCopy,
+  checkErrorsAsText,
+  checkReceiptDefaultCopy,
+  checkReceiptErrorsAsText,
+} from './app-words.js'
 export {
   checkReceiptRowFields,
   checkRowFields,

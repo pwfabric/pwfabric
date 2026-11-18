@@ -42,6 +42,7 @@ import type {
   SurfaceDataCache,
   LinkHref,
   SurfaceAddress,
+  AppMessages,
 } from '@pwfabric/runtime'
 
 // Re-export the building blocks for bundler consumers.
@@ -122,6 +123,8 @@ export interface EmbedOptions {
   readonly onDescription?: (description: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
+  /** The app's words (`plan.json` `messages`) the blocks' own words read first. */
+  readonly messages?: AppMessages
   /**
    * The page's address as the host owns it (runtime render/address.ts): where
    * a split shell's selection and the page's `urlState` live, and where a page
@@ -183,6 +186,7 @@ function passthrough(options?: EmbedOptions): Partial<RenderCoreOptions> {
     ...(o.onTitle !== undefined ? { onTitle: o.onTitle } : {}),
     ...(o.onDescription !== undefined ? { onDescription: o.onDescription } : {}),
     ...(o.locale !== undefined ? { locale: o.locale } : {}),
+    ...(o.messages !== undefined ? { messages: o.messages } : {}),
     ...(o.address !== undefined ? { address: o.address } : {}),
     ...(o.placeholderMissingBlocks !== undefined ? { placeholderMissingBlocks: o.placeholderMissingBlocks } : {}),
   }

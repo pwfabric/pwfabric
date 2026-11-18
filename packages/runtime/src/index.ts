@@ -146,6 +146,17 @@ export type {
 } from './render/index.js'
 export type { LiteralProps } from './render/index.js'
 export { documentAddress, SurfaceAddressContext } from './render/index.js'
+
+// The app's words: a block's own words (`ui.*` ids) read through useAppMessage
+export type { AppMessages, MessageVars } from './render/index.js'
+export {
+  AppMessagesContext,
+  useAppMessage,
+  useAppMessages,
+  formatMessage,
+  messageOf,
+  appMessagesOf,
+} from './render/index.js'
 export {
   ShellSelectionContext,
   ShellSelectionProvider,

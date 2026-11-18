@@ -17,7 +17,7 @@
  */
 
 import type { ToHref } from './helpers.js'
-import { copyFor, type RunnerLocale } from './copy.js'
+import { NEUTRAL_MESSAGES, type RunnerMessages } from './messages.js'
 
 export interface NotFoundParams {
   /** Where the page mounts — the same container a route render would use. */
@@ -28,7 +28,8 @@ export interface NotFoundParams {
   readonly entry: string
   /** Active router's href builder, so the way back works in both modes. */
   readonly toHref: ToHref
-  readonly locale?: RunnerLocale | undefined
+  /** The app's words (`notFound.*`). Default: the neutral fallbacks. */
+  readonly messages?: RunnerMessages | undefined
 }
 
 /**
@@ -36,7 +37,7 @@ export interface NotFoundParams {
  * like a route render, the DOM is the output.
  */
 export function renderNotFound(params: NotFoundParams): void {
-  const copy = copyFor(params.locale).notFound
+  const say = params.messages ?? NEUTRAL_MESSAGES
 
   const page = document.createElement('div')
   page.setAttribute('data-pw-not-found', '')
@@ -62,17 +63,17 @@ export function renderNotFound(params: NotFoundParams): void {
   }
 
   const heading = document.createElement('h1')
-  heading.textContent = copy.title
+  heading.textContent = say('notFound.title')
   heading.style.cssText = 'margin:0;font-size:1.75rem;font-weight:600'
   page.appendChild(heading)
 
   const body = document.createElement('p')
-  body.textContent = copy.body
+  body.textContent = say('notFound.body')
   body.style.cssText = 'margin:0;opacity:0.75;max-width:36rem'
   page.appendChild(body)
 
   const home = document.createElement('a')
-  home.textContent = copy.home
+  home.textContent = say('notFound.home')
   home.href = params.toHref(params.entry)
   home.style.cssText = [
     'margin-top:0.5rem',

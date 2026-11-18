@@ -18,6 +18,21 @@ import { isGated, mountSignInGate } from './sign-in-gate.js'
 import type { PwappAuth } from './types.js'
 import type { AuthBridge } from './auth.js'
 import type { PwappProject } from './types.js'
+import { runnerMessages } from './messages.js'
+/** An app that writes its gate words in Turkish (`plan.json` `messages`). */
+const TR = runnerMessages({
+  'gate.title': 'Oturum açın',
+  'gate.body': 'Bu uygulamayı görüntülemek için oturum açmanız gerekiyor.',
+  'gate.email': 'E-posta',
+  'gate.signIn': 'Oturum aç',
+  'gate.register': 'Kayıt ol',
+  'gate.toRegister': 'Hesabınız yok mu? Kayıt olun',
+  'gate.toSignIn': 'Zaten hesabınız var mı? Oturum açın',
+  'gate.or': 'ya da',
+  'gate.close': 'Kapat',
+  'gate.noProvider': 'Bu uygulama oturum açma gerektiriyor ama bir kimlik sağlayıcı tanımlanmamış.',
+  'gate.provider.phiwebs': 'Hesabınızla devam edin',
+})
 
 const OPEN: PwappProject = { entrySurfaceId: 'home', surfaceOrder: ['home'] }
 const GATED: PwappProject = { ...OPEN, title: 'Manav', identity: { required: true } }
@@ -87,7 +102,7 @@ describe('mountSignInGate', () => {
   })
 
   it('disables the button and says why when no provider was shipped', () => {
-    mountSignInGate(container, GATED, null, { locale: 'tr' })
+    mountSignInGate(container, GATED, null, { messages: TR })
     const button = container.querySelector('#pwapp-sign-in-gate button') as HTMLButtonElement
     expect(button.disabled).toBe(true)
     expect(container.querySelector('[data-gate-error]')?.textContent).toMatch(
@@ -176,7 +191,7 @@ describe('mountSignInGate — the password door', () => {
     expect(container.querySelector('#pwapp-sign-in-gate')).toBeNull()
   })
 
-  it('keeps the wall up and shows the server’s message on a bad password', async () => {
+  it('keeps the wall up and shows the app’s session.refused — not the server’s sentence — on a bad password', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({
@@ -190,7 +205,7 @@ describe('mountSignInGate — the password door', () => {
 
     await vi.waitFor(() =>
       expect(container.querySelector('[data-gate-error]')?.textContent).toBe(
-        'Email or password is wrong'
+        'Could not sign in. Check your details and try again.'
       )
     )
     expect(container.querySelector('#pwapp-sign-in-gate')).toBeTruthy()
@@ -238,13 +253,13 @@ describe('mountSignInGate — register mode', () => {
     })
     expect(container.querySelector('[data-gate-toggle]')).toBeNull()
     container.innerHTML = ''
-    mountSignInGate(container, GATED, null, { auth: DOOR_WITH_REGISTER, locale: 'tr' })
+    mountSignInGate(container, GATED, null, { auth: DOOR_WITH_REGISTER, messages: TR })
     expect(toggle().textContent).toBe('Hesabınız yok mu? Kayıt olun')
     expect(form().querySelector('input[name=displayName]')).toBeNull()
   })
 
   it('switching adds a name field, relabels the submit, and switches back', () => {
-    mountSignInGate(container, GATED, null, { auth: DOOR_WITH_REGISTER, locale: 'tr' })
+    mountSignInGate(container, GATED, null, { auth: DOOR_WITH_REGISTER, messages: TR })
     toggle().click()
     expect(form().querySelector('input[name=displayName]')).toBeTruthy()
     expect((form().querySelector('[data-gate-submit]') as HTMLButtonElement).textContent).toBe(
@@ -300,7 +315,7 @@ describe('mountSignInGate — register mode', () => {
     form().dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
     await vi.waitFor(() =>
       expect(container.querySelector('[data-gate-error]')?.textContent).toBe(
-        'Email already registered'
+        'Could not sign in. Check your details and try again.'
       )
     )
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
@@ -345,7 +360,7 @@ describe("the gate wears the app's appearance", () => {
   })
 
   it('is a labelled, described modal dialog', () => {
-    mountSignInGate(container, GATED, fakeBridge(), { locale: 'tr' })
+    mountSignInGate(container, GATED, fakeBridge(), { messages: TR })
     const gate = container.querySelector('#pwapp-sign-in-gate') as HTMLElement
     expect(gate.getAttribute('role')).toBe('dialog')
     expect(gate.getAttribute('aria-modal')).toBe('true')
@@ -442,15 +457,15 @@ describe('the gate speaks the app’s language', () => {
     )
   })
 
-  it('is Turkish when the app is', () => {
-    mountSignInGate(container, UNTITLED, null, { auth: DOOR, locale: 'tr' })
+  it('writes the app’s own words (messages) when it sets them', () => {
+    mountSignInGate(container, UNTITLED, null, { auth: DOOR, messages: TR })
     const gate = container.querySelector('#pwapp-sign-in-gate') as HTMLElement
     expect(gate.querySelector('.pwapp-gate-title')?.textContent).toBe('Oturum açın')
     expect(gate.querySelector('input[name=email]')?.getAttribute('aria-label')).toBe('E-posta')
     expect(gate.querySelector('[data-gate-submit]')?.textContent).toBe('Oturum aç')
   })
 
-  it('says in English when no provider was shipped', () => {
+  it('reads the neutral fallback when no provider was shipped and the app sets no words', () => {
     mountSignInGate(container, GATED, null)
     expect(container.querySelector('[data-gate-error]')?.textContent).toMatch(
       /no identity provider is configured/
@@ -462,8 +477,8 @@ describe('the gate speaks the app’s language', () => {
     expect(container.querySelector('[data-gate-error]')?.textContent).toBe('Sign-in was cancelled.')
   })
 
-  it('labels the close button in the app’s language', () => {
-    mountSignInGate(container, OPEN, fakeBridge(), { onDemand: true, locale: 'tr' })
+  it('labels the close button with the app’s word', () => {
+    mountSignInGate(container, OPEN, fakeBridge(), { onDemand: true, messages: TR })
     expect(container.querySelector('[data-gate-close]')?.getAttribute('aria-label')).toBe('Kapat')
   })
 })
@@ -489,7 +504,7 @@ describe('the gate’s social buttons', () => {
     ])
   })
 
-  it('labels them in English and Turkish, PhiWebs account included', () => {
+  it('labels them with the fallbacks, or the app’s words, PhiWebs account included', () => {
     mountSignInGate(container, GATED, null, { auth: SOCIAL, onProviderSignIn: vi.fn() })
     expect(buttons().map((b) => b.textContent)).toEqual([
       'Continue with your account',
@@ -501,7 +516,7 @@ describe('the gate’s social buttons', () => {
     mountSignInGate(container, GATED, null, {
       auth: SOCIAL,
       onProviderSignIn: vi.fn(),
-      locale: 'tr',
+      messages: TR,
     })
     expect(buttons()[0]?.textContent).toBe('Hesabınızla devam edin')
     expect(container.querySelector('.pwapp-gate-or')?.textContent).toBe('ya da')

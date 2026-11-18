@@ -312,9 +312,9 @@ describe('provider sign-in through the gateway', () => {
     expect((await roundTrip(s, 'github', '//evil.example/x')).location).toBe('/')
     expect((await roundTrip(s, 'github', '/\\evil')).location).toBe('/')
     expect((await roundTrip(s, 'github', 'relative')).location).toBe('/')
-    expect((await roundTrip(s, 'google', '/p?x=1#/a')).location).toBe('/p?x=1&auth_error=provider_unavailable#/a')
+    expect((await roundTrip(s, 'google', '/p?x=1#/a')).location).toBe('/p?x=1&auth_error=method_unavailable#/a')
     const plain = await serve('l-badseed')
-    expect((await roundTrip(plain, 'github', '/')).location).toBe('/?auth_error=provider_unavailable')
+    expect((await roundTrip(plain, 'github', '/')).location).toBe('/?auth_error=method_unavailable')
     await plain.close()
   })
 
@@ -323,10 +323,10 @@ describe('provider sign-in through the gateway', () => {
     const startRes = await fetch(`${s.base}/_auth/start/github?returnTo=/`, { redirect: 'manual' })
     const callback = startRes.headers.get('location')!
     const wrong = await fetch(s.origin + callback.replace('/github?', '/host?'), { redirect: 'manual' })
-    expect(wrong.headers.get('location')).toBe('/?auth_error=invalid_transaction')
+    expect(wrong.headers.get('location')).toBe('/?auth_error=invalid_state')
     // The mismatched attempt spent the transaction.
     const replay = await fetch(s.origin + callback, { redirect: 'manual' })
-    expect(replay.headers.get('location')).toBe('/?auth_error=invalid_transaction')
+    expect(replay.headers.get('location')).toBe('/?auth_error=invalid_state')
   })
 
   it('answers only the cookie of an app session, and the right methods', async () => {

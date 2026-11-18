@@ -30,9 +30,9 @@ export interface BuildFatHtmlOptions {
   readonly appearance?: RenderableSurface['appearance']
   /** The full contents of the built `dist/embed.js` IIFE. */
   readonly embedJs: string
-  /** `<title>` of the page. */
+  /** `<title>` of the page — the app's. Absent: the page has no title (the engine names nothing). */
   readonly title?: string
-  /** Optional `lang` attribute. */
+  /** The page's `lang` — the app's locale. Absent: no `lang` attribute (the engine guesses no language). */
   readonly lang?: string
 }
 
@@ -71,19 +71,20 @@ export function buildFatHtml(options: BuildFatHtmlOptions): string {
   const { surface, embedJs } = options
   const blocks = options.blocks ?? []
   const appearance = options.appearance ?? surface.appearance
-  const title = options.title ?? 'Surface'
-  const lang = options.lang ?? 'en'
+  // The app's title and language, or none: an engine default ("Surface",
+  // "en") was a word and a language the app never chose.
+  const titleTag = options.title ? `\n<title>${escapeHtml(options.title)}</title>` : ''
+  const langAttr = options.lang ? ` lang="${escapeHtml(options.lang)}"` : ''
 
   const surfaceJson = safeJson(surface)
   const blocksJson = safeJson(blocks)
   const appearanceJson = safeJson(appearance ?? null)
 
   return `<!DOCTYPE html>
-<html lang="${lang}">
+<html${langAttr}>
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${escapeHtml(title)}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />${titleTag}
 <style>html,body{margin:0;padding:0}#pw-root{min-height:100vh}</style>
 </head>
 <body>

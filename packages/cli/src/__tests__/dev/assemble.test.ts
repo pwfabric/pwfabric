@@ -308,7 +308,7 @@ describe('assemblePwapp', () => {
     expect(codes(missing)).toEqual(['APP_UNREADABLE'])
   })
 
-  it('checks the entry page and derives a title from the id', async () => {
+  it('checks the entry page, and makes up no title or language for an app that states none', async () => {
     const root = await app()
     await writeFile(join(root, 'pwpack.json'), JSON.stringify({
       id: '@pwpack/k/my-demo_app', version: '0.1.0', app: { entry: 'start', surfaceOrder: ['home'] },
@@ -317,7 +317,28 @@ describe('assemblePwapp', () => {
     await rm(join(root, 'app/plan.json'))
     const r = await assemblePwapp(root, { cacheDir: null })
     expect(codes(r)).toContain('ENTRY_NOT_A_PAGE')
-    expect(text(r.files.get('index.html'))).toContain('<title>My Demo App</title>')
+    // A humanised pack id ("My Demo App") and `lang="en"` were words and a
+    // language the app never chose.
+    expect(text(r.files.get('index.html'))).toContain('<title></title>')
+    expect(text(r.files.get('index.html'))).toContain('<html>')
+    expect(parse(r.files.get('pwpack/project.json'))).not.toHaveProperty('title')
+  })
+
+  it('carries the plan’s messages and locale into project.json, and boots the runner without a locale of its own', async () => {
+    const root = await app()
+    const planPath = join(root, 'app', 'plan.json')
+    const plan = JSON.parse(await readFile(planPath, 'utf8')) as Record<string, unknown>
+    await writeFile(
+      planPath,
+      JSON.stringify({ ...plan, locale: 'tr-TR', messages: { 'gate.title': 'Oturum açın', 'ui.close': 'Kapat', bad: 3 } })
+    )
+    const r = await assemblePwapp(root, { cacheDir: null })
+    const project = parse(r.files.get('pwpack/project.json')) as Record<string, unknown>
+    expect(project['locale']).toBe('tr-TR')
+    expect(project['messages']).toEqual({ 'gate.title': 'Oturum açın', 'ui.close': 'Kapat' })
+    expect(r.diagnostics.find((d) => d.code === 'MESSAGES_INVALID')?.message).toContain('messages["bad"]')
+    expect(text(r.files.get('index.html'))).toContain('<html lang="tr-TR">')
+    expect(text(r.files.get(asset(r, 'boot')))).not.toContain('locale')
   })
 
   it('names block atoms by id, manifest name and short forms', () => {

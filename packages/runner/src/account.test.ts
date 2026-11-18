@@ -16,14 +16,22 @@ import {
   applyAccountControl,
   applyAccountToSurface,
   buildAccountProp,
-  applyGreeting,
 } from './apply-auth.js'
+import { runnerMessages } from './messages.js'
 import { accountActionOf, createAccountController, hasDoor } from './account-controller.js'
 import { withProfile } from './app-session.js'
 import type { SurfaceBlockNode, PwappAccountDeclaration, PwappAuth, PwappProject } from './types.js'
 import type { AuthBridge } from './auth.js'
 
 const hashHref = (key: string): string => `#/${key}`
+
+/** An app that writes its account words in Turkish (`plan.json` `messages`). */
+const TR = runnerMessages({
+  'account.signIn': 'Oturum aç',
+  'account.signOut': 'Çıkış yap',
+  'account.profile': 'Profil',
+  'account.greeting': 'Hoş geldin, {name}',
+})
 
 const issuer = (user?: AuthSession['user']): AuthSession =>
   ({ id: 's', state: 'authenticated', provider: 'oidc', createdAt: 0, ...(user ? { user } : {}) }) as AuthSession
@@ -86,7 +94,7 @@ describe('buildAccountProp', () => {
       user: { name: 'Ayşe', email: 'a@x' },
       entry: 'home',
       toHref: hashHref,
-      locale: 'tr',
+      messages: TR,
     })
     expect(prop).toEqual({
       state: 'signed-in',
@@ -100,6 +108,7 @@ describe('buildAccountProp', () => {
       signInLabel: 'Oturum aç',
       signOutLabel: 'Çıkış yap',
       profileLabel: 'Profil',
+      greetingLabel: 'Hoş geldin, Ayşe',
     })
   })
 
@@ -171,14 +180,29 @@ describe('applyAccountToSurface — by placement', () => {
   })
 })
 
-describe('applyGreeting — the fallback for apps with no account slot', () => {
-  it('patches the navbar greeting from a platform-door user too', () => {
+describe('the runner rewrites none of the app’s text', () => {
+  it('a navbar greeting the app wrote stays as written, whoever signs in', () => {
+    // It used to be found by its English/Turkish prefix and overwritten; an
+    // app writes `{{me.name}}` instead.
     const blocks: SurfaceBlockNode[] = [
-      { type: 'navbar', props: { rightInfo: [{ value: 'Hoş geldin, …' }] } },
+      { id: 'n', type: 'navbar', props: { rightInfo: [{ value: 'Welcome, guest' }], avatarName: 'guest' } },
     ]
-    const out = applyGreeting(blocks, { email: 'a@x' }, 'tr')
-    expect(out[0]?.props?.rightInfo).toEqual([{ value: 'Hoş geldin, a@x' }])
-    expect(out[0]?.props?.avatarName).toBe('a@x')
+    const out = applyAccountControl(blocks, {
+      declaration: undefined,
+      door: true,
+      user: { name: 'Ada', email: 'ada@x' },
+      entry: 'home',
+      toHref: hashHref,
+    })
+    expect(out).toEqual(blocks)
+  })
+
+  it('the greeting the account control draws is the app’s account.greeting, signed in only', () => {
+    const declaration: PwappAccountDeclaration = { placement: 'navbar' }
+    const signedIn = buildAccountProp({ declaration, user: { email: 'a@x' }, entry: 'home', toHref: hashHref })
+    expect(signedIn.greetingLabel).toBe('Welcome, a@x')
+    const out = buildAccountProp({ declaration, user: null, entry: 'home', toHref: hashHref })
+    expect(out).not.toHaveProperty('greetingLabel')
   })
 })
 
@@ -447,7 +471,7 @@ describe('hasDoor — any way in at all', () => {
 describe('applyAccountControl — the slot is drawn only where there is a door', () => {
   const account: PwappAccountDeclaration = { placement: 'navbar', profileHref: '/profile/' }
   const page = (): SurfaceBlockNode[] => [{ id: 'n', type: 'navbar', props: { links: [] } }]
-  const common = { entry: 'home', toHref: hashHref, locale: 'en' as const }
+  const common = { entry: 'home', toHref: hashHref }
 
   it('no door + account declared + signed out: no account prop, so no "Sign in"', () => {
     const out = applyAccountControl(page(), { ...common, declaration: account, door: false, user: null })
@@ -455,7 +479,7 @@ describe('applyAccountControl — the slot is drawn only where there is a door',
     expect(out).toEqual(page())
   })
 
-  it('no door + account declared + a stale visitor: the greeting fallback, not the control', () => {
+  it('no door + account declared + a stale visitor: no control, and the page as the app wrote it', () => {
     const tree: SurfaceBlockNode[] = [
       { id: 'n', type: 'navbar', props: { rightInfo: [{ value: 'Welcome, guest' }] } },
     ]
@@ -465,8 +489,7 @@ describe('applyAccountControl — the slot is drawn only where there is a door',
       door: false,
       user: { name: 'Ada' },
     })
-    expect(out[0]?.props).not.toHaveProperty('account')
-    expect(out[0]?.props?.['avatarName']).toBe('Ada')
+    expect(out).toEqual(tree)
   })
 
   it('a door + account declared + signed out: the "Sign in" control is still drawn', () => {
@@ -487,14 +510,14 @@ describe('applyAccountControl — the slot is drawn only where there is a door',
     expect(out).toEqual(expected)
   })
 
-  it('no slot declared: the greeting patch as before, door or not', () => {
+  it('no slot declared: the page as the app wrote it, door or not', () => {
     const out = applyAccountControl(page(), {
       ...common,
       declaration: undefined,
       door: true,
       user: { name: 'Ada' },
     })
-    expect(out[0]?.props?.['avatarName']).toBe('Ada')
+    expect(out).toEqual(page())
   })
 })
 

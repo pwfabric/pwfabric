@@ -27,6 +27,7 @@ import {
   type AppSession,
 } from '../../../../runner/src/app-session.js'
 import { bootSession } from '../../../../runner/src/boot-session.js'
+import { AUTH_ERROR_CODES } from '../../../../runner/src/messages.js'
 import { isOwnApiRef, ownApiBaseOf } from '../../../../runner/src/api-base.js'
 import { createAuthBridge } from '../../../../runner/src/auth.js'
 import { clearDiscoveryCache } from '../../../../runner/src/pkce.js'
@@ -245,10 +246,12 @@ describe('the app door, end to end', () => {
       auth,
       storage: memoryStorage(),
       appId: 'social',
-      location: { pathname: '/', search: '?auth_error=provider_unavailable', hash: '' },
+      location: { pathname: '/', search: '?auth_error=method_unavailable', hash: '' },
       history: { replaceState: (_d: unknown, _t: string, url?: string | URL | null) => void replaced.push(String(url)) },
     })
-    expect(failed.authError).toBe('provider_unavailable')
+    expect(failed.authError).toBe('method_unavailable')
+    // A code the runner knows, so the visitor reads the app's auth.error words.
+    expect(AUTH_ERROR_CODES).toContain(failed.authError)
     expect(replaced).toEqual(['/'])
   })
 })

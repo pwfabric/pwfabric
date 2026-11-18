@@ -131,7 +131,8 @@ export interface WriteAction {
     readonly loading?: string
     readonly success?: string
     readonly error?: string
-    readonly message?: string
+    readonly reason?: string
+    readonly fields?: string
     readonly detail?: string
   }
 }
@@ -230,7 +231,7 @@ export interface DataBoundSurfaceRendererProps extends Omit<SurfaceRendererProps
    * What to render while the initial `fetchAllSources` pass is in flight.
    *
    * - `'gate'` (default) — the historical behavior: an all-or-nothing
-   *   "Loading data..." placeholder replaces the ENTIRE block tree until the
+   *   loading placeholder (`ui.loading`) replaces the ENTIRE block tree until the
    *   first fetch settles. Kept as the default so existing consumers (e.g.
    *   published `/s/` pages) are byte-identical.
    * - `'immediate'` — render the block tree right away; expressions bound to

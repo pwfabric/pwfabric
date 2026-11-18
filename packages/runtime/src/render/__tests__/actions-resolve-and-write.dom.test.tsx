@@ -9,8 +9,8 @@
  *      `/confirmation?id={{result.id}}` could not carry the new order.
  * #18  The `write` action: create, update or delete one record, page state
  *      driven like a form's, every source fetched again afterwards.
- * D1   A failed write's message is a visitor's sentence; the server's words go
- *      to `statusKeys.detail`.
+ * D1   A failed write's reason is a code (`statusKeys.reason`), never a
+ *      sentence; the server's words go to `statusKeys.detail`.
  *
  * @module @pwfabric/runtime/render/__tests__/actions-resolve-and-write.dom
  */
@@ -258,7 +258,7 @@ describe('#18 the write action', () => {
   const page = (blocks: Block[]) =>
     ({
       id: 'likes',
-      blocks: [...blocks, text('n', 'likes={{length(likes)}} first={{likes[0].session}} sent={{state.sent}} err={{state.failed}} msg={{state.why}} detail={{state.detail}}')],
+      blocks: [...blocks, text('n', 'likes={{length(likes)}} first={{likes[0].session}} sent={{state.sent}} err={{state.failed}} reason={{state.why}} detail={{state.detail}}')],
       capabilities: [
         {
           capability: 'platform/persistence',
@@ -269,7 +269,7 @@ describe('#18 the write action', () => {
         },
       ],
     }) as never
-  const keys = { success: 'sent', error: 'failed', message: 'why', detail: 'detail' }
+  const keys = { success: 'sent', error: 'failed', reason: 'why', detail: 'detail' }
 
   it('creates a record with resolved values, then the bound list shows it', async () => {
     render(
@@ -314,7 +314,7 @@ describe('#18 the write action', () => {
     expect(requests.some((r) => r.method === 'DELETE' && r.url === 'http://h/records/Like/l1')).toBe(true)
   })
 
-  it('a refused write sets the error keys — a sentence for the visitor, the server words as detail — and refreshes nothing', async () => {
+  it('a refused write sets the error keys — a reason code, the server words as detail — and refreshes nothing', async () => {
     refuse = 403
     render(
       <DataBoundSurfaceRenderer
@@ -327,7 +327,7 @@ describe('#18 the write action', () => {
     const before = requests.filter((r) => r.method === 'GET').length
     await click('like')
     await waitFor(() => expect(screen.getByTestId('n').textContent).toContain('err=true'))
-    expect(screen.getByTestId('n').textContent).toContain('msg=You are not allowed to save this.')
+    expect(screen.getByTestId('n').textContent).toContain('reason=forbidden ')
     expect(screen.getByTestId('n').textContent).toContain('detail=403 FORBIDDEN: You may not create Like records.')
     expect(requests.filter((r) => r.method === 'GET').length).toBe(before)
   })

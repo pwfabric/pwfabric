@@ -160,7 +160,7 @@ describe('fallback payload', () => {
       />
     )
     await waitFor(() => expect(screen.getByTestId('rows').textContent).toBe('sample-1,sample-2'))
-    expect(screen.getByTestId('err').textContent).toBe('Not connected — showing sample data.')
+    expect(screen.getByTestId('err').textContent).toBe('unconnected')
     expect(screen.getByTestId('code').textContent).toBe('unconnected')
   })
 
@@ -210,7 +210,7 @@ describe('fallback payload', () => {
         interactionMode="live"
       />
     )
-    await waitFor(() => expect(screen.getByTestId('err').textContent).toBe('You do not have access to this.'))
+    await waitFor(() => expect(screen.getByTestId('err').textContent).toBe('forbidden'))
     expect(screen.getByTestId('code').textContent).toBe('403')
     expect(screen.getByTestId('rows').textContent).toBe('')
   })
@@ -228,7 +228,7 @@ describe('fallback payload', () => {
         interactionMode="live"
       />
     )
-    await waitFor(() => expect(screen.getByTestId('err').textContent).toBe('This could not be loaded.'))
+    await waitFor(() => expect(screen.getByTestId('err').textContent).toBe('error'))
     expect(screen.getByTestId('code').textContent).toBe('error')
     expect(screen.getByTestId('rows').textContent).toBe('')
   })

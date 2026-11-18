@@ -24,7 +24,7 @@
 
 import type { KeyValueStorage } from './pkce.js'
 import type { PwappAuth } from './types.js'
-import { copyFor, type RunnerLocale } from './copy.js'
+import { NEUTRAL_MESSAGES, type RunnerMessages } from './messages.js'
 
 /** The gateway's sign-in addresses when the export names none. */
 export const DEFAULT_START_URL = '/_auth/start'
@@ -116,19 +116,19 @@ interface DoorResponse {
 }
 
 /**
- * Post credentials and return the session, or a message fit to show a person.
+ * Post credentials and return the session, or the app's words for why not.
  *
- * The API answers one message for every credential failure on purpose —
- * telling an unknown address apart from a wrong password enumerates the shop's
- * customers — so this passes it through rather than trying to be more helpful
- * than the server was willing to be.
+ * The API refuses every credential failure the same way on purpose — telling
+ * an unknown address apart from a wrong password enumerates the shop's
+ * customers. The visitor reads `session.refused` (with the server's code in
+ * `{code}`), never the server's own sentence: that is in the server's
+ * language, not the app's.
  */
 export async function signIn(
   url: string,
   credentials: { email: string; password: string; displayName?: string | undefined },
-  locale: RunnerLocale = 'en'
+  say: RunnerMessages = NEUTRAL_MESSAGES
 ): Promise<{ ok: true; session: AppSession } | { ok: false; message: string }> {
-  const copy = copyFor(locale).session
   let response: Response
   try {
     response = await fetch(url, {
@@ -137,18 +137,19 @@ export async function signIn(
       body: JSON.stringify(credentials),
     })
   } catch {
-    return { ok: false, message: copy.unreachable }
+    return { ok: false, message: say('session.unreachable') }
   }
 
   let body: DoorResponse
   try {
     body = (await response.json()) as DoorResponse
   } catch {
-    return { ok: false, message: copy.unexpected }
+    return { ok: false, message: say('session.unexpected') }
   }
 
   if (!response.ok || !body.data?.token) {
-    return { ok: false, message: body.error?.message ?? copy.failed }
+    const code = body.error?.code
+    return { ok: false, message: body.error ? say('session.refused', { code }) : say('session.failed') }
   }
   return {
     ok: true,

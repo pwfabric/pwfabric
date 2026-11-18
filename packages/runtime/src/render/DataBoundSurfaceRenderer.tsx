@@ -48,17 +48,18 @@ import { aggregateThrough } from '../entity/aggregate.js'
 import { SurfaceDataContext, SurfaceLinkHrefContext } from './surface-data-context.js'
 import { createSourceWriter } from './source-writer.js'
 import { resolveValueIn } from './resolve-expressions.js'
-import { writeFailureSentence } from '../forms/form-write-target.js'
+import { writeFailureDetail, writeFailureFields, writeFailureReason } from '../forms/form-write-target.js'
 import type { EntityFacade } from '../entity/facade.js'
 import type { EntityAggregate, EntityQuery, EntityTypeId } from '../entity/types.js'
 import type { SurfaceConnectionsValue } from '../connectors/types.js'
 import { PLATFORM_PERSISTENCE_CAPABILITY_ID } from '@pwfabric/contracts'
 import { isCapability } from '../capability/type-mapping.js'
 import { writeOnlySourceIds } from './write-only-sources.js'
-import { failureCodeOf, sourceFailureMessage, type SourceFailureCode } from './source-failure.js'
+import { failureCodeOf, sourceFailureReason, type SourceFailureCode, type SourceFailureReason } from './source-failure.js'
 import { applyEntityQuery } from '../entity/apply-query.js'
 import { documentAddress, type SurfaceAddress } from './address.js'
 import { useNotFoundReport, useUrlStateSync } from './address-sync.js'
+import { useAppMessage } from './app-messages.js'
 
 // ============================================================
 // extract dataSources + initialState from persistence config
@@ -875,10 +876,10 @@ function useSurfaceData(
     let anyLoading = false
     // Per-source errors — `{{__errors.<sourceId>}}` — so a block can
     // distinguish "fetch failed" from "fetched, genuinely empty" instead of
-    // showing a false empty-state. The value is a sentence a visitor can read
-    // (truthy check + message in one binding); null when healthy. Why it
-    // failed is `{{__errorCodes.<sourceId>}}` (source-failure).
-    const errorMap: Record<string, string | null> = {}
+    // showing a false empty-state. The value is a reason code (truthy; the
+    // page writes its own words for it); null when healthy. The HTTP status
+    // is `{{__errorCodes.<sourceId>}}` (source-failure).
+    const errorMap: Record<string, SourceFailureReason | null> = {}
     const errorCodeMap: Record<string, SourceFailureCode | null> = {}
     let anyError = false
     // `{{__status.<id>}}` — the HTTP status of the last answer (200, 404, …);
@@ -899,7 +900,7 @@ function useSurfaceData(
       loadingMap[source.id] = loading
       if (loading) anyLoading = true
       const code = entry?.error ? (entry.errorCode ?? 'error') : null
-      errorMap[source.id] = code === null ? null : sourceFailureMessage(code)
+      errorMap[source.id] = code === null ? null : sourceFailureReason(code)
       errorCodeMap[source.id] = code
       if (code !== null) anyError = true
       const status = entry?.status ?? null
@@ -1239,7 +1240,7 @@ function DataBoundInner({
    * driven through its lifecycle like a form's, and every source fetched
    * again afterwards so what the page shows is what the server now holds. The
    * server decides whether the caller may (access rules); a refusal is a
-   * failed write, with a visitor's sentence and the detail kept apart.
+   * failed write: its reason code, the refused fields and the detail.
    */
   const runWrite = React.useCallback(
     async (action: WriteAction) => {
@@ -1247,7 +1248,8 @@ function DataBoundInner({
       if (sk?.loading) setStateValue(sk.loading, true)
       if (sk?.success) setStateValue(sk.success, false)
       if (sk?.error) setStateValue(sk.error, false)
-      if (sk?.message) setStateValue(sk.message, '')
+      if (sk?.reason) setStateValue(sk.reason, '')
+      if (sk?.fields) setStateValue(sk.fields, [])
       if (sk?.detail) setStateValue(sk.detail, '')
       const id = action.id === undefined || action.id === null || action.id === '' ? undefined : String(action.id)
       const result = await writeRecord(action.sourceId, {
@@ -1262,10 +1264,11 @@ function DataBoundInner({
         return
       }
       if (sk?.error) setStateValue(sk.error, true)
-      if (sk?.message) setStateValue(sk.message, writeFailureSentence(result.error))
-      const detail = (result.error.details as { detail?: unknown } | undefined)?.detail
-      if (sk?.detail) setStateValue(sk.detail, typeof detail === 'string' ? detail : result.error.message)
-      console.warn(`[surface] write to "${action.sourceId}" failed: ${typeof detail === 'string' ? detail : result.error.message}`)
+      if (sk?.reason) setStateValue(sk.reason, writeFailureReason(result.error))
+      if (sk?.fields) setStateValue(sk.fields, writeFailureFields(result.error))
+      const detail = writeFailureDetail(result.error)
+      if (sk?.detail) setStateValue(sk.detail, detail)
+      console.warn(`[surface] write to "${action.sourceId}" failed: ${detail}`)
     },
     [writeRecord, setStateValue, fetchAllSources]
   )
@@ -1400,6 +1403,10 @@ function DataBoundInner({
     [interactionMode, onEvent, dispatchAction, resolvedBlocks, behaviors, resolveBehaviorAction]
   )
 
+  // The gate's one word is the app's (`ui.loading`), like every word a
+  // visitor reads (envelope §2).
+  const loadingLabel = useAppMessage('ui.loading', 'Loading…')
+
   // Loading state — 'gate' strategy only (the historical default): the whole
   // block tree is withheld until the first fetch pass settles. 'immediate'
   // skips this and renders the tree at once; unresolved bindings evaluate to
@@ -1430,7 +1437,7 @@ function DataBoundInner({
               margin: '0 auto 12px',
             }}
           />
-          Loading data...
+          {loadingLabel}
         </div>
       </div>
     )

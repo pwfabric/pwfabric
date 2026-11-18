@@ -13,7 +13,8 @@
  * published app does, and checks:
  *   - no loaded record → POST to the collection
  *   - a loaded record  → PATCH to `<collection>/<id>`
- *   - a server 404/400 → its own message reaches `statusKeys.message`
+ *   - a server 404/400 → its reason code reaches `statusKeys.reason`, the
+ *     fields it named `statusKeys.fields`
  *   - the in-process facade path follows the same rule (update vs create)
  */
 
@@ -76,7 +77,7 @@ function surface(method: 'PATCH' | 'POST' = 'PATCH') {
     id: 'profile',
     blocks: [
       { id: 'prof-form', type: 'form', layout: L, props: {} },
-      { id: 'msg', type: 'text', layout: L, props: { content: '{{state.saveMessage}}' } },
+      { id: 'msg', type: 'text', layout: L, props: { content: '{{state.saveReason}}|{{state.saveFields[0]}}' } },
     ],
     capabilities: [
       {
@@ -87,7 +88,7 @@ function surface(method: 'PATCH' | 'POST' = 'PATCH') {
           dataSources: [
             { id: 'me', kind: 'rest', entityType: 'Attendee', endpoint: ENDPOINT, method: 'GET', returns: 'data' },
           ],
-          initialState: { saveMessage: '' },
+          initialState: { saveReason: '', saveFields: [] },
         },
       },
       {
@@ -99,7 +100,7 @@ function surface(method: 'PATCH' | 'POST' = 'PATCH') {
               formId: 'prof-form',
               sourceId: 'me',
               method,
-              statusKeys: { loading: 'submitting', success: 'submitted', error: 'failed', message: 'saveMessage' },
+              statusKeys: { loading: 'submitting', success: 'submitted', error: 'failed', reason: 'saveReason', fields: 'saveFields' },
             },
           ],
         },
@@ -158,16 +159,16 @@ describe('form write when the bound source has no record', () => {
     expect(url).toBe(`${ENDPOINT}/att-7`)
   })
 
-  it('a server 404 is not a field-validation message — and the visitor reads a sentence, not the route', async () => {
+  it('a server 404 is not a field-validation refusal — its reason is a code, not the route', async () => {
     serve([], answer({ error: { code: 'NOT_FOUND', message: 'Route not found' } }, 404))
     await mountAndSave('PATCH')
-    await waitFor(() => expect(screen.getByTestId('msg').textContent).toBe('This could not be saved.'))
+    await waitFor(() => expect(screen.getByTestId('msg').textContent).toBe('error|'))
   })
 
   it('a server 400 validation refusal names the fields', async () => {
     serve([], answer({ error: { code: 'VALIDATION_FAILED', message: 'name: Required' } }, 400))
     await mountAndSave('POST')
-    await waitFor(() => expect(screen.getByTestId('msg').textContent).toBe('Check the highlighted fields: name.'))
+    await waitFor(() => expect(screen.getByTestId('msg').textContent).toBe('validation|name'))
   })
 })
 

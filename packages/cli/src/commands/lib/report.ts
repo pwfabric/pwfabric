@@ -7,6 +7,8 @@ import { join } from 'node:path'
 import {
   blockPropsCatalog,
   checkBlockProps,
+  checkDefaultCopy,
+  checkErrorsAsText,
   checkRowFields,
   connectionFieldSets,
   hashPack,
@@ -16,6 +18,7 @@ import {
   type PackIssue,
   type PackValidation,
 } from '@pwfabric/pack'
+import { PROVIDER_LABEL_METHODS, RUNNER_MESSAGE_IDS, type RunnerMessageId } from '@pwfabric/runner'
 import type { CommandIO } from '../types.js'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { pinsOf } from './identity.js'
@@ -182,6 +185,100 @@ export function checkAccess(root: string): PackIssue[] {
   return issues
 }
 
+function readJsonFile(path: string): unknown {
+  try {
+    const text = readFileSync(path, 'utf8')
+    return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/**
+ * The runner's message ids this app can reach — the screens and labels the
+ * runner draws for it, from what it declares:
+ *
+ *  - `notFound.*` unless `pwpack.json` `app.notFound` names its own page;
+ *  - with a way in (`auth.json` methods, or an issuer): `auth.error.*`, and the runner's own
+ *    sign-in screen (`gate.*`) unless `app.signIn` names the app's — its
+ *    password fields and `session.*` with a password method, one
+ *    `gate.provider.<method>` per provider, `gate.title` only when the plan
+ *    has no title; the account control's `account.*` when `navigation.json`
+ *    declares `account`, else the fallback pill (`pill.*`); `bridge.*` for an
+ *    external issuer.
+ */
+export function reachableMessageIds(root: string): RunnerMessageId[] {
+  const pwpack = readJsonFile(join(root, 'pwpack.json'))
+  const app = isObj(pwpack) && isObj(pwpack['app']) ? pwpack['app'] : {}
+  const plan = readJsonFile(join(root, 'app', 'plan.json'))
+  const navigation = readJsonFile(join(root, 'app', 'definitions', 'navigation.json'))
+  let auth: AuthDeclaration | undefined
+  try {
+    auth = readAuth(root)
+  } catch {
+    auth = undefined
+  }
+  const named = (v: unknown): boolean => typeof v === 'string' && v.length > 0
+  const ids = new Set<string>()
+  const all = (prefix: string): void => {
+    for (const id of RUNNER_MESSAGE_IDS) if (id.startsWith(prefix)) ids.add(id)
+  }
+  if (!named(app['notFound'])) all('notFound.')
+  // A way in: an issuer, or at least one method. An auth.json that only
+  // carries access rules signs nobody in, so the runner draws none of these.
+  const door = auth !== undefined && (auth.topology === 'external' ? auth.issuer !== undefined : auth.methods.length > 0)
+  if (auth && door) {
+    all('auth.error.')
+    const password = auth.topology === 'app' && auth.methods.includes('password')
+    const providers = auth.methods.filter((m) => m !== 'password')
+    if (!named(app['signIn'])) {
+      if (!(isObj(plan) && named(plan['title']))) ids.add('gate.title')
+      for (const id of ['gate.body', 'gate.close', 'gate.signIn'] as const) ids.add(id)
+      if (password) {
+        for (const id of ['gate.email', 'gate.password', 'gate.name', 'gate.register', 'gate.toRegister', 'gate.toSignIn'] as const) ids.add(id)
+        all('session.')
+      }
+      if (password && providers.length > 0) ids.add('gate.or')
+      for (const m of providers) if ((PROVIDER_LABEL_METHODS as readonly string[]).includes(m)) ids.add(`gate.provider.${m}`)
+    }
+    const account = isObj(navigation) && isObj(navigation['account']) ? navigation['account'] : undefined
+    if (account) {
+      for (const id of ['account.signIn', 'account.signOut', 'account.greeting'] as const) ids.add(id)
+      if (named(account['profileHref'])) ids.add('account.profile')
+    } else all('pill.')
+    if (auth.topology === 'external') all('bridge.')
+  }
+  return RUNNER_MESSAGE_IDS.filter((id) => ids.has(id))
+}
+
+/**
+ * MESSAGES_MISSING: the runner message ids this app can reach
+ * ({@link reachableMessageIds}) that `plan.json` `messages` does not set. The
+ * visitor reads the engine's neutral English fallback for each — an error
+ * when the app's `locale` is not English, a warning otherwise.
+ */
+export function checkMessages(root: string): PackIssue[] {
+  const plan = readJsonFile(join(root, 'app', 'plan.json'))
+  if (!isObj(plan)) return []
+  const messages = isObj(plan['messages']) ? plan['messages'] : {}
+  const missing = reachableMessageIds(root).filter((id) => !(typeof messages[id] === 'string' && messages[id] !== ''))
+  if (missing.length === 0) return []
+  const locale = typeof plan['locale'] === 'string' ? plan['locale'].trim() : ''
+  const english = locale === '' || /^en(?:[-_]|$)/i.test(locale)
+  return [
+    {
+      severity: english ? 'warning' : 'error',
+      code: 'MESSAGES_MISSING',
+      path: 'app/plan.json',
+      message:
+        `the app can show ${missing.length} runner message${missing.length === 1 ? '' : 's'} it does not set in messages, ` +
+        `so the visitor reads the engine's English fallback${english ? '' : ` in a ${locale} app`}: ${missing.join(', ')}`,
+    },
+  ]
+}
+
 /**
  * Block props in the folder's receipts (`app/surfaces/*.receipt.json`) that do not fit the blocks' manifests
  * (`BLOCK_PROP_UNKNOWN`, `BLOCK_PROP_ENUM`, `BLOCK_PROP_TYPE`,
@@ -196,7 +293,9 @@ export async function checkProps(root: string, identity: PackValidation['identit
 
 function propIssues(sources: readonly BlockSource[]): PackIssue[] {
   const app = sources[0]
-  return app ? checkBlockProps(app.folder, blockPropsCatalog(sources)) : []
+  if (!app) return []
+  const catalog = blockPropsCatalog(sources)
+  return [...checkBlockProps(app.folder, catalog), ...checkDefaultCopy(app.folder, catalog), ...checkErrorsAsText(app.folder, catalog)]
 }
 
 /**
@@ -227,7 +326,7 @@ export async function validateProject(root: string, pack: PackFolder): Promise<P
   const pinIssues = await checkPins(root, result.identity)
   const sources = await atomSources(root, result.identity)
   const fieldIssues = checkRowFields(pack, connectionFieldSets(pack, sources))
-  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...propIssues(sources), ...fieldIssues]
+  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...propIssues(sources), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 

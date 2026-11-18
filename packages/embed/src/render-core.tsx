@@ -23,6 +23,7 @@ import {
   BlockSurfaceRenderer as SurfaceRenderer,
   DataBoundSurfaceRenderer,
   DynamicArtifactProvider,
+  AppMessagesContext,
   surfaceNeedsDataBinding,
 } from '@pwfabric/runtime'
 import type {
@@ -39,6 +40,7 @@ import type {
   LinkHref,
   SurfaceAddress,
   BlockComponentProps,
+  AppMessages,
 } from '@pwfabric/runtime'
 import type {
   DynamicBlockDescriptor,
@@ -102,6 +104,11 @@ export interface RenderCoreOptions {
   readonly onDescription?: (description: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
+  /**
+   * The app's words (`plan.json` `messages`): what a block's own words
+   * (`useAppMessage`, `ui.*` ids) read before their neutral fallback.
+   */
+  readonly messages?: AppMessages
   /**
    * The page's address as the host owns it (runtime render/address.ts): where
    * a split shell's selection and the page's `urlState` live, and where a page
@@ -322,7 +329,9 @@ export function createSurfaceElement(opts: RenderCoreOptions): React.ReactElemen
       ...(opts.dynamicStarters && opts.dynamicStarters.length > 0
         ? { dynamicStarters: opts.dynamicStarters }
         : {}),
-      children: rendererElement,
+      // The app's words reach every block through one provider (runtime
+      // render/app-messages.tsx); without them each id reads its fallback.
+      children: React.createElement(AppMessagesContext.Provider, { value: opts.messages ?? null }, rendererElement),
     }
   )
 }

@@ -18,10 +18,6 @@ import { z } from 'zod'
 // State
 import { createStateStore, type StateStore } from '../../state/index.js'
 
-// Forms
-import type { FormProcessor } from '../../forms/index.js'
-import { createFormProcessor } from '../../forms/index.js'
-
 // Binding
 import type {
   DataSourceRegistry,
@@ -105,7 +101,6 @@ interface LoginSession {
  */
 class IntranetAppContext {
   readonly stateStore: StateStore<unknown>
-  readonly formProcessor: FormProcessor
   readonly dataRegistry: DataSourceRegistry
   readonly expressionEvaluator: ExpressionEvaluator
 
@@ -117,9 +112,6 @@ class IntranetAppContext {
   constructor() {
     // Initialize state management
     this.stateStore = createStateStore<unknown>()
-
-    // Initialize form processing
-    this.formProcessor = createFormProcessor()
 
     // Initialize data source registry
     this.dataRegistry = createDataSourceRegistry()
@@ -281,9 +273,14 @@ class IntranetAppContext {
     })
 
     // Validate
-    const validation = this.formProcessor.validateWithSchema(formData, schema)
-    if (!validation.valid) {
-      return { success: false, errors: validation.errors }
+    const validation = schema.safeParse(formData)
+    if (!validation.success) {
+      const errors: Record<string, string[]> = {}
+      for (const issue of validation.error.issues) {
+        const key = issue.path.join('.')
+        ;(errors[key] ??= []).push(issue.message)
+      }
+      return { success: false, errors }
     }
 
     // Create document

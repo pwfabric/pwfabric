@@ -16,7 +16,7 @@ ESM only: import it from an ES module (`"type": "module"` or `.mjs`). Node 22+. 
 ```js
 import { runApp } from '@pwfabric/runner'
 
-runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', router: 'hash', locale: 'en' })
+runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', router: 'hash' })
 ```
 
 Under `router: 'path'`, the app's relative asset URLs resolve against the
@@ -39,7 +39,7 @@ beside a new one. Without `version` the addresses are unchanged.
 | `createAuthBridge`, `bootSession`, `mountSignInGate`, `createAccountController` | Sign-in and session |
 | `assembleNav`, `assembleFooter`, `composeTitle`, `renderNotFound` | Page assembly |
 | `sessionDataCache`, `buildEntityFacade` | Data access |
-| `THEME_PRESETS`, `RUNNER_COPY`, `copyFor` | Theme presets and UI copy |
+| `THEME_PRESETS`, `RUNNER_MESSAGES`, `runnerMessages` | Theme presets; the runner's message ids and their neutral fallbacks (the app's `messages` win) |
 
 ## Entry points
 

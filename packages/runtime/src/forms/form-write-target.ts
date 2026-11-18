@@ -53,7 +53,7 @@ export function resolveFormWriteTarget(method: FormWriteMethod, bound: unknown):
  *
  * The API answers `VALIDATION_FAILED` with `path: message; path: message`
  * (the host's app-records API). Read the paths out so a
- * form can highlight them; keep the whole sentence so the visitor can too.
+ * form can highlight them (`statusKeys.fields`).
  */
 function fieldPathsOf(message: string): string[] {
   return message
@@ -67,62 +67,62 @@ function fieldPathsOf(message: string): string[] {
 const VALIDATION_CODES = new Set(['VALIDATION_FAILED', 'INVALID_BODY'])
 
 /**
- * What a write failure tells the VISITOR — a sentence, never the server's or
- * the runtime's internal words (data-protocol §4.2). "HTTP 500: Internal
- * Server Error" and "This form writes to \"x\", which this page does not
- * declare" are true, and they go to `statusKeys.detail`; the page reads this.
- *
- * Decided by the HTTP status when there is one (`details.status`), else by
- * the error's type.
+ * Why a write failed — the value `statusKeys.reason` binds. The page writes
+ * its own words for each (envelope §2: the app owns every word); the engine
+ * gives the state, never a sentence.
  */
-export function writeFailureSentence(error: EntityOperationError): string {
-  const details = (error.details ?? {}) as { status?: unknown; fields?: unknown }
+export type FormWriteReason = 'validation' | 'unauthenticated' | 'forbidden' | 'server' | 'network' | 'error'
+
+/**
+ * The reason of a write failure (data-protocol §4.2): decided by the HTTP
+ * status when there is one (`details.status`), else by the error's type.
+ * "HTTP 500: Internal Server Error" and "This form writes to \"x\", which
+ * this page does not declare" are true, and they go to `statusKeys.detail`
+ * — for the developer, not the visitor.
+ */
+export function writeFailureReason(error: EntityOperationError): FormWriteReason {
+  const details = (error.details ?? {}) as { status?: unknown; network?: unknown }
   const status = typeof details.status === 'number' ? details.status : undefined
-  const fields = Array.isArray(details.fields) ? details.fields.filter((f): f is string => typeof f === 'string') : []
-  if (error.type === 'validation') {
-    return fields.length > 0 ? `Check the highlighted fields: ${fields.join(', ')}.` : 'Check the fields and try again.'
-  }
-  if (status === 401) return 'Sign in to save this.'
-  if (status === 403 || error.type === 'unauthorized') return 'You are not allowed to save this.'
-  if (status !== undefined && status >= 500) return 'The server could not save this. Try again later.'
-  if (status === undefined && (details as { network?: unknown }).network === true) {
-    return 'The server could not be reached. Check your connection and try again.'
-  }
-  return 'This could not be saved.'
+  if (error.type === 'validation') return 'validation'
+  if (status === 401) return 'unauthenticated'
+  if (status === 403 || error.type === 'unauthorized') return 'forbidden'
+  if (status !== undefined && status >= 500) return 'server'
+  if (status === undefined && details.network === true) return 'network'
+  return 'error'
+}
+
+/** The field names a refusal named — what `statusKeys.fields` binds. */
+export function writeFailureFields(error: EntityOperationError): string[] {
+  const fields = (error.details as { fields?: unknown } | undefined)?.fields
+  return Array.isArray(fields) ? fields.filter((f): f is string => typeof f === 'string') : []
+}
+
+/** The writer's own words — what `statusKeys.detail` binds. */
+export function writeFailureDetail(error: EntityOperationError): string {
+  const detail = (error.details as { detail?: unknown } | undefined)?.detail
+  return typeof detail === 'string' ? detail : error.message
 }
 
 /**
- * Translate a data-layer refusal into what the form should say.
+ * Translate a data-layer refusal into what the form should know.
  *
- * "Check the highlighted fields" is reserved for a 400 that names fields (or
- * names no code). Anything else is the server refusing; the status and the
- * server's own words travel in `details` (`detail` is what
- * `statusKeys.detail` binds), and `message` is the visitor's sentence.
+ * `validation` is reserved for a 400 that names fields (or names no code).
+ * Anything else is the server refusing; the status and the server's own
+ * words travel in `details` (`detail` is what `statusKeys.detail` binds,
+ * `fields` what `statusKeys.fields` binds), and `message` repeats the
+ * detail for a caller that logs it.
  */
 export function toFormWriteError(err: DataFetchError): EntityOperationError {
   const { status, code, message } = err
   if (status === undefined) {
-    const error: EntityOperationError = {
-      type: 'connector',
-      message: '',
-      details: { network: true, detail: `Could not reach the server: ${message}` },
-    }
-    return { ...error, message: writeFailureSentence(error) }
+    const detail = `Could not reach the server: ${message}`
+    return { type: 'connector', message: detail, details: { network: true, detail } }
   }
   if (status === 400 && (code === undefined || VALIDATION_CODES.has(code))) {
-    const error: EntityOperationError = {
-      type: 'validation',
-      message: '',
-      details: { status, code, fields: fieldPathsOf(message), detail: message },
-    }
-    return { ...error, message: writeFailureSentence(error) }
+    return { type: 'validation', message, details: { status, code, fields: fieldPathsOf(message), detail: message } }
   }
   const type: EntityOperationError['type'] =
     status === 404 ? 'not_found' : status === 401 || status === 403 ? 'unauthorized' : 'connector'
-  const error: EntityOperationError = {
-    type,
-    message: '',
-    details: { status, code, detail: `${status}${code ? ` ${code}` : ''}: ${message}` },
-  }
-  return { ...error, message: writeFailureSentence(error) }
+  const detail = `${status}${code ? ` ${code}` : ''}: ${message}`
+  return { type, message: detail, details: { status, code, detail } }
 }

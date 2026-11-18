@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mountSessionPill, sessionLabel } from './session-pill.js'
+import { runnerMessages } from './messages.js'
 import type { AuthBridge } from './auth.js'
 import type { AuthSession } from '@pwfabric/runtime/auth'
 import type { PwappAuth } from './types.js'
+
+/** An app that writes its pill words in Turkish (`plan.json` `messages`). */
+const TR = runnerMessages({ 'pill.signedIn': 'Oturum açık', 'pill.signIn': 'Oturum aç', 'pill.signOut': 'Çıkış' })
 
 function fakeBridge(overrides?: Partial<AuthBridge>): AuthBridge & { fire(): void } {
   const listeners = new Set<() => void>()
@@ -52,7 +56,7 @@ describe('sessionLabel', () => {
     expect(sessionLabel({ email: 'b@x' }, null)).toBe('b@x')
     expect(sessionLabel({ name: 'Ayşe' }, null)).toBe('Ayşe')
     expect(sessionLabel(undefined, null)).toBe('Signed in')
-    expect(sessionLabel(undefined, null, 'tr')).toBe('Oturum açık')
+    expect(sessionLabel(undefined, null, TR)).toBe('Oturum açık')
   })
 })
 
@@ -207,12 +211,12 @@ describe('the pill speaks the app’s language', () => {
     expect(pill()?.querySelector('[data-session-label]')?.textContent).toBe('Signed in')
   })
 
-  it('is Turkish when the app is', () => {
+  it('writes the app’s own words (messages) when it sets them', () => {
     mountSessionPill({
       bridge: fakeBridge(),
       getAppSession: () => null,
       onSignedOut: vi.fn(),
-      locale: 'tr',
+      messages: TR,
     })
     expect(pill()?.querySelector('[data-session-signin]')?.textContent).toBe('Oturum aç')
     document.body.innerHTML = ''
@@ -220,7 +224,7 @@ describe('the pill speaks the app’s language', () => {
       bridge: null,
       getAppSession: () => ({ token: 't', expiresAt: '' }),
       onSignedOut: vi.fn(),
-      locale: 'tr',
+      messages: TR,
     })
     expect(pill()?.querySelector('[data-session-signout]')?.textContent).toBe('Çıkış')
     expect(pill()?.querySelector('[data-session-label]')?.textContent).toBe('Oturum açık')

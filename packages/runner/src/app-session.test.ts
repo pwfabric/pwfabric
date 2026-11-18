@@ -21,6 +21,7 @@ import {
   startSocialSignIn,
   writeAppSession,
 } from './app-session.js'
+import { runnerMessages } from './messages.js'
 import type { KeyValueStorage } from './pkce.js'
 
 function memory(): KeyValueStorage & { dump: () => Record<string, string> } {
@@ -93,10 +94,11 @@ describe('signIn', () => {
     })
   })
 
-  it('passes the server’s own refusal through rather than improving on it', async () => {
-    // The API answers one message for every credential failure on purpose;
+  it('shows the app’s words for a refusal, never the server’s sentence (session.refused)', async () => {
+    // The API answers one refusal for every credential failure on purpose;
     // telling an unknown address apart from a wrong password enumerates the
-    // shop's customers.
+    // shop's customers. Its sentence is in the server's language, not the
+    // app's: the visitor reads `session.refused`, with the code in {code}.
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({
@@ -105,17 +107,23 @@ describe('signIn', () => {
       }))
     )
     const result = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' })
-    expect(result).toEqual({ ok: false, message: 'Email or password is wrong' })
+    expect(result).toEqual({ ok: false, message: 'Could not sign in. Check your details and try again.' })
+    const own = await signIn(
+      'https://api.example/login',
+      { email: 'a@b.c', password: 'x' },
+      runnerMessages({ 'session.refused': 'Giriş reddedildi ({code}).' })
+    )
+    expect(own).toEqual({ ok: false, message: 'Giriş reddedildi (INVALID_CREDENTIALS).' })
   })
 
   it('reports an unreachable server as such, not as bad credentials', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
-    const result = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' }, 'tr')
+    const result = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' }, runnerMessages({ 'session.unreachable': 'Sunucuya ulaşılamadı.' }))
     expect(result.ok).toBe(false)
     expect(result.ok === false && result.message).toMatch(/ulaşılamadı/)
   })
 
-  it('speaks the app’s language — English unless told otherwise', async () => {
+  it('reads the neutral fallback when the app sets no words', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
     const result = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' })
     expect(result.ok === false && result.message).toMatch(/Could not reach the server/)
@@ -126,7 +134,7 @@ describe('signIn', () => {
       'fetch',
       vi.fn(async () => ({ ok: true, json: async () => { throw new Error('html') } }))
     )
-    const result = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' }, 'en')
+    const result = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' })
     expect(result.ok === false && result.message).toMatch(/unexpected response/)
   })
 

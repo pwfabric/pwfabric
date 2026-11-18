@@ -32,7 +32,7 @@
 
 import type { AuthSession, AuthToken, UserIdentity } from '@pwfabric/runtime/auth'
 import type { PwappAuth } from './types.js'
-import { copyFor, type RunnerLocale } from './copy.js'
+import { NEUTRAL_MESSAGES, type RunnerMessages } from './messages.js'
 import {
   authScopeKey,
   buildAuthorizeUrl,
@@ -157,15 +157,15 @@ export interface AuthBridgeOptions {
    * falls back to the historical per-location behavior (origin + pathname).
    */
   readonly redirectUri?: string
-  /** The app's content locale, for the errors the bridge reports. Default `en`. */
-  readonly locale?: RunnerLocale
+  /** The app's words, for the errors the bridge reports (`bridge.*`). Default: the neutral fallbacks. */
+  readonly messages?: RunnerMessages
 }
 
 export function createAuthBridge(auth: PwappAuth, options?: AuthBridgeOptions): AuthBridge {
   const scopeKey = authScopeKey(auth)
   const pendingKey = pendingKeyFor(scopeKey)
   const rtKey = refreshTokenKeyFor(scopeKey)
-  const copy = copyFor(options?.locale).bridge
+  const say = options?.messages ?? NEUTRAL_MESSAGES
 
   let session: AuthSession | undefined
   let lastError: string | undefined
@@ -299,7 +299,7 @@ export function createAuthBridge(auth: PwappAuth, options?: AuthBridgeOptions): 
         if (pending) {
           const exchanged = await exchangeCode(code, pending.verifier, pending.redirectUri)
           if (!exchanged) {
-            setError(copy.exchangeFailed)
+            setError(say('bridge.exchangeFailed'))
           }
           // Restore the page login started from (the redirect landed on the
           // app base). Runs BEFORE the first route (run-app awaits init), so
@@ -309,7 +309,7 @@ export function createAuthBridge(auth: PwappAuth, options?: AuthBridgeOptions): 
           return
         }
         console.error('[pwapp] auth callback ignored — no matching PKCE state (stale or replayed)')
-        setError(copy.invalidCallback)
+        setError(say('bridge.invalidCallback'))
       }
 
       // 2) Silent restore from a persisted refresh token — no user prompt.
@@ -342,7 +342,7 @@ export function createAuthBridge(auth: PwappAuth, options?: AuthBridgeOptions): 
           authorizeUrl = (await resolveEndpoints(auth)).authorizeUrl
         } catch (err) {
           console.error('[pwapp] identity issuer unreachable:', err)
-          setError(copy.issuerUnreachable)
+          setError(say('bridge.issuerUnreachable'))
           return
         }
         savePendingPkce(sessionStorage, pendingKey, { state, verifier, redirectUri, returnTo })

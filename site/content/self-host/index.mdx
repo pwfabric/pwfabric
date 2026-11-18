@@ -91,7 +91,7 @@ so you know what to keep when you replace the shell with your own page:
 ```js
 import { runApp } from './runner.js'
 
-runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', router: 'hash', locale: 'en' })
+runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', router: 'hash' })
 ```
 
 The import map is the only inline script, so the app's Content Security
@@ -113,7 +113,6 @@ the files sit next to `index.html`.
 | `engines` | `'./engines'` | folder holding the connector-engine `manifest.json` |
 | `router` | `'hash'` | `'hash'`, `'path'` or `'auto'` — see routing |
 | `mount` | `'#root'` | selector of the element the app renders into |
-| `locale` | `'en'` | content locale of the delivered app (`'en'` or `'tr'`) |
 | `version` | none | the publish this page belongs to; every file read under `source` (envelope JSON, receipts) is asked for as `?v=<version>`, so a cache never mixes two publishes |
 
 Source: `packages/runner/src/types.ts` (`RunAppOptions`).

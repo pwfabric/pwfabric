@@ -119,6 +119,14 @@ export function titleOf(name: string): string {
 export function starterPlan(name: string, title: string, blocks: readonly BlockNode[], foundationId: string, theme: string | undefined): unknown {
   return {
     title: title.slice(0, 80),
+    // The app writes every word, the runner's too (envelope §2.1): a starter
+    // app reaches only the runner's not-found page, so it says those words.
+    locale: 'en',
+    messages: {
+      'notFound.title': 'Page not found',
+      'notFound.body': 'This address does not name a page in this app.',
+      'notFound.home': 'Go to the home page',
+    },
     intent: {
       purpose: `${title}: describe what this app is for`,
       audience: 'Describe who will use it',

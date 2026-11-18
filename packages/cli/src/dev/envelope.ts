@@ -72,6 +72,8 @@ export interface ProjectJsonInput {
   readonly auth?: unknown
   /** `app/plan.json` `locale` (BCP 47): what the runtime writes dates and numbers in. */
   readonly locale?: string
+  /** `app/plan.json` `messages`: the app's words, id → string (envelope §2). */
+  readonly messages?: Readonly<Record<string, string>>
 }
 
 /** `pwpack/project.json`. */
@@ -83,8 +85,9 @@ export function buildProjectJson(input: ProjectJsonInput): Record<string, unknow
   return {
     schemaVersion: '1.0.0',
     id: input.id,
-    title: input.title,
+    ...(input.title ? { title: input.title } : {}),
     ...(input.locale ? { locale: input.locale } : {}),
+    ...(input.messages && Object.keys(input.messages).length > 0 ? { messages: input.messages } : {}),
     entrySurfaceId: input.entry,
     surfaceOrder: input.pages.map((p) => p.key),
     surfaceReceiptFiles,

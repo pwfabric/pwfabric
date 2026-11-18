@@ -178,7 +178,7 @@ describe('entity dataSource connector routing', () => {
     )
 
     await waitFor(() =>
-      expect(screen.getByTestId('err').textContent).toBe('This could not be loaded.')
+      expect(screen.getByTestId('err').textContent).toBe('error')
     )
     // Registered-but-broken must NOT silently fall back to the default
     // facade — that would render data the surface author didn't wire.
@@ -203,7 +203,7 @@ describe('entity dataSource connector routing', () => {
       />
     )
 
-    await waitFor(() => expect(screen.getByTestId('err').textContent).toBe('You do not have access to this.'))
+    await waitFor(() => expect(screen.getByTestId('err').textContent).toBe('forbidden'))
   })
 })
 

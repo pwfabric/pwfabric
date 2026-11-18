@@ -13,7 +13,6 @@ import {
   htmlLangOf,
   importMap,
   loadRuntimeAssets,
-  runnerLocaleOf,
   scriptJson,
   seededGlobals,
   shimGlobal,
@@ -130,7 +129,8 @@ describe('shell', () => {
     expect(html).toMatch(/<link rel="preload" as="style" href="https:\/\/fonts\.googleapis\.com[^"]*" \/>/)
     expect(html).not.toMatch(/<link rel="stylesheet" href="https:\/\/fonts/)
     expect(html).toContain('<!--dev-->')
-    expect(html).toContain('<html lang="en">')
+    // No locale stated: no language guessed.
+    expect(html).toContain('<html>')
     expect(html).not.toContain('Content-Security-Policy')
     const plain = buildShellHtml({ title: 'x', lang: 'tr-TR', csp: "default-src 'none'", preloadRenderer: false, bootFiles: ['pwpack/project.json'] })
     expect(plain).not.toContain('fonts.googleapis.com')
@@ -145,28 +145,24 @@ describe('shell', () => {
     expect(meta).toBeLessThan(plain.indexOf('<link'))
     expect(meta).toBeLessThan(plain.indexOf('<script'))
   })
-  it('names the hashed runtime files, and boots the runner with the renderer’s address and the locale', () => {
+  it('names the hashed runtime files, and boots the runner with the renderer’s address (its words come from project.json)', () => {
     expect(hashedName('assets/embed.js', 'abc')).toMatch(/^assets\/embed\.[0-9a-f]{8}\.js$/)
     expect(hashedName('assets/embed.js', 'abc')).toBe(hashedName('assets/embed.js', 'abc'))
     expect(hashedName('assets/embed.js', 'abd')).not.toBe(hashedName('assets/embed.js', 'abc'))
     const assets = { embed: 'assets/embed.1.js', runner: 'assets/runner.2.js', boot: 'assets/boot.3.js', theme: 'assets/theme.4.css' }
-    const boot = bootScript({ locale: 'tr', assets, webfontHref: 'https://fonts.googleapis.com/css2?family=Inter&display=swap' })
+    const boot = bootScript({ assets, webfontHref: 'https://fonts.googleapis.com/css2?family=Inter&display=swap' })
     expect(boot).toContain('import { runApp } from "./runner.2.js"')
     expect(boot).toContain('renderer: "./assets/embed.1.js"')
-    expect(boot).toContain("locale: 'tr'")
+    expect(boot).not.toContain('locale')
     // The boot module links the webfonts, so they never block the first paint.
     expect(boot).toContain("fonts.rel = 'stylesheet'")
-    expect(bootScript()).toContain("locale: 'en'")
     expect(bootScript()).not.toContain('stylesheet')
   })
   it('escapes and normalises', () => {
     expect(escapeHtml('<a href="x">&</a>')).toBe('&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;')
     expect(scriptJson({ a: '</script>' })).toBe('{"a":"\\u003c/script>"}')
     expect(htmlLangOf('en-GB')).toBe('en-GB')
-    expect(htmlLangOf('<x>')).toBe('en')
-    expect(htmlLangOf(undefined)).toBe('en')
-    expect(runnerLocaleOf('tr_TR')).toBe('tr')
-    expect(runnerLocaleOf('de')).toBe('en')
-    expect(runnerLocaleOf(undefined)).toBe('en')
+    expect(htmlLangOf('<x>')).toBe('')
+    expect(htmlLangOf(undefined)).toBe('')
   })
 })
