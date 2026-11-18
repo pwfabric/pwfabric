@@ -54,6 +54,7 @@ describe('@pwfabric/cli/host', () => {
         'readSeed',
         'rewriteEntitySources',
         'withRecordFields',
+        'withSessionSources',
       ].sort()
     )
   })

@@ -458,6 +458,50 @@ function definitionJson(source: SurfaceDataSourceDefinition): string {
 }
 
 /**
+ * A SOURCE ONLY A SESSION CAN BE ANSWERED FOR, WHILE NOBODY IS SIGNED IN
+ * (`requiresSession`, data-protocol §2.6): its answer could only be a 401, so
+ * it is not asked. It settles as that refusal — no rows, `__errors.<id>`
+ * "unauthenticated", `__errorCodes.<id>` 401 — and a sign-in asks it (its
+ * request key changes). `signedIn` undefined: the host says nothing about who
+ * is signed in (an editor, a pack gallery), and the source is asked as written.
+ */
+function isRefusedWithoutSession(source: SurfaceDataSourceDefinition, signedIn: boolean | undefined): boolean {
+  return signedIn === false && source.requiresSession === true && (source.kind === 'rest' || source.kind === 'entity')
+}
+
+/**
+ * WHAT A SOURCE SETTLES AS WITHOUT A REQUEST, decided the same way for the
+ * first frame — the build's static paint and the browser's first render
+ * (pwapp-format §2.5) — as for every pass after it: idle (it asks for
+ * nothing), refused (it needs a session nobody has), or `undefined` (it is
+ * asked). Drawn loading in the first frame and settled one effect later, an
+ * idle record page painted its spinner and then redrew it as "no record".
+ */
+function settledWithoutRequest(
+  source: SurfaceDataSourceDefinition,
+  state: Readonly<Record<string, unknown>>,
+  key: string,
+  me: unknown,
+  signedIn: boolean | undefined
+): SourceData | undefined {
+  if (isIdleSource(source, state, me)) {
+    return { data: null, loading: false, error: null, status: null, meta: null, idle: true, key }
+  }
+  if (isRefusedWithoutSession(source, signedIn)) {
+    return {
+      data: null,
+      loading: false,
+      error: 'not asked: it needs a session and nobody is signed in',
+      errorCode: 401,
+      status: null,
+      meta: null,
+      key,
+    }
+  }
+  return undefined
+}
+
+/**
  * Not fetched: a REST source whose required path value is empty, or a fetched
  * source whose query asks for no record (an empty record key, query-state.ts).
  */
@@ -486,9 +530,15 @@ function isIdleSource(source: SurfaceDataSourceDefinition, state: Readonly<Recor
  * key-name extraction is not: `{{state.a ? state.b : state.c}}` depends on `c`
  * only while `a` is false, and the resolved value knows that.
  */
-function requestKeyOf(source: SurfaceDataSourceDefinition, state: Readonly<Record<string, unknown>>, me?: unknown): string {
+function requestKeyOf(
+  source: SurfaceDataSourceDefinition,
+  state: Readonly<Record<string, unknown>>,
+  me?: unknown,
+  signedIn?: boolean
+): string {
   const def = definitionJson(source)
   if (isIdleSource(source, state, me)) return `${def}|idle`
+  if (isRefusedWithoutSession(source, signedIn)) return `${def}|unauthenticated`
   switch (source.kind) {
     case 'rest': {
       if (!source.endpoint) return def
@@ -528,10 +578,18 @@ function useSurfaceData(
    * reads it (`{{me.email}}`, query-state.ts). A sign-in or sign-out changes
    * the resolved request, so such a source is asked again.
    */
-  me: unknown = null
+  me: unknown = null,
+  /**
+   * Whether the host says a visitor is signed in; `undefined` when it says
+   * nothing (no identity host). Signed out, a `requiresSession` source is
+   * not asked (isRefusedWithoutSession).
+   */
+  signedIn?: boolean
 ): SurfaceDataResult {
   const meRef = React.useRef(me)
   meRef.current = me
+  const signedInRef = React.useRef(signedIn)
+  signedInRef.current = signedIn
   const dataService = useDataService()
   const writeOnlyRef = React.useRef(writeOnly)
   writeOnlyRef.current = writeOnly
@@ -557,26 +615,40 @@ function useSurfaceData(
   // frame (its query applied, as the data service applies it). Bound one tick
   // later through the data service, a static list was drawn empty and then
   // filled, pushing everything under it down after the page had painted.
+  //
+  // A source that settles WITHOUT A REQUEST — idle, or refused for want of a
+  // session — is settled in the first frame too (settledWithoutRequest): the
+  // build paints what the page will show, not a spinner the first pass
+  // replaces with "no record" (pwapp-format §2.5). Except THE PAGE'S RECORD
+  // (`notFoundWhenEmpty`) idle: that page is never shown — the not-found page
+  // replaces it — so its first frame stays the one every record it names
+  // loads in, and a record page's frame stands for any `?id=` (E16).
   const [sourceData, setSourceData] = React.useState<Record<string, SourceData>>(() => {
     if (!dataSources) return {}
     const seeded: Record<string, SourceData> = {}
+    const state = initialState ?? {}
     for (const source of dataSources) {
-      if (source.kind !== 'static') continue
-      const state = initialState ?? {}
-      const rows = source.staticData
-      const data =
-        source.query && Array.isArray(rows)
-          ? applyEntityQuery(rows as Record<string, unknown>[], resolveQueryState(source.query, state, me) as EntityQuery).items
-          : rows
-      seeded[source.id] = { data, loading: false, error: null, key: requestKeyOf(source, state, me) }
+      if (source.kind === 'static') {
+        const rows = source.staticData
+        const data =
+          source.query && Array.isArray(rows)
+            ? applyEntityQuery(rows as Record<string, unknown>[], resolveQueryState(source.query, state, me) as EntityQuery).items
+            : rows
+        seeded[source.id] = { data, loading: false, error: null, key: requestKeyOf(source, state, me, signedIn) }
+        continue
+      }
+      if (writeOnly?.has(source.id) === true) continue
+      const settled = settledWithoutRequest(source, state, requestKeyOf(source, state, me, signedIn), me, signedIn)
+      if (settled && !(settled.idle === true && source.notFoundWhenEmpty === true)) seeded[source.id] = settled
     }
     if (!dataCache) return seeded
     for (const source of dataSources) {
-      const key = dataSourceCacheKey(source, initialState ?? {}, me)
+      if (seeded[source.id]) continue
+      const key = dataSourceCacheKey(source, state, me)
       if (!key) continue
       const hit = dataCache.get(key)
       if (hit !== undefined) {
-        seeded[source.id] = { data: hit, loading: true, error: null, key: requestKeyOf(source, initialState ?? {}, me) }
+        seeded[source.id] = { data: hit, loading: true, error: null, key: requestKeyOf(source, state, me, signedIn) }
       }
     }
     return seeded
@@ -817,16 +889,17 @@ function useSurfaceData(
   const fetchSources = React.useCallback(
     async (sources: readonly SurfaceDataSourceDefinition[]) => {
       const state = stateRef.current
-      const idle: SurfaceDataSourceDefinition[] = []
+      const settled: { source: SurfaceDataSourceDefinition; data: SourceData }[] = []
       const writeOnlySettled: SurfaceDataSourceDefinition[] = []
       const jobs: { source: SurfaceDataSourceDefinition; controller: AbortController; key: string }[] = []
       for (const source of sources) {
         controllersRef.current.get(source.id)?.abort()
         controllersRef.current.delete(source.id)
-        const key = requestKeyOf(source, state, meRef.current)
+        const key = requestKeyOf(source, state, meRef.current, signedInRef.current)
         requestKeysRef.current[source.id] = key
-        if (isIdleSource(source, state, meRef.current)) {
-          idle.push(source)
+        const without = settledWithoutRequest(source, state, key, meRef.current, signedInRef.current)
+        if (without) {
+          settled.push({ source, data: without })
           registerSource(source, state)
           continue
         }
@@ -843,15 +916,15 @@ function useSurfaceData(
         jobs.push({ source, controller, key })
       }
 
-      // Idle sources settle at once: no data, not loading, no error. The data
-      // of whatever was shown before belongs to another request, so it goes.
-      // Fetched sources show their loading flag and keep their data until the
-      // answer arrives (a filter change does not blank the list meanwhile).
+      // Sources settled without a request settle at once — idle: no data,
+      // not loading, no error; refused for want of a session: no data,
+      // "unauthenticated". The data of whatever was shown before belongs to
+      // another request, so it goes. Fetched sources show their loading flag
+      // and keep their data until the answer arrives (a filter change does
+      // not blank the list meanwhile).
       setSourceData((prev) => {
         const next = { ...prev }
-        for (const source of idle) {
-          next[source.id] = { data: null, loading: false, error: null, status: null, meta: null, idle: true, key: requestKeysRef.current[source.id] as string }
-        }
+        for (const { source, data } of settled) next[source.id] = data
         for (const source of writeOnlySettled) {
           next[source.id] = { data: null, loading: false, error: null, status: null, meta: null, key: requestKeysRef.current[source.id] as string }
         }
@@ -962,9 +1035,9 @@ function useSurfaceData(
       setInitialLoaded(true)
       return
     }
-    const changed = sources.filter((s) => requestKeyOf(s, surfaceState, me) !== requestKeysRef.current[s.id])
+    const changed = sources.filter((s) => requestKeyOf(s, surfaceState, me, signedIn) !== requestKeysRef.current[s.id])
     if (changed.length > 0) void fetchSources(changed)
-  }, [dataSources, surfaceState, me, fetchSources, dataService])
+  }, [dataSources, surfaceState, me, signedIn, fetchSources, dataService])
 
   // ---- Unmount: abort what is in flight, forget what was fetched ----
   // Forgetting matters under StrictMode's mount → unmount → mount: the second
@@ -1376,7 +1449,18 @@ function DataBoundInner({
   // fetches it and no action writes it; a query value may read it.
   const authState = auth?.state ?? SIGNED_OUT
   const { expressionData: pageData, surfaceState, initialLoaded, setStateValue, refreshSource, fetchAllSources } =
-    useSurfaceData(dataSources, initialState, interactionMode, entityFacade, connections, dataCache, writeOnly, locale, authState.user)
+    useSurfaceData(
+      dataSources,
+      initialState,
+      interactionMode,
+      entityFacade,
+      connections,
+      dataCache,
+      writeOnly,
+      locale,
+      authState.user,
+      auth ? authState.signedIn : undefined
+    )
   const expressionData = React.useMemo<Record<string, unknown>>(
     () => ({ ...pageData, __auth: authState, me: authState.user }),
     [pageData, authState]

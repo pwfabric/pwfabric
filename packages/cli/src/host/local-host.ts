@@ -59,6 +59,7 @@ import {
 import { RecordStore, type Target } from './records.js'
 import { rewriteEntitySources } from './receipts.js'
 import { declaredRecordFields, withRecordFields } from './record-fields.js'
+import { withSessionSources } from './session-sources.js'
 import { DevIssuer, type Grant } from './oidc.js'
 import { TokenStore, type Principal } from './tokens.js'
 import type { CreateLocalHost, LocalHost, LocalHostOptions } from './types.js'
@@ -419,9 +420,11 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
     if (!receipt) return undefined
     const entities = readEntities(root)
     // The record's fields ride on the source, as `pwf build` writes them
-    // (record-fields.ts), so a form here sends the same body it will there.
+    // (record-fields.ts), so a form here sends the same body it will there;
+    // so does whether only a session can be answered for it (session-sources.ts).
     const fields = declaredRecordFields({ entities })
-    return rewriteEntitySources(withRecordFields(receipt, fields), base, new Set(entities.map((e) => e.typeId)))
+    const declared = withSessionSources(withRecordFields(receipt, fields), entities, readAuth(root))
+    return rewriteEntitySources(declared, base, new Set(entities.map((e) => e.typeId)))
   }
 
   function surface(req: IncomingMessage, res: ServerResponse, parts: string[]): void {

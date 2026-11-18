@@ -14,7 +14,10 @@
  * - nobody signed in (`__auth` signed out, no error), with the ways in the
  *   app declares ({@link firstFrameDoorOf});
  * - nothing read from the address (the page's `initialState` as written);
- * - every fetched source loading, a static source's rows in place;
+ * - every fetched source loading, a static source's rows in place, and a
+ *   source the runtime settles without a request settled: idle (an empty
+ *   record key), or refused as `unauthenticated` (`requiresSession`) —
+ *   the runtime's first render decides both (data-protocol §1.1, §2.6);
  * - the phone layout, `xs` ({@link STATIC_VIEWPORT}): mobile first;
  * - the app's locale, `en` when it names none ({@link firstFrameLocale}).
  *

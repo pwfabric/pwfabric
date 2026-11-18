@@ -59,6 +59,13 @@ export interface SurfaceDataSourceDefinition {
    */
   readonly notFoundWhenEmpty?: boolean
   /**
+   * Contract parity with `dataSourceSchema.requiresSession`: only a signed-in
+   * visitor can be answered for this source (data-protocol §2.6). While the
+   * host says nobody is signed in it is not asked: it settles as a refused
+   * read (`__errors.<id>` "unauthenticated"), and a sign-in asks it.
+   */
+  readonly requiresSession?: boolean
+  /**
    * Contract parity with `dataSourceSchema.connector`: which
    * data-plane engine serves this entity source (e.g. 'graph-lists').
    * Routed through the host-provided `ConnectorEngineRegistry` when the

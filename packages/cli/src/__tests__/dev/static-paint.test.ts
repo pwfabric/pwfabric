@@ -164,4 +164,71 @@ export default function Bar(p: { props?: { account?: { signedIn?: boolean } } })
     expect(hints.pages.dish.frame).toBe('pwpack/surfaces/dish.html')
     expect(hints.pages.home.frame).toBeUndefined()
   })
+  it('a source settled without a request is settled in the frame: idle with no ?id=, refused when only a session can read it', async () => {
+    const root = await app()
+    // headphone-shop #/confirmation: an empty record key asks for no record, so
+    // the page shows "no order" — painted so, not as a spinner hydration redraws.
+    await writeFile(
+      join(root, 'app', 'surfaces', 'confirmation.receipt.json'),
+      JSON.stringify({
+        title: 'Confirmation',
+        blocks: [
+          {
+            id: 'page',
+            type: 'stack',
+            props: {},
+            children: [
+              { id: 'o', type: 'title', props: { text: "{{__idle.order ? 'No order to confirm' : 'Loading order'}}" } },
+              { id: 'r', type: 'title', props: { text: "rsvps={{__errors.mine || 'asked'}}" } },
+            ],
+          },
+        ],
+        capabilities: [
+          {
+            capability: 'platform/persistence',
+            config: {
+              initialState: { id: '' },
+              dataSources: [
+                { id: 'order', kind: 'entity', entityType: 'Order', query: { filter: { field: 'id', operator: 'eq', value: '{{state.id}}' } } },
+                { id: 'mine', kind: 'entity', entityType: 'Rsvp' },
+              ],
+            },
+          },
+        ],
+      })
+    )
+    await mkdir(join(root, 'app', 'definitions'), { recursive: true })
+    await writeFile(
+      join(root, 'app', 'definitions', 'entities.json'),
+      JSON.stringify({ entities: ['Order', 'Rsvp'].map((typeId) => ({ typeId, fields: [{ name: 'note', type: 'text' }] })) })
+    )
+    await writeFile(
+      join(root, 'app', 'definitions', 'auth.json'),
+      JSON.stringify({
+        methods: ['password'],
+        access: { rules: [{ subject: 'member', model: 'Order', rule: 'create, read own' }, { subject: 'member', model: 'Rsvp', rule: 'read own' }] },
+      })
+    )
+    const identity = JSON.parse(await readFile(join(root, 'pwpack.json'), 'utf8')) as { app: { surfaceOrder: string[] } }
+    identity.app.surfaceOrder = ['home', 'confirmation']
+    await writeFile(join(root, 'pwpack.json'), JSON.stringify(identity))
+
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const frame = text(r.files.get('pwpack/surfaces/confirmation.html'))
+    expect(frame).toContain('No order to confirm')
+    expect(frame).toContain('rsvps=unauthenticated')
+    // The served receipt says which source only a session can be answered for.
+    const served = JSON.parse(text(r.files.get('pwpack/surfaces/confirmation.receipt.json'))) as {
+      capabilities: { config: { dataSources: { id: string; requiresSession?: boolean }[] } }[]
+    }
+    expect(served.capabilities[0]!.config.dataSources.map((d) => [d.id, d.requiresSession === true])).toEqual([
+      ['order', true],
+      ['mine', true],
+    ])
+    // `?id=` changes this frame (an order loading, not "no order"): a visit carrying one is not painted from the build.
+    const html = text(r.files.get('index.html'))
+    const data = JSON.parse(html.match(/<script type="application\/json" id="pw-first-paint">(.*?)<\/script>/)?.[1] ?? '{}')
+    expect(data.pages.confirmation.keys).toEqual(['id'])
+  })
 })

@@ -110,7 +110,16 @@ describe('envelopeEntries', () => {
         authProviderRef: base,
         returns: 'data',
       },
-      { id: 'howMany', kind: 'rest', method: 'GET', endpoint: `${base}/records/Order/count`, authProviderRef: base, returns: 'data' },
+      // Orders are `member` `read own`: only a session can be answered (session-sources.ts).
+      {
+        id: 'howMany',
+        kind: 'rest',
+        method: 'GET',
+        endpoint: `${base}/records/Order/count`,
+        authProviderRef: base,
+        returns: 'data',
+        requiresSession: true,
+      },
       { id: 'remote', kind: 'entity', entityType: 'Product', connector: 'shop-api' },
       { id: 'unknown', kind: 'entity', entityType: 'Ghost' },
       { id: 'static', kind: 'static', staticData: [1, 2] },
@@ -683,6 +692,7 @@ describe('pages', () => {
         authProviderRef: s.base,
         returns: 'data',
         fields: { item: 'text', qty: 'number', finish: 'enum', gift: 'boolean', status: 'text' },
+        requiresSession: true,
       },
     ])
   })
