@@ -32,8 +32,10 @@ import {
 import { collectMedia, fillMediaSlots } from './media.js'
 import { declaredRecordFields, withRecordFields } from '../host/record-fields.js'
 import { deriveCsp, headersFile, robotsTxt } from './csp.js'
+import { firstPaintData, paintPages, staticPageFile, staticRootHtml, type PaintedPage } from './static-paint.js'
 import {
   BOOT_FILES,
+  FIRST_PAINT_SCRIPT,
   bootScript,
   buildShellHtml,
   firstImageOf,
@@ -453,6 +455,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   if (!gated) for (const page of routes) if (page !== entryPageOf) pageHints[page.key] = hintsOf(page)
   const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref, pageHints })
   const assets: ShellAssets = { ...assets0, boot: hashedName('assets/boot.js', bootJs) }
+  let firstPaint: { rootHtml: string; data: Record<string, unknown> } | undefined
   const shell = (csp?: string): Uint8Array =>
     enc.encode(
       buildShellHtml({
@@ -467,6 +470,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         bootFiles: BOOT_FILES.filter((f) => files.has(f)),
         themeCss: new TextDecoder().decode(themeCss),
         ...(entryHints ? { entryHints } : {}),
+        ...(firstPaint ? { firstPaint } : {}),
       })
     )
   files.set(assets.boot, enc.encode(bootJs))
@@ -532,8 +536,54 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     }
   }
   const envelopeAuthBytes = files.get('pwpack/auth.json')
+
+  // ── the static first paint (pwapp-format §2.5) ────────────────────
+  // Every route's first frame and the not-found page's, rendered from the
+  // files as served. Not for an app that requires sign-in: who is signed in
+  // decides its first frame.
+  if (!gated && runtime.staticJs) {
+    const served = (path: string): unknown => {
+      const bytes = files.get(path)
+      if (!bytes) return undefined
+      try {
+        return JSON.parse(new TextDecoder().decode(bytes)) as unknown
+      } catch {
+        return undefined
+      }
+    }
+    const project = served('pwpack/project.json')
+    const paintable = [...routes, ...(notFoundPage ? [notFoundPage] : [])]
+    const painted = isRecord(project)
+      ? await paintPages({
+          staticJs: runtime.staticJs,
+          blockManifest,
+          files,
+          project,
+          navigation: served('pwpack/navigation.json'),
+          appearance: served('pwpack/appearance.json'),
+          auth: isRecord(project['identity']) ? served('pwpack/auth.json') : undefined,
+          pages: paintable.map((p) => ({ key: p.key, receipt: (servedReceipts.get(p.key) ?? p.receipt) as Record<string, unknown> })),
+        })
+      : { pages: [] as PaintedPage[], diagnostics: [] }
+    diagnostics.push(...painted.diagnostics)
+    const entryPainted = painted.pages.find((p) => p.key === entry)
+    for (const page of painted.pages) if (page !== entryPainted) files.set(staticPageFile(page.key), enc.encode(page.html))
+    if (painted.pages.length > 0) {
+      firstPaint = {
+        rootHtml: entryPainted ? staticRootHtml(entryPainted) : '',
+        data: firstPaintData({
+          entry,
+          routes: routes.map((p) => p.key),
+          ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
+          pages: painted.pages,
+        }),
+      }
+    }
+  }
+
   const csp = deriveCsp({
     importMapText: importMapText(),
+    ...(firstPaint ? { inlineScripts: [FIRST_PAINT_SCRIPT] } : {}),
     receipts: servedReceipts,
     connections,
     engines: engineManifest,

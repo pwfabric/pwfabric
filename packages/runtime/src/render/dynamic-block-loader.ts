@@ -96,6 +96,17 @@ class BlockModuleLoaderImpl {
   }
 
   /**
+   * A module already evaluated by the host, put in the cache as if it had
+   * been loaded: the build's static first paint renders a page outside a
+   * browser, where nothing can be fetched or imported, and draws each block
+   * from what it registered here. A browser never calls it — its modules come
+   * through {@link loadAtom}, hash-checked.
+   */
+  register(blockType: string, atom: LoadedAtom): void {
+    this.cache.set(blockType, { component: atom.Component, definition: atom.definition, loadedAt: Date.now() })
+  }
+
+  /**
    * Preload multiple block modules (fire-and-forget).
    */
   preload(descriptors: readonly DynamicBlockDescriptor[]): void {

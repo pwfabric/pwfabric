@@ -155,6 +155,14 @@ export interface BlockContext {
    * don't trigger navigation or external mutations. Defaults to `live`.
    */
   readonly interactionMode?: BlockInteractionMode
+  /**
+   * The app's locale (BCP 47, `en-GB`): what a block writes numbers, prices
+   * and dates in. Read it here, never off the document (`<html lang>`) — a
+   * block's render must be the same wherever it runs, and the build renders
+   * each page's first frame outside a browser (pwapp-format §2.5). Absent:
+   * the host names none, and the visitor's formats apply.
+   */
+  readonly locale?: string
 }
 
 // ============================================================
@@ -238,6 +246,8 @@ export interface BlockWrapperRenderArgs {
 export interface SurfaceRendererProps {
   /** Surface definition (starter or custom) */
   readonly surface: RenderableSurface
+  /** The app's locale, handed to every block as `context.locale`. */
+  readonly locale?: string
   /** Capability providers */
   readonly capabilities?: CapabilityProvider[]
   /**

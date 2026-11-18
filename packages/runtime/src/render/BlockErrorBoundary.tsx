@@ -5,6 +5,14 @@
  * If a single block throws during render, only that block shows
  * a fallback UI — the rest of the surface stays intact.
  *
+ * ON THE SERVER TOO. A class boundary does not catch while a page is rendered
+ * to a string (the build's static first paint, pwapp-format §2.5), so each
+ * block also sits in a `<Suspense>`: a block whose render throws there (it
+ * read `window` while rendering) leaves an empty, client-rendered boundary in
+ * the static HTML, and the browser draws that block itself once it hydrates.
+ * The rest of the page is still painted before any script runs. In the
+ * browser the Suspense is inert — no block suspends.
+ *
  * @module @pwfabric/runtime/render/BlockErrorBoundary
  */
 
@@ -65,6 +73,6 @@ export class BlockErrorBoundary extends React.Component<
       )
     }
 
-    return this.props.children
+    return <React.Suspense fallback={null}>{this.props.children}</React.Suspense>
   }
 }

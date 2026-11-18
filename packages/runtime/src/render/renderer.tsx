@@ -870,6 +870,7 @@ export function SurfaceRenderer({
   interactionMode = 'live',
   address,
   onSelection,
+  locale,
 }: SurfaceRendererProps): React.ReactElement {
   // The root, so focus is kept inside the surface when the focused block is
   // hidden (focus-keeper.ts). Only a live surface moves focus.
@@ -929,8 +930,9 @@ export function SurfaceRenderer({
       imageAdapter,
       viewport,
       interactionMode,
+      ...(locale ? { locale } : {}),
     }),
-    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode]
+    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode, locale]
   )
 
   // Create image component override if adapter is provided

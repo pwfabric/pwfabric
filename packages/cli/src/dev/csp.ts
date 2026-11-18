@@ -71,6 +71,8 @@ export interface AppCsp {
 export interface CspInputs {
   /** The exact text of the shell's inline import map. */
   readonly importMapText: string
+  /** The shell's other inline scripts (the first-paint script), allowed by hash. */
+  readonly inlineScripts?: readonly string[]
   /** Served receipts by page key (after media slots are filled). */
   readonly receipts: ReadonlyMap<string, unknown>
   /** `pwpack/connections.json`. */
@@ -311,7 +313,7 @@ export function deriveCsp(input: CspInputs): AppCsp {
   const frames = [...(ownFrames ? ["'self'"] : []), ...sorted(media, frame)]
   const directives: CspDirectives = {
     'default-src': ["'none'"],
-    'script-src': ["'self'", 'blob:', scriptHash(input.importMapText)],
+    'script-src': ["'self'", 'blob:', scriptHash(input.importMapText), ...(input.inlineScripts ?? []).map(scriptHash)],
     'style-src': ["'self'", "'unsafe-inline'", ...sorted(style)],
     'img-src': ["'self'", 'data:', 'blob:', ...sorted(media, img)],
     'media-src': ["'self'", 'data:', 'blob:', ...sorted(media, mediaOnly)],

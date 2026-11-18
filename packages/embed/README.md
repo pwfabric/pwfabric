@@ -30,6 +30,7 @@ ESM only: import it from an ES module (`"type": "module"` or `.mjs`). Node 22+. 
 |--------|----------|
 | `@pwfabric/embed` | Everything above |
 | `@pwfabric/embed/embed.js` | The self-contained browser bundle `dist/embed.js`, for a `<script type="module">` or a host that ships it as a file |
+| `@pwfabric/embed/static.js` | The same renderer with React's string renderer, `dist/static.js`: a build evaluates it in an isolated context to write each page's first frame as HTML (`PWFabricStatic.registerBlocks`, `renderStatic`; pwapp-format §2.5). It never ships to a visitor |
 
 ## Licence
 

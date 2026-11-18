@@ -139,7 +139,8 @@ export interface EmbedOptions {
    * `auth:*` actions go. A runner supplies it; absent, nobody is signed in.
    */
   readonly identity?: SurfaceAuthHost
-
+  /** See `RenderCoreOptions.onHydrated`. */
+  readonly onHydrated?: () => void
 
   // ── shared render passthrough ─────────────────────────
   readonly theme?: 'light' | 'dark'
@@ -198,7 +199,28 @@ function passthrough(options?: EmbedOptions): Partial<RenderCoreOptions> {
     ...(o.messages !== undefined ? { messages: o.messages } : {}),
     ...(o.address !== undefined ? { address: o.address } : {}),
     ...(o.identity !== undefined ? { identity: o.identity } : {}),
+    ...(o.onHydrated !== undefined ? { onHydrated: o.onHydrated } : {}),
     ...(o.placeholderMissingBlocks !== undefined ? { placeholderMissingBlocks: o.placeholderMissingBlocks } : {}),
+  }
+}
+
+/**
+ * The fat render options for an inline surface: what `render` hands
+ * `renderFat`, and what the build's static first paint renders with
+ * (static-render.ts) — one translation, so both draw the same tree.
+ */
+export function fatOptionsOf(surface: RenderableSurface, options?: EmbedOptions): RenderFatOptions {
+  const o = options ?? {}
+  return {
+    surface,
+    ...(o.blocks ? { blocks: o.blocks } : {}),
+    ...(o.appearance ? { appearance: o.appearance } : {}),
+    ...(o.hydrate ? { hydrate: true } : {}),
+    ...(o.capabilities ? { capabilities: o.capabilities } : {}),
+    ...(o.entityFacade ? { entityFacade: o.entityFacade } : {}),
+    ...(o.connections ? { connections: o.connections } : {}),
+    ...(o.dataServiceConfig ? { dataServiceConfig: o.dataServiceConfig } : {}),
+    ...passthrough(options),
   }
 }
 
@@ -224,17 +246,7 @@ export async function render(
       if (!isInlineSurface(source)) {
         throw new Error('[pwfabric-embed] fat mode requires an inline { surface }')
       }
-      const fatOpts: RenderFatOptions = {
-        surface: source.surface,
-        ...(o.blocks ? { blocks: o.blocks } : {}),
-        ...(o.appearance ? { appearance: o.appearance } : {}),
-        ...(o.hydrate ? { hydrate: true } : {}),
-        ...(o.capabilities ? { capabilities: o.capabilities } : {}),
-        ...(o.entityFacade ? { entityFacade: o.entityFacade } : {}),
-        ...(o.connections ? { connections: o.connections } : {}),
-        ...(o.dataServiceConfig ? { dataServiceConfig: o.dataServiceConfig } : {}),
-        ...passthrough(options),
-      }
+      const fatOpts = fatOptionsOf(source.surface, options)
       // The page's block modules first, all at once: drawn before they are in,
       // a page arrives in one wave per nesting level and shifts at each (see
       // load-blocks.ts).
@@ -372,7 +384,11 @@ function hydrateElement(el: HTMLElement): void {
  * Idempotent: elements already hydrated (marked with `data-pw-hydrated`) skip.
  */
 export function autoload(root: ParentNode = document): void {
-  const els = root.querySelectorAll<HTMLElement>('[data-pw-surface]')
+  // A RENDERED surface carries `data-pw-surface` too (its scope attribute,
+  // with `data-surface-renderer`): HTML the renderer drew — a page's static
+  // first paint sits in the document before this script runs — is not a
+  // placeholder to load.
+  const els = root.querySelectorAll<HTMLElement>('[data-pw-surface]:not([data-surface-renderer])')
   els.forEach((el) => {
     if (el.dataset.pwHydrated === 'true') return
     el.dataset.pwHydrated = 'true'

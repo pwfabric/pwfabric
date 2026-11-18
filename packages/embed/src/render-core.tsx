@@ -123,7 +123,13 @@ export interface RenderCoreOptions {
    * `auth:*` actions go. A runner supplies it; absent, nobody is signed in.
    */
   readonly identity?: SurfaceAuthHost
-
+  /**
+   * Called once, after the first commit — for a `hydrate` mount, once the
+   * server's HTML is adopted. An update before then makes React drop that
+   * HTML and draw the page again, so a host that brings a hydrated page to
+   * its visit (the runner) does it here.
+   */
+  readonly onHydrated?: () => void
 
   /** `live` (default) or `inert` (no auto-refresh, no dispatched actions). */
   readonly interactionMode?: 'live' | 'inert'
@@ -307,6 +313,21 @@ function withPlaceholders(opts: RenderCoreOptions): Partial<BlockComponentRegist
 // ============================================================
 
 /**
+ * Renders its children and reports the first commit. It draws no element of
+ * its own, so the tree is the same with or without a listener — the build's
+ * static first paint renders it too, and hydration matches node for node.
+ */
+function FirstCommit({ onCommit, children }: { onCommit: (() => void) | undefined; children?: React.ReactNode }): React.ReactElement {
+  const reported = React.useRef(false)
+  React.useEffect(() => {
+    if (reported.current) return
+    reported.current = true
+    onCommit?.()
+  }, [onCommit])
+  return React.createElement(React.Fragment, null, children)
+}
+
+/**
  * Build the React element tree for a surface — `DynamicArtifactProvider`
  * wrapping the appropriate renderer. Exposed separately from `mountSurface`
  * so it can be used in SSR / test contexts without a DOM root.
@@ -344,7 +365,11 @@ export function createSurfaceElement(opts: RenderCoreOptions): React.ReactElemen
         : {}),
       // The app's words reach every block through one provider (runtime
       // render/app-messages.tsx); without them each id reads its fallback.
-      children: React.createElement(AppMessagesContext.Provider, { value: opts.messages ?? null }, rendererElement),
+      children: React.createElement(
+        FirstCommit,
+        { onCommit: opts.onHydrated },
+        React.createElement(AppMessagesContext.Provider, { value: opts.messages ?? null }, rendererElement)
+      ),
     }
   )
 }
@@ -379,7 +404,13 @@ export function mountSurface(
 ): SurfaceMountHandle {
   const container = resolveTarget(target)
   const root = mountOptions?.hydrate
-    ? ReactDOM.hydrateRoot(container, createSurfaceElement(opts))
+    ? ReactDOM.hydrateRoot(container, createSurfaceElement(opts), {
+        // React recovers by drawing the page again; whoever built the HTML
+        // needs to hear that it no longer matches its first render.
+        onRecoverableError: (error) => {
+          console.warn('[pwfabric] the static first paint did not match the first render; it was drawn again', error)
+        },
+      })
     : ReactDOM.createRoot(container)
   if (!mountOptions?.hydrate) root.render(createSurfaceElement(opts))
   return {

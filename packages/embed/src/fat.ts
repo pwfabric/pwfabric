@@ -101,6 +101,8 @@ export interface RenderFatOptions {
    * `auth:*` actions go. A runner supplies it; absent, nobody is signed in.
    */
   readonly identity?: SurfaceAuthHost
+  /** See `RenderCoreOptions.onHydrated`. */
+  readonly onHydrated?: () => void
 
   /** Inline appearance ref; overrides `surface.appearance` when given. */
   readonly appearance?: RenderableSurface['appearance']
@@ -217,6 +219,7 @@ export function fatCoreOptions(opts: RenderFatOptions): RenderCoreOptions {
     ...(opts.messages !== undefined ? { messages: opts.messages } : {}),
     ...(opts.address !== undefined ? { address: opts.address } : {}),
     ...(opts.identity !== undefined ? { identity: opts.identity } : {}),
+    ...(opts.onHydrated !== undefined ? { onHydrated: opts.onHydrated } : {}),
     ...(opts.theme !== undefined ? { theme: opts.theme } : {}),
     ...(opts.viewport !== undefined ? { viewport: opts.viewport } : {}),
     ...(opts.interactionMode !== undefined ? { interactionMode: opts.interactionMode } : {}),
