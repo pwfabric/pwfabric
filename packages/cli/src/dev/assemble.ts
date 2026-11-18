@@ -218,12 +218,15 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // ── pages ────────────────────────────────────────────────────────
   const reported = new Set(diagnostics.map((d) => d.path))
   const pages: Page[] = []
-  // The app's own not-found page (`app.notFound`) is read like a page and
-  // served like one, but it is no route: not in `surfaceOrder`, not in the
-  // derived navigation.
+  // The app's own not-found page (`app.notFound`) and sign-in screen
+  // (`app.signIn`) are read like pages and served like them, but they are no
+  // routes: not in `surfaceOrder`, not in the derived navigation.
   const routeKeys = identity.app.surfaceOrder
-  const notFoundKey = identity.app.notFound !== undefined && !routeKeys.includes(identity.app.notFound) ? identity.app.notFound : undefined
-  const keys = [...routeKeys, ...(notFoundKey ? [notFoundKey] : [])]
+  const offRoute = (key: string | undefined): string | undefined =>
+    key !== undefined && !routeKeys.includes(key) ? key : undefined
+  const notFoundKey = offRoute(identity.app.notFound)
+  const signInKey = offRoute(identity.app.signIn)
+  const keys = [...routeKeys, ...(notFoundKey ? [notFoundKey] : []), ...(signInKey && signInKey !== notFoundKey ? [signInKey] : [])]
   for (const key of keys) {
     const path = `app/surfaces/${key}.receipt.json`
     const bytes = app.folder.files.get(path)
@@ -233,7 +236,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         diagnostics.push({
           severity: 'error',
           code: 'RECEIPT_MISSING',
-          message: `page "${key}" is in ${key === notFoundKey ? 'app.notFound' : 'app.surfaceOrder'} but ${path} does not exist`,
+          message: `page "${key}" is in ${key === notFoundKey ? 'app.notFound' : key === signInKey ? 'app.signIn' : 'app.surfaceOrder'} but ${path} does not exist`,
           path,
         })
       }
@@ -252,7 +255,8 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   }
   // `pages` is everything served; `routes` is what an address can name.
   const notFoundPage = notFoundKey === undefined ? undefined : pages.find((p) => p.key === notFoundKey)
-  const routes = notFoundPage ? pages.filter((p) => p !== notFoundPage) : pages
+  const signInPage = signInKey === undefined ? undefined : pages.find((p) => p.key === signInKey)
+  const routes = pages.filter((p) => p !== notFoundPage && p !== signInPage)
   const entry = identity.app.entry
   if (!identity.app.surfaceOrder.includes(entry)) {
     diagnostics.push({ severity: 'error', code: 'ENTRY_NOT_A_PAGE', message: `app.entry "${entry}" is not in app.surfaceOrder`, path: 'pwpack.json' })
@@ -449,6 +453,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         entry,
         pages: routes,
         notFound: notFoundPage,
+        signIn: signInPage,
         auth: authDoc,
         ...(locale !== undefined ? { locale } : {}),
         ...(messages !== undefined ? { messages } : {}),

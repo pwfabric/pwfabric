@@ -34,6 +34,9 @@ import type {
   SurfaceAction,
   RuntimeBehavior,
   WriteAction,
+  AuthAction,
+  SurfaceAuthHost,
+  SurfaceAuthState,
 } from './data-binding-types.js'
 import type {
   SurfaceEvent,
@@ -145,6 +148,65 @@ export function blockActionsOf(value: unknown): readonly SurfaceAction[] {
   return isSurfaceAction(value) ? [value] : []
 }
 
+/**
+ * THE IDENTITY THE PAGE READS when the host gives none: nobody signed in, no
+ * way in. `{{__auth.signedIn}}` is then false rather than unresolved, in an
+ * editor preview as on a published page without sign-in.
+ */
+const SIGNED_OUT: SurfaceAuthState = Object.freeze({
+  signedIn: false,
+  user: null,
+  methods: Object.freeze([]) as readonly string[],
+  registration: 'closed',
+  error: null,
+})
+
+const AUTH_ACTION_TYPES: ReadonlySet<string> = new Set(['auth:signIn', 'auth:register', 'auth:signOut'])
+
+/** An `auth:*` action (data-binding-types `AuthAction`) — the host's to perform, never the runtime's. */
+export function isAuthAction(value: unknown): value is AuthAction {
+  if (!value || typeof value !== 'object') return false
+  const obj = value as Record<string, unknown>
+  if (typeof obj.type !== 'string' || !AUTH_ACTION_TYPES.has(obj.type)) return false
+  return obj.method === undefined || typeof obj.method === 'string'
+}
+
+/**
+ * Hand an `auth:*` action to the host, with the values of the form whose
+ * submit fired it. Without a host that acts on it, it does nothing — said
+ * once in the console, so a dead "Sign in" is findable.
+ */
+function performAuthAction(
+  auth: SurfaceAuthHost | undefined,
+  action: AuthAction,
+  values: Readonly<Record<string, unknown>> | undefined
+): void {
+  if (!auth?.onAction) {
+    console.warn(`[surface] "${action.type}" needs a host that signs visitors in; this one does not`)
+    return
+  }
+  auth.onAction(action, values ? { values } : {})
+}
+
+/** The field values a form's submit event carries (`payload.values`), or undefined. */
+function eventValues(event: SurfaceEvent): Readonly<Record<string, unknown>> | undefined {
+  const values = (event.payload as { values?: unknown } | undefined)?.values
+  return values && typeof values === 'object' && !Array.isArray(values)
+    ? (values as Readonly<Record<string, unknown>>)
+    : undefined
+}
+
+/**
+ * Does any block read the visitor's identity (`{{me.*}}`, `{{__auth.*}}`)?
+ * Such a page needs the data-bound path even with no source: the passthrough
+ * resolves no expression, and the greeting would read "Welcome, {{me.name}}".
+ */
+const READS_AUTH = /\{\{[^}]*\b(?:me|__auth)\b/
+function blockTreeReadsAuth(blocks: readonly Block[] | undefined): boolean {
+  if (!blocks || blocks.length === 0) return false
+  return READS_AUTH.test(JSON.stringify(blocks))
+}
+
 function blockTreeHasAction(blocks: readonly Block[] | undefined): boolean {
   if (!blocks) return false
   for (const block of blocks) {
@@ -203,7 +265,8 @@ export function surfaceNeedsDataBinding(surface: {
     Boolean(behaviors && behaviors.length > 0) ||
     hasEntityFormBindings(surface) ||
     blockTreeHasAction(surface.blocks) ||
-    blockTreeHasCondition(surface.blocks)
+    blockTreeHasCondition(surface.blocks) ||
+    blockTreeReadsAuth(surface.blocks)
   )
 }
 
@@ -1010,7 +1073,8 @@ export function isSurfaceAction(value: unknown): value is SurfaceAction {
     obj.type === 'showBlock' ||
     obj.type === 'hideBlock' ||
     obj.type === 'navigate' ||
-    obj.type === 'write'
+    obj.type === 'write' ||
+    isAuthAction(value)
   )
 }
 
@@ -1042,7 +1106,7 @@ export function isSafeNavigateUrl(url: unknown): url is string {
  * fetches data, manages state, resolves expressions, and intercepts events.
  */
 export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): React.ReactElement {
-  const { surface, onEvent, behaviors: hostBehaviors, onNavigateAction, onTitle, onDescription, dataServiceConfig, ...rest } = props
+  const { surface, onEvent, behaviors: hostBehaviors, onNavigateAction, onTitle, onDescription, dataServiceConfig, identity: auth, ...rest } = props
   const { blocks, appearance, capabilities, title, description } = surface
   // dataSources + initialState + declared behaviors live under platform/persistence config
   const { dataSources, initialState, behaviors: declaredBehaviors } = extractPersistenceSeeds(surface)
@@ -1086,8 +1150,19 @@ export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): 
       ...(appearance !== undefined ? { appearance } : {}),
       ...(capabilities !== undefined ? { capabilities } : {}),
     }
-    return onEvent ? (
-      <SurfaceRenderer surface={passthrough} onEvent={onEvent} {...rest} />
+    // A static page still has the shell's account control, whose event
+    // carries its `auth:*` action (`payload.action`): handed to the host here
+    // as the data-bound path's dispatcher would.
+    const passthroughEvent =
+      auth?.onAction && rest.interactionMode !== 'inert'
+        ? (event: SurfaceEvent): void => {
+            const action = (event.payload as { action?: unknown } | undefined)?.action
+            if (isAuthAction(action)) performAuthAction(auth, action, eventValues(event))
+            onEvent?.(event)
+          }
+        : onEvent
+    return passthroughEvent ? (
+      <SurfaceRenderer surface={passthrough} onEvent={passthroughEvent} {...rest} />
     ) : (
       <SurfaceRenderer surface={passthrough} {...rest} />
     )
@@ -1110,6 +1185,7 @@ export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): 
           {...(onTitle !== undefined ? { onTitle } : {})}
           {...(description !== undefined ? { description } : {})}
           {...(onDescription !== undefined ? { onDescription } : {})}
+          {...(auth !== undefined ? { auth } : {})}
           onEvent={onEvent}
           rendererProps={rest}
         />
@@ -1127,6 +1203,7 @@ export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): 
           {...(onTitle !== undefined ? { onTitle } : {})}
           {...(description !== undefined ? { description } : {})}
           {...(onDescription !== undefined ? { onDescription } : {})}
+          {...(auth !== undefined ? { auth } : {})}
           rendererProps={rest}
         />
       )}
@@ -1156,6 +1233,7 @@ interface DataBoundInnerProps {
   onTitle?: (title: string | undefined) => void
   description?: string
   onDescription?: (description: string | undefined) => void
+  auth?: SurfaceAuthHost
   rendererProps: Omit<SurfaceRendererProps, 'surface' | 'onEvent'>
 }
 
@@ -1173,6 +1251,7 @@ function DataBoundInner({
   onTitle,
   description,
   onDescription,
+  auth,
   rendererProps,
 }: DataBoundInnerProps): React.ReactElement {
   const interactionMode = rendererProps.interactionMode ?? 'live'
@@ -1198,8 +1277,16 @@ function DataBoundInner({
     () => new Set(writeOnlyKey === '' ? [] : writeOnlyKey.split('\n')),
     [writeOnlyKey]
   )
-  const { expressionData, surfaceState, initialLoaded, setStateValue, refreshSource, fetchAllSources } =
+  const { expressionData: pageData, surfaceState, initialLoaded, setStateValue, refreshSource, fetchAllSources } =
     useSurfaceData(dataSources, initialState, interactionMode, entityFacade, connections, dataCache, writeOnly)
+  // WHO IS SIGNED IN, beside the page's data: `{{__auth.*}}` and its shorthand
+  // `{{me.*}}` (= `__auth.user`). The host's state, read-only — no source
+  // fetches it and no action writes it.
+  const authState = auth?.state ?? SIGNED_OUT
+  const expressionData = React.useMemo<Record<string, unknown>>(
+    () => ({ ...pageData, __auth: authState, me: authState.user }),
+    [pageData, authState]
+  )
   // The page scope as bound NOW, for actions resolved at dispatch time.
   const expressionDataRef = React.useRef(expressionData)
   expressionDataRef.current = expressionData
@@ -1297,9 +1384,10 @@ function DataBoundInner({
     [blocks, expressionData, linkHref, literalProps, locale]
   )
 
-  // Shared action dispatcher — handles all six action types
+  // Shared action dispatcher. `values` are the fields of the form whose
+  // submit fired the action — an `auth:*` action hands them to the host.
   const dispatchAction = React.useCallback(
-    (action: SurfaceAction) => {
+    (action: SurfaceAction, values?: Readonly<Record<string, unknown>>) => {
       switch (action.type) {
         case 'setState':
           setStateValue(action.key, action.value)
@@ -1330,9 +1418,14 @@ function DataBoundInner({
         case 'write':
           void runWrite(action)
           break
+        case 'auth:signIn':
+        case 'auth:register':
+        case 'auth:signOut':
+          performAuthAction(auth, action, values)
+          break
       }
     },
-    [setStateValue, refreshSource, fetchAllSources, onNavigateAction, runWrite]
+    [setStateValue, refreshSource, fetchAllSources, onNavigateAction, runWrite, auth]
   )
 
   /**
@@ -1365,7 +1458,7 @@ function DataBoundInner({
         const action = payload?.action
 
         if (isSurfaceAction(action)) {
-          dispatchAction(action)
+          dispatchAction(action, eventValues(event))
         }
 
         // `canonicalType` is normally stamped by the bus bridge (renderer.tsx's
@@ -1383,7 +1476,7 @@ function DataBoundInner({
         // Looked up in the RESOLVED tree, so a repeat clone (`id--N`) carries
         // its own row's values.
         if (fired === 'block:click') {
-          blockActionsOf(findBlockAction(resolvedBlocks, event.blockId)).forEach(dispatchAction)
+          blockActionsOf(findBlockAction(resolvedBlocks, event.blockId)).forEach((a) => dispatchAction(a))
         }
 
         // Execute stored behaviors whose trigger matches this canonical event.
@@ -1391,7 +1484,7 @@ function DataBoundInner({
           for (const b of behaviors) {
             if (canonicalizeEventType(b.event) !== fired) continue
             if (b.targetBlockId && !behaviorTargets(b.targetBlockId, event.blockId)) continue
-            for (const action of b.actions) dispatchAction(resolveBehaviorAction(action))
+            for (const action of b.actions) dispatchAction(resolveBehaviorAction(action), eventValues(event))
           }
         }
       }

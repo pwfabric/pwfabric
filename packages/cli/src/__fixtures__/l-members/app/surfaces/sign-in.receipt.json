@@ -1,0 +1,12 @@
+{
+  "title": "Sign in",
+  "blocks": [
+    {
+      "id": "t",
+      "type": "title",
+      "props": {
+        "text": "Sign in"
+      }
+    }
+  ]
+}

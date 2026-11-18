@@ -164,10 +164,22 @@ describe('mountSessionPill', () => {
     // A fixed bottom bar of the app's own does not cover it either.
     expect(rule).toMatch(/margin:[^;]*var\(--pw-bottom-bar-height,\s*0px\)/)
     expect(/#pwapp-login-error\s*\{([^}]*)\}/.exec(css)?.[1]).not.toMatch(/fixed/)
-    // After the app, the note right above the bar.
+    // After the app, the note inside the bar, before its controls.
     expect(app.compareDocumentPosition(pill()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(document.getElementById('pwapp-login-error')?.nextElementSibling).toBe(pill())
+    expect(pill()?.firstElementChild?.id).toBe('pwapp-login-error')
     expect(pill()?.style.position).toBe('')
+  })
+
+  it('is a landmark of its own, named, with 44 px targets', () => {
+    // Outside every landmark it was flagged on every page (axe `region`); its
+    // "Sign out" was 53×14 px on a phone.
+    mountSessionPill({ bridge: fakeBridge(), getAppSession: () => null, onSignedOut: vi.fn() })
+    expect(pill()?.tagName).toBe('ASIDE')
+    expect(pill()?.getAttribute('aria-label')).toBe('Account')
+    const css = document.getElementById('pwapp-shell-css')?.textContent ?? ''
+    const button = /#pwapp-session-pill button\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    expect(button).toMatch(/min-height:44px/)
+    expect(button).toMatch(/min-width:44px/)
   })
 
   it("paints with the app's appearance tokens", () => {

@@ -294,6 +294,15 @@ export const surfaceActionSchema = z.discriminatedUnion('type', [
       })
       .optional(),
   }),
+  /**
+   * The visitor's identity (session-protocol "identity on the page"): start
+   * signing in — by `method` (`password`, a provider method, `issuer`) or the
+   * host's choice — register, sign out. The host performs them; fired from a
+   * form's submit, the form's values (`email`, `password`, `name`) go along.
+   */
+  z.object({ type: z.literal('auth:signIn'), method: z.string().min(1).optional() }),
+  z.object({ type: z.literal('auth:register'), method: z.string().min(1).optional() }),
+  z.object({ type: z.literal('auth:signOut') }),
 ])
 export type SurfaceActionDecl = z.infer<typeof surfaceActionSchema>
 

@@ -39,6 +39,7 @@ import type {
   SurfaceDataCache,
   LinkHref,
   SurfaceAddress,
+  SurfaceAuthHost,
   BlockComponentProps,
   AppMessages,
 } from '@pwfabric/runtime'
@@ -115,6 +116,11 @@ export interface RenderCoreOptions {
    * reports a record that is not there. Absent: the document's own query.
    */
   readonly address?: SurfaceAddress
+  /**
+   * The visitor's identity (`{{__auth.*}}`, `{{me.*}}`) and where the page's
+   * `auth:*` actions go. A runner supplies it; absent, nobody is signed in.
+   */
+  readonly identity?: SurfaceAuthHost
 
 
   /** `live` (default) or `inert` (no auto-refresh, no dispatched actions). */
@@ -220,6 +226,7 @@ function buildRendererProps(opts: RenderCoreOptions): Record<string, unknown> {
   if (opts.onDescription !== undefined) props.onDescription = opts.onDescription
   if (opts.locale !== undefined) props.locale = opts.locale
   if (opts.address !== undefined) props.address = opts.address
+  if (opts.identity !== undefined) props.identity = opts.identity
   if (opts.interactionMode !== undefined) props.interactionMode = opts.interactionMode
   if (opts.basePath !== undefined) props.basePath = opts.basePath
   if (opts.imageAdapter !== undefined) props.imageAdapter = opts.imageAdapter
@@ -306,7 +313,10 @@ export function createSurfaceElement(opts: RenderCoreOptions): React.ReactElemen
   // — it is what provides `SurfaceConnectionsContext` (engine-bridge blocks) and
   // routes connector data sources through the registry. A surface with only
   // engine-bridge panels declares no dataSources, so force it on when present.
-  const useDataBound = needsDataBoundRenderer(opts.surface) || opts.connections != null
+  // A host identity, too: the shell's account control fires its `auth:*`
+  // action on a page with nothing else dynamic, and only the data-bound
+  // renderer hands it to the host (its passthrough costs nothing more).
+  const useDataBound = needsDataBoundRenderer(opts.surface) || opts.connections != null || opts.identity !== undefined
   const components = withPlaceholders(opts)
   const shared = buildRendererProps(components && components !== opts.components ? { ...opts, components } : opts)
 

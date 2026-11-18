@@ -83,6 +83,7 @@ describe('envelopeEntries', () => {
       gatewaySessionUrl: `${base}/_auth/session`,
       gatewayLogoutUrl: `${base}/_auth/logout`,
       methods: ['password', 'google'],
+      registration: 'open',
       apiBase: base,
     })
     expect(Object.keys(entries).sort()).toEqual(['auth.json', 'surfaces/home.receipt.json', 'surfaces/orders.receipt.json'])
@@ -179,7 +180,7 @@ describe('the app door', () => {
     const door = (await login.json()) as { data: { token: string; expiresAt: string; principal: unknown } }
     expect(door.data.token).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(Date.parse(door.data.expiresAt)).toBeGreaterThan(Date.now())
-    expect(door.data.principal).toEqual({ id: 'u-7', email: 'ada@example.com', displayName: 'Ada' })
+    expect(door.data.principal).toEqual({ id: 'u-7', email: 'ada@example.com', displayName: 'Ada', roles: ['staff'] })
 
     const me = await fetch(`${s.base}/session`, withSession(door.data.token))
     expect(await me.json()).toEqual({ data: { principal: door.data.principal } })
@@ -201,7 +202,7 @@ describe('the app door', () => {
       const res = await fetch(`${s.base}/register`, json({ email, password: 'longenough' }))
       expect(res.status).toBe(201)
       const body = (await res.json()) as { data: { principal: unknown } }
-      expect(body.data.principal).toEqual({ id: 'dev-user', email: 'dev@localhost', displayName: 'Developer' })
+      expect(body.data.principal).toEqual({ id: 'dev-user', email: 'dev@localhost', displayName: 'Developer', roles: ['staff'] })
     }
   })
 
@@ -209,7 +210,7 @@ describe('the app door', () => {
     const s = await start('l-shop')
     const res = await fetch(`${s.base}/login`, json({ email: ' N@E.w ', password: 'x' }))
     const body = (await res.json()) as { data: { principal: unknown } }
-    expect(body.data.principal).toEqual({ id: 'dev-n@e.w', email: 'n@e.w', displayName: 'n@e.w' })
+    expect(body.data.principal).toEqual({ id: 'dev-n@e.w', email: 'n@e.w', displayName: 'n@e.w', roles: [] })
   })
 
   it('refuses a password sign-in the app does not declare', async () => {
@@ -220,6 +221,41 @@ describe('the app door', () => {
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe('NO_PASSWORD_DOOR')
       await s.close()
     }
+  })
+
+  it('a required app takes no new accounts by default: no register door, no stranger signs in', async () => {
+    // `member` is any signed-in account: if anyone could make one, every
+    // member rule of a team's app would be public.
+    const s = await start('l-members')
+    const entries = createLocalHost({ root: fixture('l-members'), prefix: '/h' }).envelopeEntries('http://x')
+    expect(entries['auth.json']).toMatchObject({ registration: 'closed' })
+    expect((entries['auth.json'] as Record<string, unknown>).registerUrl).toBeUndefined()
+    const reg = await fetch(`${s.base}/register`, json({ email: 'eve@example.com', password: 'x' }))
+    expect([reg.status, ((await reg.json()) as { error: { code: string } }).error.code]).toEqual([403, 'REGISTRATION_CLOSED'])
+    const stranger = await fetch(`${s.base}/login`, json({ email: 'eve@example.com', password: 'x' }))
+    expect(stranger.status).toBe(401)
+    expect((await fetch(`${s.base}/records/Task`)).status).toBe(401)
+    // The account that exists still signs in.
+    await signIn(s.base)
+  })
+
+  it('an invite-only app makes an account only with an invitation', async () => {
+    const s = await start('l-invite')
+    const bare = await fetch(`${s.base}/register`, json({ email: 'new@example.com', password: 'x' }))
+    expect([bare.status, ((await bare.json()) as { error: { code: string } }).error.code]).toEqual([403, 'INVITATION_REQUIRED'])
+    expect((await fetch(`${s.base}/login`, json({ email: 'new@example.com', password: 'x' }))).status).toBe(401)
+    const made = await fetch(`${s.base}/register`, json({ email: 'new@example.com', password: 'x', invitation: 'tok' }))
+    expect(made.status).toBe(201)
+    // Invited, they are an account now — and hold no role for it.
+    const again = await fetch(`${s.base}/login`, json({ email: 'new@example.com', password: 'x' }))
+    expect(again.status).toBe(200)
+    expect(((await again.json()) as { data: { principal: { roles: string[] } } }).data.principal.roles).toEqual([])
+  })
+
+  it('serves the sign-in screen to a visitor who has not signed in, and no other page', async () => {
+    const s = await start('l-members')
+    expect((await fetch(`${s.base}/surfaces/home.receipt.json`)).status).toBe(401)
+    expect((await fetch(`${s.base}/surfaces/sign-in.receipt.json`)).status).toBe(200)
   })
 
   it('needs a session at /session when sign-in is required', async () => {
@@ -566,7 +602,7 @@ describe('records', () => {
 
   it('leaves every model open when the app declares no rule at all', async () => {
     const s = await start('l-members')
-    const token = await signIn(s.base, 'someone@example.com')
+    const token = await signIn(s.base)
     const made = await fetch(`${s.base}/records/Task`, withSession(token, json({ title: 'Bread' })))
     expect(made.status).toBe(201)
     const id = ((await made.json()) as { data: { id: string } }).data.id

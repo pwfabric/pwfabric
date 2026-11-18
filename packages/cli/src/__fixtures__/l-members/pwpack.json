@@ -5,6 +5,7 @@
     "entry": "home",
     "surfaceOrder": [
       "home"
-    ]
+    ],
+    "signIn": "sign-in"
   }
 }

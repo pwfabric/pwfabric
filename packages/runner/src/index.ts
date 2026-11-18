@@ -62,8 +62,9 @@ export {
   buildAccountProp,
 } from './apply-auth.js'
 export type { AccountUser } from './apply-auth.js'
-export { accountActionOf, createAccountController, hasDoor } from './account-controller.js'
-export type { AccountAction, AccountController, AccountControllerDeps } from './account-controller.js'
+export { createAccountController, hasDoor } from './account-controller.js'
+export type { AccountController, AccountControllerDeps, SignInMode } from './account-controller.js'
+export { authErrorCode, authMethodsOf, authStateOf, authUserOf } from './auth-state.js'
 export {
   shellThemeVars,
   shellDarkThemeVars,

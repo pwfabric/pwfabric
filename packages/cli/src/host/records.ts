@@ -78,6 +78,7 @@ function prepared(
     body,
     op,
     ...(caller.principal ? { callerId: caller.principal.id } : {}),
+    ...(caller.principal ? { callerName: caller.principal.displayName || caller.principal.email } : {}),
     now,
   })
   if (!result.ok) throw new HostError(400, result.code, result.message)

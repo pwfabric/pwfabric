@@ -18,7 +18,7 @@ import {
   buildAccountProp,
 } from './apply-auth.js'
 import { runnerMessages } from './messages.js'
-import { accountActionOf, createAccountController, hasDoor } from './account-controller.js'
+import { createAccountController, hasDoor } from './account-controller.js'
 import { withProfile } from './app-session.js'
 import type { SurfaceBlockNode, PwappAccountDeclaration, PwappAuth, PwappProject } from './types.js'
 import type { AuthBridge } from './auth.js'
@@ -206,35 +206,6 @@ describe('the runner rewrites none of the app’s text', () => {
   })
 })
 
-describe('accountActionOf', () => {
-  it('reads the two auth actions off a block event payload', () => {
-    expect(accountActionOf({ type: 'click', blockId: 'n', payload: { action: { type: 'auth:signOut' } } })).toBe(
-      'signOut'
-    )
-    expect(accountActionOf({ type: 'custom', blockId: 'n', payload: { action: { type: 'auth:signIn' } } })).toBe(
-      'signIn'
-    )
-  })
-
-  it('reads the shape the pack blocks emit (block:click with the account beside the action)', () => {
-    const event = {
-      type: 'click',
-      canonicalType: 'block:click',
-      blockId: 'bb',
-      payload: { account: { state: 'signed-in' }, action: { type: 'auth:signOut' } },
-    }
-    expect(accountActionOf(event)).toBe('signOut')
-    // Preview/inert mode omits the action: nothing to do.
-    expect(accountActionOf({ ...event, payload: { account: { state: 'signed-in' } } })).toBeNull()
-  })
-
-  it('ignores anything else', () => {
-    expect(accountActionOf({ type: 'click', blockId: 'n', payload: { action: { type: 'navigate' } } })).toBeNull()
-    expect(accountActionOf({ type: 'click', blockId: 'n' })).toBeNull()
-    expect(accountActionOf(null)).toBeNull()
-  })
-})
-
 function fakeBridge(session?: AuthSession): AuthBridge {
   return {
     session,
@@ -265,8 +236,10 @@ describe('createAccountController — sign-out', () => {
       clearCaches: vi.fn(() => order.push('caches')),
       regate: vi.fn(() => order.push('regate')),
       rerender: vi.fn(() => order.push('rerender')),
-      openGate: vi.fn(),
+      openSignIn: vi.fn(),
       startProvider: vi.fn(),
+      onSignedIn: vi.fn(),
+      onFailed: vi.fn(),
     }
     const controller = createAccountController(deps)
     await controller.signOut()
@@ -299,8 +272,10 @@ describe('createAccountController — sign-out', () => {
       clearCaches: vi.fn(),
       regate: vi.fn(),
       rerender: vi.fn(),
-      openGate: vi.fn(),
+      openSignIn: vi.fn(),
       startProvider: vi.fn(),
+      onSignedIn: vi.fn(),
+      onFailed: vi.fn(),
     }
     await createAccountController(deps).signOut()
     expect(deps.clearAppSession).toHaveBeenCalled()
@@ -324,8 +299,10 @@ describe('createAccountController — sign-out', () => {
       clearCaches: vi.fn(),
       regate: vi.fn(),
       rerender: vi.fn(),
-      openGate: vi.fn(),
+      openSignIn: vi.fn(),
       startProvider: vi.fn(),
+      onSignedIn: vi.fn(),
+      onFailed: vi.fn(),
     }
     const controller = createAccountController(deps)
     const first = controller.signOut()
@@ -352,12 +329,14 @@ describe('createAccountController — sign-in', () => {
       ...base,
       bridge: null,
       auth: { provider: 'password', providers: [google] } as PwappAuth,
-      openGate: vi.fn(),
+      openSignIn: vi.fn(),
       startProvider: vi.fn(),
+      onSignedIn: vi.fn(),
+      onFailed: vi.fn(),
     }
     createAccountController(deps).signIn()
     expect(deps.startProvider).toHaveBeenCalledWith('google')
-    expect(deps.openGate).not.toHaveBeenCalled()
+    expect(deps.openSignIn).not.toHaveBeenCalled()
   })
 
   it('an issuer bridge with no platform door: straight to the issuer', () => {
@@ -366,12 +345,14 @@ describe('createAccountController — sign-in', () => {
       ...base,
       bridge,
       auth: { provider: 'oauth2-pkce', issuer: 'https://i', clientId: 'c', scopes: [] } as PwappAuth,
-      openGate: vi.fn(),
+      openSignIn: vi.fn(),
       startProvider: vi.fn(),
+      onSignedIn: vi.fn(),
+      onFailed: vi.fn(),
     }
     createAccountController(deps).signIn()
     expect(bridge.loginWithPkce).toHaveBeenCalled()
-    expect(deps.openGate).not.toHaveBeenCalled()
+    expect(deps.openSignIn).not.toHaveBeenCalled()
   })
 
   it('a password door (with or without providers) opens the gate', () => {
@@ -379,11 +360,13 @@ describe('createAccountController — sign-in', () => {
       ...base,
       bridge: null,
       auth: { provider: 'password', loginUrl: 'https://api/x/login', providers: [google] } as PwappAuth,
-      openGate: vi.fn(),
+      openSignIn: vi.fn(),
       startProvider: vi.fn(),
+      onSignedIn: vi.fn(),
+      onFailed: vi.fn(),
     }
     createAccountController(deps).signIn()
-    expect(deps.openGate).toHaveBeenCalled()
+    expect(deps.openSignIn).toHaveBeenCalledWith('login')
     expect(deps.startProvider).not.toHaveBeenCalled()
   })
 
@@ -392,11 +375,126 @@ describe('createAccountController — sign-in', () => {
       ...base,
       bridge: null,
       auth: { provider: 'password', providers: [google, { method: 'github' }] } as PwappAuth,
-      openGate: vi.fn(),
+      openSignIn: vi.fn(),
       startProvider: vi.fn(),
+      onSignedIn: vi.fn(),
+      onFailed: vi.fn(),
     }
     createAccountController(deps).signIn()
-    expect(deps.openGate).toHaveBeenCalled()
+    expect(deps.openSignIn).toHaveBeenCalled()
+  })
+})
+
+describe('createAccountController — the auth:* actions any block fires', () => {
+  const PASSWORD = { provider: 'password', loginUrl: 'https://api/x/login', registerUrl: 'https://api/x/register', registration: 'open' } as PwappAuth
+  const make = (auth: PwappAuth, bridge: AuthBridge | null = null) => ({
+    project: PROJECT,
+    auth,
+    bridge,
+    getAppSession: () => null,
+    clearAppSession: vi.fn(),
+    clearCaches: vi.fn(),
+    regate: vi.fn(),
+    rerender: vi.fn(),
+    openSignIn: vi.fn(),
+    startProvider: vi.fn(),
+    onSignedIn: vi.fn(),
+    onFailed: vi.fn(),
+  })
+
+  it('a form submit carries the credentials: the password door is asked, and the session handed on', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { token: 't', expiresAt: '', principal: { id: 'u', email: 'a@b.c' } } }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const deps = make(PASSWORD)
+    createAccountController(deps).perform({ type: 'auth:signIn' }, { email: ' a@b.c ', password: 'pw' })
+    await vi.waitFor(() => expect(deps.onSignedIn).toHaveBeenCalled())
+    expect(fetchMock).toHaveBeenCalledWith('https://api/x/login', expect.objectContaining({ method: 'POST', body: JSON.stringify({ email: 'a@b.c', password: 'pw' }) }))
+    expect(deps.onSignedIn).toHaveBeenCalledWith({ token: 't', expiresAt: '', principal: { id: 'u', email: 'a@b.c' } })
+    expect(deps.openSignIn).not.toHaveBeenCalled()
+  })
+
+  it('a refused password is a code, not a sentence', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'Wrong.' } }) })))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const deps = make(PASSWORD)
+    createAccountController(deps).perform({ type: 'auth:signIn', method: 'password' }, { email: 'a@b.c', password: 'x' })
+    await vi.waitFor(() => expect(deps.onFailed).toHaveBeenCalledWith('refused'))
+    expect(deps.onSignedIn).not.toHaveBeenCalled()
+  })
+
+  it('register posts to the register door with the name; an existing account is `exists`', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 409, json: async () => ({ error: {} }) }))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const deps = make(PASSWORD)
+    createAccountController(deps).perform({ type: 'auth:register' }, { email: 'a@b.c', password: 'x', name: 'Ada' })
+    await vi.waitFor(() => expect(deps.onFailed).toHaveBeenCalledWith('exists'))
+    expect(fetchMock).toHaveBeenCalledWith('https://api/x/register', expect.objectContaining({ body: JSON.stringify({ email: 'a@b.c', password: 'x', displayName: 'Ada' }) }))
+  })
+
+  it('a click carries nothing to send: show where to sign in, or register', () => {
+    const deps = make(PASSWORD)
+    const c = createAccountController(deps)
+    c.perform({ type: 'auth:signIn', method: 'password' })
+    c.perform({ type: 'auth:register' })
+    expect(deps.openSignIn.mock.calls).toEqual([['login'], ['register']])
+  })
+
+  it('a method names the way in: a provider, the issuer — or one the app does not offer', () => {
+    const bridge = fakeBridge()
+    const deps = make({ ...PASSWORD, providers: [{ method: 'google' }] } as PwappAuth, bridge)
+    const c = createAccountController(deps)
+    c.perform({ type: 'auth:signIn', method: 'google' })
+    c.perform({ type: 'auth:signIn', method: 'issuer' })
+    c.perform({ type: 'auth:signIn', method: 'github' })
+    expect(deps.startProvider).toHaveBeenCalledWith('google')
+    expect(bridge.loginWithPkce).toHaveBeenCalled()
+    expect(deps.onFailed).toHaveBeenCalledWith('unavailable')
+  })
+
+  it('an invite-only door registers with the invitation the form carries, and without one does not', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 201, json: async () => ({ data: { token: 't', expiresAt: '' } }) }))
+    vi.stubGlobal('fetch', fetchMock)
+    const deps = make({ ...PASSWORD, registration: 'invite' } as PwappAuth)
+    const c = createAccountController(deps)
+    c.perform({ type: 'auth:register' }, { email: 'a@b.c', password: 'x' })
+    expect(deps.onFailed).toHaveBeenCalledWith('unavailable')
+    expect(fetchMock).not.toHaveBeenCalled()
+    c.perform({ type: 'auth:register' }, { email: 'a@b.c', password: 'x', invitation: 'tok' })
+    await vi.waitFor(() => expect(deps.onSignedIn).toHaveBeenCalled())
+    expect(fetchMock).toHaveBeenCalledWith('https://api/x/register', expect.objectContaining({ body: JSON.stringify({ email: 'a@b.c', password: 'x', invitation: 'tok' }) }))
+  })
+
+  it('a closed door takes no registration, whatever the form sends', () => {
+    const deps = make({ ...PASSWORD, registration: 'closed' } as PwappAuth)
+    createAccountController(deps).perform({ type: 'auth:register' }, { email: 'a@b.c', password: 'x', invitation: 'tok' })
+    expect(deps.onFailed).toHaveBeenCalledWith('unavailable')
+  })
+
+  it('register on a door that takes no new accounts is `unavailable`', () => {
+    const deps = make({ provider: 'password', loginUrl: 'https://api/x/login' } as PwappAuth)
+    createAccountController(deps).perform({ type: 'auth:register' }, { email: 'a@b.c', password: 'x' })
+    expect(deps.onFailed).toHaveBeenCalledWith('unavailable')
+  })
+
+  it('an app with no door does nothing at all', () => {
+    const deps = make(null as unknown as PwappAuth)
+    const c = createAccountController(deps)
+    c.perform({ type: 'auth:signIn' }, { email: 'a@b.c', password: 'x' })
+    c.perform({ type: 'auth:register' })
+    expect(deps.openSignIn).not.toHaveBeenCalled()
+    expect(deps.onFailed).not.toHaveBeenCalled()
+  })
+
+  it('auth:signOut signs out', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })))
+    const deps = make(PASSWORD)
+    createAccountController(deps).perform({ type: 'auth:signOut' })
+    await vi.waitFor(() => expect(deps.rerender).toHaveBeenCalled())
   })
 })
 

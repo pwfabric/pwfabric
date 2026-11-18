@@ -184,6 +184,24 @@ describe('assemblePwapp', () => {
     expect(codes(r)).toContain('THEME_NOT_FOUND')
   })
 
+  it("serves the app's own sign-in screen beside its routes, never as one", async () => {
+    const root = await app()
+    const identity = JSON.parse(await readFile(join(root, 'pwpack.json'), 'utf8')) as { app: Record<string, unknown> }
+    await writeFile(join(root, 'pwpack.json'), JSON.stringify({ ...identity, app: { ...identity.app, signIn: 'sign-in' } }))
+    await writeFile(join(root, 'app/surfaces/sign-in.receipt.json'), JSON.stringify({ title: 'Sign in', blocks: [{ id: 'si', type: 'title', props: { text: 'Welcome back' } }] }))
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const project = parse(r.files.get('pwpack/project.json')) as Record<string, unknown>
+    expect(project).toMatchObject({ surfaceOrder: ['home'], signInSurfaceId: 'sign-in' })
+    expect((project.surfaceReceiptFiles as Record<string, string>)['sign-in']).toBe('surfaces/sign-in.receipt.json')
+    expect(r.files.has('pwpack/surfaces/sign-in.receipt.json')).toBe(true)
+    expect(text(r.files.get('pwpack/navigation.json'))).not.toContain('sign-in')
+    await rm(join(root, 'app/surfaces/sign-in.receipt.json'))
+    const broken = await assemblePwapp(root, { cacheDir: null })
+    expect(broken.ok).toBe(false)
+    expect(broken.diagnostics.some((d) => d.path === 'app/surfaces/sign-in.receipt.json' && d.severity === 'error')).toBe(true)
+  })
+
   it("serves the app's own not-found page beside its routes, never as one", async () => {
     // An unknown route rendered the runner's page outside the app shell; the app
     // declares its own (`app.notFound`), drawn like a page but not a route.

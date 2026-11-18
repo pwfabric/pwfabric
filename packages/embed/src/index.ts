@@ -43,6 +43,7 @@ import type {
   LinkHref,
   SurfaceAddress,
   AppMessages,
+  SurfaceAuthHost,
 } from '@pwfabric/runtime'
 
 // Re-export the building blocks for bundler consumers.
@@ -131,6 +132,11 @@ export interface EmbedOptions {
    * reports a record that is not there. Absent: the document's own query.
    */
   readonly address?: SurfaceAddress
+  /**
+   * The visitor's identity (`{{__auth.*}}`, `{{me.*}}`) and where the page's
+   * `auth:*` actions go. A runner supplies it; absent, nobody is signed in.
+   */
+  readonly identity?: SurfaceAuthHost
 
 
   // ── shared render passthrough ─────────────────────────
@@ -188,6 +194,7 @@ function passthrough(options?: EmbedOptions): Partial<RenderCoreOptions> {
     ...(o.locale !== undefined ? { locale: o.locale } : {}),
     ...(o.messages !== undefined ? { messages: o.messages } : {}),
     ...(o.address !== undefined ? { address: o.address } : {}),
+    ...(o.identity !== undefined ? { identity: o.identity } : {}),
     ...(o.placeholderMissingBlocks !== undefined ? { placeholderMissingBlocks: o.placeholderMissingBlocks } : {}),
   }
 }

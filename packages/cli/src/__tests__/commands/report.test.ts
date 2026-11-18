@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { checkAccess, checkEntities, checkMessages, checkSeeds, reachableMessageIds } from '../../commands/lib/report.js'
+import { checkAccess, checkEntities, checkMessages, checkReservedSources, checkSeeds, reachableMessageIds } from '../../commands/lib/report.js'
 import { tempDir } from './helpers.js'
 
 async function project(files: Record<string, unknown>): Promise<string> {
@@ -159,7 +159,7 @@ describe('MESSAGES_MISSING', () => {
     }
   })
 
-  it('the app’s own sign-in screen (app.signIn) takes the gate’s words with it; no slot brings the pill', async () => {
+  it('the app’s own sign-in screen (app.signIn) takes the gate’s words and the pill with it', async () => {
     const root = await project({
       'app/plan.json': plan({ title: '' }),
       'pwpack.json': { app: { signIn: 'sign-in' } },
@@ -167,8 +167,31 @@ describe('MESSAGES_MISSING', () => {
     })
     const ids = reachableMessageIds(root)
     expect(ids.some((id) => id.startsWith('gate.'))).toBe(false)
-    expect(ids).toContain('pill.signIn')
+    // The screen is the app's own way in: the fallback pill is not drawn.
+    expect(ids.some((id) => id.startsWith('pill.'))).toBe(false)
     expect(ids).toContain('bridge.invalidCallback')
+  })
+
+  it('sign-up words only for a door that takes anyone; the wall sentence only for a required app', async () => {
+    const at = async (auth: Record<string, unknown>) =>
+      reachableMessageIds(await project({ 'app/plan.json': plan(), 'app/definitions/auth.json': { topology: 'app', methods: ['password'], ...auth } }))
+    const closed = await at({ required: true })
+    expect(closed).toContain('gate.body')
+    expect(closed).not.toContain('gate.register')
+    expect(closed).not.toContain('gate.close')
+    const open = await at({ required: false })
+    expect(open).toContain('gate.register')
+    expect(open).toContain('gate.close')
+    expect(open).not.toContain('gate.body')
+  })
+
+  it('SOURCE_ID_RESERVED: a source may not be called me or __anything', async () => {
+    const receipt = (id: string) => ({ blocks: [], capabilities: [{ capability: 'platform/persistence', config: { dataSources: [{ id, kind: 'state' }] } }] })
+    const root = await project({ 'app/surfaces/a.receipt.json': receipt('me'), 'app/surfaces/b.receipt.json': receipt('__auth'), 'app/surfaces/c.receipt.json': receipt('profile') })
+    expect(checkReservedSources(root).map((i) => [i.code, i.path])).toEqual([
+      ['SOURCE_ID_RESERVED', 'app/surfaces/a.receipt.json'],
+      ['SOURCE_ID_RESERVED', 'app/surfaces/b.receipt.json'],
+    ])
   })
 
   it('an auth.json with access rules only is no way in: no sign-in words are reachable', async () => {

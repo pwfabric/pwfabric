@@ -81,6 +81,8 @@ export interface SignInGateOptions {
   readonly onDemand?: boolean | undefined
   /** Called when an on-demand gate is dismissed without signing in. */
   readonly onDismiss?: (() => void) | undefined
+  /** Open on the registration form (`auth:register`) when the door takes new accounts. */
+  readonly initialMode?: 'login' | 'register' | undefined
 }
 
 /**
@@ -115,7 +117,9 @@ export function mountSignInGate(
   // redirect, no verifier and no discovery document — treating it as a
   // degenerate PKCE flow is how the two would drift into one confused branch.
   const loginUrl = options.auth?.loginUrl
-  const registerUrl = options.auth?.registerUrl
+  // Sign-up is offered only by a door that takes anyone: an invite-only app's
+  // visitor registers on the app's own screen, with the invitation.
+  const registerUrl = options.auth?.registration === 'open' ? options.auth.registerUrl : undefined
   const usesPassword = Boolean(loginUrl) && project.identity?.topology !== 'external'
   const onDemand = options.onDemand === true
   const say = options.messages ?? NEUTRAL_MESSAGES
@@ -124,7 +128,7 @@ export function mountSignInGate(
   const ids = `pwapp-gate-${++gateSeq}`
   // The export declares `registerUrl` only when the door takes new accounts.
   // Without it the gate is sign-in only; with it the visitor can switch.
-  let mode: 'login' | 'register' = 'login'
+  let mode: 'login' | 'register' = options.initialMode === 'register' && registerUrl ? 'register' : 'login'
   let signedIn = false
   let busy = false
   let closed = false
@@ -175,7 +179,10 @@ export function mountSignInGate(
     gate.setAttribute('role', 'dialog')
     gate.setAttribute('aria-modal', 'true')
     gate.setAttribute('aria-labelledby', `${ids}-title`)
-    gate.setAttribute('aria-describedby', `${ids}-body`)
+    // "You need to sign in" is the wall's sentence, and only the wall's. A
+    // dialog the visitor opened on an app that does not require sign-in says
+    // no such thing: they can close it and go on.
+    if (!onDemand) gate.setAttribute('aria-describedby', `${ids}-body`)
     if (options.themeVars) applyThemeVars(gate, options.themeVars)
 
     const title = document.createElement('h1')
@@ -183,10 +190,14 @@ export function mountSignInGate(
     title.className = 'pwapp-gate-title'
     title.textContent = project.title ?? say('gate.title')
 
-    const body = document.createElement('p')
-    body.id = `${ids}-body`
-    body.className = 'pwapp-gate-body'
-    body.textContent = say('gate.body')
+    const intro: HTMLElement[] = [title]
+    if (!onDemand) {
+      const body = document.createElement('p')
+      body.id = `${ids}-body`
+      body.className = 'pwapp-gate-body'
+      body.textContent = say('gate.body')
+      intro.push(body)
+    }
 
     const error = document.createElement('p')
     error.setAttribute('data-gate-error', '')
@@ -267,7 +278,7 @@ export function mountSignInGate(
 
       if (displayName) form.append(displayName)
       form.append(email, password, submit)
-      panel.append(title, body, form, error)
+      panel.append(...intro, form, error)
 
       if (registerUrl) {
         // One link, two directions. Rebuilding the panel is the only way to
@@ -293,7 +304,7 @@ export function mountSignInGate(
     } else if (!bridge && offersProviders) {
       // A social-only door: the provider buttons below ARE the way in, so no
       // dead primary button and no "nothing is configured" complaint.
-      panel.append(title, body, error)
+      panel.append(...intro, error)
     } else {
       const button = document.createElement('button')
       button.type = 'button'
@@ -307,7 +318,7 @@ export function mountSignInGate(
       if (bridge) button.addEventListener('click', () => bridge.loginWithPkce())
       else button.disabled = true
       error.textContent = bridge ? (bridge.lastError ?? '') : say('gate.noProvider')
-      panel.append(title, body, button, error)
+      panel.append(...intro, button, error)
     }
     // A failed arrival is shown from the first frame, whichever door is drawn.
     if (message && !error.textContent) error.textContent = message

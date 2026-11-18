@@ -69,6 +69,8 @@ export interface ProjectJsonInput {
   readonly pages: readonly Page[]
   /** The app's own not-found page (`app.notFound`), when it declares one. */
   readonly notFound?: Page | undefined
+  /** The app's own sign-in screen (`app.signIn`), when it declares one. */
+  readonly signIn?: Page | undefined
   readonly auth?: unknown
   /** `app/plan.json` `locale` (BCP 47): what the runtime writes dates and numbers in. */
   readonly locale?: string
@@ -80,7 +82,9 @@ export interface ProjectJsonInput {
 export function buildProjectJson(input: ProjectJsonInput): Record<string, unknown> {
   const surfaceReceiptFiles: Record<string, string> = {}
   for (const p of input.pages) surfaceReceiptFiles[p.key] = `surfaces/${p.key}.receipt.json`
-  if (input.notFound) surfaceReceiptFiles[input.notFound.key] = `surfaces/${input.notFound.key}.receipt.json`
+  for (const off of [input.notFound, input.signIn]) {
+    if (off) surfaceReceiptFiles[off.key] = `surfaces/${off.key}.receipt.json`
+  }
   const identity = identityOf(input.auth)
   return {
     schemaVersion: '1.0.0',
@@ -92,6 +96,7 @@ export function buildProjectJson(input: ProjectJsonInput): Record<string, unknow
     surfaceOrder: input.pages.map((p) => p.key),
     surfaceReceiptFiles,
     ...(input.notFound ? { notFoundSurfaceId: input.notFound.key } : {}),
+    ...(input.signIn ? { signInSurfaceId: input.signIn.key } : {}),
     ...(identity ? { identity } : {}),
   }
 }

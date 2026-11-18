@@ -15,12 +15,14 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { isRecordServerField, type RecordServerField } from '@pwfabric/contracts'
+import { isRecordServerField, registrationOf, type IdentityRegistration, type RecordServerField } from '@pwfabric/contracts'
 
 export interface AuthDeclaration {
   readonly required: boolean
   readonly topology: 'app' | 'external'
   readonly methods: readonly string[]
+  /** Who may make an account — declared, or `registrationOf`'s default. */
+  readonly registration: IdentityRegistration
   readonly issuer?: {
     readonly issuer: string
     readonly clientId: string
@@ -76,6 +78,7 @@ export function readAuth(root: string): AuthDeclaration | undefined {
     required: raw.required === true,
     topology,
     methods: strings(raw.methods),
+    registration: registrationOf(raw),
     ...(iss && typeof iss.issuer === 'string' && typeof iss.clientId === 'string'
       ? {
           issuer: {
@@ -135,6 +138,18 @@ export function readReceipt(root: string, key: string): Record<string, unknown> 
   if (!PAGE_KEY.test(key)) return undefined
   const raw = readJson(join(root, 'app', 'surfaces', `${key}.receipt.json`))
   return isObject(raw) ? raw : undefined
+}
+
+/**
+ * The app's sign-in screen (`pwpack.json` `app.signIn`), or undefined. It is
+ * the one page served to a visitor who has not signed in to an app that
+ * requires it — the screen they sign in on.
+ */
+export function readSignInKey(root: string): string | undefined {
+  const identity = readJson(join(root, 'pwpack.json'))
+  const app = isObject(identity) ? identity['app'] : undefined
+  const key = isObject(app) ? app['signIn'] : undefined
+  return typeof key === 'string' && PAGE_KEY.test(key) ? key : undefined
 }
 
 /**

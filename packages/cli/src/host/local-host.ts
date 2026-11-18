@@ -51,6 +51,7 @@ import {
   readAuth,
   readEntities,
   readReceipt,
+  readSignInKey,
   surfaceKeys,
   type AuthDeclaration,
   type EntityDeclaration,
@@ -116,7 +117,10 @@ export function authAddresses(auth: AuthDeclaration | undefined, base: string): 
   if (auth.methods.includes('password')) {
     door.provider = 'password'
     door.loginUrl = `${base}/login`
-    door.registerUrl = `${base}/register`
+    // A door that takes new accounts says so; a closed one has no address
+    // to register at, so no runner can offer it.
+    if (auth.registration !== 'closed') door.registerUrl = `${base}/register`
+    door.registration = auth.registration
     door.logoutUrl = `${base}/logout`
     door.sessionUrl = `${base}/session`
   }
@@ -168,6 +172,8 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
   }
 
   const bearer = new TokenStore<Grant>()
+  /** Accounts made with an invitation (`registration: "invite"`), by principal id. */
+  const invited = new Set<string>()
   const transactions = new TokenStore<{ readonly returnTo: string; readonly method: string; readonly expiresAt: number }>()
   const records = new RecordStore(root, user)
   const issuer = new DevIssuer(bearer, user)
@@ -176,10 +182,20 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
 
   const principalOf = (req: IncomingMessage): Principal | undefined => bearer.get(credentialOf(req))?.principal
 
+  /**
+   * The principal as a door answers it: with its `roles` (session-protocol
+   * §8). The development user carries every role the app declares — the same
+   * grant the records path gives it — and anyone else none.
+   */
+  const answered = (principal: Principal): Principal & { readonly roles: readonly string[] } => ({
+    ...principal,
+    roles: principal.id === user.id ? [...(readAuth(root)?.access.roles ?? [])] : [],
+  })
+
   function startSession(principal: Principal = user): { token: string; expiresAt: string; principal: Principal } {
     const expiresAt = Date.now() + SESSION_TTL_MS
     const token = bearer.issue({ principal, kind: 'session', expiresAt })
-    return { token, expiresAt: new Date(expiresAt).toISOString(), principal }
+    return { token, expiresAt: new Date(expiresAt).toISOString(), principal: answered(principal) }
   }
 
   /** The password door signs in whoever it is told: the development user, or a plain member for any other e-mail. */
@@ -207,7 +223,7 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
       const presented = credentialOf(req)
       const grant = bearer.get(presented)
       if (grant) {
-        sendJson(res, 200, { data: { principal: grant.principal } })
+        sendJson(res, 200, { data: { principal: answered(grant.principal) } })
         return
       }
       if (presented !== undefined || auth?.required) {
@@ -228,7 +244,26 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
     if (!auth || auth.topology !== 'app' || !auth.methods.includes('password')) {
       throw new HostError(404, 'NO_PASSWORD_DOOR', 'This app declares no password sign-in.')
     }
-    sendJson(res, action === 'register' ? 201 : 200, { data: startSession(principalNamed(credentials.email)) })
+    // WHO MAY HAVE AN ACCOUNT (auth.json `registration`). Open: anyone, as
+    // before. Invite: registering needs an invitation (this host takes any
+    // token — it plays the owner who sent it). Closed: nobody registers.
+    // Under invite and closed, only an account that exists signs in: the
+    // development user, and whoever registered with an invitation here.
+    const principal = principalNamed(credentials.email)
+    if (action === 'register') {
+      if (auth.registration === 'closed') {
+        throw new HostError(403, 'REGISTRATION_CLOSED', 'This app takes no new accounts.')
+      }
+      if (auth.registration === 'invite') {
+        if (typeof credentials.invitation !== 'string' || !credentials.invitation.trim()) {
+          throw new HostError(403, 'INVITATION_REQUIRED', 'This app makes accounts by invitation only.')
+        }
+        invited.add(principal.id)
+      }
+    } else if (auth.registration !== 'open' && principal.id !== user.id && !invited.has(principal.id)) {
+      throw new HostError(401, 'INVALID_CREDENTIALS', 'Email or password is wrong.')
+    }
+    sendJson(res, action === 'register' ? 201 : 200, { data: startSession(principal) })
   }
 
   function gateway(req: IncomingMessage, res: ServerResponse, url: URL, parts: string[]): void {
@@ -268,7 +303,7 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
         throw new HostError(401, 'SIGN_IN_REQUIRED', 'No session cookie.')
       }
       sendJson(res, 200, {
-        data: { token, expiresAt: new Date(grant.expiresAt).toISOString(), principal: grant.principal },
+        data: { token, expiresAt: new Date(grant.expiresAt).toISOString(), principal: answered(grant.principal) },
       })
       return
     }
@@ -383,10 +418,13 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
     if (req.method !== 'GET') methodNotAllowed()
     const file = parts.length === 1 ? parts[0] : undefined
     if (!file || !file.endsWith('.receipt.json')) notFound()
-    if (readAuth(root)?.required && !principalOf(req)) {
+    const key = file.slice(0, -'.receipt.json'.length)
+    // The sign-in screen is the page a visitor signs in ON: refusing it
+    // without a session would leave nothing to sign in with.
+    if (readAuth(root)?.required && !principalOf(req) && key !== readSignInKey(root)) {
       throw new HostError(401, 'SIGN_IN_REQUIRED', 'Sign in to open this page.')
     }
-    const receipt = receiptFor(file.slice(0, -'.receipt.json'.length), originOf(req) + prefix)
+    const receipt = receiptFor(key, originOf(req) + prefix)
     if (!receipt) notFound()
     sendJson(res, 200, receipt)
   }

@@ -56,6 +56,14 @@ export interface PwappProject {
    */
   readonly notFoundSurfaceId?: string
   /**
+   * Key of the app's own sign-in screen — in `surfaceReceiptFiles`, not in
+   * `surfaceOrder` (not a route). Drawn like any page, inside the app's
+   * shell, in front of every page while an app that requires sign-in has no
+   * visitor, and when the page asks to sign in with nothing to send. It reads
+   * `{{__auth.*}}` and fires `auth:*` actions. Absent: the runner's own dialog.
+   */
+  readonly signInSurfaceId?: string
+  /**
    * WHO THE VISITOR IS — frozen at export.
    *
    * `authRequired` lived in the plan, was drawn on the canvas card and never
@@ -212,6 +220,13 @@ export interface PwappAuth {
    */
   readonly loginUrl?: string
   readonly registerUrl?: string
+  /**
+   * Who may make an account (auth.json `registration`): `open` — anyone;
+   * `invite` — only with an invitation, sent as `invitation` to `registerUrl`;
+   * `closed` — nobody registers (no `registerUrl`). The runner offers to sign
+   * up only when it is `open`.
+   */
+  readonly registration?: 'open' | 'invite' | 'closed'
   readonly logoutUrl?: string
   readonly sessionUrl?: string
   /**

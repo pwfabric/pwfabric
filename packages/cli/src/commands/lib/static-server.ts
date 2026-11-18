@@ -23,8 +23,13 @@ export type StaticSource = { readonly dir: string } | { readonly files: Readonly
 export interface StaticHost {
   /** Handles a request; resolves false when the path is not the host's. */
   handle(req: IncomingMessage, res: ServerResponse): Promise<boolean>
-  /** The body to serve instead of a built file, or undefined to serve it as built. */
-  envelopeFile(rel: string, built: Uint8Array): Uint8Array | undefined
+  /**
+   * The body to serve instead of a built file, or undefined to serve it as
+   * built. Asked with `built` undefined for a path the build does not have —
+   * the host may own it (`pwpack/auth.json`, which a build leaves to the
+   * publisher) — and undefined then is a 404.
+   */
+  envelopeFile(rel: string, built: Uint8Array | undefined): Uint8Array | undefined
 }
 
 export interface StaticServerOptions {
@@ -155,6 +160,13 @@ async function handle(source: StaticSource, req: IncomingMessage, res: ServerRes
   // The headers file configures the server; it is not part of the site.
   const found = rel === null || rel === HEADERS_FILE ? null : await resolveRequest(source, rel)
   if (!found) {
+    const own = rel !== null && rel !== HEADERS_FILE ? host?.envelopeFile(rel, undefined) : undefined
+    if (own) {
+      res.writeHead(200, { 'content-type': contentTypeOf(rel as string), 'content-length': String(own.byteLength), 'cache-control': 'no-cache' })
+      if (req.method === 'HEAD') res.end()
+      else res.end(own)
+      return
+    }
     res.writeHead(404, TEXT).end('not found\n')
     return
   }

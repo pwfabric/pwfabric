@@ -1,0 +1,38 @@
+{
+  "title": "Tasks",
+  "blocks": [],
+  "capabilities": [
+    {
+      "capability": "platform/persistence",
+      "config": {
+        "dataSources": [
+          {
+            "id": "tasks",
+            "kind": "entity",
+            "entityType": "Task"
+          },
+          {
+            "id": "total",
+            "kind": "entity",
+            "entityType": "Task",
+            "aggregate": {
+              "fn": "sum",
+              "field": "points"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "capability": "platform/entities",
+      "config": {
+        "formBindings": [
+          {
+            "formId": "task-form",
+            "sourceId": "tasks"
+          }
+        ]
+      }
+    }
+  ]
+}
