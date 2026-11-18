@@ -1,6 +1,6 @@
 {
   "name": "@pwfabric/authoring",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Authoring surface for PWFabric — define blocks, factories and capabilities",
   "type": "module",
   "license": "Apache-2.0",

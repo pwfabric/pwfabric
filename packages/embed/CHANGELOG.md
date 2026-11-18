@@ -1,5 +1,9 @@
 # @pwfabric/embed
 
+## 3.0.1
+
+- No changes; released with the other packages at 3.0.1.
+
 ## 3.0.0
 
 Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).

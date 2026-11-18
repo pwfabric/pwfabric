@@ -1,5 +1,10 @@
 # @pwfabric/runner
 
+## 3.0.1
+
+- Changed: the runner draws no default words. `RUNNER_MESSAGES` and `NEUTRAL_MESSAGES` are removed; `RUNNER_MESSAGE_IDS`, `NO_MESSAGES`, `labelWith` and `RENDERER_MESSAGE_IDS` are exported. A message the app does not set is drawn empty, a control left without a name is named by its id, and `pwf dev` names each missing id in the console once (#61).
+- Fixed: for an app with a way in, the first frame is marked `pending`: a `requiresSession` source stays loading until the session is known, so a signed-in visitor no longer sees the signed-out prompt first (#61).
+
 ## 3.0.0
 
 Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
