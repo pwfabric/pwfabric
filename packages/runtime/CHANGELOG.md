@@ -1,5 +1,36 @@
 # @pwfabric/runtime
 
+## 3.0.0
+
+Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
+
+### Breaking
+
+- `{{__errors.<id>}}` is a code (`unauthenticated | forbidden | not_found | conflict | server | network | unconnected | error`), not a sentence. Forms and the `write` action write `statusKeys.reason` and `statusKeys.fields` instead of `statusKeys.message`; `statusKeys.detail` is for the developer (#49, #56).
+- The forms validator and processor exports are removed (`createFormValidator`, `createFormProcessor`, `DEFAULT_VALIDATION_MESSAGES`, `validateWithZod` …) (#49).
+- A failed source's `{{<id>}}` is always empty, also after a refresh or a poll; `EntityStore.query` rejects instead of answering an empty list. An `id eq` (or `notFoundWhenEmpty` `eq`) value that resolves to nothing makes the source idle (#51). An idle source is idle from the first render (#58).
+- A block's props come from its manifest: the renderer applies the declared defaults and coercions (`applyBlockProps`); zod schemas moved to `@pwfabric/runtime/schemas` (#53).
+- `style.maxWidth` no longer centres; write `margin: '0 auto'` (#51).
+- The root no longer exports the Postgres connector (`/entity/postgres`), SEO (`/seo`), analytics (`/analytics`), Graph (`/graph`), perf (`/perf`) or the platform capability declarations (`/platform-capabilities`, also gone from `/capability`) (#55).
+- `href: ""` is no longer a link to the entry page; write `/` (#56).
+- `date(v)` writes `18 Nov 2026`; `time(v)` writes `14:30` with no seconds; a value that is not a date writes `''` (#56).
+- Query values that read `{{me.*}}` are resolved; signed out, such a source is idle. Behaviors on a `repeat` row resolve `item` and `index`. A click dispatches the manifest's default `action` when the receipt sets none. `BlockContext.appHref` is required (#56).
+- A source with `requiresSession` is not asked while nobody is signed in: no rows, `__errors.<id>` `unauthenticated`, `__errorCodes.<id>` `401` (#58).
+- Every block sits in its own `Suspense` boundary inside its error boundary (#52).
+
+### Other changes
+
+- Added: `useAppMessage(id, fallback, vars)`, `AppMessagesContext`, `useAppMessages`, `formatMessage`, `messageOf`; the data gate reads `ui.loading` (#49).
+- Added: `__auth` (`signedIn`, `user`, `methods`, `registration`, `error`) and `me` in the page scope; the `auth:signIn` / `auth:register` / `auth:signOut` actions, handed to the host's `identity.onAction` (#50).
+- Added: `context.locale` (#52) and `context.appHref(path)` (#56) on every block; the helper `find(list, field, value)`; `date`/`time`/`datetime` take a style (`'short' | 'medium' | 'long' | 'full'`) (#56).
+- Added: `BlockModuleLoader.register` and server rendering with hydration (#52).
+- Changed: forms send the record's declared fields only, each as its type; a chosen file is refused before sending with the field named (#51, #56). A 409 is `reason: 'conflict'` with `fields` naming the unique key (#56).
+- Changed: `initialState` expressions are evaluated once, when the first data pass settles; demo fallback rows are filtered only on fields they have (#51).
+- Fixed: when the focused block is hidden by `visibleWhen`, focus moves to the region that appeared (#51).
+- Fixed: the dev-only notice of `BlockErrorBoundary` names the declared props that did not fit when a block throws (#54).
+- Fixed: the block loader's `fetch` matches the shell's preload, so each block module is requested once (#57).
+- Fixed: a changed `initialState` reaches a mounted page, and not-found is reported only once the host address is known, so a hydrated record page loads the record from the address (#60).
+
 ## 2.2.0
 
 - Changed (behaviour, apps and packs must act on it): **failure is a state, not sample data.** A source that fails for a real reason — a refused read (401/403), a not-found, a server error, a network failure, a connected engine that fails — binds **no rows**, whatever its `fallback` says. `fallback` is bound only when nothing is connected to serve the source (a connector the host did not register, no entity facade or records base), with the source's `query` applied, so an `?id=` detail never shows another record. This reverses 2.1.0's "a `rest` source that cannot be served binds its `fallback`". A page that showed sample data behind a refused read must branch on `__errorCodes.<id>`; a detail page that bound a fallback record must show its own not-found or error state.

@@ -181,8 +181,8 @@ Before a block renders, the renderer applies its declarations
   own shape declares;
 - a value of the wrong JSON type is coerced where that loses nothing: `"24"`
   → `24`, `"true"` → `true`, `24` → `"24"`;
-- a value that still does not fit its shape is replaced by its default (and
-  kept as written when there is none);
+- a value that still does not fit its shape is kept as written (coerced as
+  far as it goes) and reported under `pwf dev`, never replaced by the default;
 - a `null` where the shape takes no `null` counts as missing;
 - a prop the declarations do not name passes through untouched.
 
@@ -206,10 +206,10 @@ Your component receives one object:
 
 | Prop | Type | Meaning |
 |---|---|---|
-| `props` | `TProps` | The placed block's props with the declarations applied: defaults filled in, values coerced, a value that does not fit replaced by its default |
+| `props` | `TProps` | The placed block's props with the declarations applied: defaults filled in, values coerced, a value that does not fit kept as written |
 | `blockId` | `string` | The instance id |
 | `children` | `ReactNode?` | Rendered nested blocks, for container blocks |
-| `context` | `CustomBlockContext?` | `theme` (`'light'` or `'dark'`), `viewport` (a breakpoint name), and an optional `onEvent` |
+| `context` | `CustomBlockContext?` | `theme` (`'light'` or `'dark'`), `viewport` (a breakpoint name), `appHref(path)` (an app page's address in the host's router form), and an optional `onEvent` |
 
 `context` is a narrowed view of the renderer's block context: capabilities,
 the image adapter and the base path are platform internals and are not passed
@@ -236,7 +236,7 @@ defineBlock<FeatureGridProps>({
 ```
 
 A placed block with `columns: "4"` renders with `4`; one with `columns: 9`
-renders with `3`, and `pwf dev` prints why.
+keeps `9`, and `pwf dev` prints why (`pwf validate` reports it as `BLOCK_PROP_SHAPE`).
 
 Source: `packages/authoring/src/types.ts`
 (`CustomBlockComponentProps`, `CustomBlockContext`),

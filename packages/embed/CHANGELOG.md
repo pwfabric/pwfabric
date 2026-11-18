@@ -1,5 +1,22 @@
 # @pwfabric/embed
 
+## 3.0.0
+
+Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
+
+### Breaking
+
+- `embed.js` no longer imports zod: no `zod` host import, shim or `__pwfabric_zod` global; the package no longer depends on zod (#53).
+- A block that imports `@pwfabric/authoring` on a seeded page gets the runtime plus the four `@pwfabric/authoring/block` functions (`defineBlock`, `isCustomBlockDefinition`, `createBlockInstance`, `validateBlockDefinition`), no longer `defineFactory`, the registry or the props validators (#55).
+
+### Other changes
+
+- Added: the `messages` render option (`useAppMessage` for every block) (#49) and the `identity` render option (#50).
+- Added: `@pwfabric/embed/static.js`, the build-time renderer (`renderStatic`); `onHydrated`; `autoload` skips rendered surfaces; a hydration mismatch is reported on the console (#52).
+- Changed: `embed.js` carries only what a visitor's page runs: 731 KB → 446 KB raw, 217 KB → 138 KB gzip, measured on the release build (#53, #55).
+- Fixed: hydration keeps prose and inline SVG painted at build. The React a block imports keeps one `{ __html }` object per markup string, so React does not rewrite it (#57).
+- Changed: `buildFatHtml` no longer writes a "Surface" title or `lang="en"` (#49).
+
 ## 2.2.0
 
 - Added (minor): render options `onTitle`, `onDescription`, `locale` and `address`, passed through to the runtime.

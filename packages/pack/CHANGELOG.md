@@ -1,5 +1,19 @@
 # @pwfabric/pack
 
+## 3.0.0
+
+Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
+
+### Breaking
+
+- A block (or any atom source) that imports `zod` no longer validates: `BLOCK_IMPORTS_ZOD`. `validateBlockProps` takes `manifests` (descriptors), not `schemas` (#53).
+
+### Other changes
+
+- Added: `BLOCK_PROP_SHAPE` (bounds, lengths, patterns, formats, nested members) and `BLOCK_PROP_DECLARATION` (a shape or default the runtime cannot read) (#53). A misfit value is reported as kept as written (#54).
+- Added: `BLOCK_DEFAULT_COPY` and `ERROR_BOUND_AS_TEXT` warnings (`checkDefaultCopy`, `checkErrorsAsText`) (#49).
+- Added: `pwpack.json` `app.signIn` (`APP_SIGN_IN_IS_A_ROUTE`) (#50).
+
 ## 2.2.0
 
 - Added: `checkBlockProps` / `checkReceiptBlockProps` warn `BLOCK_PROP_NOT_BINDABLE` when a receipt puts a `{{…}}` template on a prop its block manifest declares `bindable: false` — anywhere in the value, nested lists and objects included. The runtime leaves such a prop as written, so the braces would render. The message names the block, the prop (with the path inside its value) and the template; a prop with no `bindable` declaration is bindable. A `bindable: false` value is now also checked against its schema as the literal it is (a template there is no longer skipped as a binding).

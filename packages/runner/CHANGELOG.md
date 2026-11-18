@@ -1,5 +1,25 @@
 # @pwfabric/runner
 
+## 3.0.0
+
+Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
+
+### Breaking
+
+- `runApp({ locale })`, the Turkish runner copy, `RUNNER_COPY`, `copyFor`, `RunnerLocale`, `RunnerCopy` and `ProviderLabelKey` are removed; use `RUNNER_MESSAGES`, `runnerMessages`, `NEUTRAL_MESSAGES`, `RunnerMessages`, `RUNNER_MESSAGE_IDS`. Runner components take `messages` instead of `locale`. `applyGreeting` and `applyAuthToSurface` are removed. A refused sign-in shows `session.refused` (#49).
+- `accountActionOf` / `AccountAction` are removed; `auth:*` actions reach the runner through the renderer's `identity.onAction`. `AccountControllerDeps.openGate` → `openSignIn(mode)`. A door without `registration: "open"` offers no sign-up (#50).
+- `doorOf` and `declaresBridge` are removed; use `firstFrameDoorOf(project)` (#57).
+- A page drawn into a static first paint is hydrated, not drawn again (#52, #57).
+
+### Other changes
+
+- Added: the app's own sign-in page (`project.json` `signInSurfaceId`), drawn inside the shell in front of a required app or when an `auth:*` action has nothing to send. The session bar is an `<aside>` landmark with 44 px buttons, drawn only when the app has no account control or sign-in page (#50).
+- Added: `first-frame.ts` (`pageBlocksOf`, `pageSurfaceOf`, `firstFrameOptions`, `firstFrameAuthState`, `firstFrameLocale`, `firstFrameDoorOf`), shared with the build (#52, #57).
+- Changed: `navigate` is followed through `router.follow`, as a link is; an empty `activeHref` marks no nav item (#51).
+- Changed: the session probe treats an answer without a token as no session (#57). Own-records sources carry `requiresSession` (#58).
+- Changed: block modules are preloaded once (`as="fetch"`); the runner skips modules already preloaded (#57).
+- Fixed: a page painted at build takes the address (`?id=` and other keys) after hydration, so a record page opened at phone width loads its record instead of showing not-found (#60).
+
 ## 2.2.0
 
 - Fixed: under the hash router, an in-page anchor (`href: "#rsvp"`, a button's `location.href = "#rsvp"`, a `navigate` to `#rsvp`) keeps the page in the address — `#/session?id=1#rsvp` — so a reload or a shared link lands on the same page at the anchor (it opened the entry page). A link click adds one history entry; `#` alone goes to the top of the page shown. Under the path router an anchor stays on the current path and query instead of resolving against `<base href>`. A jump within the page scrolls smoothly (instantly under `prefers-reduced-motion: reduce`).

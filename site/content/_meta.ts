@@ -5,6 +5,7 @@ export default {
   cli: 'CLI',
   authoring: 'Authoring',
   'self-host': 'Self-hosting',
+  'upgrading-to-3': 'Upgrading to 3.0',
   specification: 'Specification',
   licence: 'Licensing',
   faq: 'FAQ',

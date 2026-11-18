@@ -1,5 +1,15 @@
 # @pwfabric/core
 
+## 3.0.0
+
+Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
+
+### Breaking
+
+- `BlockDefinition.schema` is gone; a block definition carries `props: BlockPropDescriptor[]` (#53).
+- The root is zod-free: zod schemas (`blockLayoutSchema` …) moved to `@pwfabric/core/schemas` (#53).
+- The root no longer exports the host-import table (`BLOCK_HOST_IMPORTS`, `blockImportMap`, `shimSource` …) → `@pwfabric/core/host-imports`; `defineConfigSchema` and its builders → `/config-schema`; `observe*`, `DEFAULT_BUDGET`, `createMetricsState`, `getRating` → `/monitoring`. `zod` is no longer a block host import (#53, #55).
+
 ## 2.2.0
 
 - No changes; released with the other packages at 2.2.0.

@@ -1,5 +1,18 @@
 # @pwfabric/authoring
 
+## 3.0.0
+
+Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
+
+### Breaking
+
+- `defineBlock<TProps>({ type, name, props, defaultProps?, component })` takes no `schema`; `props` are manifest descriptors and `TProps` is the author's interface. `SchemaProps` and `InferSchemaProps` are removed. `validateProps`, `validatePropsWithDefaults` and `createPropsValidator` take descriptors. zod is an optional peer, needed only for `defineFactory`'s `configSchema` (#53).
+
+### Other changes
+
+- Added: `@pwfabric/authoring/block` — `defineBlock`, `isCustomBlockDefinition`, `createBlockInstance`, `validateBlockDefinition` (#55).
+- Added: `CustomBlockContext.appHref` (#56).
+
 ## 2.2.0
 
 - No changes; released with the other packages at 2.2.0.
