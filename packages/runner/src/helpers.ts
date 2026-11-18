@@ -105,6 +105,11 @@ export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref): T {
         // nobody has; it stays a path relative to the shell's base, where the
         // media is served in both router modes.
         out[k] = mediaLinkOf(v)
+      } else if (k === 'activeHref' && v === '') {
+        // AN EMPTY `activeHref` MARKS NO ITEM. It is not a link but the page a
+        // nav calls current; read like an empty link (the entry), a not-found
+        // page's `activeHref: ""` marked the entry's nav item as the page shown.
+        out[k] = ''
       } else if (isLinkMember(k, node as Record<string, unknown>) && typeof v === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(v) && !v.startsWith('#') && !v.startsWith('//') && !isExpressionLink(v)) {
         // THE PAGE IS THE ADDRESS; the query and fragment ride along. Keying
         // the whole href would make `/api-reference#authentication` into the

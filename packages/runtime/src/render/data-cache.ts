@@ -11,7 +11,7 @@
  * @module @pwfabric/runtime/render/data-cache
  */
 import type { SurfaceDataSourceDefinition } from './data-binding-types.js'
-import { resolveQueryState } from './query-state.js'
+import { queryAsksForNothing, resolveQueryState } from './query-state.js'
 import { endpointMissingPathValue, resolveEndpoint } from './endpoint.js'
 
 export interface SurfaceDataCache {
@@ -38,6 +38,14 @@ export function dataSourceCacheKey(
   if (source.kind === 'state' || source.kind === 'static') return undefined
   // An idle source (a required path value is empty) is not fetched either.
   if (source.kind === 'rest' && source.endpoint !== undefined && endpointMissingPathValue(source.endpoint, state)) {
+    return undefined
+  }
+  // So is one whose query asks for no record (an empty record key).
+  if (
+    (source.kind === 'rest' || source.kind === 'entity') &&
+    source.aggregate === undefined &&
+    queryAsksForNothing(source.query, state, source.notFoundWhenEmpty === true)
+  ) {
     return undefined
   }
   const query = source.query ? resolveQueryState(source.query, state) : null

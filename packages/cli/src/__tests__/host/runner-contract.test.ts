@@ -161,7 +161,8 @@ describe('the app door, end to end', () => {
     // 5. Sign out — both places a session lives — and the host forgets the token.
     await signOut(auth, session.token)
     expect(await withProfile(bare, auth.sessionUrl)).toBe(bare)
-    expect((await facade!.resolveBinding(Task)).items).toEqual([])
+    // Refused, not empty: the list read that cannot be served rejects like the count.
+    await expect(facade!.resolveBinding(Task)).rejects.toThrow(/401/)
     await expect(facade!.resolveAggregate!(Task, { fn: 'count' })).rejects.toThrow(/401/)
   })
 

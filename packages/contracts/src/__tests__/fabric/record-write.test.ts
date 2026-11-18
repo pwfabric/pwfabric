@@ -26,7 +26,7 @@ const update = (body: Record<string, unknown>) =>
 
 describe('prepareRecordWrite', () => {
   it('sets the server-owned fields on create and reads every value as its type', () => {
-    const r = create({ items: 'A40', qty: '2', gift: 'on', deliverOn: '2026-11-19', product: 7, finish: 'sand' })
+    const r = create({ items: 'A40', qty: 2, gift: true, deliverOn: '2026-11-19', product: '7', finish: 'sand' })
     expect(r).toEqual({
       ok: true,
       fields: {
@@ -68,6 +68,11 @@ describe('prepareRecordWrite', () => {
     expect(r).toMatchObject({ ok: false, fieldNames: ['total'] })
   })
 
+  it('is strict: a numeral, "on" or a number id is not its type (the writer converts before it sends)', () => {
+    const r = create({ items: 'A40', qty: '10', gift: 'on', product: 7 })
+    expect(r).toMatchObject({ ok: false, fieldNames: ['qty', 'gift', 'product'] })
+  })
+
   it('refuses a value that is not its type', () => {
     const r = create({ items: 3, qty: 'two', gift: 'yes', deliverOn: '19/11/2026', finish: 'red' })
     expect(r.ok).toBe(false)
@@ -105,5 +110,43 @@ describe('prepareRecordWrite', () => {
   it('carries a field of an unknown type unchecked', () => {
     const r = prepareRecordWrite({ fields: [{ name: 'shape', type: 'geo' }], body: { shape: { x: 1 } }, op: 'create', now: NOW })
     expect(r).toEqual({ ok: true, fields: { shape: { x: 1 } } })
+  })
+
+  it('an email field holds an address', () => {
+    const fields = [{ name: 'email', type: 'email', required: true }]
+    expect(prepareRecordWrite({ fields, body: { email: 'notanemail' }, op: 'create', now: NOW })).toMatchObject({
+      ok: false,
+      message: 'email: must be an e-mail address',
+    })
+    expect(prepareRecordWrite({ fields, body: { email: ' ada@example.com ' }, op: 'create', now: NOW })).toEqual({
+      ok: true,
+      fields: { email: 'ada@example.com' },
+    })
+  })
+
+  it('a consent field declared mustBe: true refuses false', () => {
+    const fields = [{ name: 'consent', type: 'boolean', required: true, mustBe: true }]
+    expect(prepareRecordWrite({ fields, body: { consent: false }, op: 'create', now: NOW })).toMatchObject({
+      ok: false,
+      message: 'consent: must be true',
+    })
+    expect(prepareRecordWrite({ fields, body: { consent: true }, op: 'create', now: NOW }).ok).toBe(true)
+  })
+
+  it('a number keeps to its min, max and integer', () => {
+    const fields = [{ name: 'quantity', type: 'number', min: 1, max: 10, integer: true }]
+    const w = (quantity: number) => prepareRecordWrite({ fields, body: { quantity }, op: 'create', now: NOW })
+    expect(w(-5)).toMatchObject({ ok: false, message: 'quantity: must be at least 1' })
+    expect(w(11)).toMatchObject({ ok: false, message: 'quantity: must be at most 10' })
+    expect(w(1.5)).toMatchObject({ ok: false, message: 'quantity: must be a whole number' })
+    expect(w(3).ok).toBe(true)
+  })
+
+  it('a relation must name a record the caller can read, when the server says which', () => {
+    const fields = [{ name: 'order', type: 'relation', targetTypeId: 'Order' }]
+    const readable = (t: string, id: string) => t === 'Order' && id === 'mine'
+    const w = (order: string) => prepareRecordWrite({ fields, body: { order }, op: 'create', now: NOW, relationReadable: readable })
+    expect(w('theirs')).toMatchObject({ ok: false, message: 'order: does not name a readable Order record' })
+    expect(w('mine').ok).toBe(true)
   })
 })

@@ -19,7 +19,7 @@ import type {
 } from './types.js'
 import { aggregateThrough } from './aggregate.js'
 import type { EntityRegistry } from './registry.js'
-import type { ConnectorRegistry } from './connector.js'
+import type { ConnectorFailureCode, ConnectorRegistry } from './connector.js'
 import type { SurfaceEventBus } from '@pwfabric/contracts'
 
 // ============================================================
@@ -55,15 +55,17 @@ export interface EntityStore {
   delete(entityType: EntityTypeId, instanceId: EntityInstanceId): Promise<EntityMutationResult>
 
   /**
-   * Query entity instances
+   * Query entity instances. REJECTS when the list cannot be served (an
+   * unregistered type, no connector, a failed connector query); the
+   * rejection carries the connector's code as `status` (a number) or
+   * `code: "network"`. An empty list means the collection has no such rows.
    */
   query(entityType: EntityTypeId, query: EntityQuery): Promise<EntityQueryResult>
 
   /**
    * One number over the collection. Server-side when the connector
    * can; otherwise the connector's rows are reduced in memory. REJECTS when
-   * the number cannot be served — unlike `query`, whose honest failure is an
-   * empty list, a counter's `0` would be a lie.
+   * the number cannot be served, like `query`: a counter's `0` would be a lie.
    *
    * OPTIONAL so a host-written `EntityStore` keeps compiling; the facade
    * lists and reduces through `query` when a store has none.
@@ -384,58 +386,41 @@ export class DefaultEntityStore implements EntityStore {
   }
 
   async query(entityType: EntityTypeId, query: EntityQuery): Promise<EntityQueryResult> {
-    // Validate entity type exists
+    // A LIST THAT CANNOT BE SERVED REJECTS, like a count (below). Answering
+    // an empty list hid the failure from the page: a 503 read as "no
+    // sessions yet", `__errorCodes.<id>` stayed null and no error state could
+    // show (data-protocol §2.5). The rejection carries the connector's code —
+    // the HTTP status, or "network" — for the renderer to bind.
     if (!this.registry.has(entityType)) {
-      return {
-        items: [],
-        total: 0,
-        offset: 0,
-        limit: query.pagination?.limit ?? 50,
-        hasMore: false,
-      }
+      throw new Error(`Entity type '${String(entityType)}' is not registered`)
     }
-
-    // Resolve connector
     const connector = this.connectors.resolve(entityType)
-    if (!connector) {
-      return {
-        items: [],
-        total: 0,
-        offset: 0,
-        limit: query.pagination?.limit ?? 50,
-        hasMore: false,
-      }
-    }
-
-    // Delegate to connector
+    if (!connector) throw new Error(`No connector for entity type '${String(entityType)}'`)
     const result = await connector.query(entityType, query)
-    if (!result.success) {
-      return {
-        items: [],
-        total: 0,
-        offset: 0,
-        limit: query.pagination?.limit ?? 50,
-        hasMore: false,
-      }
-    }
-
+    if (!result.success) throw connectorFailure(result.error, result.code)
     return result.result
   }
 
   async aggregate(entityType: EntityTypeId, aggregate: EntityAggregate): Promise<EntityAggregateResult> {
-    // NOT the same as query. An empty list is an honest answer to "could not
-    // list"; `{ value: 0 }` is not an honest answer to "could not count" —
-    // a 403 would read as "0 people are coming". Reject, and the renderer
-    // binds `fallback` and `__errors.<id>` like any failed source.
+    // Rejects like `query`: `{ value: 0 }` is not an honest answer to "could
+    // not count" — a 403 would read as "0 people are coming".
     if (!this.registry.has(entityType)) {
       throw new Error(`Entity type '${String(entityType)}' is not registered`)
     }
     const connector = this.connectors.resolve(entityType)
     if (!connector) throw new Error(`No connector for entity type '${String(entityType)}'`)
     const result = await aggregateThrough(connector, entityType, aggregate)
-    if (!result.success) throw new Error(result.error)
+    if (!result.success) throw connectorFailure(result.error, result.code)
     return result.result
   }
+}
+
+/** A connector's failure as a rejection that carries its code (`status` or `"network"`). */
+function connectorFailure(message: string, code: ConnectorFailureCode | undefined): Error {
+  const err = new Error(message) as Error & { status?: number; code?: 'network' }
+  if (typeof code === 'number') err.status = code
+  else if (code === 'network') err.code = 'network'
+  return err
 }
 
 // ============================================================

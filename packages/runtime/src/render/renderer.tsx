@@ -9,6 +9,7 @@
 import * as React from 'react'
 import type { Block } from '@pwfabric/core'
 import { FLEX_HOIST_KEYS, LAYOUT_HOIST_KEYS } from './scoped-css.js'
+import { useFocusKeeper } from './focus-keeper.js'
 import type {
   SurfaceRendererProps,
   BlockRendererProps,
@@ -493,24 +494,22 @@ function computeBlockLayoutStyle(
       }
     }
   }
-  // Auto-center when maxWidth is set without an explicit margin.
-  if (
-    hoistedStyle.maxWidth !== undefined &&
-    hoistedStyle.margin === undefined &&
-    hoistedStyle.marginLeft === undefined &&
-    hoistedStyle.marginRight === undefined
-  ) {
-    hoistedStyle.margin = '0 auto'
-    // An auto-centred max-width block FILLS up to its max width, as a block
-    // box with `max-width` + `margin: 0 auto` does in normal flow. Inside a
-    // flex column or a grid cell, auto inline margins cancel `stretch`, so
-    // without an explicit width the wrapper shrank to its content and the
-    // inner `width:100%` resolved against that shrunken box (
-    // a two-pane doc shell collapsed to 307 px and the panes stacked unless
-    // the selected text was long, and content columns narrowed).
-    // Not applied where the block keeps its own width: an intrinsic block
-    // (button, badge), a row cell (its flex basis is the width), a column
-    // child with a span-derived width, or an authored non-100% width.
+  // A MAX-WIDTH BLOCK IS NOT CENTRED UNLESS IT ASKS TO BE. The wrapper used
+  // to get `margin: 0 auto` whenever `maxWidth` came without a margin, so a
+  // left-aligned reading column needed `margin: '0'` to undo a rule nobody
+  // wrote. Centring is the author's: `margin: '0 auto'` (or `marginInline:
+  // 'auto'`) in block style, which reaches the wrapper like every margin.
+  //
+  // A max-width block FILLS up to its max width, as a block box with
+  // `max-width` does in normal flow. Inside a flex column or a grid cell an
+  // auto inline margin cancels `stretch`, and a centred column shrinks its
+  // children, so without an explicit width the wrapper shrank to its content
+  // and the inner `width:100%` resolved against that shrunken box (a
+  // two-pane doc shell collapsed to 307 px). Not applied where the block
+  // keeps its own width: an intrinsic block (button, badge), a row cell (its
+  // flex basis is the width), a column child with a span-derived width, or
+  // an authored non-100% width.
+  if (hoistedStyle.maxWidth !== undefined) {
     const authoredWidth = (block.style as React.CSSProperties | undefined)?.width
     if (
       sizing !== 'intrinsic' &&
@@ -872,6 +871,10 @@ export function SurfaceRenderer({
   address,
   onSelection,
 }: SurfaceRendererProps): React.ReactElement {
+  // The root, so focus is kept inside the surface when the focused block is
+  // hidden (focus-keeper.ts). Only a live surface moves focus.
+  const surfaceRootRef = React.useRef<HTMLDivElement | null>(null)
+  useFocusKeeper(surfaceRootRef, interactionMode === 'live')
   // Use explicit viewport or auto-detect
   const autoViewport = useViewport()
   const viewport = viewportProp ?? autoViewport
@@ -1151,6 +1154,7 @@ export function SurfaceRenderer({
           // Carries the surface id so scoped rules can target THIS surface only.
           // Empty string when the surface has no id — still matches the bare
           // `[data-pw-surface]` selector the base CSS and the embed autoloader use.
+          ref={surfaceRootRef}
           data-pw-surface={scopeId ?? ''}
           data-surface-renderer
           data-theme={theme}

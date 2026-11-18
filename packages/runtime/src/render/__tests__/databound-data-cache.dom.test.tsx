@@ -139,7 +139,8 @@ describe('DataBoundSurfaceRenderer — dataCache', () => {
     await waitFor(() => expect((facade as { resolveBinding: ReturnType<typeof vi.fn> }).resolveBinding).toHaveBeenCalled())
     await new Promise((r) => setTimeout(r, 20))
     expect(cache.store.get(key)).toEqual([{ id: 'cached-1' }])
-    // The seeded rows stay on screen rather than being wiped by the failure.
-    expect(screen.getByTestId('rows').textContent).toBe('cached-1')
+    // But the seeded rows leave the screen: a real failure binds no rows
+    // (data-protocol §2.5) — yesterday's list under today's error is a lie.
+    expect(screen.getByTestId('rows').textContent).toBe('')
   })
 })

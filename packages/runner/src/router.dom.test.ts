@@ -649,3 +649,56 @@ describe('writeQuery', () => {
     expect(location.search).toBe('')
   })
 })
+
+// ============================================================
+// follow — a `navigate` action goes where a link would
+// ============================================================
+
+describe('follow', () => {
+  it('path mode: a bare #anchor stays on the page shown, under a <base href> naming the app root', () => {
+    // `location.assign('#faq')` resolves against <base href> — the ENTRY page —
+    // and walked the reader off the page they were on.
+    const base = document.createElement('base')
+    base.href = '/app/'
+    document.head.appendChild(base)
+    goTo('/app/people?tab=all')
+    const target = section('faq')
+    const router = createRouter('path', PAGES, 'home', { basePath: '/app/' })
+    router.current()
+    const onChange = vi.fn()
+    router.start(onChange)
+    expect(router.follow('#faq')).toBe(true)
+    expect(location.pathname + location.search + location.hash).toBe('/app/people?tab=all#faq')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(scrolledInto).toContain(target)
+  })
+
+  it('hash mode: a bare #anchor is written onto the page shown', () => {
+    goTo('/#/product?id=12')
+    const target = section('rsvp')
+    const router = createRouter('hash', PAGES, 'home')
+    router.current()
+    router.start(vi.fn())
+    expect(router.follow('#rsvp')).toBe(true)
+    expect(location.hash).toBe('#/product?id=12#rsvp')
+    expect(scrolledInto).toContain(target)
+  })
+
+  it('a page of the app is routed to', () => {
+    goTo('/app/home')
+    const router = createRouter('path', PAGES, 'home', { basePath: '/app/' })
+    router.current()
+    const onChange = vi.fn()
+    router.start(onChange)
+    expect(router.follow('/app/people')).toBe(true)
+    expect(location.pathname).toBe('/app/people')
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('another origin or an unsafe scheme is not taken', () => {
+    const router = createRouter('hash', PAGES, 'home')
+    router.start(vi.fn())
+    expect(router.follow('https://example.org/x')).toBe(false)
+    expect(router.follow('javascript:alert(1)')).toBe(false)
+  })
+})

@@ -47,11 +47,13 @@ describe('@pwfabric/cli/host', () => {
         'accessOf',
         'authAddresses',
         'createLocalHost',
+        'declaredRecordFields',
         'parseRule',
         'readAuth',
         'readEntities',
         'readSeed',
         'rewriteEntitySources',
+        'withRecordFields',
       ].sort()
     )
   })

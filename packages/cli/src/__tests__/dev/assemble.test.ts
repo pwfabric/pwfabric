@@ -114,7 +114,13 @@ describe('assemblePwapp', () => {
     // The shell names the hashed files and starts the renderer without holding the page.
     expect(html).toContain(`<script type="module" src="./${asset(r, 'boot')}"></script>`)
     expect(html).toContain(`<script async src="./${asset(r, 'embed')}"></script>`)
-    expect(html).toContain(`<link rel="stylesheet" href="./${asset(r, 'theme')}" />`)
+    // The theme is written into the head: the first paint waits on no stylesheet.
+    expect(html).not.toContain('rel="stylesheet"')
+    expect(html).toContain(`<style>${text(r.files.get(asset(r, 'theme')))}</style>`)
+    // The entry page's receipt and its block modules are asked for with the document.
+    expect(html).toContain('<link rel="preload" as="fetch" href="./pwpack/surfaces/home.receipt.json" crossorigin />')
+    const manifest = parse(r.files.get('blocks/manifest.json')) as { moduleUrl: string }[]
+    for (const m of manifest) expect(html).toContain(`<link rel="modulepreload" href="./${m.moduleUrl}" />`)
     expect(html).not.toMatch(/<script src=/)
     // A hashed name is the hash of the bytes.
     const { createHash } = await import('node:crypto')
@@ -224,6 +230,27 @@ describe('assemblePwapp', () => {
     const broken = await assemblePwapp(root, { cacheDir: null })
     expect(broken.ok).toBe(false)
     expect(broken.diagnostics.some((d) => d.path === 'app/surfaces/missing.receipt.json' && d.severity === 'error')).toBe(true)
+  })
+
+  it("writes each own-records source's declared field names on it, so a write sends only those", async () => {
+    const root = await app()
+    await mkdir(join(root, 'app/definitions'), { recursive: true })
+    await writeFile(
+      join(root, 'app/definitions/entities.json'),
+      JSON.stringify({ entities: [{ typeId: 'Booking', fields: [{ name: 'name', type: 'text' }] }] })
+    )
+    const home = JSON.parse(await readFile(join(root, 'app/surfaces/home.receipt.json'), 'utf8')) as Record<string, unknown>
+    await writeFile(
+      join(root, 'app/surfaces/home.receipt.json'),
+      JSON.stringify({
+        ...home,
+        capabilities: [{ capability: 'platform/persistence', config: { dataSources: [{ id: 'b', kind: 'entity', entityType: 'Booking' }] } }],
+      })
+    )
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const served = parse(r.files.get('pwpack/surfaces/home.receipt.json')) as { capabilities: { config: { dataSources: unknown[] } }[] }
+    expect(served.capabilities[0]?.config.dataSources).toEqual([{ id: 'b', kind: 'entity', entityType: 'Booking', fields: { name: 'text' } }])
   })
 
   it('reports an unknown block type, a broken receipt and a broken definition', async () => {

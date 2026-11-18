@@ -252,23 +252,33 @@ describe('row stacking law (xs)', () => {
 })
 
 // ============================================================
-// AUTO-CENTRED MAX-WIDTH FILLS UP TO ITS MAX WIDTH (H3 L1)
+// A MAX-WIDTH BLOCK FILLS UP TO ITS MAX WIDTH, AND IS CENTRED ONLY WHEN ASKED
 // ============================================================
 // At 1280 px a shell content column `{width:'100%', maxWidth,
 // marginInline:'auto'}` inside a flex column got `margin: 0 auto` on its
 // wrapper but no width — auto margins cancel `stretch`, the wrapper shrank
-// to its content (307 px) and a two-pane layout stacked.
-describe('auto-centred max-width wrapper', () => {
+// to its content (307 px) and a two-pane layout stacked. And `margin: 0 auto`
+// was added to every max-width wrapper, so a left-aligned column had to undo
+// it with `margin: '0'`.
+describe('max-width wrapper', () => {
   const column = (child: Record<string, unknown>) => [
     { id: 'col', type: 'container', props: { direction: 'column' }, children: [child] },
   ]
 
-  it('gives the wrapper width:100% alongside margin:0 auto and max-width', () => {
+  it('is not centred unless the block style says so', () => {
     const html = render(column({ id: 'c', type: 'echo', props: {}, style: { width: '100%', maxWidth: '1200px' } }))
     const style = wrapperStyle(html, 'c')
-    expect(style).toContain('margin:0 auto')
+    expect(style).not.toContain('margin')
     expect(style).toContain('max-width:1200px')
     expect(style).toMatch(/(^|;)width:100%/)
+  })
+
+  it('an authored centring reaches the wrapper, in either spelling', () => {
+    const a = render(column({ id: 'c', type: 'echo', props: {}, style: { maxWidth: '640px', margin: '0 auto' } }))
+    expect(wrapperStyle(a, 'c')).toContain('margin:0 auto')
+    const b = render(column({ id: 'c', type: 'echo', props: {}, style: { maxWidth: '640px', marginInline: 'auto' } }))
+    expect(wrapperStyle(b, 'c')).toContain('margin-inline:auto')
+    expect(b.slice(b.indexOf('data-echo'))).not.toContain('margin-inline')
   })
 
   it('fills when the block declares no width at all', () => {
@@ -283,9 +293,6 @@ describe('auto-centred max-width wrapper', () => {
     // authored fixed width
     const fixed = render(column({ id: 'c', type: 'echo', props: {}, style: { width: '320px', maxWidth: '640px' } }))
     expect(wrapperStyle(fixed, 'c')).not.toMatch(/(^|;)width:/)
-    // explicit margin — no auto-centre, no width
-    const margined = render(column({ id: 'c', type: 'echo', props: {}, style: { maxWidth: '640px', margin: '0' } }))
-    expect(wrapperStyle(margined, 'c')).not.toMatch(/(^|;)width:/)
     // row cell — its flex basis is its width
     const row = render([
       { id: 'r', type: 'container', props: { direction: 'row' }, children: [{ id: 'c', type: 'echo', props: {}, style: { maxWidth: '640px' } }] },

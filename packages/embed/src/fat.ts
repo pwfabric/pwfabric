@@ -80,6 +80,8 @@ export interface RenderFatOptions {
   readonly dataCache?: SurfaceDataCache
   /** How the host writes an in-app link whose page was an expression; see the runtime's render/links.ts. */
   readonly linkHref?: LinkHref
+  /** A `navigate` action offered to the host first; `true` means it followed it (the runner's router). */
+  readonly onNavigateAction?: (url: string) => boolean
   /** Told the page title once its expressions resolve (`undefined` while they resolve to nothing). */
   readonly onTitle?: (title: string | undefined) => void
   /** Like `onTitle`, for the surface's `description`. */
@@ -208,6 +210,7 @@ export function fatCoreOptions(opts: RenderFatOptions): RenderCoreOptions {
     ...(opts.loadingStrategy !== undefined ? { loadingStrategy: opts.loadingStrategy } : {}),
     ...(opts.dataCache !== undefined ? { dataCache: opts.dataCache } : {}),
     ...(opts.linkHref !== undefined ? { linkHref: opts.linkHref } : {}),
+    ...(opts.onNavigateAction !== undefined ? { onNavigateAction: opts.onNavigateAction } : {}),
     ...(opts.onTitle !== undefined ? { onTitle: opts.onTitle } : {}),
     ...(opts.onDescription !== undefined ? { onDescription: opts.onDescription } : {}),
     ...(opts.locale !== undefined ? { locale: opts.locale } : {}),

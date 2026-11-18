@@ -43,12 +43,22 @@ export interface EntityField {
   readonly values?: readonly string[]
   /** Set by the server, never by a client (definitions, "Server-owned fields"). */
   readonly server?: RecordServerField
+  /** `number`: bounds and whole-number (definitions, "Field types"). */
+  readonly min?: number
+  readonly max?: number
+  readonly integer?: boolean
+  /** The one value the field may hold (a consent box: `true`). */
+  readonly mustBe?: unknown
+  /** `relation`: the entity it points at. */
+  readonly targetTypeId?: string
 }
 
 export interface EntityDeclaration {
   readonly typeId: string
   readonly displayName?: string
   readonly fields: readonly EntityField[]
+  /** Field-name sets no two records may share (definitions, "Unique keys"). */
+  readonly unique?: readonly (readonly string[])[]
 }
 
 function readJson(path: string): unknown {
@@ -107,6 +117,11 @@ export function readEntities(root: string): EntityDeclaration[] {
               required: f.required === true,
               ...(Array.isArray(f.values) ? { values: strings(f.values) } : {}),
               ...(isRecordServerField(f.server) ? { server: f.server } : {}),
+              ...(typeof f.min === 'number' ? { min: f.min } : {}),
+              ...(typeof f.max === 'number' ? { max: f.max } : {}),
+              ...(f.integer === true ? { integer: true } : {}),
+              ...('mustBe' in f && f.mustBe !== undefined ? { mustBe: f.mustBe } : {}),
+              ...(typeof f.targetTypeId === 'string' && f.targetTypeId ? { targetTypeId: f.targetTypeId } : {}),
             },
           ]
         : []
@@ -116,6 +131,9 @@ export function readEntities(root: string): EntityDeclaration[] {
         typeId: e.typeId,
         ...(typeof e.displayName === 'string' ? { displayName: e.displayName } : {}),
         fields,
+        ...(Array.isArray(e.unique)
+          ? { unique: e.unique.filter(Array.isArray).map((k) => strings(k)).filter((k) => k.length > 0) }
+          : {}),
       },
     ]
   })

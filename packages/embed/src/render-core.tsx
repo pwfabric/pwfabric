@@ -99,6 +99,8 @@ export interface RenderCoreOptions {
   readonly dataCache?: SurfaceDataCache
   /** How the host writes an in-app link whose page was an expression; see the runtime's render/links.ts. */
   readonly linkHref?: LinkHref
+  /** A `navigate` action offered to the host first; `true` means it followed it (the runner's router). */
+  readonly onNavigateAction?: (url: string) => boolean
   /** Told the page title once its expressions resolve (`undefined` while they resolve to nothing). */
   readonly onTitle?: (title: string | undefined) => void
   /** Like `onTitle`, for the surface's `description`. */
@@ -222,6 +224,7 @@ function buildRendererProps(opts: RenderCoreOptions): Record<string, unknown> {
   if (opts.loadingStrategy !== undefined) props.loadingStrategy = opts.loadingStrategy
   if (opts.dataCache !== undefined) props.dataCache = opts.dataCache
   if (opts.linkHref !== undefined) props.linkHref = opts.linkHref
+  if (opts.onNavigateAction !== undefined) props.onNavigateAction = opts.onNavigateAction
   if (opts.onTitle !== undefined) props.onTitle = opts.onTitle
   if (opts.onDescription !== undefined) props.onDescription = opts.onDescription
   if (opts.locale !== undefined) props.locale = opts.locale

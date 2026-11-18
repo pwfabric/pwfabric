@@ -55,6 +55,44 @@ describe('static server', () => {
     }
   })
 
+  it('compresses as a production host does (br, else gzip) and keeps the build’s cache rules', async () => {
+    const dir = await builtApp()
+    const big = `export const text = ${JSON.stringify('x'.repeat(4000))}\n`
+    await writeFile(join(dir, 'assets', 'big.js'), big)
+    await writeFile(join(dir, '_headers'), '/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n')
+    const server = await startStaticServer({ source: { dir }, port: 0 })
+    const { request } = await import('node:http')
+    const { brotliDecompressSync, gunzipSync } = await import('node:zlib')
+    const get = (path: string, acceptEncoding: string) =>
+      new Promise<{ headers: Record<string, unknown>; body: Buffer }>((done, fail) => {
+        const req = request(new URL(path, server.url), { headers: { 'accept-encoding': acceptEncoding } }, (res) => {
+          const chunks: Buffer[] = []
+          res.on('data', (c: Buffer) => chunks.push(c))
+          res.on('end', () => done({ headers: res.headers, body: Buffer.concat(chunks) }))
+        })
+        req.on('error', fail)
+        req.end()
+      })
+    try {
+      const br = await get('assets/big.js', 'gzip, deflate, br')
+      expect(br.headers['content-encoding']).toBe('br')
+      expect(br.headers['vary']).toBe('Accept-Encoding')
+      expect(br.headers['cache-control']).toBe('public, max-age=31536000, immutable')
+      expect(brotliDecompressSync(br.body).toString()).toBe(big)
+      const gz = await get('assets/big.js', 'gzip')
+      expect(gz.headers['content-encoding']).toBe('gzip')
+      expect(gunzipSync(gz.body).toString()).toBe(big)
+      const plain = await get('assets/big.js', 'identity')
+      expect(plain.headers['content-encoding']).toBeUndefined()
+      expect(plain.body.toString()).toBe(big)
+      // A tiny file goes as it is; a page without a rule keeps no-cache.
+      expect((await get('assets/runner.js', 'br')).headers['content-encoding']).toBeUndefined()
+      expect((await get('', 'br')).headers['cache-control']).toBe('no-cache')
+    } finally {
+      await server.close()
+    }
+  })
+
   it('answers a nested page path with the shell and a base, so its relative assets resolve', async () => {
     const dir = await builtApp()
     await writeFile(

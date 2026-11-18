@@ -30,16 +30,19 @@ import {
   type Page,
 } from './envelope.js'
 import { collectMedia, fillMediaSlots } from './media.js'
+import { declaredRecordFields, withRecordFields } from '../host/record-fields.js'
 import { deriveCsp, headersFile, robotsTxt } from './csp.js'
 import {
   BOOT_FILES,
   bootScript,
   buildShellHtml,
+  firstImageOf,
   hashedName,
   importMapText,
   loadRuntimeAssets,
   shimsFor,
   type RuntimeAssets,
+  type PageHints,
   type ShellAssets,
 } from './shell.js'
 import { isRecord, jsonOf, loadSources, PWF_DIR, type PackMemo, type SourcePack } from './sources.js'
@@ -276,6 +279,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const appearanceDoc = definition('appearance')
   const connectionsDoc = definition('connections')
   const authDoc = definition('auth')
+  // Each own-records source carries its type's field names, so a write sends
+  // those only (host/record-fields.ts).
+  const recordFields = declaredRecordFields(definition('entities'))
   const plan = jsonOf(app.folder, 'app/plan.json')
 
   // ── compile ──────────────────────────────────────────────────────
@@ -419,7 +425,33 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     runner: hashedName('assets/runner.js', runtime.runnerJs),
     theme: hashedName('assets/theme.css', themeCss),
   }
-  const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref })
+  // ── what each page needs first (shell and boot hints) ──
+  const moduleOf = new Map(blockManifest.map((b) => [b.blockType, b.moduleUrl]))
+  // The receipt as it will be served: its media slots filled.
+  const media = collectMedia(app.folder, diagnostics)
+  const servedReceiptOf = (page: Page): unknown => {
+    const filled = fillMediaSlots(page.bytes, media.slots.get(page.key))
+    if (!filled) return page.receipt
+    try {
+      return JSON.parse(new TextDecoder().decode(filled)) as unknown
+    } catch {
+      return page.receipt
+    }
+  }
+  const hintsOf = (page: Page): PageHints => {
+    const receipt = servedReceiptOf(page)
+    const image = firstImageOf(receipt)
+    return {
+      receipt: `pwpack/surfaces/${page.key}.receipt.json`,
+      modules: [...new Set(blockTypesOf(receipt).map((t) => moduleOf.get(t)).filter((m): m is string => m !== undefined))].sort(),
+      ...(image ? { image: image.src, ...(image.priority ? { imagePriority: true } : {}) } : {}),
+    }
+  }
+  const entryPageOf = routes.find((p) => p.key === entry)
+  const entryHints = entryPageOf && !gated ? hintsOf(entryPageOf) : undefined
+  const pageHints: Record<string, PageHints> = {}
+  if (!gated) for (const page of routes) if (page !== entryPageOf) pageHints[page.key] = hintsOf(page)
+  const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref, pageHints })
   const assets: ShellAssets = { ...assets0, boot: hashedName('assets/boot.js', bootJs) }
   const shell = (csp?: string): Uint8Array =>
     enc.encode(
@@ -433,6 +465,8 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         assets,
         preloadRenderer: !gated,
         bootFiles: BOOT_FILES.filter((f) => files.has(f)),
+        themeCss: new TextDecoder().decode(themeCss),
+        ...(entryHints ? { entryHints } : {}),
       })
     )
   files.set(assets.boot, enc.encode(bootJs))
@@ -461,13 +495,15 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       ...(appDescription !== undefined ? { description: appDescription } : {}),
     })
   )
-  for (const page of pages) files.set(`pwpack/surfaces/${page.key}.receipt.json`, page.bytes)
+  for (const page of pages) {
+    const declared = withRecordFields(page.receipt, recordFields)
+    files.set(`pwpack/surfaces/${page.key}.receipt.json`, declared === page.receipt ? page.bytes : json(declared))
+  }
   files.set('pwpack/navigation.json', json(isRecord(navigationDoc) ? navigationDoc : deriveNavigation(routes, entry)))
   if (appearance) files.set('pwpack/appearance.json', json(appearance))
   // Always written: the runner asks for it on every boot, and an app that
   // declares no connection should not cost the visitor a 404 in the console.
   files.set('pwpack/connections.json', json(connections ?? { connections: [] }))
-  const media = collectMedia(app.folder, diagnostics)
   for (const [file, bytes] of media.files) files.set(`pwpack/${file}`, bytes)
   mergeEnvelopeEntries(files, options.envelopeEntries, diagnostics)
   // An identity without an `auth.json` has no door: say so, so the runner

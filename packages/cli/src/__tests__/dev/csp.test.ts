@@ -97,7 +97,10 @@ describe('content security policy', () => {
     const page = (props: Record<string, unknown>): Map<string, unknown> =>
       new Map([['report', { blocks: [{ type: 'container', props: {}, children: [{ type: 'embed', props }] }] }]])
     expect(deriveCsp({ ...base, receipts: page({ src: 'pwpack/media/sprint-25.pdf' }) }).directives['frame-src']).toEqual(["'self'"])
-    expect(deriveCsp({ ...base, receipts: page({ src: '/pwpack/media/terms.html' }) }).directives['frame-src']).toEqual(["'self'"])
+    expect(deriveCsp({ ...base, receipts: page({ src: '/pwpack/media/terms.txt' }) }).directives['frame-src']).toEqual(["'self'"])
+    // Same-origin HTML in a frame runs as the app: it never opens frame-src 'self'.
+    expect(deriveCsp({ ...base, receipts: page({ src: '/pwpack/media/terms.html' }) }).directives['frame-src']).toBeUndefined()
+    expect(deriveCsp({ ...base, receipts: page({ src: 'pwpack/media/terms.htm' }) }).directives['frame-src']).toBeUndefined()
     // An image of its own is not a frame; a link to the PDF is navigation, not a frame.
     expect(deriveCsp({ ...base, receipts: page({ src: 'pwpack/media/logo.svg' }) }).directives['frame-src']).toBeUndefined()
     expect(deriveCsp({ ...base, receipts: page({ href: 'pwpack/media/sprint-25.pdf' }) }).directives['frame-src']).toBeUndefined()

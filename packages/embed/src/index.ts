@@ -118,6 +118,8 @@ export interface EmbedOptions {
   readonly dataCache?: SurfaceDataCache
   /** How the host writes an in-app link whose page was an expression; see the runtime's render/links.ts. */
   readonly linkHref?: LinkHref
+  /** A `navigate` action offered to the host first; `true` means it followed it (the runner's router). */
+  readonly onNavigateAction?: (url: string) => boolean
   /** Told the page title once its expressions resolve (`undefined` while they resolve to nothing). */
   readonly onTitle?: (title: string | undefined) => void
   /** Like `onTitle`, for the surface's `description`. */
@@ -189,6 +191,7 @@ function passthrough(options?: EmbedOptions): Partial<RenderCoreOptions> {
     ...(o.loadingStrategy !== undefined ? { loadingStrategy: o.loadingStrategy } : {}),
     ...(o.dataCache !== undefined ? { dataCache: o.dataCache } : {}),
     ...(o.linkHref !== undefined ? { linkHref: o.linkHref } : {}),
+    ...(o.onNavigateAction !== undefined ? { onNavigateAction: o.onNavigateAction } : {}),
     ...(o.onTitle !== undefined ? { onTitle: o.onTitle } : {}),
     ...(o.onDescription !== undefined ? { onDescription: o.onDescription } : {}),
     ...(o.locale !== undefined ? { locale: o.locale } : {}),

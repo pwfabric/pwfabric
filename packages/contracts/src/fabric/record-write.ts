@@ -21,17 +21,25 @@
  *     A body that carries a value for one of them where the server sets it
  *     is REFUSED (not silently dropped): a client that sends `owner` is
  *     either wrong or forging, and both deserve the 400.
- *  4. **Declared types are checked** and a value is stored as its type
- *     (definitions, "Field types"): `text` a string; `number` a finite number
- *     or a decimal numeral; `boolean` true/false or `"true"`/`"false"`,
- *     `"on"`/`"off"`, `"1"`/`"0"`, `1`/`0`; `date` an ISO 8601 date or
- *     date-time; `relation` a record id (a string, or a number written as
- *     one); `enum` one of the field's `values`. A field of another type is
- *     carried unchecked. On a field that is not `text`, a blank string is
- *     no value. `null` is no value.
- *  5. **`required`** fields must have a value on create — not absent, not
+ *  4. **Declared types are checked STRICTLY** (definitions, "Field types"):
+ *     `text` a string; `email` a string shaped like an address; `number` a
+ *     finite JSON number — never a numeral in a string, which the writer
+ *     converts before it sends; `boolean` `true` or `false`; `date` an ISO
+ *     8601 date or date-time; `relation` a record id as a string; `enum` one
+ *     of the field's `values`. A field of another type is carried
+ *     unchecked. On a field that is not `text`, a blank string is no value.
+ *     `null` is no value.
+ *  5. **Bounds**: a `number` field's `min`, `max` and `integer`.
+ *  6. **`mustBe`**: a field that declares it holds exactly that value when it
+ *     has one — a consent box is `{ "type": "boolean", "required": true,
+ *     "mustBe": true }`, so `false` is refused.
+ *  7. **`required`** fields must have a value on create — not absent, not
  *     `null`, not a blank string (of any type) — and an update may not
  *     clear one.
+ *  8. **Relations point at a record the caller can read**, when the server
+ *     says which those are (`relationReadable`): the target exists and the
+ *     caller's `view` reach covers it, so a member cannot attach a note to
+ *     another account's order.
  *
  * Every refusal is one `VALIDATION_FAILED` whose message lists each problem as
  * `<field>: <reason>`, separated by `; ` — the form highlights those fields.
@@ -61,6 +69,16 @@ export interface RecordFieldDeclaration {
   /** `enum` only: the values the field may hold. */
   readonly values?: readonly string[]
   readonly server?: RecordServerField
+  /** `number` only: the least value allowed. */
+  readonly min?: number
+  /** `number` only: the greatest value allowed. */
+  readonly max?: number
+  /** `number` only: a whole number. */
+  readonly integer?: boolean
+  /** The one value the field may hold (a consent box: `true`). */
+  readonly mustBe?: unknown
+  /** `relation` only: the entity the field points at. */
+  readonly targetTypeId?: string
 }
 
 export interface RecordWriteInput {
@@ -74,6 +92,12 @@ export interface RecordWriteInput {
   readonly callerName?: string
   /** The time of the write, ISO 8601. */
   readonly now: string
+  /**
+   * Whether the caller may point a relation at record `id` of `targetTypeId`:
+   * it exists and the caller's `view` reach covers it. Absent: relations are
+   * checked by shape only.
+   */
+  readonly relationReadable?: (targetTypeId: string, id: string) => boolean
 }
 
 export type RecordWriteResult =
@@ -96,9 +120,8 @@ export const RECORD_ENVELOPE_MEMBERS: ReadonlySet<string> = new Set(['id', 'enti
 const UNSAFE_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype'])
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/
-const DECIMAL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/
-const TRUE = new Set(['true', 'on', '1'])
-const FALSE = new Set(['false', 'off', '0'])
+/** An address: something, `@`, a domain with a dot — the shape, not deliverability. */
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /** Is `server` a role (or a default) this contract knows? */
 export function isRecordServerField(server: unknown): server is RecordServerField {
@@ -111,7 +134,7 @@ export function isRecordServerField(server: unknown): server is RecordServerFiel
  * for no value), `{ error }` when it is not.
  */
 export function readRecordFieldValue(
-  field: Pick<RecordFieldDeclaration, 'type' | 'values'>,
+  field: Pick<RecordFieldDeclaration, 'type' | 'values' | 'min' | 'max' | 'integer'>,
   raw: unknown
 ): { readonly value: unknown } | { readonly error: string } {
   if (raw === null || raw === undefined) return { value: undefined }
@@ -119,22 +142,21 @@ export function readRecordFieldValue(
   switch (field.type) {
     case 'text':
       return typeof raw === 'string' ? { value: raw } : { error: 'must be text' }
+    case 'email': {
+      if (blank) return { value: undefined }
+      return typeof raw === 'string' && EMAIL.test(raw.trim()) ? { value: raw.trim() } : { error: 'must be an e-mail address' }
+    }
     case 'number': {
       if (blank) return { value: undefined }
-      if (typeof raw === 'number') return Number.isFinite(raw) ? { value: raw } : { error: 'must be a number' }
-      if (typeof raw === 'string' && DECIMAL.test(raw.trim())) return { value: Number(raw.trim()) }
-      return { error: 'must be a number' }
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) return { error: 'must be a number' }
+      if (field.integer === true && !Number.isInteger(raw)) return { error: 'must be a whole number' }
+      if (typeof field.min === 'number' && raw < field.min) return { error: `must be at least ${field.min}` }
+      if (typeof field.max === 'number' && raw > field.max) return { error: `must be at most ${field.max}` }
+      return { value: raw }
     }
     case 'boolean': {
       if (blank) return { value: undefined }
-      if (typeof raw === 'boolean') return { value: raw }
-      if (raw === 1 || raw === 0) return { value: raw === 1 }
-      if (typeof raw === 'string') {
-        const s = raw.trim().toLowerCase()
-        if (TRUE.has(s)) return { value: true }
-        if (FALSE.has(s)) return { value: false }
-      }
-      return { error: 'must be true or false' }
+      return typeof raw === 'boolean' ? { value: raw } : { error: 'must be true or false' }
     }
     case 'date': {
       if (blank) return { value: undefined }
@@ -146,7 +168,6 @@ export function readRecordFieldValue(
     case 'relation': {
       if (blank) return { value: undefined }
       if (typeof raw === 'string') return { value: raw.trim() }
-      if (typeof raw === 'number' && Number.isFinite(raw)) return { value: String(raw) }
       return { error: 'must be the id of a record' }
     }
     case 'enum': {
@@ -206,6 +227,20 @@ export function prepareRecordWrite(input: RecordWriteInput): RecordWriteResult {
     const read = readRecordFieldValue(field, raw)
     if ('error' in read) {
       problems.push([name, read.error])
+      continue
+    }
+    if (read.value !== undefined && 'mustBe' in field && field.mustBe !== undefined && read.value !== field.mustBe) {
+      problems.push([name, `must be ${JSON.stringify(field.mustBe)}`])
+      continue
+    }
+    if (
+      read.value !== undefined &&
+      field.type === 'relation' &&
+      typeof field.targetTypeId === 'string' &&
+      input.relationReadable &&
+      !input.relationReadable(field.targetTypeId, read.value as string)
+    ) {
+      problems.push([name, `does not name a readable ${field.targetTypeId} record`])
       continue
     }
     if (read.value !== undefined) out[name] = read.value

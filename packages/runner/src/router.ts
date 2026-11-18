@@ -82,6 +82,15 @@ export interface RouterHandle {
    * the runner then re-renders only if the change reaches page state.
    */
   start(onChange: (change?: RouteChange) => void): void
+  /**
+   * Follow `href` exactly as a click on a link to it is followed — an in-page
+   * anchor scrolls and is written onto the page shown, one of the app's pages
+   * is routed to — and say whether it was taken. A `navigate` action goes
+   * through here: left to `location.assign`, a bare `#anchor` replaced the
+   * hash route. Only a same-origin http(s) address is taken; `false` leaves
+   * any other to the caller (which refuses an unsafe one).
+   */
+  follow(href: string): boolean
 }
 
 /** What a location change changed, when the router can tell. */
@@ -313,6 +322,7 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
     applyScroll() {
       scrollToAnchor(hashAnchorOf(location.hash))
     },
+    follow: followAsLink,
     start(onChange) {
       window.addEventListener('hashchange', () => {
         // A BARE in-page anchor (`#contact-form`) that did not come from a
@@ -434,6 +444,7 @@ function createPathRouter(
     applyScroll() {
       scrollToAnchor(location.hash.startsWith('#') ? location.hash.slice(1) : null)
     },
+    follow: followAsLink,
     start(onChange) {
       window.addEventListener('popstate', () => onChange())
       // Link interception: same-origin anchors UNDER this app's base navigate
@@ -501,6 +512,32 @@ function createPathRouter(
       })
     },
   }
+}
+
+/**
+ * ONE WAY TO FOLLOW AN ADDRESS: the way a link is. The address goes on a
+ * link that is clicked, so the router's own click handling decides — the
+ * same code an authored `<a href>` meets — and what it does not take, the
+ * browser follows as it would that link.
+ */
+function followAsLink(href: string): boolean {
+  let url: URL
+  try {
+    url = new URL(href, document.baseURI)
+  } catch {
+    return false
+  }
+  if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.origin !== location.origin) return false
+  const link = document.createElement('a')
+  link.setAttribute('href', href)
+  link.hidden = true
+  document.body.appendChild(link)
+  try {
+    link.click()
+  } finally {
+    link.remove()
+  }
+  return true
 }
 
 /**

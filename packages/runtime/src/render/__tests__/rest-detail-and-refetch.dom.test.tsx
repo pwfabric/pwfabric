@@ -8,8 +8,8 @@
  *       the page opened with an error → now the source stays IDLE, no request;
  *     - a 404 landed in `__errors` exactly like a network failure → now
  *       `__status.<id>` carries the HTTP status and `__notFound.<id>` is true;
- *     - on error the previous cart stayed on screen → now the data is cleared
- *       when the failing request is not the one that produced it.
+ *     - on error the previous cart stayed on screen → now a failure binds no
+ *       rows at all (data-protocol §2.5).
  * N7  every setState refetched every source: typing into a draft input with a
  *     `stateKey` fetched on each keystroke and flashed the loading state → now
  *     only sources whose resolved request changed are fetched.
@@ -228,7 +228,7 @@ describe('a detail endpoint with an empty path parameter stays idle', () => {
     expect(calls).toEqual(['https://dummyjson.com/carts/1'])
   })
 
-  it('the same request failing on a refresh keeps its last good data', async () => {
+  it('the same request failing on a refresh binds no rows (a real failure, §2.5)', async () => {
     let fail = false
     serve((url) => (fail ? 'network-error' : dummyjson(url)))
     render(
@@ -247,7 +247,7 @@ describe('a detail endpoint with an empty path parameter stays idle', () => {
     fail = true
     await click('r')
     await waitFor(() => expect(textOf('probe')).toContain('err=network'))
-    expect(textOf('probe')).toContain('first=Example Roadster')
+    expect(textOf('probe')).toContain('first= ')
   })
 
   it('endpointMissingPathValue: path placeholders are required, query-string ones are not', () => {
