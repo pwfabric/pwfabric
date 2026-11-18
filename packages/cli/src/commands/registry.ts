@@ -6,12 +6,13 @@ import { validate } from './validate.js'
 import { pack } from './pack.js'
 import { add } from './add.js'
 import { run } from './run.js'
+import { migrate } from './migrate.js'
 
 /**
  * Every `pwf` command. Lanes add their command module here and nowhere else.
  * Order is the order `pwf help` prints.
  */
-export const COMMANDS: Command[] = [create, devCommand, buildCommand, validate, pack, add, run]
+export const COMMANDS: Command[] = [create, devCommand, buildCommand, validate, pack, add, run, migrate]
 
 export function findCommand(name: string): Command | undefined {
   return COMMANDS.find((c) => c.name === name)

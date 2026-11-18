@@ -1,20 +1,17 @@
 /**
  * Block Props Validation
  *
- * Runtime validation of block props using injected Zod schemas.
- * the legacy `blockSchemas` map is gone — production
- * callers supply a schema map sourced from the install pipeline (per-atom
- * `manifest.definition.props[*].jsonSchema` rebuilt into Zod). Without a
- * schema map the validator runs in lenient mode and passes everything
- * through.
+ * Block props checked against the block's manifest — the single definition of
+ * what a block takes (`definition.props`: name, default, shape, `bindable`).
+ * No validation library: the check is `checkPropValue` from
+ * `@pwfabric/contracts`, the same reading the renderer applies before a block
+ * renders. Without a manifest map the validator runs in lenient mode and
+ * passes everything through.
  *
  * @module @pwfabric/runtime/surface/validation
  */
 
-import type { ZodSchema } from 'zod'
-
-/** Map of block type → Zod schema. Supply via options to enable strict checks. */
-export type BlockSchemaMap = Readonly<Record<string, ZodSchema>>
+import { applyBlockProps, checkPropValue, coercePropValue, propDefault, type BlockPropDescriptor } from '@pwfabric/contracts'
 
 // ============================================================
 // VALIDATION TYPES
@@ -30,27 +27,21 @@ export interface BlockPropsValidationOptions {
    */
   readonly strict?: boolean
   /**
-   * Per-block-type Zod schemas. the runtime no longer
-   * ships a built-in schema map — callers that want prop validation
-   * supply their own (typically rebuilt from
-   * each installed block manifest's `definition.props[*].jsonSchema`).
-   * Omitting the map yields lenient pass-through behaviour.
-   */
-  readonly schemas?: BlockSchemaMap
-  /**
-   * Per-block-type manifest props. When supplied, props a manifest
-   * does not declare and templates on `bindable: false` props are reported as
-   * WARNINGS (`manifestPropFindings`); they never fail validation.
+   * Per-block-type manifest props (`definition.props`). A value that does not
+   * fit its declared shape fails validation; props a manifest does not
+   * declare and templates on `bindable: false` props are reported as WARNINGS
+   * (`manifestPropFindings`). Omitting the map yields lenient pass-through.
    */
   readonly manifests?: BlockManifestPropsMap
 }
 
 /**
- * Result of validating block props against the schema
+ * Result of validating block props against the manifest
  */
 export interface BlockPropsValidationResult {
   readonly valid: boolean
   readonly errors: readonly string[]
+  /** The props with their declared defaults and coercions applied (`applyBlockProps`). */
   readonly coerced?: Record<string, unknown>
 }
 
@@ -59,22 +50,23 @@ export interface BlockPropsValidationResult {
 // ============================================================
 
 /**
- * Validate block props against the known Zod schema for the given block type.
+ * Validate block props against the block type's manifest props.
  *
- * - Known block types are validated against the schema from @pwfabric/core.
+ * - A declared prop whose value (coerced where lossless) does not fit its
+ *   shape, or a required prop with no default left out, is an error.
  * - Unknown block types pass through in lenient mode (default) and fail in strict mode.
- * - On success, returns coerced data (with defaults applied by Zod).
+ * - On success, returns the props with the declared defaults applied.
  */
 export function validateBlockProps(
   type: string,
   props: Record<string, unknown>,
   options: BlockPropsValidationOptions = {}
 ): BlockPropsValidationResult {
-  const { strict = false, schemas } = options
+  const { strict = false, manifests } = options
 
-  const schema = schemas?.[type]
+  const descriptors = manifests?.[type]
 
-  if (!schema) {
+  if (!descriptors) {
     if (strict) {
       return {
         valid: false,
@@ -85,22 +77,19 @@ export function validateBlockProps(
     return { valid: true, errors: [] }
   }
 
-  const result = schema.safeParse(props)
-
-  if (result.success) {
-    return {
-      valid: true,
-      errors: [],
-      coerced: result.data as Record<string, unknown>,
+  const errors: string[] = []
+  for (const d of descriptors) {
+    const value = props[d.name]
+    if (value === undefined || value === null) {
+      if (d.required && propDefault(d) === undefined) errors.push(`${d.name}: is required`)
+      continue
+    }
+    for (const issue of checkPropValue(coercePropValue(value, d.jsonSchema), d.jsonSchema, d.name)) {
+      errors.push(issue.message)
     }
   }
-
-  return {
-    valid: false,
-    errors: result.error.issues.map(
-      (i) => `${i.path.map(String).join('.')}: ${i.message}`
-    ),
-  }
+  if (errors.length > 0) return { valid: false, errors }
+  return { valid: true, errors: [], coerced: { ...applyBlockProps(props, descriptors) } }
 }
 
 /**
@@ -160,15 +149,8 @@ export function validateLayoutProps(
 // PACK MANIFEST ENFORCEMENT
 // ============================================================
 
-/**
- * One prop a pack manifest declares: `manifest.definition.props[*]`. Only the
- * two fields the check reads; a full manifest entry passes as it is.
- */
-export interface ManifestPropSpec {
-  readonly name: string
-  /** `false` = the prop takes a literal only; a `{{ }}` template is not resolved for it. */
-  readonly bindable?: boolean
-}
+/** One prop a pack manifest declares: `manifest.definition.props[*]`. */
+export type ManifestPropSpec = BlockPropDescriptor
 
 /** Block type → the props its manifest declares. */
 export type BlockManifestPropsMap = Readonly<Record<string, readonly ManifestPropSpec[]>>

@@ -5,15 +5,10 @@
  * @module @pwfabric/contracts/__tests__/fabric/pwpack-json
  */
 import { describe, it, expect } from 'vitest'
-import {
-  PwpackIdentitySchema,
-  PwpackEnginesSchema,
-  PwpackIdentityAppSchema,
-  parsePwpackIdentity,
-  safeParsePwpackIdentity,
-  type PwpackIdentity,
-} from '../../fabric/pwpack-json.js'
+import { type PwpackIdentity } from '../../fabric/pwpack-json.js'
+import { PwpackIdentitySchema, PwpackEnginesSchema, PwpackIdentityAppSchema, parsePwpackIdentity, safeParsePwpackIdentity } from '../../fabric/pwpack-json.schema.js'
 import * as contracts from '../../index.js'
+import * as schemas from '../../schemas.js'
 
 const full: PwpackIdentity = {
   id: '@pwpack/example/shop',
@@ -56,10 +51,13 @@ describe('PwpackIdentitySchema — valid', () => {
     expect(r).toEqual({ id: 'a', version: '1.0.0' })
   })
 
-  it('is exported from the package root', () => {
-    expect(typeof contracts.PwpackIdentitySchema.parse).toBe('function')
-    expect(typeof contracts.safeParsePwpackIdentity).toBe('function')
-    expect(typeof contracts.parsePwpackIdentity).toBe('function')
+  it('is reachable from @pwfabric/contracts/schemas, not from the zod-free root', () => {
+    expect(typeof schemas.PwpackIdentitySchema.parse).toBe('function')
+    expect(typeof schemas.safeParsePwpackIdentity).toBe('function')
+    expect(typeof schemas.parsePwpackIdentity).toBe('function')
+    expect('PwpackIdentitySchema' in contracts).toBe(false)
+    expect('safeParsePwpackIdentity' in contracts).toBe(false)
+    expect('parsePwpackIdentity' in contracts).toBe(false)
   })
 })
 

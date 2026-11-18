@@ -9,7 +9,7 @@
  * browser-side, `installedBlocksOverride` server-side).
  *
  * The 45 stubs carry only the metadata the rule engine and composition
- * validators consult: `type`, `name`, `category`, `schema`,
+ * validators consult: `type`, `name`, `category`, `props`,
  * `defaultProps`, `canHaveChildren`, optional `allowedChildren`/
  * `allowedParents`. Component implementations live exclusively in
  * `pwpack-source/<pack>/blocks/<cat>/<name>/component.tsx` and are
@@ -25,7 +25,7 @@
  * @module @pwfabric/runtime/blocks/__test-fixtures__/block-fixtures
  */
 
-import { z } from 'zod'
+import type { PropShape as Shape } from '@pwfabric/contracts'
 import type { BlockDefinition, BlockCategory } from '@pwfabric/core'
 import { type BlockRegistry, blockRegistry } from '../registry.js'
 
@@ -35,13 +35,11 @@ import { type BlockRegistry, blockRegistry } from '../registry.js'
 //
 // Tests that exercise the rule engine / composition validation only
 // touch `BlockDefinition.canHaveChildren` / `.allowedChildren` /
-// `.allowedParents`. Tests that walk `schema.shape` for prop names use
-// the shape keys defined per-block below; the schemas are built with
-// `z.object(shape).passthrough()` so unknown props don't throw on
-// safeParse.
+// `.allowedParents`. Tests that read prop names use `BlockDefinition.props`,
+// built from the shapes defined per-block below (manifest-style descriptors).
 // ============================================================
 
-type PropShape = z.ZodRawShape
+type PropShape = Readonly<Record<string, Shape>>
 
 function makeDefinition(input: {
   type: string
@@ -53,13 +51,13 @@ function makeDefinition(input: {
   allowedChildren?: readonly string[]
   allowedParents?: readonly string[]
 }): BlockDefinition {
-  const schema = z.object(input.shape ?? {}).passthrough()
+  const props = Object.entries(input.shape ?? {}).map(([name, jsonSchema]) => ({ name, jsonSchema }))
   return {
     type: input.type,
     name: input.name,
     category: input.category,
     icon: 'block',
-    schema,
+    props,
     defaultProps: input.defaultProps ?? {},
     canHaveChildren: input.canHaveChildren ?? false,
     ...(input.allowedChildren !== undefined ? { allowedChildren: input.allowedChildren } : {}),
@@ -68,16 +66,16 @@ function makeDefinition(input: {
 }
 
 // Common prop shapes used across stubs. Keys match the runtime block
-// authoring contracts so tests that read `schema.shape` for prop names
+// authoring contracts so tests that read the declared prop names
 // still see the expected keys.
-const stringProp = z.string().optional()
-const numberProp = z.number().optional()
-const booleanProp = z.boolean().optional()
-const anyArrayProp = z.array(z.unknown()).optional()
-const styleProp = z.record(z.string(), z.unknown()).optional()
+const stringProp: Shape = { type: 'string' }
+const numberProp: Shape = { type: 'number' }
+const booleanProp: Shape = { type: 'boolean' }
+const anyArrayProp: Shape = { type: 'array' }
+const styleProp: Shape = { type: 'object' }
 
-// Helper for blocks whose schema would otherwise be empty — keeps tests
-// that walk `Object.keys(schema.shape)` from observing zero props.
+// Helper for blocks whose props would otherwise be empty — keeps tests
+// that list the declared props from observing zero props.
 const baseShape: PropShape = {
   className: stringProp,
   style: styleProp,
@@ -321,7 +319,7 @@ export const TEST_BLOCK_DEFINITIONS: readonly BlockDefinition[] = [
       ...baseShape,
       src: stringProp,
       alt: stringProp,
-      shape: z.enum(['circle', 'rounded', 'square']).optional(),
+      shape: { type: 'string', enum: ['circle', 'rounded', 'square'] },
     },
   }),
   makeDefinition({
@@ -332,9 +330,7 @@ export const TEST_BLOCK_DEFINITIONS: readonly BlockDefinition[] = [
     shape: {
       ...baseShape,
       text: stringProp,
-      variant: z
-        .enum(['primary', 'secondary', 'success', 'warning', 'destructive', 'error', 'info'])
-        .optional(),
+      variant: { type: 'string', enum: ['primary', 'secondary', 'success', 'warning', 'destructive', 'error', 'info'] },
     },
   }),
   makeDefinition({
@@ -352,8 +348,8 @@ export const TEST_BLOCK_DEFINITIONS: readonly BlockDefinition[] = [
     shape: {
       ...baseShape,
       label: stringProp,
-      variant: z.enum(['primary', 'secondary', 'outline', 'ghost', 'destructive']).optional(),
-      size: z.enum(['small', 'medium', 'large']).optional(),
+      variant: { type: 'string', enum: ['primary', 'secondary', 'outline', 'ghost', 'destructive'] },
+      size: { type: 'string', enum: ['small', 'medium', 'large'] },
       href: stringProp,
       disabled: booleanProp,
     },
@@ -470,8 +466,7 @@ export const TEST_BLOCK_DEFINITIONS: readonly BlockDefinition[] = [
     shape: {
       ...baseShape,
       name: stringProp,
-      type: z
-        .enum([
+      type: { type: 'string', enum: [
           'text',
           'email',
           'password',
@@ -482,8 +477,7 @@ export const TEST_BLOCK_DEFINITIONS: readonly BlockDefinition[] = [
           'time',
           'datetime-local',
           'search',
-        ])
-        .optional(),
+        ] },
       label: stringProp,
       placeholder: stringProp,
     },

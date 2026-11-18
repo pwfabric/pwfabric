@@ -1,28 +1,30 @@
 /**
  * defineBlock API
  *
- * Create type-safe custom block definitions with Zod schemas.
+ * Create custom block definitions. A block's props are declared once, as its
+ * manifest declares them (`definition.props`); there is no schema and no
+ * validation library (3.0).
  *
  * @module @pwfabric/authoring/define-block
  *
  * @example
  * ```typescript
  * import { defineBlock } from '@pwfabric/authoring'
- * import { z } from 'zod'
  *
- * export const MyBlock = defineBlock({
+ * interface MyProps { readonly title: string }
+ *
+ * export const MyBlock = defineBlock<MyProps>({
  *   type: 'my-block',
  *   name: 'My Block',
- *   schema: z.object({ title: z.string() }),
- *   defaultProps: { title: 'Default' },
+ *   props: [{ name: 'title', default: 'Default', jsonSchema: { type: 'string' }, copy: true }],
  *   component: ({ props }) => <div>{props.title}</div>
  * })
  * ```
  */
 
-import { z, type ZodSchema, type ZodTypeAny } from 'zod'
+import { applyBlockProps, checkPropValue, type BlockPropDescriptor } from '@pwfabric/contracts'
 import { createElement, type ReactNode } from 'react'
-import type { CustomBlockOptions, CustomBlockDefinition, SchemaProps } from './types.js'
+import type { CustomBlockOptions, CustomBlockDefinition } from './types.js'
 
 // ============================================================
 // VALIDATION
@@ -101,20 +103,18 @@ function coerceBlockName(name: unknown, type: string): string {
 }
 
 /**
- * Warn (never throw) when defaultProps don't satisfy the schema.
- * the renderer degrades, it does not crash. A mismatch is an authoring defect
- * to flag, not a render-time fatality (the registry already falls back to
- * defaultProps on a failed parse).
+ * Warn (never throw) when defaultProps do not fit the declared props.
+ * The renderer degrades, it does not crash: a mismatch is an authoring defect
+ * to flag, not a render-time fatality.
  */
-function warnOnSchemaMismatch(
+function warnOnPropsMismatch(
   type: string,
-  schema: ZodSchema<unknown>,
+  props: readonly BlockPropDescriptor[],
   defaultProps: Record<string, unknown>
 ): void {
-  const result = schema.safeParse(defaultProps)
-  if (!result.success) {
-    const errors = result.error.issues.map((e) => `${e.path.map(String).join('.')}: ${e.message}`).join(', ')
-    console.warn(`[pwfabric] block "${type}": defaultProps do not match schema (${errors}). Fix at authoring.`)
+  const errors = props.flatMap((d) => checkPropValue(defaultProps[d.name], d.jsonSchema, d.name)).map((i) => i.message)
+  if (errors.length > 0) {
+    console.warn(`[pwfabric] block "${type}": defaultProps do not fit the declared props (${errors.join(', ')}). Fix at authoring.`)
   }
 }
 
@@ -146,38 +146,39 @@ function placeholderComponent(type: string): () => ReactNode {
 // ============================================================
 
 /**
- * Define a custom block with type-safe Zod schema validation
+ * Define a custom block.
  *
  * Creates a reusable block definition that can be registered with
- * CustomBlockRegistry and used with SurfaceRenderer.
+ * CustomBlockRegistry and used with SurfaceRenderer. `props` is the block's
+ * manifest `definition.props` - the only definition of what it takes; the
+ * registry applies their defaults and shapes before `component` renders.
  *
  * @param options - Block definition options
- * @returns A frozen, type-safe custom block definition
+ * @returns A frozen custom block definition
  *
  * @example
  * ```typescript
  * import { defineBlock } from '@pwfabric/authoring'
- * import { z } from 'zod'
  *
- * // Define a pricing card block
- * const PricingCard = defineBlock({
+ * interface PricingCardProps {
+ *   readonly title: string
+ *   readonly price: number
+ *   readonly currency: string
+ *   readonly features: readonly string[]
+ *   readonly highlighted: boolean
+ * }
+ *
+ * const PricingCard = defineBlock<PricingCardProps>({
  *   type: 'pricing-card',
  *   name: 'Pricing Card',
  *   category: 'content',
- *   schema: z.object({
- *     title: z.string(),
- *     price: z.number(),
- *     currency: z.string().default('USD'),
- *     features: z.array(z.string()),
- *     highlighted: z.boolean().default(false),
- *   }),
- *   defaultProps: {
- *     title: 'Basic Plan',
- *     price: 9.99,
- *     currency: 'USD',
- *     features: ['Feature 1', 'Feature 2'],
- *     highlighted: false,
- *   },
+ *   props: [
+ *     { name: 'title', default: '', jsonSchema: { type: 'string' }, copy: true },
+ *     { name: 'price', default: 0, jsonSchema: { type: 'number', minimum: 0 } },
+ *     { name: 'currency', default: 'USD', jsonSchema: { type: 'string', minLength: 3, maxLength: 3 } },
+ *     { name: 'features', default: [], jsonSchema: { type: 'array', items: { type: 'string' } } },
+ *     { name: 'highlighted', default: false, jsonSchema: { type: 'boolean' } },
+ *   ],
  *   component: ({ props }) => (
  *     <div className={props.highlighted ? 'highlighted' : ''}>
  *       <h3>{props.title}</h3>
@@ -190,10 +191,9 @@ function placeholderComponent(type: string): () => ReactNode {
  * })
  * ```
  */
-export function defineBlock<TSchema extends ZodTypeAny>(
-  options: CustomBlockOptions<TSchema>
-): CustomBlockDefinition<SchemaProps<TSchema>> {
-  type TProps = SchemaProps<TSchema>
+export function defineBlock<TProps extends Record<string, unknown> = Record<string, unknown>>(
+  options: CustomBlockOptions<TProps>
+): CustomBlockDefinition<TProps> {
   // the renderer DEGRADES, it never throws. `type` is the identity
   // → HARD (throws). Every other required field falls back + warns so a single
   // malformed block can't white-screen the canvas. The authoring/publish gate is
@@ -201,22 +201,10 @@ export function defineBlock<TSchema extends ZodTypeAny>(
   validateBlockType(options.type)
   const safeName = coerceBlockName(options.name, options.type)
 
-  // schema — missing → passthrough (props pass through unvalidated) + warn.
-  let schema = options.schema as ZodSchema<TProps> | undefined
-  if (!schema) {
-    console.warn(
-      `[pwfabric] block "${options.type}": no schema — using a passthrough (props unvalidated). ` +
-        `Add a schema at authoring; this is degraded render, not a fix.`
-    )
-    schema = z.object({}).passthrough() as unknown as ZodSchema<TProps>
-  }
+  const props: readonly BlockPropDescriptor[] = Array.isArray(options.props) ? options.props : []
 
   // defaultProps — missing → {} + warn.
-  let defaultProps = options.defaultProps
-  if (!defaultProps) {
-    console.warn(`[pwfabric] block "${options.type}": no defaultProps — using {}.`)
-    defaultProps = {} as TProps
-  }
+  const defaultProps: Partial<TProps> = options.defaultProps ?? {}
 
   // component — missing → visible placeholder + warn (not a thrown white-screen).
   let component = options.component
@@ -225,8 +213,8 @@ export function defineBlock<TSchema extends ZodTypeAny>(
     component = placeholderComponent(options.type) as typeof options.component
   }
 
-  // Defaults vs schema: warn, never throw.
-  warnOnSchemaMismatch(options.type, schema, defaultProps)
+  // Starting props vs the declarations: warn, never throw.
+  warnOnPropsMismatch(options.type, props, defaultProps)
 
   // Build the definition with defaults
   const definition = {
@@ -234,7 +222,7 @@ export function defineBlock<TSchema extends ZodTypeAny>(
     name: safeName,
     category: options.category ?? 'content',
     icon: options.icon ?? '◆',
-    schema,
+    props,
     defaultProps,
     canHaveChildren: options.canHaveChildren ?? false,
     component,
@@ -309,7 +297,7 @@ export function isCustomBlockDefinition(value: unknown): value is CustomBlockDef
     typeof def.type === 'string' &&
     typeof def.name === 'string' &&
     typeof def.category === 'string' &&
-    typeof def.schema === 'object' &&
+    Array.isArray(def.props) &&
     typeof def.defaultProps === 'object' &&
     typeof def.component === 'function'
   )
@@ -320,7 +308,7 @@ export function isCustomBlockDefinition(value: unknown): value is CustomBlockDef
  *
  * @param definition - The block definition
  * @param id - Unique block ID
- * @param props - Optional props override (merged with defaults)
+ * @param props - Optional props override (merged with the starting props and the declared defaults)
  * @param children - Optional children blocks
  */
 export function createBlockInstance<TProps extends Record<string, unknown>>(
@@ -329,22 +317,21 @@ export function createBlockInstance<TProps extends Record<string, unknown>>(
   props?: Partial<TProps>,
   children?: readonly { id: string; type: string; props: Record<string, unknown> }[]
 ): { id: string; type: string; props: TProps; children?: typeof children } {
-  const mergedProps = {
+  const mergedProps: Record<string, unknown> = {
     ...definition.defaultProps,
     ...props,
-  } as TProps
+  }
 
-  // Validate merged props
-  const result = definition.schema.safeParse(mergedProps)
-  if (!result.success) {
-    const errors = result.error.issues.map((e) => `${e.path.map(String).join('.')}: ${e.message}`).join(', ')
-    throw new Error(`Invalid block props: ${errors}`)
+  // An instance is authored here, not rendered: a value that does not fit is refused.
+  const errors = definition.props.flatMap((d) => checkPropValue(mergedProps[d.name], d.jsonSchema, d.name)).map((i) => i.message)
+  if (errors.length > 0) {
+    throw new Error(`Invalid block props: ${errors.join(', ')}`)
   }
 
   const instance: { id: string; type: string; props: TProps; children?: typeof children } = {
     id,
     type: definition.type,
-    props: result.data as TProps,
+    props: applyBlockProps(mergedProps, definition.props) as TProps,
   }
 
   if (children && children.length > 0) {

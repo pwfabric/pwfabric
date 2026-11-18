@@ -39,10 +39,13 @@
  * `useSurfaceEvents` reading a second context makes `emit()` a silent no-op.
  *
  * It is the only kind: every specifier on this list is resolved by the host
- * through a shim reading a global. `zod` included — blocks share the host's
- * single zod instance, because introspection needs the real zod for
- * `instanceof` while walking a schema. A specifier a bundler inlines is simply
+ * through a shim reading a global. A specifier a bundler inlines is simply
  * not external, and so never reaches this list.
+ *
+ * `zod` is NOT on it (3.0). A block's props are declared in its manifest
+ * (`definition.props`), the runtime reads them without a validation library,
+ * and nothing on a visitor's page carries zod. A block that imports it fails
+ * to compile (`ZOD_IMPORT`).
  */
 export type HostImportKind = 'global'
 
@@ -185,15 +188,6 @@ export const BLOCK_HOST_IMPORTS: readonly HostImport[] = [
     shim: 'sdk@v1.mjs',
     reason:
       'What the scaffolding emits and a third-party author reads first. A host that does not map it breaks every block that follows the documented path.',
-  },
-  {
-    specifier: 'zod',
-    kind: 'global',
-    global: '__pwfabric_zod',
-    seeding: 'every-host',
-    shim: 'zod.mjs',
-    reason:
-      'Every block with a prop schema imports it as a value — 81 pack source files take `z`. Shared, not inlined: `zod.mjs` re-exports the host instance, and introspection depends on it being the real zod so `instanceof` holds while walking a schema.',
   },
 ] as const
 

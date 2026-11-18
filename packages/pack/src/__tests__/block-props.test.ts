@@ -65,7 +65,7 @@ describe('checkReceiptBlockProps', () => {
         level: 2,
         ratio: '1:1',
         items: [{ a: 1 }],
-        action: { type: 'navigate' },
+        action: { type: 'refresh' },
         free: { anything: true },
         nullable: null,
         both: 'a',
@@ -105,6 +105,19 @@ describe('checkReceiptBlockProps', () => {
     expect(check({ label: 2.5 })[0]?.message).toContain('to a number (2.5); control.button expects string')
     expect(check({ label: 'x'.repeat(100) }).length).toBe(0)
     expect(check({ gap: 'x'.repeat(100) })[0]?.message).toContain('…')
+  })
+
+  it('warns about a value of the right type that breaks the rest of its shape, as the runtime reads it (BLOCK_PROP_SHAPE)', () => {
+    // A member of a nested object: the runtime renders the default instead.
+    expect(codes({ action: { type: 'navigate' } })).toEqual(['BLOCK_PROP_SHAPE'])
+    // An array item that is not an object.
+    expect(codes({ items: [{}, 3] })).toEqual(['BLOCK_PROP_SHAPE'])
+    const [issue] = check({ items: [{}, 3] })
+    expect(issue?.message).toContain('items[1]')
+    // A binding anywhere in the value is left to the runtime.
+    expect(codes({ items: [{}, '{{row}}'] })).toEqual([])
+    // Positive control: a fitting nested value draws nothing.
+    expect(codes({ items: [{}, {}] })).toEqual([])
   })
 
   it('warns about a prop the manifest does not declare', () => {

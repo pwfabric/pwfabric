@@ -8,15 +8,13 @@
  * @example
  * ```typescript
  * import { createCustomBlockRegistry, defineBlock } from '@pwfabric/authoring'
- * import { z } from 'zod'
  *
  * const registry = createCustomBlockRegistry()
  *
- * const MyBlock = defineBlock({
+ * const MyBlock = defineBlock<{ title: string }>({
  *   type: 'my-block',
  *   name: 'My Block',
- *   schema: z.object({ title: z.string() }),
- *   defaultProps: { title: 'Default' },
+ *   props: [{ name: 'title', default: 'Default', jsonSchema: { type: 'string' }, copy: true }],
  *   component: ({ props }) => <div>{props.title}</div>
  * })
  *
@@ -36,6 +34,7 @@ import type {
   CustomBlockContext,
 } from './types.js'
 import { createElement, type ReactNode } from 'react'
+import { applyBlockProps } from '@pwfabric/contracts'
 
 // ============================================================
 // CUSTOM BLOCK REGISTRY
@@ -230,9 +229,9 @@ function createBlockComponentWrapper(
     children?: ReactNode
     context: unknown
   }): ReactNode {
-    // Validate and apply defaults using the schema
-    const result = definition.schema.safeParse(rawProps)
-    const validatedProps = result.success ? result.data : definition.defaultProps
+    // The declared defaults and shapes, applied as the runtime applies a
+    // pack block's (`applyBlockProps`): never throws.
+    const validatedProps = applyBlockProps(rawProps, definition.props)
 
     // Map runtime context to custom block context
     const customContext = mapToCustomBlockContext(context)

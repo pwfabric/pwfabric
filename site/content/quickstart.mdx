@@ -121,30 +121,57 @@ needs `"type": "module"`.
 **1. Install the authoring package.**
 
 ```bash
-pnpm add @pwfabric/authoring @pwfabric/runtime @pwfabric/contracts zod@4 react react-dom
+pnpm add @pwfabric/authoring @pwfabric/runtime @pwfabric/contracts react react-dom
 pnpm add -D typescript @types/react tsx
 ```
 
-PWFabric uses zod 4 (`^4.6.6`). A project still on zod 3 stays on the 1.x packages.
+A block needs no validation library: its props are declared as data.
 `typescript` and `@types/react` type-check the block; `tsx` runs the
 TypeScript examples below (`npx tsx check.ts`).
 
-**2. Write the block.** Put it at `atoms/blocks/text/customer-quote/component.tsx`, the
-place a pwpack source tree expects it:
+**2. Write the block.** A block is one folder,
+`atoms/blocks/text/customer-quote/`, the place a pwpack source tree expects
+it. Its `manifest.json` declares the props, once:
+
+```json
+{
+  "id": "text.customer-quote",
+  "kind": "block",
+  "version": "0.1.0",
+  "name": "Customer quote",
+  "state": "stable",
+  "definition": {
+    "props": [
+      { "name": "quote", "type": "string", "required": true, "jsonSchema": { "type": "string", "minLength": 10, "maxLength": 500 }, "copy": true },
+      { "name": "author", "type": "string", "required": true, "jsonSchema": { "type": "string" }, "copy": true },
+      { "name": "role", "type": "string", "jsonSchema": { "type": "string" }, "copy": true }
+    ],
+    "defaultProps": { "quote": "A great product to work with.", "author": "Jane Doe", "role": "Product Manager" },
+    "canHaveChildren": false
+  }
+}
+```
+
+and `component.tsx` beside it renders them:
 
 ```tsx
 import { defineBlock } from '@pwfabric/authoring'
-import { z } from 'zod'
 
-export const CustomerQuote = defineBlock({
+interface CustomerQuoteProps extends Record<string, unknown> {
+  readonly quote: string
+  readonly author: string
+  readonly role?: string
+}
+
+export const CustomerQuote = defineBlock<CustomerQuoteProps>({
   type: 'customer-quote',
   name: 'Customer quote',
   category: 'text',
-  schema: z.object({
-    quote: z.string().min(10).max(500),
-    author: z.string(),
-    role: z.string().optional(),
-  }),
+  props: [
+    { name: 'quote', required: true, jsonSchema: { type: 'string', minLength: 10, maxLength: 500 }, copy: true },
+    { name: 'author', required: true, jsonSchema: { type: 'string' }, copy: true },
+    { name: 'role', jsonSchema: { type: 'string' }, copy: true },
+  ],
   defaultProps: {
     quote: 'A great product to work with.',
     author: 'Jane Doe',
@@ -161,10 +188,14 @@ export const CustomerQuote = defineBlock({
 
 `type` is the block's identity: 2–50 characters, kebab-case, and not one of
 the first-party names. `defineBlock()` throws on a bad `type` and warns on
-anything else it can work around.
+anything else it can work around. `props` is the manifest's list again, for
+rendering the block in your own React tree (step 4); in an app, the manifest
+is what the renderer reads. `CustomerQuoteProps` is the TypeScript view of
+the same props, written by you. `defaultProps` is what a newly placed block
+starts with.
 
 **3. Validate it.** `validateBlockDefinition()` is the check a publish gate
-runs on a definition; `validateBlock()` checks an instance against your schema.
+runs on a definition; `validateBlock()` checks an instance against the declared props.
 
 ```ts
 import {
@@ -185,7 +216,7 @@ const result = validateBlock(
   CustomerQuote,
 )
 console.log(result.valid ? 'ok' : formatValidationErrors(result.errors))
-// [VALIDATION_ERROR] at quote: String must contain at least 10 character(s)
+// [VALIDATION_ERROR] at quote: is shorter than 10 characters
 ```
 
 **4. See it render.** A registry turns definitions into the component map

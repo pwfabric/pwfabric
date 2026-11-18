@@ -37,6 +37,16 @@ prop (BLOCK_PROP_UNKNOWN), a value outside the prop's enum (BLOCK_PROP_ENUM)
 or of the wrong JSON type (BLOCK_PROP_TYPE) is a warning; {{…}} bindings are
 not checked, except that a {{…}} in a prop the manifest declares
 bindable: false is a warning (BLOCK_PROP_NOT_BINDABLE): it renders as written.
+A value of the right type that breaks the rest of its declared shape (a
+bound, length, pattern, format, or a member of a nested object or array
+item) is a warning too (BLOCK_PROP_SHAPE): the block renders its default.
+\`pwf build\` reports the same findings, so receipts are judged before they
+ship, not in the visitor's browser.
+
+The manifest is a block's only definition of its props (3.0). A source file
+that imports zod is an error (BLOCK_IMPORTS_ZOD; \`pwf migrate blocks\` moves
+the schema into the manifest), and a prop declaration the runtime cannot
+read, or whose default does not fit it, is a warning (BLOCK_PROP_DECLARATION).
 
 The app writes every word. MESSAGES_MISSING lists the runner message ids the
 app can reach (its sign-in screen, account labels, not-found page …) that

@@ -1,11 +1,11 @@
 /**
- * defineBlock() infers a block's props from its SCHEMA.
+ * defineBlock() types a block's props from its explicit `TProps` generic.
  *
- * The props used to be inferred from `defaultProps` too, and TypeScript took
- * the narrower candidate: a schema field declared `.optional()` but given a
- * default value came out as `string`, not `string | undefined`, and the
- * documented quick-start block failed strict type-checking. This test
- * type-checks that block with the strict settings a consumer project uses.
+ * There is no schema to infer from (3.0): the author writes the TypeScript
+ * view of the props (`defineBlock<MyProps>(...)`), the component's `props` is
+ * `TProps`, and `defaultProps` is `Partial<TProps>`. The declared descriptors
+ * (`props`) are typed `BlockPropDescriptor[]`. These tests type-check fixture
+ * blocks with the strict settings a consumer project uses.
  */
 import { describe, it, expect } from 'vitest'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
@@ -15,7 +15,7 @@ import ts from 'typescript'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '..', 'define-block.ts').split('\\').join('/')
-// Inside the package, so `zod` resolves from its node_modules as in a consumer.
+// Inside the package, so `@pwfabric/contracts` resolves from its node_modules as in a consumer.
 const PKG = join(HERE, '..', '..')
 
 function diagnostics(source: string): string[] {
@@ -44,44 +44,118 @@ function diagnostics(source: string): string[] {
 
 // Each test runs the TypeScript compiler over a fixture; under a parallel
 // coverage run that takes longer than the 5 s default.
-describe('defineBlock() infers props from the schema', { timeout: 30_000 }, () => {
+describe('defineBlock() types props from its TProps generic', { timeout: 30_000 }, () => {
   it('accepts the quick-start block: an optional field with a default value', () => {
     const errors = diagnostics(`
       import { defineBlock } from '${SRC}'
-      import { z } from 'zod'
 
-      export const CustomerQuote = defineBlock({
+      interface CustomerQuoteProps extends Record<string, unknown> {
+        readonly quote: string
+        readonly author: string
+        readonly role?: string
+      }
+
+      export const CustomerQuote = defineBlock<CustomerQuoteProps>({
         type: 'customer-quote',
         name: 'Customer quote',
         category: 'text',
-        schema: z.object({
-          quote: z.string().min(10).max(500),
-          author: z.string(),
-          role: z.string().optional(),
-        }),
+        props: [
+          { name: 'quote', required: true, jsonSchema: { type: 'string', minLength: 10, maxLength: 500 }, copy: true },
+          { name: 'author', required: true, jsonSchema: { type: 'string' }, copy: true },
+          { name: 'role', jsonSchema: { type: 'string' }, copy: true },
+        ],
         defaultProps: { quote: 'A great product to work with.', author: 'Jane Doe', role: 'Product Manager' },
         component: ({ props }) => {
           const role: string | undefined = props.role
-          return role ?? props.author
+          const author: string = props.author
+          return role ?? author
         },
       })
     `)
     expect(errors).toEqual([])
   })
 
-  it('still refuses default props that do not fit the schema', () => {
+  it('types defaultProps as Partial<TProps>: required fields may be left out', () => {
     const errors = diagnostics(`
       import { defineBlock } from '${SRC}'
-      import { z } from 'zod'
 
-      export const Price = defineBlock({
+      type PriceProps = { amount: number; currency: string }
+
+      export const Price = defineBlock<PriceProps>({
         type: 'price-tag',
         name: 'Price tag',
-        schema: z.object({ amount: z.number() }),
+        defaultProps: { currency: 'EUR' },
+        component: ({ props }) => props.currency + String(props.amount),
+      })
+    `)
+    expect(errors).toEqual([])
+  })
+
+  it('still refuses default props that do not fit TProps', () => {
+    const errors = diagnostics(`
+      import { defineBlock } from '${SRC}'
+
+      type PriceProps = { amount: number }
+
+      export const Price = defineBlock<PriceProps>({
+        type: 'price-tag',
+        name: 'Price tag',
+        props: [{ name: 'amount', jsonSchema: { type: 'number' } }],
         defaultProps: { amount: 'twelve' },
         component: () => null,
       })
     `)
-    expect(errors.length).toBeGreaterThan(0)
+    expect(errors.join(' | ')).toMatch(/'string' is not assignable to type 'number'/)
+  })
+
+  it('refuses a component that reads a prop TProps does not have', () => {
+    const errors = diagnostics(`
+      import { defineBlock } from '${SRC}'
+
+      type PriceProps = { amount: number }
+
+      export const Price = defineBlock<PriceProps>({
+        type: 'price-tag',
+        name: 'Price tag',
+        component: ({ props }) => props.missing,
+      })
+    `)
+    expect(errors.join(' | ')).toMatch(/Property 'missing' does not exist/)
+  })
+
+  it('refuses a prop descriptor whose shape is not a PropShape', () => {
+    const errors = diagnostics(`
+      import { defineBlock } from '${SRC}'
+
+      export const Bad = defineBlock({
+        type: 'bad-shape',
+        name: 'Bad shape',
+        props: [{ name: 'size', jsonSchema: { type: 'text' } }],
+        component: () => null,
+      })
+    `)
+    expect(errors.join(' | ')).toMatch(/'"text"' is not assignable/)
+  })
+
+  it('types the definition: props is a descriptor array, component props are TProps', () => {
+    const errors = diagnostics(`
+      import { defineBlock } from '${SRC}'
+      import type { BlockPropDescriptor } from '@pwfabric/contracts'
+
+      type HeroProps = { headline: string }
+
+      const Hero = defineBlock<HeroProps>({
+        type: 'hero-banner',
+        name: 'Hero',
+        props: [{ name: 'headline', default: 'Hello', jsonSchema: { type: 'string' } }],
+        component: ({ props }) => props.headline,
+      })
+
+      export const descriptors: readonly BlockPropDescriptor[] = Hero.props
+      export const start: Partial<HeroProps> = Hero.defaultProps
+      // @ts-expect-error -- the zod schema is gone from the definition
+      export const schema = Hero.schema
+    `)
+    expect(errors).toEqual([])
   })
 })

@@ -51,25 +51,33 @@ how to build the `.pwpack` archive that `--foundation` takes. The
 [examples](https://github.com/pwfabric/examples) are three complete
 apps to start from.
 
-Writing your own block takes one function:
+Writing your own block takes one function. Its props are declared once, as
+data (the same list its `manifest.json` carries in `definition.props`); the
+runtime fills in defaults and checks shapes before the block renders:
 
 ```tsx
 import { defineBlock } from '@pwfabric/authoring'
-import { z } from 'zod'
 
-export const priceTag = defineBlock({
+interface PriceTagProps extends Record<string, unknown> {
+  readonly amount: number
+  readonly currency: string
+}
+
+export const priceTag = defineBlock<PriceTagProps>({
   type: 'price-tag',
   name: 'Price tag',
-  schema: z.object({ amount: z.number(), currency: z.string() }),
-  defaultProps: { amount: 0, currency: 'EUR' },
+  props: [
+    { name: 'amount', default: 0, jsonSchema: { type: 'number' } },
+    { name: 'currency', default: 'EUR', jsonSchema: { type: 'string', minLength: 3, maxLength: 3 } },
+  ],
   component: ({ props }) => <b>{props.amount} {props.currency}</b>,
 })
 ```
 
 These packages are at **2.2.0**, published on npm
 (`npm install @pwfabric/authoring`). They are ES
-modules only: a project that imports them sets `"type": "module"`. Blocks
-take `zod@4`.
+modules only: a project that imports them sets `"type": "module"`. A block
+needs no validation library, and a block that imports `zod` is refused.
 
 Full documentation is at [pwfabric.com](https://pwfabric.com).
 

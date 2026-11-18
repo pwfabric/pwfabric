@@ -45,7 +45,8 @@ describe('shims', () => {
     // Names that blocks and the runner import by name.
     expect(exportsOf(shims.get('react.mjs') as string)).toEqual(expect.arrayContaining(['useState', 'useEffect', 'createElement', 'Fragment']))
     expect(exportsOf(shims.get('react-jsx-runtime.mjs') as string)).toEqual(expect.arrayContaining(['jsx', 'jsxs', 'Fragment']))
-    expect(exportsOf(shims.get('zod.mjs') as string)).toContain('z')
+    // No zod shim (3.0): block props are declared in the manifest.
+    expect(shims.has('zod.mjs')).toBe(false)
     expect(exportsOf(shims.get('runtime.mjs') as string)).toEqual(
       expect.arrayContaining(['createConnectorEngineRegistry', 'useSurfaceEvents', 'applyEntityQuery'])
     )
@@ -67,9 +68,8 @@ describe('shims', () => {
     expect(statics.filter((spec) => spec !== undefined && spec in map)).toEqual([])
     // Once the renderer is in it imports these by name (run-app.ts, entity-facade.ts).
     const dynamic = [...runnerJs.matchAll(/import\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1])
-    expect(dynamic.sort()).toEqual(['@pwfabric/runtime', 'zod'])
+    expect(dynamic.sort()).toEqual(['@pwfabric/runtime'])
     expect(exportsOf(shims.get('runtime.mjs') as string)).toContain('createConnectorEngineRegistry')
-    expect(exportsOf(shims.get('zod.mjs') as string)).toContain('z')
     // The bundle's own map is not shipped, so it does not point at one.
     expect(runnerJs).not.toMatch(/sourceMappingURL/)
   })

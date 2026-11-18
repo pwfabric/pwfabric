@@ -3,7 +3,6 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import { z } from 'zod'
 import {
   CustomBlockRegistry,
   createCustomBlockRegistry,
@@ -19,7 +18,7 @@ const createTestBlock = (type: string, name = 'Test Block'): ReturnType<typeof d
   defineBlock({
     type,
     name,
-    schema: z.object({ title: z.string() }),
+    props: [{ name: 'title', jsonSchema: { type: 'string' } }],
     defaultProps: { title: 'Default' },
     component: () => null,
   })
@@ -111,7 +110,7 @@ describe('CustomBlockRegistry', () => {
         type: 'content-block',
         name: 'Content',
         category: 'control',
-        schema: z.object({ text: z.string() }),
+        props: [{ name: 'text', jsonSchema: { type: 'string' } }],
         defaultProps: { text: '' },
         component: () => null,
       })
@@ -120,7 +119,7 @@ describe('CustomBlockRegistry', () => {
         type: 'layout-block',
         name: 'Layout',
         category: 'layout',
-        schema: z.object({ gap: z.number() }),
+        props: [{ name: 'gap', jsonSchema: { type: 'number' } }],
         defaultProps: { gap: 16 },
         component: () => null,
       })
@@ -190,7 +189,7 @@ describe('CustomBlockRegistry', () => {
       const contextBlock = defineBlock({
         type: 'context-block',
         name: 'Context Block',
-        schema: z.object({ title: z.string() }),
+        props: [{ name: 'title', jsonSchema: { type: 'string' } }],
         defaultProps: { title: 'Test' },
         component: () => null,
       })
@@ -230,11 +229,37 @@ describe('CustomBlockRegistry', () => {
       expect(ctx).not.toHaveProperty('basePath')
     })
 
+    it('should apply declared defaults and keep a bad value before rendering', () => {
+      const propsBlock = defineBlock<{ title: string; size: string; count: number }>({
+        type: 'props-block',
+        name: 'Props Block',
+        props: [
+          { name: 'title', default: 'Untitled', jsonSchema: { type: 'string' } },
+          { name: 'size', default: 'md', jsonSchema: { type: 'string', enum: ['sm', 'md', 'lg'] } },
+          { name: 'count', default: 0, jsonSchema: { type: 'number' } },
+        ],
+        component: () => null,
+      })
+
+      registry.register(propsBlock)
+      const wrapper = registry.getComponents()['props-block']
+
+      const element = wrapper({
+        block: { id: 'b1', type: 'props-block', props: {} },
+        // title missing -> default; size outside the enum -> kept (a dev warning); "24" coerced to 24
+        props: { size: 'xl', count: '24', extra: 'kept' },
+        children: undefined,
+        context: undefined,
+      }) as { props?: { props?: Record<string, unknown> } }
+
+      expect(element.props?.props).toEqual({ title: 'Untitled', size: 'xl', count: 24, extra: 'kept' })
+    })
+
     it('should handle missing context gracefully', () => {
       const noCtxBlock = defineBlock({
         type: 'no-ctx-block',
         name: 'No Context Block',
-        schema: z.object({ title: z.string() }),
+        props: [{ name: 'title', jsonSchema: { type: 'string' } }],
         defaultProps: { title: 'Test' },
         component: () => null,
       })
@@ -257,7 +282,7 @@ describe('CustomBlockRegistry', () => {
       const eventBlock = defineBlock({
         type: 'event-block',
         name: 'Event Block',
-        schema: z.object({ title: z.string() }),
+        props: [{ name: 'title', jsonSchema: { type: 'string' } }],
         defaultProps: { title: 'Test' },
         component: () => null,
       })

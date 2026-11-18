@@ -7,11 +7,12 @@
  * @module @pwfabric/runtime/render/DynamicBlockWrapper
  */
 
-import { useState, useEffect, useCallback, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import type { DynamicBlockDescriptor } from '@pwfabric/contracts'
 import type { Block } from '@pwfabric/core'
 import type { BlockComponent, BlockContext } from './types.js'
 import { BlockModuleLoader } from './dynamic-block-loader.js'
+import { blockPropsForRender } from './block-props.js'
 
 // ============================================================
 // TYPES
@@ -175,22 +176,24 @@ export function DynamicBlockWrapper({
     loadModule()
   }, [descriptor.blockType, loadModule])
 
+  // The manifest is the block's single definition of its props: their
+  // defaults and shapes are applied here, before it renders (block-props.ts).
+  // `props` is never undefined — a node may carry no `props` key at all
+  // (`{id, type, children}` is a valid section), and a block reads `props.x`.
+  const props = useMemo(
+    () => blockPropsForRender(descriptor.blockType, block.props, descriptor.definition?.props),
+    [descriptor.blockType, block.props, descriptor.definition?.props]
+  )
+
   // Component-first: if we have a loaded component, always render it regardless of
   // the state machine. This prevents the skeleton from flashing when state transitions
   // to 'loading' (e.g. retry) while the previous component is still valid in cache.
   if (component) {
     const Component = component
-    // `props` is NEVER undefined. A node may legitimately carry no `props` key
-    // at all — `{id, type, children}` is a valid section — and a block component
-    // reads `props.x` directly, so handing it `undefined` throws inside the
-    // component and the block renders as an error placeholder.
-    //
-    // A `section` authored without a `props` key would otherwise crash with
-    // "Cannot read properties of undefined (reading 'paddingY')". The static
-    // renderer guards this too (`renderer.tsx`: `block.props ?? {}`); this is
-    // the path every PACK-INSTALLED block takes.
+    // The path every PACK-INSTALLED block takes. The static renderer guards
+    // `props` too (`renderer.tsx`: `block.props ?? {}`).
     return (
-      <Component block={block} props={block.props ?? {}} context={context}>
+      <Component block={block} props={props} context={context}>
         {children}
       </Component>
     )

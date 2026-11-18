@@ -293,6 +293,55 @@ describe('validatePack — block origins', () => {
   })
 })
 
+describe('validatePack — the block contract (3.0: the manifest declares the props, no zod)', () => {
+  const blockManifest = (props: unknown[]): string =>
+    JSON.stringify({ id: 'control.badge', kind: 'block', definition: { props, defaultProps: {}, canHaveChildren: false } })
+
+  it('refuses a source that imports zod (BLOCK_IMPORTS_ZOD), naming the file, the line and the migration', () => {
+    const v = withIdentity(
+      { id: 'x', version: '1' },
+      {
+        'atoms/blocks/control/badge/component.tsx': "import * as React from 'react'\nimport { z } from 'zod'\nexport const s = z.object({})\n",
+        'atoms/blocks/control/badge/manifest.json': blockManifest([]),
+        'atoms/lib/_shared-schemas.ts': "export { z } from 'zod/mini'\n",
+      }
+    )
+    expect(codes(v, 'error')).toEqual(['BLOCK_IMPORTS_ZOD', 'BLOCK_IMPORTS_ZOD'])
+    const messages = v.issues.map((i) => i.message).join('\n')
+    expect(messages).toContain('atoms/blocks/control/badge/component.tsx:2 imports zod')
+    expect(messages).toContain('pwf migrate blocks')
+  })
+
+  it("allows a type-only zod import, a comment that mentions zod, and the pack's own tests", () => {
+    const v = withIdentity(
+      { id: 'x', version: '1' },
+      {
+        'atoms/blocks/control/badge/component.tsx': "import type { z } from 'zod'\n// import { z } from 'zod'\nexport type T = z.infer<never>\n",
+        'atoms/blocks/control/badge/manifest.json': blockManifest([]),
+        'test/badge.test.ts': "import { z } from 'zod'\n",
+        'atoms/blocks/control/badge/__tests__/x.test.tsx': "import { z } from 'zod'\n",
+      }
+    )
+    expect(codes(v, 'error')).toEqual([])
+  })
+
+  it('warns on a prop declaration the runtime cannot read, or whose default does not fit (BLOCK_PROP_DECLARATION)', () => {
+    const v = withIdentity(
+      { id: 'x', version: '1' },
+      {
+        'atoms/blocks/control/badge/component.tsx': 'x',
+        'atoms/blocks/control/badge/manifest.json': blockManifest([
+          { name: 'size', default: 'xl', jsonSchema: { type: 'string', enum: ['sm', 'md'] } },
+          { name: 'gap', jsonSchema: { type: 'number', minimumValue: 0 } },
+          { name: 'ok', default: 'md', jsonSchema: { type: 'string', enum: ['sm', 'md'] } },
+        ]),
+      }
+    )
+    expect(codes(v)).toEqual(['BLOCK_PROP_DECLARATION', 'BLOCK_PROP_DECLARATION'])
+    expect(v.issues.map((i) => i.message).join('\n')).toMatch(/size default: "xl" is not one of[\s\S]*"minimumValue" is not a keyword/)
+  })
+})
+
 describe('validatePack — media', () => {
   const hero = 'RIFF....WEBP'
   const heroHash = `sha256:${createHash('sha256').update(hero).digest('hex')}`

@@ -6,7 +6,7 @@
  * @module @pwfabric/core/blocks/types
  */
 
-import type { ZodSchema } from 'zod'
+import type { BlockPropDescriptor } from '@pwfabric/contracts'
 import type { BlockLayout } from './layout-schema.js'
 
 // The block instance type is defined in @pwfabric/contracts; re-exported here.
@@ -63,8 +63,12 @@ export interface BlockDefinition {
   /** Icon character or identifier */
   readonly icon: string
 
-  /** Zod schema for props validation */
-  readonly schema: ZodSchema
+  /**
+   * The props the block takes, as its manifest declares them
+   * (`definition.props`): the only definition. The runtime applies their
+   * defaults and shapes before the block renders (`applyBlockProps`).
+   */
+  readonly props?: readonly BlockPropDescriptor[]
 
   /** Default props for new instances */
   readonly defaultProps: Record<string, unknown>

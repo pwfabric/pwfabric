@@ -4,14 +4,10 @@
  * @module @pwfabric/contracts/__tests__/fabric/media-provenance
  */
 import { describe, it, expect } from 'vitest'
-import {
-  MediaProvenanceEntrySchema,
-  MEDIA_PROVENANCE_SOURCES,
-  parseMediaProvenance,
-  safeParseMediaProvenance,
-  type MediaProvenance,
-} from '../../fabric/media-provenance.js'
+import { MEDIA_PROVENANCE_SOURCES, type MediaProvenance } from '../../fabric/media-provenance.js'
+import { MediaProvenanceEntrySchema, parseMediaProvenance, safeParseMediaProvenance } from '../../fabric/media-provenance.schema.js'
 import * as contracts from '../../index.js'
+import * as schemas from '../../schemas.js'
 
 const generated = {
   path: 'media/hero.webp',
@@ -51,9 +47,11 @@ describe('MediaProvenanceSchema — valid', () => {
     expect(MEDIA_PROVENANCE_SOURCES).toEqual(['generated', 'uploaded', 'provided'])
   })
 
-  it('is exported from the package root', () => {
-    expect(typeof contracts.MediaProvenanceSchema.parse).toBe('function')
-    expect(typeof contracts.safeParseMediaProvenance).toBe('function')
+  it('is reachable from @pwfabric/contracts/schemas, not from the zod-free root', () => {
+    expect(typeof schemas.MediaProvenanceSchema.parse).toBe('function')
+    expect(typeof schemas.safeParseMediaProvenance).toBe('function')
+    expect('MediaProvenanceSchema' in contracts).toBe(false)
+    expect('safeParseMediaProvenance' in contracts).toBe(false)
   })
 })
 

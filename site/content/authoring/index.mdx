@@ -14,11 +14,14 @@ an interface, and an interface must be free to adopt (see
 [Licensing](/licence)).
 
 ```bash
-pnpm add @pwfabric/authoring @pwfabric/contracts zod react
+pnpm add @pwfabric/authoring @pwfabric/contracts react
 ```
 
-React 19 is a peer dependency; `zod` 4 is what schemas are written in. The
-package depends on `@pwfabric/contracts`, `@pwfabric/core` and
+React 19 is a peer dependency. A block needs no validation library: its props
+are declared as data in its manifest (see [`defineBlock()`](/authoring/define-block#props)).
+`zod` 4 is used only by `defineFactory()`'s optional `configSchema` and by the
+tooling entry points (`@pwfabric/contracts/schemas`, `@pwfabric/core/schemas`,
+`@pwfabric/runtime/schemas`). The package depends on `@pwfabric/contracts`, `@pwfabric/core` and
 `@pwfabric/runtime` and re-exports everything `@pwfabric/runtime` exports, so a
 block module needs one import.
 
@@ -31,10 +34,10 @@ Everything below is a named export of `@pwfabric/authoring`.
 
 | Group | Export | What it is |
 |---|---|---|
-| Block | [`defineBlock(options)`](/authoring/define-block) | A frozen, typed block definition: `type`, `name`, Zod `schema`, `defaultProps`, React `component` |
+| Block | [`defineBlock(options)`](/authoring/define-block) | A frozen, typed block definition: `type`, `name`, declared `props`, `defaultProps`, React `component` |
 | Block | `validateBlockDefinition({ type, name })` | The gate's field check; returns `BlockDefinitionIssue[]`, never throws |
 | Block | `isCustomBlockDefinition(value)` | Type guard for a definition |
-| Block | `createBlockInstance(definition, id, props?, children?)` | A block instance with defaults merged and props parsed; throws on invalid props |
+| Block | `createBlockInstance(definition, id, props?, children?)` | A block instance with `defaultProps` merged and the declared props applied; throws on a value that does not fit |
 | Factory | [`defineFactory(options)`](/authoring/define-factory) | A frozen factory: `build(config)` returns blocks with generated ids |
 | Factory | `isFactoryDefinition(value)` | Type guard for a factory |
 | Factory | `composeFactoryOutputs(...arrays)` | Flattens several `build()` results into one block array |
@@ -47,17 +50,17 @@ Everything below is a named export of `@pwfabric/authoring`.
 | Registry | `CustomBlockRegistry` | `register`, `registerMany`, `get`, `has`, `list`, `getByCategory`, `types`, `unregister`, `clear`, `size`, `getComponents()` |
 | Registry | `mergeRegistries(...registries)` | A new registry with every definition; throws on a duplicate `type` |
 | Registry | `mergeWithBaseComponents(base, registry)` | A component map: `base` spread first, the registry's components on top |
-| Validation | `validateProps(props, schema)` | `{ valid, props?, errors }` from a Zod schema |
-| Validation | `validatePropsWithDefaults(props, schema, defaults)` | Parsed props, or `defaults` when parsing fails |
+| Validation | `validateProps(props, descriptors)` | `{ valid, props?, errors }` against declared props, values as written |
+| Validation | `validatePropsWithDefaults(props, descriptors)` | The props a block renders with (defaults, coercion, fallback to default); never fails |
 | Validation | `validateBlock(block, definition)` | Checks `type`, props, `canHaveChildren`, `allowedChildren` |
 | Validation | `validateBlockTree(blocks, registry)` | Walks a tree; blocks the registry does not know are skipped |
-| Validation | `createBlockValidator(definition)` · `createPropsValidator(schema)` | Curried forms of the two above |
+| Validation | `createBlockValidator(definition)` · `createPropsValidator(descriptors)` | Curried forms of the two above |
 | Validation | `formatValidationErrors(errors)` · `hasErrors(result)` | `[CODE] at path: message` lines; a boolean |
 | Validation | `isBlock(value)` · `isBlockArray(value)` | Structural guards: `id`, `type`, `props` |
 | Types | `CustomBlockOptions`, `CustomBlockDefinition`, `CustomBlockComponent`, `CustomBlockComponentProps`, `CustomBlockContext` | The block shapes |
 | Types | `FactoryOptions`, `FactoryDefinition`, `FactoryConfig`, `BlockSpec`, `FactoryValidationResult`, `FactoryValidationError` | The factory shapes |
 | Types | `ICustomBlockRegistry`, `BlockValidationResult`, `BlockValidationError`, `PropsValidationResult`, `BlockDefinitionIssue` | Registry and validation shapes |
-| Types | `InferBlockProps<T>`, `InferFactoryConfig<T>`, `InferSchemaProps<T>` | Inference helpers |
+| Types | `InferBlockProps<T>`, `InferFactoryConfig<T>` | Inference helpers: a definition's `TProps`, a factory's config |
 
 Source: `packages/authoring/src/index.ts`,
 `packages/authoring/src/registry.ts`,
@@ -78,23 +81,30 @@ engine.
 (`stable` · `beta` · `alpha` · `deprecated` · `experimental`), and optional
 `category`, `description`, `tags`, a `knowledge` entry and, for blocks,
 `definition` — the block's authoring metadata (`props`, `defaultProps`, `canHaveChildren`, and
-optional `allowedParents`, `icon`, `traits`, `allowedChildTraits`).
+optional `allowedParents`, `icon`, `traits`, `allowedChildTraits`). `definition.props`
+is the only definition of what the block takes: each prop's name, default,
+shape (`jsonSchema`), `bindable` and `copy`
+(see [`defineBlock()`](/authoring/define-block#props)).
 
 **2. Bundle.** Publishing compiles the source into one ES module per block
 type. The renderer's loader looks for the exports `Component` and
 `definition`; it also accepts a `default`, `component` or `render` export for
 the component. A fixed list of imports stays external and is resolved by the
-page's import map: `react`, `react/jsx-runtime`, `react-dom`, `zod`,
+page's import map: `react`, `react/jsx-runtime`, `react-dom`,
 `@pwfabric/runtime` (and its `/data`, `/capability` and `/adapters` subpaths),
 `@pwfabric/contracts`, `@pwfabric/core` and `@pwfabric/authoring`. Anything
-else a block imports is bundled into it. The list is `BLOCK_HOST_IMPORTS` in
-`packages/core/src/blocks/host-imports.ts`.
+else a block imports is bundled into it, except `zod`: a block that imports
+it is refused (`ZOD_IMPORT`), and no visitor's page carries it. The list is
+`BLOCK_HOST_IMPORTS` in `packages/core/src/blocks/host-imports.ts`.
 
 **3. Manifest.** The app's `blocks/manifest.json` is a list of
 `DynamicBlockDescriptor` entries — `blockType`, `moduleUrl`, `integrity`
 (SHA-256 of the bundle bytes), `publisher`, `publisherVerified`, and a
-`definition` (`name`, optional `icon`, `category`, `defaultProps`,
-`canHaveChildren`, `propertySchema`). Before evaluating a bundle the loader
+`definition` (`name`, optional `props`, `icon`, `category`, `defaultProps`,
+`canHaveChildren`, `propertySchema`). `props` is the manifest's
+`definition.props` without the parts written for people (`type`,
+`description`, `copy`, and prose inside the shapes); the renderer applies it
+before the block renders. Before evaluating a bundle the loader
 fetches it, hashes it and compares; a missing or mismatching hash is a hard
 failure, not a warning.
 
@@ -140,9 +150,10 @@ export function Preview() {
 }
 ```
 
-`getComponents()` wraps each definition: it runs the block's Zod schema over
-the incoming props and, when parsing fails, renders with `defaultProps`
-instead of throwing. The component receives `props`, `blockId`, `children`
+`getComponents()` wraps each definition: it applies the block's declared
+`props` to the incoming props as the runtime does for a pack block (defaults
+filled in, lossless coercion, a value that does not fit replaced by its
+default) and never throws. The component receives `props`, `blockId`, `children`
 and `context`, where `context` is narrowed to `theme`, `viewport` and
 `onEvent`.
 

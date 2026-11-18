@@ -77,10 +77,6 @@ export class InMemoryEntityRegistry implements EntityRegistry {
       throw new Error('Entity definition must have a name')
     }
 
-    if (!definition.schema) {
-      throw new Error('Entity definition must have a schema')
-    }
-
     if (!definition.primaryKey) {
       throw new Error('Entity definition must have a primaryKey')
     }
@@ -117,6 +113,13 @@ export class InMemoryEntityRegistry implements EntityRegistry {
           },
         ],
       }
+    }
+
+    if (!definition.schema) {
+      if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+        return { valid: true, data: data as Record<string, unknown> }
+      }
+      return { valid: false, errors: [{ field: '_root', message: 'a record is an object', code: 'invalid_type' }] }
     }
 
     const result = definition.schema.safeParse(data)

@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { blockLayoutSchema } from '../blocks/layout-schema.js'
+import { blockLayoutSchema } from '../blocks/layout-schema.schema.js'
 
 describe('widthScope', () => {
   it('kirilma noktasi haritasi kabul eder', () => {

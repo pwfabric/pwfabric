@@ -2,25 +2,35 @@
 
 What you write a pwpack with: `defineBlock()`, `defineFactory()` and
 `defineCapability()`, plus the block registry and prop validation. A block's
-props are inferred from its zod schema. It re-exports `@pwfabric/runtime`.
+props are declared once, as data (its manifest's `definition.props`), and
+typed by an interface you write; no validation library is involved. It
+re-exports `@pwfabric/runtime`.
 
 ## Install
 
 ```bash
-pnpm add @pwfabric/authoring @pwfabric/runtime @pwfabric/contracts zod@4 react react-dom
+pnpm add @pwfabric/authoring @pwfabric/runtime @pwfabric/contracts react react-dom
 pnpm add -D typescript @types/react
 ```
 
 ESM only: import it from an ES module (`"type": "module"` or `.mjs`). Node 22+. Peer: `react` 19.
+`zod` 4 is used only by `defineFactory()`'s optional `configSchema`.
 
 ```tsx
 import { defineBlock } from '@pwfabric/authoring'
-import { z } from 'zod'
 
-export const Quote = defineBlock({
+interface QuoteProps extends Record<string, unknown> {
+  readonly quote: string
+  readonly author: string
+}
+
+export const Quote = defineBlock<QuoteProps>({
   type: 'customer-quote',
   name: 'Customer quote',
-  schema: z.object({ quote: z.string(), author: z.string() }),
+  props: [
+    { name: 'quote', required: true, jsonSchema: { type: 'string' }, copy: true },
+    { name: 'author', required: true, jsonSchema: { type: 'string' }, copy: true },
+  ],
   defaultProps: { quote: 'A great product to work with.', author: 'Jane Doe' },
   component: ({ props }) => <blockquote>{props.quote} — {props.author}</blockquote>,
 })
@@ -35,7 +45,7 @@ export const Quote = defineBlock({
 | `defineCapability`, `CapabilityBuilder` | Capabilities — see [defineCapability()](https://pwfabric.com/authoring/define-capability) |
 | `CustomBlockRegistry`, `createCustomBlockRegistry`, `mergeRegistries` | Block registries |
 | `validateProps`, `validateBlock`, `validateBlockTree`, `formatValidationErrors` | Validation |
-| `CustomBlockOptions`, `SchemaProps`, `CustomBlockDefinition`, `InferBlockProps`, … | Types |
+| `CustomBlockOptions`, `CustomBlockDefinition`, `InferBlockProps`, … | Types (`BlockPropDescriptor` and `PropShape` come from `@pwfabric/contracts`) |
 | everything from `@pwfabric/runtime` | Re-exported |
 
 ## Entry points

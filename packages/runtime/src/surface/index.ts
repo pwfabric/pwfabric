@@ -87,16 +87,9 @@ export {
   getPrimitiveDefinition,
 } from './primitives.js'
 
-// Schemas
-export {
-  surfaceJsonSchema,
-  layoutJsonSchema,
-  bindingJsonSchema,
-  environmentSchema,
-  isSurfaceJSON,
-  isLayoutJSON,
-  isBindingJSON,
-} from './schemas.js'
+// The surface-JSON zod schemas, the typed transform wrappers and the typed
+// output factories validate with zod: they are in `@pwfabric/runtime/schemas`
+// (3.0), so the package root — and the visitor bundle — carries no zod.
 
 // Interpreter
 export type {
@@ -153,20 +146,6 @@ export type {
   TypedTransformConfig,
   TransformValidationResult,
 } from './transforms.js'
-export {
-  mapTransformConfigSchema,
-  filterTransformConfigSchema,
-  pickTransformConfigSchema,
-  omitTransformConfigSchema,
-  customTransformConfigSchema,
-  validateTransformConfig,
-  narrowTransformDescriptor,
-  createMapTransform,
-  createFilterTransform,
-  createPickTransform,
-  createOmitTransform,
-  createCustomTransform,
-} from './transforms.js'
 
 // Typed Output Factories
 export type {
@@ -175,4 +154,3 @@ export type {
   TypedCliOutput,
   OutputFactoryResult,
 } from './output.js'
-export { createWebOutput, createApiOutput, createCliOutput } from './output.js'

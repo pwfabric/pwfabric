@@ -40,7 +40,7 @@ describe('compileAtom — golden output', () => {
     expect(a.hash).toBe(b.hash)
     expect(a.hash).toMatch(/^sha256:[a-f0-9]{64}$/)
     expect(a.size).toBe(Buffer.byteLength(a.code))
-    expect(a.hash).toMatchInlineSnapshot(`"sha256:10debece7ea08f19ed2bea244850801ae21ed853e5c5f6264d8c155cd1efb0fd"`)
+    expect(a.hash).toMatchInlineSnapshot(`"sha256:c7f348778a7b5fe04253a70ae3a37f01781b1b6609707b610f1c94d4a27f917d"`)
   })
 
   it('plain block: the wrapper re-exports Component + definition under stable names', async () => {
@@ -59,7 +59,7 @@ describe('compileAtom — golden output', () => {
     expect(a.code).toBe(b.code)
     expect(a.code).not.toContain('notPartOfThisAtom')
     expect(a.code).not.toContain('42')
-    expect(a.hash).toMatchInlineSnapshot(`"sha256:73bb18277d95c378fc5edf4978c24f237a2d6cc5bd435ec251bc3a11885f3a77"`)
+    expect(a.hash).toMatchInlineSnapshot(`"sha256:623f3e65617e75b7f206cbf64f958d05e55e6ba7d5067d7d7b25ff0734e52755"`)
     const mod = await load(a.code)
     expect((mod.Component as (p: { name: string }) => string)({ name: 'you' })).toBe('HELLO, YOU!')
   })
@@ -69,14 +69,14 @@ describe('compileAtom — golden output', () => {
     const b = await compileAtom(HOST_BLOCK)
     expect(a.ok, JSON.stringify(a.diagnostics)).toBe(true)
     expect(a.code).toBe(b.code)
-    expect(a.externals).toEqual(['@pwfabric/runtime', 'react', 'react/jsx-runtime', 'zod'])
+    expect(a.externals).toEqual(['@pwfabric/runtime', 'react', 'react/jsx-runtime'])
     for (const ext of a.externals) {
       expect(a.code).toMatch(new RegExp(`from\\s*["']${ext.replace(/\//g, '\\/')}["']`))
     }
     // The type-only relative import is erased; core (type-only) never appears.
     expect(a.code).not.toContain('component-types')
     expect(a.code).not.toContain('@pwfabric/core')
-    expect(a.hash).toMatchInlineSnapshot(`"sha256:a0e4726912bf4c66849d19d66663d1ecce6af7747a15f8b3068add651ebede99"`)
+    expect(a.hash).toMatchInlineSnapshot(`"sha256:c9e0e9819192318382c733bd98f27c0b3bcae268c2069776c4d255bab0509c07"`)
   })
 
   it('records the compiler and esbuild versions', async () => {
@@ -177,6 +177,24 @@ describe('compileAtom — externals come from the core host-import list', () => 
     expect(d?.message).toContain("'left-pad'")
     expect(d?.file).toBe('blocks/x/y/component.tsx')
     expect(d?.line).toBe(1)
+  })
+
+  it('a block importing zod fails with ZOD_IMPORT, naming the manifest and the migration (3.0)', async () => {
+    for (const spec of ['zod', 'zod/mini']) {
+      const r = await compileAtom({
+        files: { 'blocks/x/y/component.tsx': `import { z } from '${spec}'
+export const s = z.object({})
+export default function C() { return null }
+` },
+        entry: 'blocks/x/y/component.tsx',
+      })
+      expect(r.ok).toBe(false)
+      const d = r.diagnostics.find((x) => x.code === 'ZOD_IMPORT')
+      expect(d?.severity).toBe('error')
+      expect(d?.message).toContain('definition.props')
+      expect(d?.message).toContain('pwf migrate blocks')
+      expect(d?.line).toBe(1)
+    }
   })
 
   it('a node builtin is not a host import either', async () => {

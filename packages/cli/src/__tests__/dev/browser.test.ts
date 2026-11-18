@@ -38,7 +38,6 @@ describe('the assembled page in a document', () => {
     expect(result['seeded']).toEqual([
       '__pwfabric_react',
       '__pwfabric_jsx_runtime',
-      '__pwfabric_zod',
       '__pwfabric_runtime',
       '__pwfabric_contracts',
       '__pwfabric_react_dom',
@@ -62,14 +61,12 @@ describe('the assembled page in a document', () => {
  * the definition it returns, the way the quickstart writes one.
  */
 const QUOTE_BLOCK = `import { defineBlock } from '@pwfabric/authoring'
-import { z } from 'zod'
 
-export const QuoteCard = defineBlock({
+export const QuoteCard = defineBlock<{ quote: string }>({
   type: 'quote-card',
   name: 'Quote card',
   category: 'text',
-  schema: z.object({ quote: z.string() }),
-  defaultProps: { quote: 'A great product to work with.' },
+  props: [{ name: 'quote', default: 'A great product to work with.', jsonSchema: { type: 'string' }, copy: true }],
   component: ({ props }) => <blockquote data-k="quote">{props.quote}</blockquote>,
 })
 `

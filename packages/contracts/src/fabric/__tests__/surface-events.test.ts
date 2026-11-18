@@ -8,10 +8,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import {
-  SURFACE_EVENT_NAMESPACE_REGISTRY,
-  SURFACE_EVENT_PAYLOAD_SCHEMAS,
-} from '../surface-events.js'
+import { SURFACE_EVENT_NAMESPACE_REGISTRY } from '../surface-events.js'
+import { SURFACE_EVENT_PAYLOAD_SCHEMAS } from '../surface-events.schema.js'
 import type { SurfaceEventNamespace, KnownSurfaceEventType } from '../surface-events.js'
 
 // ============================================================
@@ -217,8 +215,11 @@ describe('SURFACE_EVENT_PAYLOAD_SCHEMAS', () => {
     })
   })
 
-  it('is importable from the barrel @pwfabric/contracts', async () => {
-    const contracts = await import('@pwfabric/contracts')
-    expect((contracts as Record<string, unknown>)['SURFACE_EVENT_PAYLOAD_SCHEMAS']).toBeDefined()
+  it('is importable from @pwfabric/contracts/schemas, not from the zod-free barrel', async () => {
+    const contracts = (await import('@pwfabric/contracts')) as Record<string, unknown>
+    const schemas = (await import('@pwfabric/contracts/schemas')) as Record<string, unknown>
+    expect(schemas['SURFACE_EVENT_PAYLOAD_SCHEMAS']).toBeDefined()
+    expect(contracts['SURFACE_EVENT_PAYLOAD_SCHEMAS']).toBeUndefined()
   })
+
 })

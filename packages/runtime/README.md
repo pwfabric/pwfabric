@@ -34,6 +34,7 @@ Next.js image adapter.
 | `@pwfabric/runtime/blocks` | Block registry, component types, composition rules |
 | `@pwfabric/runtime/auth` | Auth providers (`createAuthProvider`, `ApiKeyAuthProvider`, `MsalAuthProvider`) |
 | `@pwfabric/runtime/data` | `DataService`, `createDataService` and the data capability provider |
+| `@pwfabric/runtime/schemas` | The zod schemas of the runtime, for tooling; the other entry points export no zod value |
 | `@pwfabric/runtime/blocks/*` | One module of `blocks/`, e.g. `@pwfabric/runtime/blocks/hooks` |
 | `@pwfabric/runtime/render/*` | One module of `render/`, e.g. `@pwfabric/runtime/render/renderer` |
 

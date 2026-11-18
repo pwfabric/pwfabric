@@ -9,9 +9,11 @@
  * no block code runs. Every finding is a WARNING, because the runtime tolerates
  * the prop.
  *
- * Deliberately shallow: the prop's name, its value's JSON type and, where the
- * schema has one, its `enum`/`const`. `anyOf`/`oneOf`/`allOf` combine branches;
- * nothing below the top level of an object or array value is checked. A value
+ * The prop's name, its value's JSON type and, where the schema has one, its
+ * `enum`/`const` (BLOCK_PROP_UNKNOWN, _TYPE, _ENUM); then the rest of the
+ * shape, as the runtime reads it (`checkPropValue`, @pwfabric/contracts): bounds,
+ * lengths, patterns, formats, and the members of nested objects and array items
+ * (BLOCK_PROP_SHAPE). A value
  * that is a binding (a string carrying `{{…}}`, whole or interpolated) resolves
  * at runtime and is not checked — except on a prop the manifest declares
  * `bindable: false`. The runtime leaves such a prop exactly as written, nested
@@ -19,7 +21,7 @@
  * a warning of its own (BLOCK_PROP_NOT_BINDABLE), and the value is judged as
  * the literal it is. A prop with no `bindable` declaration is bindable.
  */
-import type { AtomRef } from '@pwfabric/contracts'
+import { checkPropValue, coercePropValue, type AtomRef, type PropShape } from '@pwfabric/contracts'
 import type { PackFolder, PackIssue } from './types.js'
 
 /** A prop is named that the block's manifest does not declare; the block ignores it. */
@@ -30,6 +32,12 @@ export const BLOCK_PROP_ENUM = 'BLOCK_PROP_ENUM'
 export const BLOCK_PROP_TYPE = 'BLOCK_PROP_TYPE'
 /** A `{{…}}` template sits in a prop declared `bindable: false`; it is not resolved and renders as written. */
 export const BLOCK_PROP_NOT_BINDABLE = 'BLOCK_PROP_NOT_BINDABLE'
+/**
+ * A value of the right type that does not fit the rest of its declared
+ * shape: a bound, a length, a pattern, a format, or a member of a nested
+ * object or array item. The runtime renders the prop's default instead.
+ */
+export const BLOCK_PROP_SHAPE = 'BLOCK_PROP_SHAPE'
 
 /** One prop as a block manifest declares it; the members this check reads. */
 export interface BlockPropDescriptor {
@@ -139,6 +147,14 @@ export function blockPropsCatalog(sources: readonly BlockSource[]): Map<string, 
     }
   }
   return catalog
+}
+
+/** Whether a value carries a binding anywhere (nested in lists and objects too). */
+function carriesBinding(value: unknown): boolean {
+  if (isBinding(value)) return true
+  if (Array.isArray(value)) return value.some(carriesBinding)
+  if (isRecord(value)) return Object.values(value).some(carriesBinding)
+  return false
 }
 
 /** A string carrying a `{{…}}` expression, whole or interpolated: it resolves at runtime. */
@@ -320,6 +336,18 @@ export function checkReceiptBlockProps(receipt: unknown, catalog: BlockPropsCata
         }
         const found = valueIssue(where, prop, value, spec.jsonSchema, entry.atomId, literal)
         if (found) issues.push({ severity: 'warning', path, ...found })
+        else if (isRecord(spec.jsonSchema) && (literal || !carriesBinding(value))) {
+          // The rest of the shape, as the runtime reads it: bounds, formats, nested members.
+          const shape = spec.jsonSchema as PropShape
+          for (const issue of checkPropValue(coercePropValue(value, shape), shape, prop)) {
+            issues.push({
+              severity: 'warning',
+              code: BLOCK_PROP_SHAPE,
+              path,
+              message: `${where} sets ${issue.message.replace(/^([^:]+): /, '$1, which ')}; ${entry.atomId} renders its default instead`,
+            })
+          }
+        }
       }
     }
     const children = node['children']

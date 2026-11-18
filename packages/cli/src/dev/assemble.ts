@@ -12,8 +12,9 @@
  * be pinned). Nothing is fetched; every input is on disk.
  */
 import { join } from 'node:path'
-import { blockTypeNames, hashPack } from '@pwfabric/pack'
-import { atomKindMeta, safeParseBlockOrigins, type BlockOrigins } from '@pwfabric/contracts'
+import { blockPropDescriptors, blockTypeNames, checkReceiptBlockProps, hashPack } from '@pwfabric/pack'
+import { atomKindMeta, type BlockOrigins } from '@pwfabric/contracts'
+import { safeParseBlockOrigins } from '@pwfabric/contracts/schemas'
 import { compileSources, createCompileCache, type CompileCache, type CompiledAtom } from './compile.js'
 import { hasErrors, sortDiagnostics, type AssembleDiagnostic } from './diagnostics.js'
 import {
@@ -312,6 +313,21 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       byName.set(name, list)
     }
   }
+  // Every receipt is checked against its blocks' manifests here, at build
+  // time, not in the visitor's browser: a prop the manifest does not declare,
+  // a value that does not fit its declared shape (the runtime renders it
+  // as written, with a developer warning), a template on a literal-only prop. Warnings.
+  const propCatalog = new Map<string, { atomId: string; props: NonNullable<ReturnType<typeof blockPropDescriptors>> }>()
+  for (const [name, list] of byName) {
+    const props = list[0] ? blockPropDescriptors(list[0].manifest) : undefined
+    if (list[0] && props) propCatalog.set(name, { atomId: list[0].id, props })
+  }
+  for (const page of pages) {
+    for (const issue of checkReceiptBlockProps(page.receipt, propCatalog, page.path)) {
+      diagnostics.push({ severity: 'warning', code: issue.code, message: issue.message, path: page.path })
+    }
+  }
+
   const used = new Set<CompiledAtom>()
   const placedBlocks: { atomId: string; origins?: BlockOrigins }[] = []
   const blockManifest: BlockManifestEntry[] = []

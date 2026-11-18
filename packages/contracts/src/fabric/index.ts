@@ -50,6 +50,8 @@ export * from './artifact.js'
 // Dynamic artifact types
 export * from './dynamic-artifact.js'
 
+export * from './block-prop.js'
+
 // Surface theme types
 export * from './surface-theme.js'
 

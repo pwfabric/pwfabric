@@ -2,8 +2,8 @@
  * Loading the renderer — `embed.js` — when the first page is drawn.
  *
  * WHY THE RUNNER LOADS IT. The shell used to name `embed.js` as a classic
- * script in `<head>`: every visitor waited for the whole renderer (React, the
- * runtime, zod) before the browser drew anything, and a visitor of an app
+ * script in `<head>`: every visitor waited for the whole renderer (React and the
+ * runtime) before the browser drew anything, and a visitor of an app
  * behind sign-in downloaded all of it to be shown one button. The runner
  * itself needs nothing the renderer seeds until it draws a page, so it asks
  * for the renderer then, once. A shell that wants it early names it as

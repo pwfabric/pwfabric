@@ -38,7 +38,7 @@ assets/seed.js                 seeds the shared globals the block bundles read
 assets/embed.js                the renderer (defines window.PWFabric.render)
 assets/runner.js               @pwfabric/runner, ES module
 assets/theme.css               the app's token set as CSS custom properties
-shims/*.mjs                    import-map targets for react, zod, @pwfabric/*
+shims/*.mjs                    import-map targets for react, @pwfabric/*
 blocks/manifest.json           block type -> bundle file + SHA-256
 blocks/<type>.<hash8>.mjs      one ESM bundle per block type the pages use
 engines/manifest.json          connector/provider engines (bundled or declared)
@@ -150,8 +150,8 @@ Each `blocks/manifest.json` entry is a `DynamicBlockDescriptor`:
 
 Before evaluating a bundle the renderer fetches `moduleUrl`, hashes the bytes
 with SHA-256 and compares them to `integrity` (hex, or SRI `sha256-<base64>`).
-A missing or mismatching hash is a hard failure. Bundles keep `react`, `zod`
-and `@pwfabric/*` external; the shell's import map points those
+A missing or mismatching hash is a hard failure. Bundles keep `react` and
+`@pwfabric/*` external (a block may not import `zod`); the shell's import map points those
 specifiers at `./shims/*.mjs`.
 
 `engines/manifest.json` entries are either **bundled** (`moduleUrl` +

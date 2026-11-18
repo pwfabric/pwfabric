@@ -4,18 +4,14 @@
  *
  * @module @pwfabric/pack/validate
  */
-import {
-  classifyPackPath,
-  safeParseBlockOrigins,
-  safeParsePwpackIdentity,
-  type AtomRef,
-  type PwpackIdentity,
-} from '@pwfabric/contracts'
+import { checkPropValue, classifyPackPath, propShapeProblems, type AtomRef, type PropShape, type PwpackIdentity } from '@pwfabric/contracts'
+import { safeParseBlockOrigins, safeParsePwpackIdentity } from '@pwfabric/contracts/schemas'
 import type { PackFolder, PackIssue } from './types.js'
 import { findCaseConflicts, findPathConflict, sortedPaths, unsafePathReason } from './paths.js'
 import { PACK_DOC_FILES } from './content.js'
 import { atomOccurrences, deriveAtoms, IDENTITY_FILE, stripBom } from './manifest.js'
 import { sha256Hex } from './hash.js'
+import { blockPropDescriptors } from './block-props.js'
 import { MEDIA_PROVENANCE_FILE as MEDIA_PROVENANCE, mediaDeclarations, readMediaProvenance } from './media.js'
 
 /** The `formatVersion` major this reader understands. A newer one gets a warning. */
@@ -91,6 +87,31 @@ function parseJson(bytes: Uint8Array): { ok: true; value: unknown } | { ok: fals
   }
 }
 
+/** A source file the compiler bundles: TypeScript or JavaScript. */
+const SOURCE_FILE = /\.(?:tsx?|mts|cts|jsx?|mjs|cjs)$/
+/** A pack's own tests: they never ship, and may use what they like. */
+const TEST_FILE = /(?:^|\/)(?:__tests__|__fixtures__|test|tests)\/|\.(?:test|spec)\.[^/]+$/
+
+/** What a block author does about a zod import (shared wording with the compiler's ZOD_IMPORT). */
+export const ZOD_REMEDY =
+  "A block's props are declared in its manifest (definition.props: type, default, enum, bounds, shape) and the runtime applies them, so no visitor page carries zod. Run `pwf migrate blocks <folder>` to move the schema into the manifest, then delete the import."
+
+/**
+ * The 1-based line of the first value import of zod (`import … from 'zod'`,
+ * `import 'zod'`, `export … from 'zod'`, `import('zod')`, a `zod/…` subpath),
+ * or `undefined`. A type-only import (`import type`) is erased and allowed.
+ * Comments are not read.
+ */
+export function zodImportLine(source: string): number | undefined {
+  const masked = source.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' ')).replace(/\/\/[^\n]*/g, '')
+  const re = /\b(import|export)\s+(type\s+)?(?:[^'"`;]*?\sfrom\s+)?['"](zod(?:\/[^'"]*)?)['"]|\bimport\s*\(\s*['"](zod(?:\/[^'"]*)?)['"]\s*\)/g
+  for (const m of masked.matchAll(re)) {
+    if (m[2]) continue
+    return masked.slice(0, m.index).split('\n').length
+  }
+  return undefined
+}
+
 /**
  * Validate a pack folder.
  *
@@ -107,9 +128,13 @@ function parseJson(bytes: Uint8Array): { ok: true; value: unknown } | { ok: fals
  * for an undeclared entity, not shaped
  * `{ data: [...] }`, or with a record whose `id` is missing, not a UUID or
  * repeated; a block manifest whose `definition.origins` is not a map of
- * known directives to exact origins (`BLOCK_ORIGIN_INVALID`).
+ * known directives to exact origins (`BLOCK_ORIGIN_INVALID`); a source file
+ * that imports zod (`BLOCK_IMPORTS_ZOD`: a block's props are declared in its
+ * manifest, and no visitor page carries zod — 3.0).
  *
- * Warnings: two paths that collide on a case-insensitive file system;
+ * Warnings: a block manifest prop whose shape (`jsonSchema`) uses what the
+ * runtime does not read, or whose default does not fit it
+ * (`BLOCK_PROP_DECLARATION`); two paths that collide on a case-insensitive file system;
  * unknown top-level entries; unknown families under `atoms/`; the
  * rootless or mixed layout; `pwpack.json` declaring a newer format; an app
  * entry not in its surface order or a key listed twice; files under
@@ -393,6 +418,36 @@ export function validatePack(pack: PackFolder): PackValidation {
     const result = safeParseBlockOrigins(origins)
     if (!result.ok) {
       for (const issue of result.issues) add('error', 'BLOCK_ORIGIN_INVALID', `${path} definition.origins — ${issue}`, path)
+    }
+  }
+
+  // ---- block props: the manifest is their only definition ----
+  for (const dir of blockDirs) {
+    const path = `${dir}manifest.json`
+    const bytes = pack.files.get(path)
+    const parsed = bytes ? parseJson(bytes) : undefined
+    if (!parsed?.ok) continue
+    for (const d of blockPropDescriptors(parsed.value) ?? []) {
+      const shape = (d as { jsonSchema?: unknown }).jsonSchema
+      const problems = shape === undefined ? [] : propShapeProblems(shape, d.name)
+      const fallback = d.default
+      if (problems.length === 0 && fallback !== undefined && isRecord(shape)) {
+        problems.push(...checkPropValue(fallback, shape as PropShape, `${d.name} default`).map((i) => i.message))
+      }
+      for (const problem of problems) add('warning', 'BLOCK_PROP_DECLARATION', `${path} definition.props — ${problem}`, path)
+    }
+  }
+
+  // ---- sources: no zod (3.0) ----
+  // A block's props are declared in its manifest and applied by the runtime
+  // without a validation library; no visitor page carries zod. A source that
+  // still imports it fails here, before the compiler refuses it.
+  for (const path of paths) {
+    if (!SOURCE_FILE.test(path) || TEST_FILE.test(path)) continue
+    const text = new TextDecoder().decode(pack.files.get(path) as Uint8Array)
+    const line = zodImportLine(text)
+    if (line !== undefined) {
+      add('error', 'BLOCK_IMPORTS_ZOD', `${path}:${line} imports zod. ${ZOD_REMEDY}`, path)
     }
   }
 

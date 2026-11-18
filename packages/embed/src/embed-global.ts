@@ -13,11 +13,10 @@
  * @module @pwfabric/embed/embed-global
  */
 
-// FIRST, before the re-export below: a re-export loads its module too, and
-// ES modules load in the order they are named. zod must be jitless before any
-// bundled module defines a schema, or the page reports a CSP eval violation
-// (see zod-jitless.ts).
-import './zod-jitless.js'
+// No zod (3.0): a block's props are declared in its manifest and applied
+// without a validation library, and every package root bundled here is
+// zod-free (their zod schemas are the `/schemas` subpaths, tooling only).
+// `src/__tests__/visitor-bundle.test.ts` fails the build if zod comes back.
 
 export {
   render,
@@ -40,7 +39,7 @@ export {
 //
 // Dynamically-loaded block bundles (the offline fat-preview `data:`/blob ESM
 // modules built by a local block bundler) MUST share THIS IIFE's single
-// React / react-dom / runtime / contracts / zod instances instead of inlining
+// React / react-dom / runtime / contracts instances instead of inlining
 // their own copies. Two independent failure classes motivate this:
 //
 //   1. A block that inlines its own React calls hooks against a *different*
@@ -56,10 +55,6 @@ export {
 // shares exactly these instances. These are the SAME module objects the embed
 // renderer uses (they're bundled into this IIFE), guaranteeing one React
 // dispatcher and one set of contract values across host + blocks.
-// NOTE on zod: zod is NOT exposed here. It has no React-dispatcher / context
-// identity concern (it is a leaf value library), and the embed package does
-// not declare it as a direct dependency, so the block-bundler keeps zod
-// INLINED per-block. Only the identity-sensitive singletons live below.
 import * as React from 'react'
 import * as ReactJsxRuntime from 'react/jsx-runtime'
 import * as ReactDom from 'react-dom'
@@ -68,7 +63,6 @@ import * as Runtime from '@pwfabric/runtime'
 import * as Contracts from '@pwfabric/contracts'
 import * as Core from '@pwfabric/core'
 import * as Authoring from '@pwfabric/authoring'
-import * as Zod from 'zod'
 
 declare global {
   var __PW_VENDOR__: Record<string, unknown> | undefined
@@ -97,7 +91,7 @@ if (typeof globalThis !== 'undefined') {
 //
 // A DIFFERENT set of dynamically-loaded block bundles — the published
 // atoms a host's bundle service compiles (esbuild, `external`:
-// react/react-dom/jsx-runtime/zod/the @pwfabric packages,
+// react/react-dom/jsx-runtime/the @pwfabric packages,
 // literal bare specifiers left in the output) — are loaded via a browser
 // native `<script type="importmap">` + `import(blob:...)`, NOT via
 // `__PW_VENDOR__` (that's the local block bundler's own,
@@ -127,7 +121,6 @@ if (typeof globalThis !== 'undefined') {
   // bundle is the only thing on it that can. It is already in this bundle
   // (the vendor table above carries it), so seeding it costs nothing.
   g.__pwfabric_sdk = Authoring
-  g.__pwfabric_zod = Zod
   // Mirrors a host's providers module: @pwfabric/runtime re-exports the public
   // contracts surface, so the SAME module namespace backs both globals.
   g.__pwfabric_contracts = Runtime

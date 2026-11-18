@@ -7,7 +7,7 @@
  * derived from it here, so a block compiled against that list always links.
  *
  * A shim re-exports a global the renderer seeded from its own bundled copy
- * (one React, one runtime, one zod for every block). Its named exports are
+ * (one React and one runtime for every block). Its named exports are
  * not typed out by hand: they are read off the very globals the renderer
  * bundle seeds, by evaluating that bundle once in an isolated context. An
  * ESM import of a name a shim does not export fails the whole module at link

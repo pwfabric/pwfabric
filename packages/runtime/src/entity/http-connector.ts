@@ -7,7 +7,6 @@
  * @module @pwfabric/runtime/entity/http-connector
  */
 
-import { z } from 'zod'
 import type {
   EntityTypeId,
   EntityInstanceId,
@@ -109,28 +108,44 @@ export interface HttpConnectorConfig {
 // DEFAULTS
 // ============================================================
 
-const queryResponseSchema = z
-  .object({
-    items: z.array(z.unknown()).optional(),
-    total: z.number().optional(),
-    offset: z.number().optional(),
-    limit: z.number().optional(),
-  })
-  .passthrough()
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/**
+ * A query answer: an object whose `items` (when present) is an array and
+ * whose `total`/`offset`/`limit` (when present) are numbers. Other members
+ * pass through (the platform's `{ data, meta }` envelope is read below).
+ */
+function queryResponseOf(body: unknown): Record<string, unknown> | null {
+  if (!isRecord(body)) return null
+  if (body['items'] !== undefined && !Array.isArray(body['items'])) return null
+  for (const k of ['total', 'offset', 'limit']) {
+    if (body[k] !== undefined && typeof body[k] !== 'number') return null
+  }
+  return body
+}
 
 /**
  * `{ data: { fn, field?, value, count, numericCount? }, meta }` is how the
  * platform answers (`routes/app-records.ts`); a bare `{ value, count }` body
  * is accepted too. `value` is null when a numeric fn had nothing to reduce.
  */
-const aggregateBodySchema = z
-  .object({
-    fn: z.enum(['count', 'sum', 'avg']).optional(),
-    field: z.string().optional(),
-    value: z.number().nullable().optional(),
-    count: z.number().optional(),
-  })
-  .passthrough()
+interface AggregateBody {
+  readonly fn?: 'count' | 'sum' | 'avg'
+  readonly field?: string
+  readonly value?: number | null
+  readonly count?: number
+}
+
+function aggregateBodyOf(body: unknown): AggregateBody | null {
+  if (!isRecord(body)) return null
+  const { fn, field, value, count } = body
+  if (fn !== undefined && fn !== 'count' && fn !== 'sum' && fn !== 'avg') return null
+  if (field !== undefined && typeof field !== 'string') return null
+  if (value !== undefined && value !== null && typeof value !== 'number') return null
+  if (count !== undefined && typeof count !== 'number') return null
+  return body as AggregateBody
+}
 
 const DEFAULT_TIMEOUT = 30_000
 
@@ -216,11 +231,10 @@ export class HttpEntityConnector implements EntityConnector {
       }
     }
 
-    const parsed = queryResponseSchema.safeParse(result.data)
-    if (!parsed.success) {
+    const data = queryResponseOf(result.data)
+    if (!data) {
       return { success: false, error: 'Invalid query response shape' }
     }
-    const data = parsed.data as Record<string, unknown>
 
     // Accept both the connector contract ({items,total}) and the platform
     // entity-records envelope ({data:[...], meta:{total}}).
@@ -276,9 +290,8 @@ export class HttpEntityConnector implements EntityConnector {
 
     const envelope = result.data
     const body = envelope.data && typeof envelope.data === 'object' ? envelope.data : envelope
-    const parsed = aggregateBodySchema.safeParse(body)
-    if (!parsed.success) return { success: false, error: 'Invalid aggregate response shape' }
-    const d = parsed.data
+    const d = aggregateBodyOf(body)
+    if (!d) return { success: false, error: 'Invalid aggregate response shape' }
     const field = d.field ?? aggregate.field
     const out: EntityAggregateResult = {
       fn: d.fn ?? aggregate.fn,
@@ -413,9 +426,9 @@ export class HttpEntityConnector implements EntityConnector {
           return { success: true, data: {} }
         }
 
-        const jsonData = await response.json()
-        const data = z.record(z.string(), z.unknown()).parse(jsonData)
-        return { success: true, data }
+        const jsonData: unknown = await response.json()
+        if (!isRecord(jsonData)) throw new Error('the answer is not a JSON object')
+        return { success: true, data: jsonData }
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err)
 

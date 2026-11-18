@@ -1,13 +1,9 @@
-import { z } from 'zod'
 import * as React from 'react'
 import { clean } from '../../../lib/_shared-text.js'
-
-export const titlePropsSchema = z.object({ text: z.string().default('') })
 
 export const titleDefinition = {
   type: 'title',
   name: 'Title',
-  schema: titlePropsSchema,
   defaultProps: { text: '' },
 }
 

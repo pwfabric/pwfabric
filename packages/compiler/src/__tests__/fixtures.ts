@@ -56,23 +56,19 @@ export function unused(): number {
   },
 }
 
-/** A block importing host-provided modules: react (JSX), zod and the runtime. */
+/** A block importing host-provided modules: react (JSX) and the runtime. */
 export const HOST_BLOCK = {
   entry: 'blocks/data/card/component.tsx',
   files: {
-    'blocks/data/card/component.tsx': `import { z } from 'zod'
-import { useState } from 'react'
+    'blocks/data/card/component.tsx': `import { useState } from 'react'
 import { useSurfaceEvents } from '@pwfabric/runtime'
 import type { BlockDefinition } from '@pwfabric/core'
 import type { BlockComponent } from '../../component-types.js'
-
-export const propsSchema = z.object({ title: z.string().default('Card') })
 
 export const definition: BlockDefinition = {
   type: 'data.card',
   name: 'Card',
   category: 'data',
-  schema: propsSchema,
   defaultProps: { title: 'Card' },
   canHaveChildren: false,
 } as unknown as BlockDefinition

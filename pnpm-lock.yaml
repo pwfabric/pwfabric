@@ -106,6 +106,12 @@ importers:
       '@pwfabric/runner':
         specifier: workspace:*
         version: link:../runner
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -239,9 +245,6 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@22.19.19)(@vitest/coverage-v8@4.1.12)(jsdom@26.1.0)(vite@6.4.6(@types/node@22.19.19)(yaml@2.9.1))
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
 
   packages/pack:
     dependencies:
@@ -289,9 +292,6 @@ importers:
       vitest:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@22.19.19)(@vitest/coverage-v8@4.1.12)(jsdom@26.1.0)(vite@6.4.6(@types/node@22.19.19)(yaml@2.9.1))
-      zod:
-        specifier: ^4.6.7
-        version: 4.6.7
 
   packages/runtime:
     dependencies:

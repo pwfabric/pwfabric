@@ -11,7 +11,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { AtomFileManifestSchema, classifyAtom, classifyPackPath } from '../fabric/atom.js'
+import { classifyAtom, classifyPackPath } from '../fabric/atom.js'
+import { AtomFileManifestSchema } from '../fabric/atom.schema.js'
 import type { AtomFileManifest, PackPathClassification, PwpackManifest } from '../fabric/atom.js'
 import { IDENTITY_METHODS } from '../fabric/project-identity.js'
 

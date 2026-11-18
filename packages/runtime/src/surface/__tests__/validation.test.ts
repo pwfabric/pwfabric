@@ -1,51 +1,50 @@
 /**
  * Block Props Validation Tests
  *
- * +. tests cover the post-deletion API where
- * `validateBlockProps` accepts a Zod schema map via `options.schemas`.
- * Without a schema (lenient mode), unknown types pass through; in
- * strict mode they fail.
+ * `validateBlockProps` reads the block manifests' declared props
+ * (`options.manifests`) — no validation library. Without a manifest
+ * (lenient mode), unknown types pass through; in strict mode they fail.
  */
 
 import { describe, it, expect } from 'vitest'
-import { z } from 'zod'
+import type { BlockManifestPropsMap } from '../validation.js'
 import { validateBlockProps, validateLayoutProps } from '../validation.js'
 
-const stubSchemas = {
-  text: z.object({
-    content: z.string().default('Add your text here'),
-    fontSize: z.number().default(14),
-    fontWeight: z.string().optional(),
-  }),
-  container: z.object({
-    direction: z.enum(['row', 'column']).default('column'),
-    gap: z.number().default(16),
-    padding: z.number().optional(),
-  }),
-  button: z.object({
-    label: z.string(),
-    variant: z.enum(['primary', 'secondary', 'destructive']).default('primary'),
-    size: z.enum(['small', 'medium', 'large']).default('medium'),
-  }),
-  heading: z.object({
-    text: z.string(),
-    level: z.enum(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']),
-  }),
-  image: z.object({
-    src: z.string(),
-    alt: z.string().optional(),
-  }),
-  grid: z.object({
-    columns: z.number().min(1).max(24),
-  }),
+const str = { type: 'string' } as const
+const num = { type: 'number' } as const
+const stubManifests: BlockManifestPropsMap = {
+  text: [
+    { name: 'content', default: 'Add your text here', jsonSchema: str },
+    { name: 'fontSize', default: 14, jsonSchema: num },
+    { name: 'fontWeight', jsonSchema: str },
+  ],
+  container: [
+    { name: 'direction', default: 'column', jsonSchema: { type: 'string', enum: ['row', 'column'] } },
+    { name: 'gap', default: 16, jsonSchema: num },
+    { name: 'padding', jsonSchema: num },
+  ],
+  button: [
+    { name: 'label', required: true, jsonSchema: str },
+    { name: 'variant', default: 'primary', jsonSchema: { type: 'string', enum: ['primary', 'secondary', 'destructive'] } },
+    { name: 'size', default: 'medium', jsonSchema: { type: 'string', enum: ['small', 'medium', 'large'] } },
+  ],
+  heading: [
+    { name: 'text', required: true, jsonSchema: str },
+    { name: 'level', required: true, jsonSchema: { type: 'string', enum: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] } },
+  ],
+  image: [
+    { name: 'src', required: true, jsonSchema: str },
+    { name: 'alt', jsonSchema: str },
+  ],
+  grid: [{ name: 'columns', required: true, jsonSchema: { type: 'number', minimum: 1, maximum: 24 } }],
 }
 
-describe('validateBlockProps (with explicit schema map)', () => {
+describe('validateBlockProps (with a manifest map)', () => {
   it('passes valid container props and applies defaults', () => {
     const result = validateBlockProps(
       'container',
       { direction: 'column', gap: 16, padding: 8 },
-      { schemas: stubSchemas }
+      { manifests: stubManifests }
     )
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
@@ -53,7 +52,7 @@ describe('validateBlockProps (with explicit schema map)', () => {
   })
 
   it('applies defaults via coercion for empty props', () => {
-    const result = validateBlockProps('text', {}, { schemas: stubSchemas })
+    const result = validateBlockProps('text', {}, { manifests: stubManifests })
     expect(result.valid).toBe(true)
     expect(result.coerced?.content).toBe('Add your text here')
     expect(result.coerced?.fontSize).toBe(14)
@@ -63,7 +62,7 @@ describe('validateBlockProps (with explicit schema map)', () => {
     const result = validateBlockProps(
       'text',
       { content: 'Hello', fontSize: 'banana' },
-      { schemas: stubSchemas }
+      { manifests: stubManifests }
     )
     expect(result.valid).toBe(false)
     expect(result.errors.some((e) => e.includes('fontSize'))).toBe(true)
@@ -73,7 +72,7 @@ describe('validateBlockProps (with explicit schema map)', () => {
     const result = validateBlockProps(
       'container',
       { direction: 'diagonal' },
-      { schemas: stubSchemas }
+      { manifests: stubManifests }
     )
     expect(result.valid).toBe(false)
     expect(result.errors.length).toBeGreaterThan(0)
@@ -83,14 +82,14 @@ describe('validateBlockProps (with explicit schema map)', () => {
     const result = validateBlockProps(
       'button',
       { label: 'Click', variant: 'neon' },
-      { schemas: stubSchemas }
+      { manifests: stubManifests }
     )
     expect(result.valid).toBe(false)
     expect(result.errors.some((e) => e.includes('variant'))).toBe(true)
   })
 
   it('catches invalid grid columns', () => {
-    const result = validateBlockProps('grid', { columns: -999 }, { schemas: stubSchemas })
+    const result = validateBlockProps('grid', { columns: -999 }, { manifests: stubManifests })
     expect(result.valid).toBe(false)
     expect(result.errors.length).toBeGreaterThan(0)
   })
@@ -105,7 +104,7 @@ describe('validateBlockProps — schema-less paths', () => {
   })
 
   it('passes through types absent from the schema map (lenient with map)', () => {
-    const result = validateBlockProps('not-in-map', { x: 1 }, { schemas: stubSchemas })
+    const result = validateBlockProps('not-in-map', { x: 1 }, { manifests: stubManifests })
     expect(result.valid).toBe(true)
   })
 
@@ -119,7 +118,7 @@ describe('validateBlockProps — schema-less paths', () => {
     const result = validateBlockProps(
       'not-in-map',
       { x: 1 },
-      { strict: true, schemas: stubSchemas }
+      { strict: true, manifests: stubManifests }
     )
     expect(result.valid).toBe(false)
   })
@@ -129,7 +128,7 @@ describe('validateLayoutProps', () => {
   it('validates a flat layout', () => {
     const issues = validateLayoutProps(
       { type: 'text', props: { content: 'Hello', fontSize: 16 } },
-      { schemas: stubSchemas }
+      { manifests: stubManifests }
     )
     expect(issues).toHaveLength(0)
   })
@@ -144,7 +143,7 @@ describe('validateLayoutProps', () => {
           { type: 'button', props: { label: 'Click' } },
         ],
       },
-      { schemas: stubSchemas }
+      { manifests: stubManifests }
     )
     expect(issues).toHaveLength(0)
   })
@@ -156,7 +155,7 @@ describe('validateLayoutProps', () => {
         props: { direction: 'column' },
         children: [{ type: 'text', props: { fontSize: 'banana' } }],
       },
-      { schemas: stubSchemas }
+      { manifests: stubManifests }
     )
     expect(issues.length).toBeGreaterThan(0)
     expect(issues[0]?.path).toBe('root.children[0]')
@@ -173,7 +172,7 @@ describe('validateLayoutProps', () => {
           { type: 'button', props: { variant: 'neon' } },
         ],
       },
-      { schemas: stubSchemas }
+      { manifests: stubManifests }
     )
     expect(issues.length).toBe(3)
     expect(issues[0]?.path).toBe('root')

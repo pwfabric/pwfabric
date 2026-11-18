@@ -64,6 +64,8 @@ export {
   ATOM_FAMILIES,
   SUPPORTED_FORMAT_MAJOR,
   validatePack,
+  zodImportLine,
+  ZOD_REMEDY,
   type PackLayout,
   type PackValidation,
 } from './validate.js'
@@ -71,6 +73,7 @@ export {
   atomManifestPath,
   BLOCK_PROP_ENUM,
   BLOCK_PROP_NOT_BINDABLE,
+  BLOCK_PROP_SHAPE,
   BLOCK_PROP_TYPE,
   BLOCK_PROP_UNKNOWN,
   blockPropDescriptors,

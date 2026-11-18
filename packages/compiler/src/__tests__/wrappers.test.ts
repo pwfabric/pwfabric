@@ -107,7 +107,7 @@ describe('block wrapper — which export is the component', () => {
 
   it('takes the component from a defineBlock() definition when the module exports only that', async () => {
     const component = (): null => null
-    const definition = Object.freeze({ type: 'quote-card', schema: {}, component })
+    const definition = Object.freeze({ type: 'quote-card', props: [], component })
     const m = await resolve({ QuoteCard: definition })
     expect(m.Component).toBe(component)
     expect(m.definition).toBe(definition)
@@ -115,7 +115,7 @@ describe('block wrapper — which export is the component', () => {
 
   it('still prefers a default-exported component', async () => {
     const own = (): null => null
-    const m = await resolve({ default: own, QuoteCard: { type: 'q', schema: {}, component: (): null => null } })
+    const m = await resolve({ default: own, QuoteCard: { type: 'q', props: [], component: (): null => null } })
     expect(m.Component).toBe(own)
   })
 

@@ -10,6 +10,7 @@
 export {
   compileAtom,
   MAX_ATOM_BUNDLE_BYTES,
+  ZOD_IMPORT_MESSAGE,
   type CompileInput,
   type CompileResult,
   type CompileTarget,

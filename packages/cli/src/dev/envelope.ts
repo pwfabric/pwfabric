@@ -3,7 +3,7 @@
  * `navigation.json`, `connections.json`, the two module manifests), built
  * from the app folder's declaration.
  */
-import type { DynamicBlockProp } from '@pwfabric/contracts'
+import type { DynamicBlockProp, PropShape } from '@pwfabric/contracts'
 import { blockPropDescriptors } from '@pwfabric/pack'
 import type { AssembleDiagnostic } from './diagnostics.js'
 import { isRecord } from './sources.js'
@@ -162,23 +162,46 @@ export interface BlockManifestEntry {
   readonly publisher: string
   readonly publisherVerified: boolean
   /**
-   * `props`: the props the block's manifest declares, name and `bindable`
-   * only — the renderer leaves a `bindable: false` prop as written. Absent
-   * when the manifest declares no props.
+   * `props`: the props the block's manifest declares — name, `bindable`,
+   * `required`, `default` and shape (`jsonSchema`, without its prose) — which
+   * the renderer applies before the block renders. Absent when the manifest
+   * declares no props.
    */
   readonly definition: { readonly name: string; readonly props?: readonly DynamicBlockProp[] }
 }
 
+/** Shape members for people and tools only: a visitor's page does not need them. */
+const PROSE = new Set(['description', 'title', 'examples', '$schema'])
+
+function withoutProse(shape: unknown): unknown {
+  if (Array.isArray(shape)) return shape.map(withoutProse)
+  if (!isRecord(shape)) return shape
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(shape)) {
+    if (PROSE.has(k)) continue
+    // `default`, `enum` and `const` are values, not shapes: copied as written.
+    out[k] = k === 'default' || k === 'enum' || k === 'const' ? v : k === 'properties' && isRecord(v) ? Object.fromEntries(Object.entries(v).map(([n, s]) => [n, withoutProse(s)])) : withoutProse(v)
+  }
+  return out
+}
+
 /**
  * The props a block manifest declares, as `blocks/manifest.json` carries
- * them. `bindable` is copied only when it is a boolean; a descriptor without
- * a name is skipped (the validator reports it). `undefined` when the manifest
- * declares no props.
+ * them: what the renderer reads (`applyBlockProps`) — `name`, `bindable`,
+ * `required`, `default` and `jsonSchema` — and nothing written for people
+ * (`type`, `description`, `copy`). A descriptor without a name is skipped
+ * (the validator reports it). `undefined` when the manifest declares no props.
  */
 export function manifestProps(manifest: unknown): DynamicBlockProp[] | undefined {
   return blockPropDescriptors(manifest)?.map((p) => {
-    const bindable = (p as { bindable?: unknown }).bindable
-    return typeof bindable === 'boolean' ? { name: p.name, bindable } : { name: p.name }
+    const d = p as unknown as Record<string, unknown>
+    return {
+      name: p.name,
+      ...(typeof d['bindable'] === 'boolean' ? { bindable: d['bindable'] } : {}),
+      ...(d['required'] === true ? { required: true } : {}),
+      ...(d['default'] !== undefined ? { default: d['default'] } : {}),
+      ...(isRecord(d['jsonSchema']) ? { jsonSchema: withoutProse(d['jsonSchema']) as PropShape } : {}),
+    }
   })
 }
 

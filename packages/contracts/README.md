@@ -2,7 +2,8 @@
 
 The types and schemas every part of PWFabric agrees on: ids, results, versions,
 blocks, surfaces, capabilities, events and the pwpack manifest. Everything else
-in the engine depends on this package; it depends only on `zod`.
+in the engine depends on this package. Its only peer is `zod`, and only the
+`/schemas` entry point loads it: the package root exports no zod value.
 
 ## Install
 
@@ -20,6 +21,7 @@ ESM only: import it from an ES module (`"type": "module"` or `.mjs`). Node 22+. 
 | `surfaceId`, `capabilityId`, `artifactId`, `parseId`, `isValidId`, … | Branded ids |
 | `parseVersion`, `compareVersions`, `isValidVersion` | Semver helpers |
 | `toJsonSchema`, `validationOk`, `validationErr` | Schema and validation helpers |
+| `BlockPropDescriptor`, `PropShape`, `applyBlockProps`, `checkPropValue` | A block's declared props, and how the runtime applies them |
 | `CapabilityBuilder`, `defineCapability` | Declare a capability |
 | Block, surface, event and manifest types and schemas | The shapes a pwpack and a pwapp are made of |
 
@@ -27,7 +29,8 @@ ESM only: import it from an ES module (`"type": "module"` or `.mjs`). Node 22+. 
 
 | Import | Contents |
 |--------|----------|
-| `@pwfabric/contracts` | Everything above (the only entry point) |
+| `@pwfabric/contracts` | Everything above; no zod value |
+| `@pwfabric/contracts/schemas` | The zod schemas of the contracts, for tooling (CLI, validators, tests) |
 
 ## Licence
 

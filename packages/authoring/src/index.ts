@@ -14,13 +14,11 @@
  * @example
  * ```typescript
  * import { defineBlock, createCustomBlockRegistry } from '@pwfabric/authoring'
- * import { z } from 'zod'
  *
- * const MyBlock = defineBlock({
+ * const MyBlock = defineBlock<{ title: string }>({
  *   type: 'my-block',
  *   name: 'My Block',
- *   schema: z.object({ title: z.string() }),
- *   defaultProps: { title: 'Default' },
+ *   props: [{ name: 'title', default: 'Default', jsonSchema: { type: 'string' }, copy: true }],
  *   component: ({ props }) => <div>{props.title}</div>
  * })
  *
@@ -39,7 +37,6 @@ export * from '@pwfabric/runtime'
 export type {
   // Custom block types
   CustomBlockOptions,
-  SchemaProps,
   CustomBlockComponentProps,
   CustomBlockComponent,
   CustomBlockContext,
@@ -64,7 +61,6 @@ export type {
   // Utility types
   InferBlockProps,
   InferFactoryConfig,
-  InferSchemaProps,
 } from './types.js'
 
 // ============================================================

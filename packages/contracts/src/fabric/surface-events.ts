@@ -89,7 +89,7 @@ export interface SurfaceEventBus {
 // EVENT NAMESPACE REGISTRY
 // ============================================================
 
-import { z } from 'zod'
+import type { SURFACE_EVENT_PAYLOAD_SCHEMAS } from './surface-events.schema.js'
 
 /**
  * Canonical event namespace registry.
@@ -107,50 +107,5 @@ export const SURFACE_EVENT_NAMESPACE_REGISTRY = {
 } as const
 
 export type SurfaceEventNamespace = keyof typeof SURFACE_EVENT_NAMESPACE_REGISTRY
-
-/**
- * Zod payload schemas for known event types.
- * Used for dev-mode validation only — no runtime enforcement in prod.
- */
-export const SURFACE_EVENT_PAYLOAD_SCHEMAS = {
-  'form:submit': z.object({
-    values: z.record(z.string(), z.any()),
-    formId: z.string(),
-    timestamp: z.number(),
-  }),
-  'form:change': z.object({
-    field: z.string(),
-    value: z.any().optional(),
-    formId: z.string(),
-  }),
-  'input:change': z.object({
-    value: z.any().optional(),
-    inputId: z.string(),
-    validationResult: z
-      .object({
-        valid: z.boolean(),
-        errors: z.array(z.string()).optional(),
-      })
-      .optional(),
-  }),
-  'entity:created': z.object({
-    entityType: z.string(),
-    instanceId: z.string(),
-    data: z.record(z.string(), z.any()),
-    timestamp: z.number(),
-  }),
-  'entity:updated': z.object({
-    entityType: z.string(),
-    instanceId: z.string(),
-    data: z.record(z.string(), z.any()),
-    changeset: z.record(z.string(), z.any()).optional(),
-    timestamp: z.number(),
-  }),
-  'entity:deleted': z.object({
-    entityType: z.string(),
-    instanceId: z.string(),
-    timestamp: z.number(),
-  }),
-} as const
 
 export type KnownSurfaceEventType = keyof typeof SURFACE_EVENT_PAYLOAD_SCHEMAS

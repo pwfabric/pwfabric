@@ -28,7 +28,8 @@ ESM only: import it from an ES module (`"type": "module"` or `.mjs`). Node 22+.
 
 | Import | Contents |
 |--------|----------|
-| `@pwfabric/core` | Everything above (the only entry point) |
+| `@pwfabric/core` | Everything above; no zod value |
+| `@pwfabric/core/schemas` | The zod schemas of core, for tooling |
 
 ## Licence
 

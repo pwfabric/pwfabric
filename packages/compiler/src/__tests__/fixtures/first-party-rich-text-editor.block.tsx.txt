@@ -1,23 +1,21 @@
-import { z } from 'zod'
 import * as React from 'react'
 import type { BlockDefinition } from '@pwfabric/core'
 import type { BlockComponent } from '../../component-types.js'
 
-export const rich_text_editorPropsSchema = z.object({
-  name: z.string().optional(),
-  label: z.string().optional(),
-  placeholder: z.string().default('Start writing…'),
-  value: z.string().default(''),
-})
+/** The props this block reads; their defaults and shapes are in manifest.json (definition.props). */
+export interface RichTextEditorProps {
+  readonly name?: string
+  readonly label?: string
+  readonly placeholder?: string
+  readonly value?: string
+}
 
-export type RichTextEditorProps = z.infer<typeof rich_text_editorPropsSchema>
 
 export const RichTextEditorDefinition: BlockDefinition = {
   type: 'rich-text-editor',
   name: 'RichTextEditor',
   category: 'form',
   icon: 'edit',
-  schema: rich_text_editorPropsSchema,
   defaultProps: { placeholder: 'Start writing…', value: '' },
   canHaveChildren: false,
 }
