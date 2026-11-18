@@ -75,9 +75,8 @@ export interface PreviewBridgeOptions {
 // PAYLOAD SHAPES
 // ============================================================
 //
-// Checked by hand rather than with zod: this module is part of runner.js,
-// which loads BEFORE the renderer that seeds the page's zod (see renderer.ts)
-// and so cannot import it. The checks mirror the contracts' surface and
+// Checked by hand: no page carries zod (3.0; the contracts' zod schemas are
+// tooling, `@pwfabric/contracts/schemas`). The checks mirror the contracts' surface and
 // appearance schemas — same field names and value types — and stay as loose
 // as they are (unknown members pass through, except at the top of a message,
 // where they are dropped), because the renderer is the one that decides what

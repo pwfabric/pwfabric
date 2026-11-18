@@ -24,6 +24,8 @@ export type {
   EntityRelationType,
   EntityRelationDefinition,
   EntityDefinition,
+  EntityRecordSchema,
+  EntityRecordSchemaIssue,
   EntityQuery,
   EntityFilter,
   EntitySortField,

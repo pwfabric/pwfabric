@@ -6,7 +6,8 @@
  * @module @pwfabric/authoring/types
  */
 
-import type { ZodSchema, ZodTypeAny, output as ZodOutput } from 'zod'
+import type { ZodSchema } from 'zod'
+import type { BlockPropDescriptor } from '@pwfabric/contracts'
 import type { Block, BlockCategory } from '@pwfabric/core'
 import type { BlockComponentRegistry } from '@pwfabric/runtime'
 import type { ReactNode } from 'react'
@@ -16,22 +17,13 @@ import type { ReactNode } from 'react'
 // ============================================================
 
 /**
- * Custom block definition options
- *
- * Used with `defineBlock()` to create a type-safe custom block.
+ * Options for `defineBlock()`. The block's props are declared ONCE, as its
+ * manifest declares them (`definition.props`: name, default, shape,
+ * `bindable`, `copy`); there is no schema. `TProps` is the TypeScript view of
+ * those props the component reads — written by the author, checked by nothing
+ * at runtime but the declarations.
  */
-export type SchemaProps<TSchema extends ZodTypeAny> =
-  ZodOutput<TSchema> extends Record<string, unknown> ? ZodOutput<TSchema> : Record<string, unknown>
-
-/**
- * Options for `defineBlock()`. The block's props are the schema's output
- * (`SchemaProps<TSchema>`): they are inferred from `schema` alone, and
- * `defaultProps` and `component` are checked against them.
- */
-export interface CustomBlockOptions<
-  TSchema extends ZodTypeAny = ZodTypeAny,
-  TProps extends Record<string, unknown> = SchemaProps<TSchema>,
-> {
+export interface CustomBlockOptions<TProps extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique block type identifier (kebab-case) */
   readonly type: string
 
@@ -44,15 +36,20 @@ export interface CustomBlockOptions<
   /** Icon character or identifier */
   readonly icon?: string
 
-  /** Zod schema for props validation */
-  readonly schema: TSchema
+  /**
+   * The props the block takes — the same list as the manifest's
+   * `definition.props`. Their defaults and shapes are applied before the
+   * component renders (`applyBlockProps`); a value that does not fit is a
+   * developer warning, never a crash. Absent: props pass as written.
+   */
+  readonly props?: readonly BlockPropDescriptor[]
 
   /**
-   * Default props for new instances. Checked against the schema, never used to
-   * infer the props: a field the schema marks optional stays optional even when
-   * it has a default here.
+   * The props a NEW instance starts with when an editor places the block.
+   * Not a second definition of the defaults: a missing prop takes its
+   * declared `default` whatever this says. Checked against `props`.
    */
-  readonly defaultProps: TProps
+  readonly defaultProps?: Partial<TProps>
 
   /** Whether this block can contain children */
   readonly canHaveChildren?: boolean
@@ -72,7 +69,7 @@ export interface CustomBlockOptions<
   /** Maximum instances allowed in a surface */
   readonly maxInstances?: number
 
-  /** React component to render this block; its props are the schema's output. */
+  /** React component to render this block; it gets the props with their declared defaults applied. */
   readonly component: CustomBlockComponent<TProps>
 }
 
@@ -134,11 +131,11 @@ export interface CustomBlockDefinition<
   /** Icon character or identifier */
   readonly icon: string
 
-  /** Zod schema for validation */
-  readonly schema: ZodSchema<TProps>
+  /** The props the block takes, as its manifest declares them (`definition.props`). */
+  readonly props: readonly BlockPropDescriptor[]
 
-  /** Default props */
-  readonly defaultProps: TProps
+  /** The props a new instance starts with. */
+  readonly defaultProps: Partial<TProps>
 
   /** Whether this block can contain children */
   readonly canHaveChildren: boolean
@@ -361,8 +358,3 @@ export type InferBlockProps<T> = T extends CustomBlockDefinition<infer TProps> ?
  * Infer config type from a factory definition
  */
 export type InferFactoryConfig<T> = T extends FactoryDefinition<infer TConfig> ? TConfig : never
-
-/**
- * Infer props type from a Zod schema
- */
-export type InferSchemaProps<T> = T extends ZodSchema<infer TOutput> ? TOutput : never

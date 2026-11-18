@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { AppearanceConfigSchema } from '../../schemas.js'
 import {
-  AppearanceConfigSchema,
   DEFAULT_APPEARANCE_THEME,
   THEME_STATUS_TOKENS,
   allowedWebfontsIn,

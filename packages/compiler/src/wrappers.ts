@@ -73,8 +73,11 @@ export function buildWrapperSource(kind: AtomKind, ctx: WrapperContext): string 
   if (kind === 'block') {
     return `import * as _atom from ${JSON.stringify(`./${sourceBase}.js`)}
 
+// A block definition: a \`type\` and what a definition carries — its
+// starting props, its declared props, or (defineBlock) its component.
 const _isDef = (v) =>
-  v != null && typeof v === 'object' && 'type' in v && 'schema' in v
+  v != null && typeof v === 'object' && typeof v.type === 'string' &&
+  ('defaultProps' in v || 'props' in v || typeof v.component === 'function')
 
 const _resolveDefinition = (m) => {
   for (const k of Object.keys(m)) {

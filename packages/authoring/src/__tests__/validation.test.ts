@@ -3,7 +3,6 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import { z } from 'zod'
 import {
   validateProps,
   validatePropsWithDefaults,
@@ -19,62 +18,108 @@ import {
 import { defineBlock } from '../define-block.js'
 import { createCustomBlockRegistry } from '../registry.js'
 import type { Block } from '@pwfabric/runtime'
+import type { BlockPropDescriptor } from '@pwfabric/contracts'
 
 describe('validateProps', () => {
-  const schema = z.object({
-    title: z.string(),
-    count: z.number().optional(),
-  })
+  const descriptors: readonly BlockPropDescriptor[] = [
+    { name: 'title', required: true, jsonSchema: { type: 'string' } },
+    { name: 'count', jsonSchema: { type: 'number' } },
+  ]
 
   it('should return valid result for matching props', () => {
-    const result = validateProps({ title: 'Test' }, schema)
+    const result = validateProps({ title: 'Test' }, descriptors)
 
     expect(result.valid).toBe(true)
     expect(result.props).toEqual({ title: 'Test' })
     expect(result.errors).toHaveLength(0)
   })
 
-  it('should return invalid result for non-matching props', () => {
-    const result = validateProps({ count: 10 }, schema)
+  it('should return invalid result when a required prop without default is missing', () => {
+    const result = validateProps({ count: 10 }, descriptors)
 
     expect(result.valid).toBe(false)
     expect(result.props).toBeUndefined()
     expect(result.errors.length).toBeGreaterThan(0)
     expect(result.errors[0].code).toBe('VALIDATION_ERROR')
+    expect(result.errors[0].path).toBe('title')
+  })
+
+  it('should accept a missing required prop that has a declared default, and apply it', () => {
+    const result = validateProps({}, [{ name: 'title', required: true, default: 'Hi', jsonSchema: { type: 'string' } }])
+
+    expect(result.valid).toBe(true)
+    expect(result.props).toEqual({ title: 'Hi' })
+  })
+
+  it('should return invalid result for a value of the wrong type', () => {
+    const result = validateProps({ title: 123 }, descriptors)
+
+    expect(result.valid).toBe(false)
+    expect(result.errors[0]).toMatchObject({ code: 'VALIDATION_ERROR', path: 'title' })
+  })
+
+  it('should treat non-object props as invalid', () => {
+    for (const bad of [null, 'x', 42, ['a']]) {
+      const result = validateProps(bad, descriptors)
+      expect(result.valid).toBe(false)
+      expect(result.errors[0].code).toBe('VALIDATION_ERROR')
+    }
   })
 
   it('should include path in error for nested objects', () => {
-    const nestedSchema = z.object({
-      nested: z.object({
-        value: z.string(),
-      }),
-    })
+    const nested: readonly BlockPropDescriptor[] = [
+      { name: 'nested', jsonSchema: { type: 'object', properties: { value: { type: 'string' } } } },
+    ]
 
-    const result = validateProps({ nested: { value: 123 } }, nestedSchema)
+    const result = validateProps({ nested: { value: 123 } }, nested)
 
     expect(result.valid).toBe(false)
     expect(result.errors[0].path).toBe('nested.value')
   })
+
+  it('should include the item index in the path for arrays', () => {
+    const list: readonly BlockPropDescriptor[] = [
+      {
+        name: 'items',
+        jsonSchema: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' } } } },
+      },
+    ]
+
+    const result = validateProps({ items: [{ label: 'ok' }, { label: 7 }] }, list)
+
+    expect(result.valid).toBe(false)
+    expect(result.errors[0].path).toBe('items[1].label')
+  })
 })
 
 describe('validatePropsWithDefaults', () => {
-  const schema = z.object({
-    title: z.string(),
-    count: z.number(),
-  })
+  const descriptors: readonly BlockPropDescriptor[] = [
+    { name: 'title', default: 'Default', jsonSchema: { type: 'string' } },
+    { name: 'count', default: 0, jsonSchema: { type: 'number' } },
+  ]
 
-  const defaults = { title: 'Default', count: 0 }
-
-  it('should return validated props when valid', () => {
-    const result = validatePropsWithDefaults({ title: 'Custom', count: 5 }, schema, defaults)
+  it('should return the props when they fit', () => {
+    const result = validatePropsWithDefaults({ title: 'Custom', count: 5 }, descriptors)
 
     expect(result).toEqual({ title: 'Custom', count: 5 })
   })
 
-  it('should return defaults when validation fails', () => {
-    const result = validatePropsWithDefaults({ invalid: true }, schema, defaults)
+  it('should fill in declared defaults for missing props', () => {
+    const result = validatePropsWithDefaults({ invalid: true }, descriptors)
 
-    expect(result).toEqual(defaults)
+    expect(result).toEqual({ invalid: true, title: 'Default', count: 0 })
+  })
+
+  it('should replace a value that does not fit with its default (never fails)', () => {
+    const result = validatePropsWithDefaults({ title: { not: 'a string' }, count: 'many' }, descriptors)
+
+    expect(result).toEqual({ title: 'Default', count: 0 })
+  })
+
+  it('should coerce a lossless value to its shape', () => {
+    const result = validatePropsWithDefaults({ count: '12' }, descriptors)
+
+    expect(result.count).toBe(12)
   })
 })
 
@@ -82,10 +127,10 @@ describe('validateBlock', () => {
   const definition = defineBlock({
     type: 'validated-block',
     name: 'Validated Block',
-    schema: z.object({
-      title: z.string(),
-      active: z.boolean().default(false),
-    }),
+    props: [
+      { name: 'title', required: true, jsonSchema: { type: 'string' } },
+      { name: 'active', default: false, jsonSchema: { type: 'boolean' } },
+    ],
     defaultProps: { title: 'Default', active: false },
     canHaveChildren: false,
     component: () => null,
@@ -102,6 +147,19 @@ describe('validateBlock', () => {
 
     expect(result.valid).toBe(true)
     expect(result.block).toEqual(block)
+  })
+
+  it('should return the block with declared defaults applied', () => {
+    const block: Block = {
+      id: 'block-1b',
+      type: 'validated-block',
+      props: { title: 'Test' },
+    }
+
+    const result = validateBlock(block, definition)
+
+    expect(result.valid).toBe(true)
+    expect(result.block?.props).toEqual({ title: 'Test', active: false })
   })
 
   it('should return error for type mismatch', () => {
@@ -148,7 +206,7 @@ describe('validateBlock', () => {
     const containerDef = defineBlock({
       type: 'container-validated',
       name: 'Container',
-      schema: z.object({ gap: z.number() }),
+      props: [{ name: 'gap', jsonSchema: { type: 'number' } }],
       defaultProps: { gap: 16 },
       canHaveChildren: true,
       allowedChildren: ['text', 'heading'],
@@ -180,7 +238,7 @@ describe('validateBlockTree', () => {
       defineBlock({
         type: 'tree-block',
         name: 'Tree Block',
-        schema: z.object({ value: z.string() }),
+        props: [{ name: 'value', jsonSchema: { type: 'string' } }],
         defaultProps: { value: '' },
         canHaveChildren: true,
         component: () => null,
@@ -240,7 +298,7 @@ describe('createBlockValidator', () => {
     const definition = defineBlock({
       type: 'reusable-block',
       name: 'Reusable',
-      schema: z.object({ text: z.string() }),
+      props: [{ name: 'text', jsonSchema: { type: 'string' } }],
       defaultProps: { text: '' },
       component: () => null,
     })
@@ -265,8 +323,7 @@ describe('createBlockValidator', () => {
 
 describe('createPropsValidator', () => {
   it('should create a reusable props validator', () => {
-    const schema = z.object({ count: z.number().positive() })
-    const validate = createPropsValidator(schema)
+    const validate = createPropsValidator([{ name: 'count', jsonSchema: { type: 'number', exclusiveMinimum: 0 } }])
 
     const validResult = validate({ count: 5 })
     expect(validResult.valid).toBe(true)

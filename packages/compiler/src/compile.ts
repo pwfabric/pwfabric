@@ -58,6 +58,8 @@ export type DiagnosticCode =
   | 'PATH_ESCAPE'
   /** A bare import that is not a host import. */
   | 'NON_HOST_IMPORT'
+  /** The block imports zod: props are declared in the manifest, and no visitor page carries zod. */
+  | 'ZOD_IMPORT'
   /** A subpath of a host import — compiled external, but the host import map only resolves exact specifiers. */
   | 'HOST_SUBPATH_IMPORT'
   /** A relative import that names no file in the tree. */
@@ -325,6 +327,7 @@ function virtualTreePlugin(
         }
 
         if (hostImports.has(spec)) return { path: spec, external: true }
+        if (spec === 'zod' || spec.startsWith('zod/')) return reject('ZOD_IMPORT', ZOD_IMPORT_MESSAGE)
         const hostRoot = [...hostImports].find((h) => spec.startsWith(`${h}/`))
         if (hostRoot) {
           return {
@@ -359,6 +362,14 @@ function virtualTreePlugin(
 // HELPERS
 // ============================================================
 
+/**
+ * Why a block may not import zod (3.0): its props are declared in its
+ * manifest, read by the runtime without a validation library, and no
+ * visitor's page carries zod. Shared with `pwf validate` (BLOCK_IMPORTS_ZOD).
+ */
+export const ZOD_IMPORT_MESSAGE =
+  "a block may not import 'zod': its props are declared in its manifest (definition.props: type, default, enum, bounds, shape) and the runtime applies them, so no visitor page carries zod. Run `pwf migrate blocks <folder>` to move the schema into the manifest, then delete the import"
+
 function error(code: DiagnosticCode, message: string): Diagnostic {
   return { severity: 'error', code, message }
 }
@@ -367,6 +378,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set<DiagnosticCode>([
   'INVALID_INPUT',
   'PATH_ESCAPE',
   'NON_HOST_IMPORT',
+  'ZOD_IMPORT',
   'HOST_SUBPATH_IMPORT',
   'UNRESOLVED_IMPORT',
   'NOT_A_COMPANION',

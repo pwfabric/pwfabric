@@ -31,7 +31,7 @@ export function createSurfaceEventBus(): SurfaceEventBus {
       // Dev-mode payload validation — async/lazy, does not block emit
       if (process.env.NODE_ENV === 'development') {
         // Import lazily to avoid prod bundle size impact
-        void import('@pwfabric/contracts').then(({ SURFACE_EVENT_PAYLOAD_SCHEMAS }) => {
+        void import('@pwfabric/contracts/schemas').then(({ SURFACE_EVENT_PAYLOAD_SCHEMAS }) => {
           const schema =
             SURFACE_EVENT_PAYLOAD_SCHEMAS[event.type as keyof typeof SURFACE_EVENT_PAYLOAD_SCHEMAS]
           if (schema && event.payload !== undefined) {

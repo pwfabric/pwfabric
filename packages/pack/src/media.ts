@@ -11,13 +11,8 @@
  *
  * @module @pwfabric/pack/media
  */
-import {
-  safeParseMediaDeclaration,
-  safeParseMediaProvenance,
-  type MediaDeclaration,
-  type MediaProvenance,
-  type MediaProvenanceEntry,
-} from '@pwfabric/contracts'
+import { type MediaDeclaration, type MediaProvenance, type MediaProvenanceEntry } from '@pwfabric/contracts'
+import { safeParseMediaDeclaration, safeParseMediaProvenance } from '@pwfabric/contracts/schemas'
 import type { PackFolder, PackIssue } from './types.js'
 import { sortedPaths } from './paths.js'
 import { stripBom } from './manifest.js'

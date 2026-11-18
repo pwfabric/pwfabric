@@ -93,7 +93,28 @@ export interface EntityDefinition {
   readonly primaryKey: string
   readonly timestamps?: boolean
   readonly softDelete?: boolean
-  readonly schema: z.ZodObject<z.ZodRawShape>
+  /**
+   * What a create or update must satisfy. Any value with zod's `safeParse`
+   * shape will do (a zod object is one); the runtime carries no validation
+   * library of its own. Absent: every record object is accepted as written.
+   */
+  readonly schema?: EntityRecordSchema
+}
+
+/** One problem a record schema reports (zod's issue shape, reduced). */
+export interface EntityRecordSchemaIssue {
+  readonly path: readonly PropertyKey[]
+  readonly message: string
+  readonly code: string
+}
+
+/** The validator an entity definition may carry: a `safeParse` (a zod object is one). */
+export interface EntityRecordSchema {
+  safeParse(
+    data: unknown
+  ):
+    | { readonly success: true; readonly data: unknown }
+    | { readonly success: false; readonly error: { readonly issues: readonly EntityRecordSchemaIssue[] } }
 }
 
 // ============================================================

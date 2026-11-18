@@ -10,8 +10,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { surfaceActionSchema, surfaceBehaviorSchema } from '../../fabric/surface-schema.js'
-import { SURFACE_EVENT_PAYLOAD_SCHEMAS } from '../../fabric/surface-events.js'
+import { surfaceActionSchema, surfaceBehaviorSchema } from '../../fabric/surface-schema.schema.js'
+import { SURFACE_EVENT_PAYLOAD_SCHEMAS } from '../../fabric/surface-events.schema.js'
 
 describe('setState action without `value` (1.x accepted it)', () => {
   it('surfaceActionSchema accepts { type: "setState", key } with no value', () => {

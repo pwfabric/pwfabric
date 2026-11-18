@@ -70,12 +70,11 @@ describe('InMemoryEntityRegistry', () => {
       expect(() => registry.register(definition)).toThrow('Entity definition must have a name')
     })
 
-    it('should throw if definition has no schema', () => {
-      const definition = createTestDefinition({
-        schema: undefined as unknown as z.ZodObject<z.ZodRawShape>,
-      })
-
-      expect(() => registry.register(definition)).toThrow('Entity definition must have a schema')
+    it('accepts a definition with no record schema, and then takes any record object as written', () => {
+      const { schema: _none, ...rest } = createTestDefinition({})
+      registry.register(rest)
+      expect(registry.validate(rest.id, { any: 'thing' })).toEqual({ valid: true, data: { any: 'thing' } })
+      expect(registry.validate(rest.id, ['not', 'a', 'record']).valid).toBe(false)
     })
 
     it('should throw if definition has no primaryKey', () => {

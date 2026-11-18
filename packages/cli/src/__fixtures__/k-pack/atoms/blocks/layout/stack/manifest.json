@@ -21,7 +21,10 @@
         "name": "gap",
         "type": "string",
         "required": false,
-        "default": "16px"
+        "default": "16px",
+        "jsonSchema": {
+          "type": "string"
+        }
       }
     ],
     "defaultProps": {

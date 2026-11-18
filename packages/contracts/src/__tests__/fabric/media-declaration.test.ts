@@ -4,15 +4,10 @@
  * @module @pwfabric/contracts/__tests__/fabric/media-declaration
  */
 import { describe, it, expect } from 'vitest'
-import {
-  MEDIA_DECLARATION_KINDS,
-  MEDIA_DECLARATION_ORIGINS,
-  MediaDeclarationSchema,
-  parseMediaDeclaration,
-  safeParseMediaDeclaration,
-  type MediaDeclaration,
-} from '../../fabric/media-declaration.js'
+import { MEDIA_DECLARATION_KINDS, MEDIA_DECLARATION_ORIGINS, type MediaDeclaration } from '../../fabric/media-declaration.js'
+import { MediaDeclarationSchema, parseMediaDeclaration, safeParseMediaDeclaration } from '../../fabric/media-declaration.schema.js'
 import * as contracts from '../../index.js'
+import * as schemas from '../../schemas.js'
 
 const full: MediaDeclaration = {
   kind: 'image',
@@ -83,10 +78,12 @@ describe('MediaDeclarationSchema — invalid', () => {
 })
 
 describe('exports', () => {
-  it('is reachable from the package root', () => {
-    expect(contracts.MediaDeclarationSchema).toBe(MediaDeclarationSchema)
-    expect(contracts.safeParseMediaDeclaration).toBe(safeParseMediaDeclaration)
+  it('is reachable from @pwfabric/contracts/schemas, not from the zod-free root', () => {
+    expect(schemas.MediaDeclarationSchema).toBe(MediaDeclarationSchema)
+    expect(schemas.safeParseMediaDeclaration).toBe(safeParseMediaDeclaration)
     expect(MEDIA_DECLARATION_KINDS).toEqual(['image', 'file'])
     expect(MEDIA_DECLARATION_ORIGINS).toContain('library')
+    expect('MediaDeclarationSchema' in contracts).toBe(false)
+    expect('safeParseMediaDeclaration' in contracts).toBe(false)
   })
 })

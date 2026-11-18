@@ -9,6 +9,8 @@
  * @module @pwfabric/contracts/fabric/dynamic-artifact
  */
 
+import type { BlockPropDescriptor } from './block-prop.js'
+
 // ============================================================
 // BLOCK ARTIFACT TYPES (Code Loading)
 // ============================================================
@@ -39,21 +41,19 @@ export interface PropertySchemaEntry {
 
 /**
  * One prop a block's manifest declares (block-manifest, "Prop descriptor"),
- * reduced to what a renderer reads before the module loads: its name and
- * whether it takes a binding. `bindable: false` means the prop takes a literal
- * only — a `{{…}}` in it is shown as written. Absent means bindable.
+ * as the host hands it to the renderer in `blocks/manifest.json`: its name,
+ * whether it takes a binding, its default and its shape. The renderer applies
+ * the default and the shape before the block renders (`applyBlockProps`) and
+ * leaves a `bindable: false` prop as written.
  */
-export interface DynamicBlockProp {
-  readonly name: string
-  readonly bindable?: boolean
-}
+export type DynamicBlockProp = BlockPropDescriptor
 
 /**
  * Block definition extracted from the dynamic module.
  */
 export interface DynamicBlockDefinition {
   readonly name: string
-  /** The props the block's manifest declares (`definition.props`), name and `bindable` only. */
+  /** The props the block's manifest declares (`definition.props`): the only definition of what the block takes. */
   readonly props?: readonly DynamicBlockProp[]
   readonly icon?: string
   readonly category?: string

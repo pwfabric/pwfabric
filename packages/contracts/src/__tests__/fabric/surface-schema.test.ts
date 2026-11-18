@@ -7,15 +7,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import {
-  blockSnapshotSchema,
-  surfaceThemeSchema,
-  surfaceDocumentSchema,
-  surfaceDocumentStrictSchema,
-  dataSourceSchema,
-  findDuplicateBlockIds,
-  assertUniqueBlockIds,
-} from '../../fabric/surface-schema.js'
+import { findDuplicateBlockIds, assertUniqueBlockIds } from '../../fabric/surface-schema.js'
+import { blockSnapshotSchema, surfaceThemeSchema, surfaceDocumentSchema, surfaceDocumentStrictSchema, dataSourceSchema } from '../../fabric/surface-schema.schema.js'
 
 describe('blockSnapshotSchema', () => {
   it('should accept a minimal block (type only)', () => {

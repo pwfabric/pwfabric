@@ -15,18 +15,14 @@ import { screenSource, maskSource, SCREEN_IMPORT_ALLOWLIST, screenBlockSource, B
 function fixture(name: string): string {
   return readFileSync(fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url)), 'utf8')
 }
-const BENIGN = `import { z } from 'zod'
-import * as React from 'react'
+const BENIGN = `import * as React from 'react'
 import type { BlockDefinition } from '@pwfabric/core'
 import type { BlockComponent } from '../../component-types.js'
-
-export const propsSchema = z.object({ label: z.string().default('Hi') })
 
 export const definition: BlockDefinition = {
   type: 'custom.greeting',
   name: 'Greeting',
   category: 'custom',
-  schema: propsSchema,
   defaultProps: { label: 'Hi' },
   canHaveChildren: false,
 }
@@ -241,7 +237,11 @@ describe('screenSource — companions and details', () => {
   it('checks export-from and bare side-effect imports', () => {
     expect(screenSource(`export { x } from 'left-pad'\n`).ok).toBe(false)
     expect(screenSource(`export type { X } from 'left-pad'\n`).ok).toBe(true)
-    expect(screenSource(`import 'zod'\n`).ok).toBe(true)
+    expect(screenSource(`import 'react'
+`).ok).toBe(true)
+    // zod is not a host import (3.0): props are declared in the manifest.
+    expect(screenSource(`import 'zod'
+`).ok).toBe(false)
   })
 
   it('maskSource keeps offsets, blanks comments, and optionally literals', () => {

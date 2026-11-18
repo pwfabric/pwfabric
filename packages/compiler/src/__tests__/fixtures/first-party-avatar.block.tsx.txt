@@ -1,27 +1,22 @@
-import { z } from 'zod'
 import * as React from 'react'
 import type { BlockDefinition } from '@pwfabric/core'
 import type { BlockComponent } from '../../component-types.js'
 
 // ============================================================
-// SCHEMA
+// PROPS
 // ============================================================
 
-export const avatarShapeSchema = z.enum(['circle', 'square', 'rounded'])
-export const avatarSizeSchema = z.enum(['xs', 'sm', 'md', 'lg', 'xl'])
-
-export const avatarPropsSchema = z.object({
-  src: z.string().optional(),
-  alt: z.string().default(''),
-  name: z.string().optional(),
-  size: avatarSizeSchema.default('md'),
-  shape: avatarShapeSchema.default('circle'),
-  fallbackColor: z.string().optional(),
-  showStatus: z.boolean().default(false),
-  status: z.enum(['online', 'offline', 'away', 'busy']).optional(),
-})
-
-export type AvatarProps = z.infer<typeof avatarPropsSchema>
+/** The props this block reads; their defaults and shapes are in manifest.json (definition.props). */
+export interface AvatarProps {
+  readonly src?: string
+  readonly alt?: string
+  readonly name?: string
+  readonly size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+  readonly shape?: 'circle' | 'square' | 'rounded'
+  readonly fallbackColor?: string
+  readonly showStatus?: boolean
+  readonly status?: 'online' | 'offline' | 'away' | 'busy'
+}
 
 // ============================================================
 // DEFINITION
@@ -32,7 +27,6 @@ export const avatarDefinition: BlockDefinition = {
   name: 'Avatar',
   category: 'control',
   icon: '👤',
-  schema: avatarPropsSchema,
   defaultProps: {
     size: 'md',
     shape: 'circle',

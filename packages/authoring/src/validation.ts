@@ -6,7 +6,7 @@
  * @module @pwfabric/authoring/validation
  */
 
-import type { ZodSchema } from 'zod'
+import { applyBlockProps, checkPropValue, propDefault, type BlockPropDescriptor } from '@pwfabric/contracts'
 import type { Block } from '@pwfabric/core'
 import type {
   CustomBlockDefinition,
@@ -21,55 +21,49 @@ import type {
 // ============================================================
 
 /**
- * Validate props against a Zod schema
+ * Validate props against a block's declared props (its manifest
+ * `definition.props`).
  *
  * @param props - The props to validate
- * @param schema - The Zod schema to validate against
- * @returns Validation result with validated props or errors
+ * @param descriptors - The declared props
+ * @returns Validation result with the props (declared defaults applied) or errors
  */
 export function validateProps<TProps extends Record<string, unknown>>(
   props: unknown,
-  schema: ZodSchema<TProps>
+  descriptors: readonly BlockPropDescriptor[]
 ): PropsValidationResult<TProps> {
-  const result = schema.safeParse(props)
-
-  if (result.success) {
-    return {
-      valid: true,
-      props: result.data,
-      errors: [],
+  const record = props && typeof props === 'object' && !Array.isArray(props) ? (props as Record<string, unknown>) : null
+  if (!record) {
+    return { valid: false, errors: [{ code: 'VALIDATION_ERROR', message: 'props must be an object', path: '' }] }
+  }
+  const errors: BlockValidationError[] = []
+  for (const d of descriptors) {
+    const value = record[d.name]
+    if (value === undefined) {
+      if (d.required && propDefault(d) === undefined) errors.push({ code: 'VALIDATION_ERROR', message: 'is required', path: d.name })
+      continue
+    }
+    for (const issue of checkPropValue(value, d.jsonSchema, d.name)) {
+      errors.push({ code: 'VALIDATION_ERROR', message: issue.message, path: issue.path })
     }
   }
-
-  const errors: BlockValidationError[] = result.error.issues.map((e) => ({
-    code: 'VALIDATION_ERROR',
-    message: e.message,
-    path: e.path.map(String).join('.'),
-  }))
-
-  return {
-    valid: false,
-    errors,
-  }
+  if (errors.length > 0) return { valid: false, errors }
+  return { valid: true, props: applyBlockProps(record, descriptors) as TProps, errors: [] }
 }
 
 /**
- * Validate props with defaults applied
+ * The props a block renders with: the declared defaults filled in, values
+ * coerced, and a value that does not fit replaced by its default
+ * (`applyBlockProps`). Never fails.
  *
- * If validation fails, returns the default props.
- *
- * @param props - The props to validate
- * @param schema - The Zod schema
- * @param defaultProps - Default props to use if validation fails
- * @returns Validated props or defaults
+ * @param props - The props as written
+ * @param descriptors - The declared props
  */
 export function validatePropsWithDefaults<TProps extends Record<string, unknown>>(
-  props: unknown,
-  schema: ZodSchema<TProps>,
-  defaultProps: TProps
+  props: Record<string, unknown>,
+  descriptors: readonly BlockPropDescriptor[]
 ): TProps {
-  const result = schema.safeParse(props)
-  return result.success ? result.data : defaultProps
+  return applyBlockProps(props, descriptors) as TProps
 }
 
 // ============================================================
@@ -99,7 +93,7 @@ export function validateBlock<TProps extends Record<string, unknown>>(
   }
 
   // Validate props
-  const propsResult = validateProps(block.props, definition.schema)
+  const propsResult = validateProps(block.props, definition.props)
   if (!propsResult.valid) {
     errors.push(...propsResult.errors)
   }
@@ -210,15 +204,15 @@ export function createBlockValidator<TProps extends Record<string, unknown>>(
 }
 
 /**
- * Create a props validation function for a specific schema
+ * Create a props validation function for a block's declared props
  *
- * @param schema - The Zod schema
+ * @param descriptors - The declared props
  * @returns A validation function
  */
 export function createPropsValidator<TProps extends Record<string, unknown>>(
-  schema: ZodSchema<TProps>
+  descriptors: readonly BlockPropDescriptor[]
 ): (props: unknown) => PropsValidationResult<TProps> {
-  return (props: unknown) => validateProps(props, schema)
+  return (props: unknown) => validateProps<TProps>(props, descriptors)
 }
 
 // ============================================================

@@ -2,8 +2,8 @@
  * defineBlock API Tests
  */
 
-import { describe, it, expect } from 'vitest'
-import { z } from 'zod'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import type { BlockPropDescriptor } from '@pwfabric/contracts'
 import {
   defineBlock,
   isCustomBlockDefinition,
@@ -12,25 +12,25 @@ import {
 } from '../define-block.js'
 
 describe('field severity (name soft / type hard)', () => {
-  const schema = z.object({ title: z.string().default('x') })
+  const descriptors: readonly BlockPropDescriptor[] = [{ name: 'title', default: 'x', jsonSchema: { type: 'string' } }]
   const props = { title: 'x' }
   const comp = (): string => '<div/>'
 
   it('coerces a non-string name to type instead of throwing (cosmetic, SOFT)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const block = defineBlock({ type: 'price-card', name: 123 as any, schema, defaultProps: props, component: comp })
+    const block = defineBlock({ type: 'price-card', name: 123 as any, props: descriptors, defaultProps: props, component: comp })
     expect(block.name).toBe('price-card')
   })
 
   it('coerces a missing/empty name to type', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const block = defineBlock({ type: 'hero', name: '' as any, schema, defaultProps: props, component: comp })
+    const block = defineBlock({ type: 'hero', name: '' as any, props: descriptors, defaultProps: props, component: comp })
     expect(block.name).toBe('hero')
   })
 
   it('still throws on an invalid type (identity, HARD)', () => {
     expect(() =>
-      defineBlock({ type: 'Bad Type', name: 'ok', schema, defaultProps: props, component: comp })
+      defineBlock({ type: 'Bad Type', name: 'ok', props: descriptors, defaultProps: props, component: comp })
     ).toThrow()
   })
 
@@ -44,27 +44,29 @@ describe('field severity (name soft / type hard)', () => {
   })
 })
 
+type TestProps = { title: string; count: number }
+
 describe('defineBlock', () => {
-  const validSchema = z.object({
-    title: z.string(),
-    count: z.number().default(0),
-  })
+  const validSchema: readonly BlockPropDescriptor[] = [
+    { name: 'title', required: true, jsonSchema: { type: 'string' } },
+    { name: 'count', default: 0, jsonSchema: { type: 'number' } },
+  ]
 
   const validProps = {
     title: 'Test Title',
     count: 0,
   }
 
-  const mockComponent = ({ props }: { props: { title: string; count: number } }): string => {
+  const mockComponent = ({ props }: { props: TestProps }): string => {
     return `<div>${props.title} - ${props.count}</div>`
   }
 
   describe('successful creation', () => {
     it('should create a block definition with required fields', () => {
-      const block = defineBlock({
+      const block = defineBlock<TestProps>({
         type: 'test-block',
         name: 'Test Block',
-        schema: validSchema,
+        props: validSchema,
         defaultProps: validProps,
         component: mockComponent,
       })
@@ -78,12 +80,12 @@ describe('defineBlock', () => {
     })
 
     it('should create a block definition with all optional fields', () => {
-      const block = defineBlock({
+      const block = defineBlock<TestProps>({
         type: 'custom-block',
         name: 'Custom Block',
         category: 'layout',
         icon: '🎨',
-        schema: validSchema,
+        props: validSchema,
         defaultProps: validProps,
         canHaveChildren: true,
         allowedChildren: ['text', 'heading'],
@@ -105,10 +107,10 @@ describe('defineBlock', () => {
     })
 
     it('should omit traits fields when not provided', () => {
-      const block = defineBlock({
+      const block = defineBlock<TestProps>({
         type: 'no-trait-block',
         name: 'No Trait Block',
-        schema: validSchema,
+        props: validSchema,
         defaultProps: validProps,
         component: mockComponent,
       })
@@ -118,10 +120,10 @@ describe('defineBlock', () => {
     })
 
     it('should return a frozen object', () => {
-      const block = defineBlock({
+      const block = defineBlock<TestProps>({
         type: 'frozen-block',
         name: 'Frozen Block',
-        schema: validSchema,
+        props: validSchema,
         defaultProps: validProps,
         component: mockComponent,
       })
@@ -133,10 +135,10 @@ describe('defineBlock', () => {
   describe('type validation', () => {
     it('should reject non-kebab-case types', () => {
       expect(() =>
-        defineBlock({
+        defineBlock<TestProps>({
           type: 'TestBlock',
           name: 'Test',
-          schema: validSchema,
+          props: validSchema,
           defaultProps: validProps,
           component: mockComponent,
         })
@@ -145,10 +147,10 @@ describe('defineBlock', () => {
 
     it('should reject types starting with number', () => {
       expect(() =>
-        defineBlock({
+        defineBlock<TestProps>({
           type: '1-block',
           name: 'Test',
-          schema: validSchema,
+          props: validSchema,
           defaultProps: validProps,
           component: mockComponent,
         })
@@ -157,10 +159,10 @@ describe('defineBlock', () => {
 
     it('should reject reserved block types', () => {
       expect(() =>
-        defineBlock({
+        defineBlock<TestProps>({
           type: 'container',
           name: 'Container',
-          schema: validSchema,
+          props: validSchema,
           defaultProps: validProps,
           component: mockComponent,
         })
@@ -169,10 +171,10 @@ describe('defineBlock', () => {
 
     it('should reject types that are too short', () => {
       expect(() =>
-        defineBlock({
+        defineBlock<TestProps>({
           type: 'a',
           name: 'Test',
-          schema: validSchema,
+          props: validSchema,
           defaultProps: validProps,
           component: mockComponent,
         })
@@ -180,10 +182,10 @@ describe('defineBlock', () => {
     })
 
     it('should accept valid kebab-case types', () => {
-      const block = defineBlock({
+      const block = defineBlock<TestProps>({
         type: 'my-custom-block-v2',
         name: 'My Custom Block V2',
-        schema: validSchema,
+        props: validSchema,
         defaultProps: validProps,
         component: mockComponent,
       })
@@ -192,46 +194,53 @@ describe('defineBlock', () => {
     })
   })
 
-  describe('schema validation', () => {
-    it('warns but does NOT throw when defaultProps do not match schema (degrade)', () => {
-      expect(() =>
-        defineBlock({
-          type: 'invalid-block',
-          name: 'Invalid Block',
-          schema: z.object({ required: z.string() }),
-          defaultProps: { wrong: 'prop' } as unknown as { required: string },
-          component: mockComponent as unknown as () => unknown,
-        })
-      ).not.toThrow()
+  describe('declared props', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
     })
 
-    it('should accept defaultProps that match schema', () => {
-      const schema = z.object({
-        name: z.string(),
-        age: z.number().optional(),
-      })
+    it('warns but does NOT throw when defaultProps do not fit the declared props (degrade)', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      expect(() =>
+        defineBlock<{ label: string }>({
+          type: 'invalid-block',
+          name: 'Invalid Block',
+          props: [{ name: 'label', jsonSchema: { type: 'string' } }],
+          defaultProps: { label: 42 } as unknown as { label: string },
+          component: () => null,
+        })
+      ).not.toThrow()
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('defaultProps do not fit'))
+    })
 
-      const block = defineBlock({
+    it('does not warn when defaultProps fit the declared props', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const props: readonly BlockPropDescriptor[] = [
+        { name: 'name', required: true, jsonSchema: { type: 'string' } },
+        { name: 'age', jsonSchema: { type: 'number' } },
+      ]
+
+      const block = defineBlock<{ name: string; age?: number }>({
         type: 'valid-block',
         name: 'Valid Block',
-        schema,
+        props,
         defaultProps: { name: 'Test' },
         component: () => null,
       })
 
       expect(block.defaultProps).toEqual({ name: 'Test' })
+      expect(block.props).toBe(props)
+      expect(warn).not.toHaveBeenCalled()
     })
 
-    it('should apply schema defaults in defaultProps', () => {
-      const schema = z.object({
-        name: z.string(),
-        count: z.number().default(10),
-      })
-
-      const block = defineBlock({
+    it('keeps defaultProps as given (declared defaults are applied per instance)', () => {
+      const block = defineBlock<{ name: string; count: number }>({
         type: 'default-block',
         name: 'Default Block',
-        schema,
+        props: [
+          { name: 'name', required: true, jsonSchema: { type: 'string' } },
+          { name: 'count', default: 10, jsonSchema: { type: 'number' } },
+        ],
         defaultProps: { name: 'Test', count: 10 },
         component: () => null,
       })
@@ -241,30 +250,26 @@ describe('defineBlock', () => {
   })
 
   describe('required-field degrade (render never throws)', () => {
-    it('missing schema → passthrough, no throw', () => {
-      let block!: ReturnType<typeof defineBlock>
+    it('missing props → [], no throw', () => {
+      let block!: ReturnType<typeof defineBlock<TestProps>>
       expect(() => {
-        block = defineBlock({
-          type: 'no-schema',
-          name: 'No Schema',
-          schema: undefined as unknown as z.ZodSchema,
-          defaultProps: { anything: 1 },
-          component: mockComponent as unknown as () => unknown,
+        block = defineBlock<TestProps>({
+          type: 'no-props-declared',
+          name: 'No Props Declared',
+          defaultProps: validProps,
+          component: mockComponent,
         })
       }).not.toThrow()
-      // passthrough accepts and keeps arbitrary props
-      const parsed = block.schema.safeParse({ a: 1, b: 'x' })
-      expect(parsed.success).toBe(true)
+      expect(block.props).toEqual([])
     })
 
     it('missing defaultProps → {}, no throw', () => {
-      let block!: ReturnType<typeof defineBlock>
+      let block!: ReturnType<typeof defineBlock<TestProps>>
       expect(() => {
-        block = defineBlock({
+        block = defineBlock<TestProps>({
           type: 'no-props',
           name: 'No Props',
-          schema: validSchema,
-          defaultProps: undefined as unknown as typeof validProps,
+          props: validSchema,
           component: mockComponent,
         })
       }).not.toThrow()
@@ -272,12 +277,12 @@ describe('defineBlock', () => {
     })
 
     it('non-function component → placeholder, no throw', () => {
-      let block!: ReturnType<typeof defineBlock>
+      let block!: ReturnType<typeof defineBlock<TestProps>>
       expect(() => {
-        block = defineBlock({
+        block = defineBlock<TestProps>({
           type: 'no-component',
           name: 'No Component',
-          schema: validSchema,
+          props: validSchema,
           defaultProps: validProps,
           component: 'not a function' as unknown as typeof mockComponent,
         })
@@ -292,7 +297,7 @@ describe('isCustomBlockDefinition', () => {
     const block = defineBlock({
       type: 'test-block',
       name: 'Test',
-      schema: z.object({ title: z.string() }),
+      props: [{ name: 'title', jsonSchema: { type: 'string' } }],
       defaultProps: { title: 'Test' },
       component: () => null,
     })
@@ -311,18 +316,26 @@ describe('isCustomBlockDefinition', () => {
     expect(isCustomBlockDefinition({ type: 'test' })).toBe(false)
     expect(isCustomBlockDefinition({ type: 'test', name: 'Test' })).toBe(false)
   })
+
+  it('should return false when props is not a descriptor array', () => {
+    const base = { type: 'test', name: 'Test', category: 'content', defaultProps: {}, component: () => null }
+    expect(isCustomBlockDefinition({ ...base, props: [] })).toBe(true)
+    expect(isCustomBlockDefinition(base)).toBe(false)
+    expect(isCustomBlockDefinition({ ...base, props: { title: 'x' } })).toBe(false)
+  })
 })
 
 describe('createBlockInstance', () => {
-  const schema = z.object({
-    title: z.string(),
-    count: z.number().default(0),
-  })
+  const descriptors: readonly BlockPropDescriptor[] = [
+    { name: 'title', required: true, jsonSchema: { type: 'string' } },
+    { name: 'count', default: 0, jsonSchema: { type: 'number' } },
+    { name: 'size', default: 'md', jsonSchema: { type: 'string', enum: ['sm', 'md', 'lg'] } },
+  ]
 
-  const definition = defineBlock({
+  const definition = defineBlock<{ title: string; count: number; size: string; extra?: boolean }>({
     type: 'instance-block',
     name: 'Instance Block',
-    schema,
+    props: descriptors,
     defaultProps: { title: 'Default', count: 0 },
     component: () => null,
   })
@@ -349,11 +362,27 @@ describe('createBlockInstance', () => {
     ).toThrow('Invalid block props')
   })
 
+  it('should apply declared defaults the starting props do not set', () => {
+    const instance = createBlockInstance(definition, 'block-5')
+
+    expect(instance.props.size).toBe('md')
+  })
+
+  it('should refuse a value outside the declared enum, naming the prop', () => {
+    expect(() => createBlockInstance(definition, 'block-6', { size: 'xl' })).toThrow(/Invalid block props: size:/)
+  })
+
+  it('should keep undeclared props as given', () => {
+    const instance = createBlockInstance(definition, 'block-7', { extra: true })
+
+    expect(instance.props.extra).toBe(true)
+  })
+
   it('should add children if allowed', () => {
     const containerDef = defineBlock({
       type: 'container-block',
       name: 'Container',
-      schema: z.object({ gap: z.number() }),
+      props: [{ name: 'gap', jsonSchema: { type: 'number' } }],
       defaultProps: { gap: 16 },
       canHaveChildren: true,
       component: () => null,

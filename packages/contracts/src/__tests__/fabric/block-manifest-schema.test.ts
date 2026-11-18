@@ -7,7 +7,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { blockManifestSchema, type BlockManifest } from '../../fabric/block-manifest-schema.js'
+import { type BlockManifest } from '../../fabric/block-manifest-schema.js'
+import { blockManifestSchema } from '../../fabric/block-manifest-schema.schema.js'
 
 const validManifest: BlockManifest = {
   manifestVersion: 1,

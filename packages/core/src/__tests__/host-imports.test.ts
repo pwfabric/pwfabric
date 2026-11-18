@@ -35,13 +35,10 @@ describe('BLOCK_HOST_IMPORTS', () => {
     }
   })
 
-  it('shares one zod instance rather than a copy per block', () => {
-    // Not a preference: introspection walks a prop schema with `instanceof`,
-    // which a second zod would break.
-    const zod = BLOCK_HOST_IMPORTS.find((i) => i.specifier === 'zod')
-    expect(zod?.kind).toBe('global')
-    expect(zod?.global).toBe('__pwfabric_zod')
-    expect(blockHostGlobals('standalone')).toContain('__pwfabric_zod')
+  it('does not offer zod to blocks (3.0: props are declared in the manifest)', () => {
+    expect(BLOCK_HOST_IMPORTS.find((i) => i.specifier === 'zod')).toBeUndefined()
+    expect(blockHostGlobals('standalone')).not.toContain('__pwfabric_zod')
+    expect(blockShimFiles()).not.toContain('zod.mjs')
   })
 
   it('keeps one global per shim file', () => {
@@ -76,7 +73,7 @@ describe('BLOCK_HOST_IMPORTS', () => {
     // Regression lock. These four are not a sample: blocks depend on each, and
     // a host import map that misses one breaks them.
     const specifiers = blockBundleExternals()
-    expect(specifiers).toContain('zod')
+    expect(specifiers).not.toContain('zod')
     expect(specifiers).toContain('@pwfabric/contracts')
     expect(specifiers).toContain('@pwfabric/runtime')
     expect(specifiers).toContain('@pwfabric/authoring')
@@ -101,7 +98,7 @@ describe('derivations', () => {
     // `/_pwfabric/shims`. A helper that hard-coded either would be wrong for the
     // other, and a trailing slash would produce a double slash in the map.
     const { imports } = blockImportMap('assets/shims')
-    expect(imports['zod']).toBe('assets/shims/zod.mjs')
+    expect(imports['react']).toBe('assets/shims/react.mjs')
   })
 
   it('lists each shim file once, sorted', () => {

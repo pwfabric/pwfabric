@@ -7,13 +7,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import {
-  validationIssueSeverity,
-  validationIssueSchema,
-  fabricValidationResultSchema,
-  type ValidationIssue,
-  type FabricValidationResult,
-} from '../../fabric/validation.js'
+import { type ValidationIssue, type FabricValidationResult } from '../../fabric/validation.js'
+import { validationIssueSeverity, validationIssueSchema, fabricValidationResultSchema } from '../../fabric/validation.schema.js'
 
 describe('validationIssueSeverity', () => {
   it('should accept error severity', () => {

@@ -1,17 +1,13 @@
 /**
  * What the visitor bundle (`dist/embed.js`) leaves out, as esbuild plugins.
  *
- * `embed.js` exposes whole module namespaces to blocks (`__pwfabric_zod`,
- * `__pwfabric_runtime`, …), so nothing in them can be tree-shaken: whatever a
- * namespace reaches ships to every visitor of every app. Two things it reaches
- * have no use on a published page and are cut here, at the one place the
- * bundle is made:
+ * `embed.js` exposes whole module namespaces to blocks (`__pwfabric_runtime`,
+ * `__pwfabric_core`, …), so nothing in them can be tree-shaken: whatever a
+ * namespace reaches ships to every visitor of every app. What it reaches with
+ * no use on a published page is cut here, at the one place the bundle is made:
  *
- * - **zod's message locales.** `z.locales` carries ~50 translations of zod's
- *   error messages (~264 KB minified, more than a quarter of the bundle). zod
- *   itself uses English (`en`), and nothing in the engine switches it. The
- *   bundle keeps `z.locales.en` only; a block that wants zod's messages in
- *   another language ships that locale itself.
+ * - **zod.** Not cut — absent: no package root bundled here imports it (3.0),
+ *   and {@link noZod} turns any import that comes back into a build error.
  * - **`next/image`.** The runtime's `NextImageAdapter` is for a Next.js host,
  *   which bundles the runtime itself; a pwapp has no Next. The adapter stays
  *   exported, and fails loudly if a page ever draws it.
@@ -21,24 +17,23 @@
  *
  * @module @pwfabric/embed/visitor-bundle
  */
-import { dirname, join } from 'node:path'
 import type { Plugin } from 'esbuild'
 
-/** zod's locale index, as zod's own modules import it. */
-const ZOD_LOCALES = /^\.\.\/locales(\/index\.js)?$/
-
-/** `z.locales` with English only. */
-export const zodEnglishOnly: Plugin = {
-  name: 'pwfabric-zod-english-only',
+/**
+ * zod has no place on a visitor's page (3.0): block props are declared in the
+ * manifest and applied without a validation library, and the package roots
+ * the bundle carries are zod-free. An import of zod that creeps back fails the
+ * build here, naming the importer, instead of adding ~190 KB to every page.
+ */
+export const noZod: Plugin = {
+  name: 'pwfabric-no-zod',
   setup(build) {
-    build.onResolve({ filter: ZOD_LOCALES }, (args) => {
-      if (!/[\\/]zod[\\/]/.test(args.importer)) return undefined
-      return { path: join(dirname(args.importer), '..', 'locales', 'index.js'), namespace: 'pwfabric-zod-locales' }
-    })
-    build.onLoad({ filter: /.*/, namespace: 'pwfabric-zod-locales' }, (args) => ({
-      contents: `export { default as en } from ${JSON.stringify(join(dirname(args.path), 'en.js'))}\n`,
-      loader: 'js',
-      resolveDir: dirname(args.path),
+    build.onResolve({ filter: /^zod(\/.*)?$/ }, (args) => ({
+      errors: [
+        {
+          text: `zod is not in embed.js: ${args.importer} imports '${args.path}'. Import the zod-free package root, or move the schema to a /schemas subpath (tooling only).`,
+        },
+      ],
     }))
   },
 }
@@ -56,4 +51,4 @@ export const noNextImage: Plugin = {
   },
 }
 
-export const visitorBundlePlugins: Plugin[] = [zodEnglishOnly, noNextImage]
+export const visitorBundlePlugins: Plugin[] = [noZod, noNextImage]

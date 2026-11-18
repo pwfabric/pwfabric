@@ -15,17 +15,10 @@
  * @module @pwfabric/contracts/__tests__/fabric/pack-requires
  */
 import { describe, it, expect } from 'vitest'
-import {
-  PwpackRequirementsSchema,
-  validatePwpackRequirements,
-  resolvePackClosure,
-  satisfiesSemverRange,
-  isValidSemverRange,
-  isValidSemverVersion,
-  packRefKey,
-  type PackClosureCandidate,
-} from '../../fabric/pack-requires.js'
+import { satisfiesSemverRange, isValidSemverRange, isValidSemverVersion, packRefKey, type PackClosureCandidate } from '../../fabric/pack-requires.js'
+import { PwpackRequirementsSchema, validatePwpackRequirements, resolvePackClosure } from '../../fabric/pack-requires.schema.js'
 import * as contracts from '../../index.js'
+import * as schemas from '../../schemas.js'
 import type { PwpackManifest } from '../../fabric/atom.js'
 
 const pack = (id: string, version: string, packs?: { id: string; range: string }[]): PackClosureCandidate => ({
@@ -411,9 +404,12 @@ describe('positive control — the fixtures are sound, the rule is what refuses'
     expect(resolvePackClosure(['a'], [pack('a', '1.0.0', [{ id: 'b', range: '*' }]), pack('b', '1.0.0')]).ok).toBe(true)
   })
 
-  it('is reachable from the package root', () => {
-    expect(typeof contracts.resolvePackClosure).toBe('function')
-    expect(typeof contracts.validatePwpackRequirements).toBe('function')
-    expect(contracts.PwpackRequirementsSchema).toBeDefined()
+  it('is reachable from @pwfabric/contracts/schemas, not from the zod-free root', () => {
+    expect(typeof schemas.resolvePackClosure).toBe('function')
+    expect(typeof schemas.validatePwpackRequirements).toBe('function')
+    expect(schemas.PwpackRequirementsSchema).toBeDefined()
+    expect('resolvePackClosure' in contracts).toBe(false)
+    expect('validatePwpackRequirements' in contracts).toBe(false)
+    expect('PwpackRequirementsSchema' in contracts).toBe(false)
   })
 })

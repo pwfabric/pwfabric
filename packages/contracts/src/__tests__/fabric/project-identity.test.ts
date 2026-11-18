@@ -12,17 +12,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import {
-  ProjectIdentitySchema,
-  registrationOf,
-  ANONYMOUS_IDENTITY,
-  IDENTITY_METHODS,
-  IDENTITY_TOPOLOGIES,
-  SOCIAL_METHODS,
-  IdentityConnectionSchema,
-  IdentityMethodSchema,
-  discoveryUrlOf,
-} from '../../fabric/project-identity.js'
+import { registrationOf, ANONYMOUS_IDENTITY, IDENTITY_METHODS, IDENTITY_TOPOLOGIES, SOCIAL_METHODS, discoveryUrlOf } from '../../fabric/project-identity.js'
+import { ProjectIdentitySchema, IdentityConnectionSchema, IdentityMethodSchema } from '../../fabric/project-identity.schema.js'
 
 describe('ProjectIdentitySchema', () => {
   it('an empty declaration is an anonymous app, not an error', () => {

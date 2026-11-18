@@ -21,7 +21,10 @@
         "name": "text",
         "type": "string",
         "required": false,
-        "default": ""
+        "default": "",
+        "jsonSchema": {
+          "type": "string"
+        }
       }
     ],
     "defaultProps": {
