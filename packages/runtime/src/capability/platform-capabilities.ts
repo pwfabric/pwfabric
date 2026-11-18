@@ -15,15 +15,16 @@
  *
  * Active capabilities: persistence, entities, navigation, interaction.
  *
- * @module @pwfabric/runtime/capability/platform-capabilities
+ * Its own subpath, out of the package root: these are declarations a host's
+ * registry and its tooling read, with config schemas built by
+ * `@pwfabric/core/config-schema`. A visitor's page runs none of it, and the
+ * root is what every page carries whole (embed.js exposes it to blocks).
+ *
+ * @module @pwfabric/runtime/platform-capabilities
  */
 
-import {
-  defineCapability,
-  defineContract,
-  defineConfigSchema,
-  anySchema,
-} from '@pwfabric/core'
+import { defineCapability, defineContract, anySchema } from '@pwfabric/core'
+import { defineConfigSchema } from '@pwfabric/core/config-schema'
 import type { Capability } from '@pwfabric/contracts'
 import type { CapabilityRegistry } from '../registry.js'
 import { createDataService } from '../data/manager.js'
@@ -280,7 +281,7 @@ export const entitiesCapability = defineCapability()
 /**
  * All platform capabilities as an array.
  *
- * SOURCE OF TRUTH — derive all other lists from this array (see index.ts).
+ * SOURCE OF TRUTH — derive all other lists from this array (below).
  * platform/auth removed (phantom capability).
  * routing renamed to navigation.
  * platform/input removed — form writes flow through platform/entities.
@@ -291,6 +292,20 @@ export const platformCapabilities: readonly Capability[] = [
   navigationCapability,
   interactionCapability,
 ] as const
+
+/**
+ * Canonical capability IDs — derived from the `platformCapabilities` array.
+ *
+ * Drift-proof: if `platformCapabilities` changes, this updates automatically.
+ * Consumers should import this constant rather than hardcoding the list.
+ */
+export const CANONICAL_CAPABILITY_IDS: readonly string[] = platformCapabilities.map((c) => c.id)
+
+/**
+ * Canonical capability count. Should remain 4 until a governance-approved
+ * change adds/removes a capability (dropped platform/input).
+ */
+export const CAPABILITY_COUNT: number = platformCapabilities.length
 
 /**
  * Register all platform capabilities with a registry

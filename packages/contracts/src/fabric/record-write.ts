@@ -45,7 +45,7 @@
  * `<field>: <reason>`, separated by `; ` — the form highlights those fields.
  * Computed fields (`total = price × qty`) are out of scope.
  *
- * @module @pwfabric/contracts/fabric/record-write
+ * @module @pwfabric/contracts/record-write
  */
 
 /** The server-owned roles a field may declare. */

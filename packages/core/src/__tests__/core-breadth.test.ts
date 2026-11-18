@@ -18,9 +18,9 @@ import { // logger.ts
   Logger, createLogger, // utils.ts
   ok, err, sleep, retry, generateId, // errors.ts
   PWFabricError, CoreValidationError, NotFoundError, UnauthorizedError, ForbiddenError, // observability
-  ConsoleLogger, createObservabilityLogger, createTraceContext, createChildContext, createSpan, extractTraceId, injectTraceId, // monitoring
-  DEFAULT_BUDGET, createMetricsState, getRating, // blocks/layout-schema
+  ConsoleLogger, createObservabilityLogger, createTraceContext, createChildContext, createSpan, extractTraceId, injectTraceId, // blocks/layout-schema
   resolveResponsiveValue, resolveSpanAtBreakpoint, getColumnsAtBreakpoint, getBreakpointForWidth } from '../index.js'
+import { DEFAULT_BUDGET, createMetricsState, getRating } from '../monitoring/index.js'
 import { responsiveNumberSchema, responsiveBooleanSchema, blockLayoutSchema } from '../schemas.js'
 
 // ============================================================

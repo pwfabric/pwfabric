@@ -12,6 +12,13 @@
  *   which bundles the runtime itself; a pwapp has no Next. The adapter stays
  *   exported, and fails loudly if a page ever draws it.
  *
+ * What only a build, an install, a server or a tool runs is not cut here: it
+ * is not in those namespaces at all. It lives on its package's subpaths
+ * (`@pwfabric/core/host-imports`, `@pwfabric/contracts/pack`,
+ * `@pwfabric/runtime/entity/postgres`, …), and the authoring global is the
+ * runtime plus `@pwfabric/authoring/block`. The bundle test lists each module
+ * and fails if one comes back.
+ *
  * Kept in its own module so the test that guards the budget builds the bundle
  * with exactly these plugins.
  *

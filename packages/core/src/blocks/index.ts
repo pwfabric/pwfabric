@@ -38,23 +38,8 @@ export {
   getBreakpointForWidth,
 } from './layout-schema.js'
 
-// What a dynamically loaded block may import, and what the host must provide.
-// One list; the bundler's allowlist, every host import map and every shim file
-// are derived from it rather than hand-copied — see the module header for the
-// three-way drift this replaces.
-export {
-  BLOCK_HOST_IMPORTS,
-  blockBundleExternals,
-  blockImportMap,
-  blockShimFiles,
-  blockHostGlobals,
-  unseededHostGlobals,
-  specifiersForShim,
-  isExportableName,
-  shimSource,
-  type HostImport,
-  type HostImportKind,
-  type HostSeeding,
-} from './host-imports.js'
+// What a dynamically loaded block may import, and what the host must provide,
+// is `@pwfabric/core/host-imports` (./host-imports.ts): the compiler and the
+// hosts read it, a visitor's page does not.
 
 // NOTE: CompositionRuleEngine has moved to @pwfabric/runtime/blocks

@@ -19,7 +19,8 @@ import {
   compileAtom,
   type CompileResult,
 } from '@pwfabric/compiler'
-import { atomKindMeta, resolveSiblingEntry, type AtomKind, type AtomRef } from '@pwfabric/contracts'
+import type { AtomKind, AtomRef } from '@pwfabric/contracts'
+import { atomKindMeta, resolveSiblingEntry } from '@pwfabric/contracts/pack'
 import type { AssembleDiagnostic } from './diagnostics.js'
 import { isRecord, jsonOf, type SourcePack } from './sources.js'
 

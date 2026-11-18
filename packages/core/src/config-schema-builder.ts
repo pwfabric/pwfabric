@@ -11,7 +11,7 @@
  *   .build()
  * ```
  *
- * @module @pwfabric/core/config-schema-builder
+ * @module @pwfabric/core/config-schema
  */
 
 import type {

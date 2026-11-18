@@ -68,13 +68,7 @@ export { StaticConnector, createStaticConnector } from './connectors/index.js'
 export type { HttpAuthConfig, HttpRetryConfig, HttpConnectorConfig } from './http-connector.js'
 export { HttpEntityConnector, createHttpConnector } from './http-connector.js'
 
-// PostgreSQL Connector (Database connector)
-export type {
-  PostgresConnectorConfig,
-  DatabaseAdapter,
-  DatabaseResult,
-} from './postgres-connector.js'
-export { PostgresEntityConnector, createPostgresConnector } from './postgres-connector.js'
+// The PostgreSQL connector is a server's: `@pwfabric/runtime/entity/postgres`.
 
 // Lifecycle
 export type {

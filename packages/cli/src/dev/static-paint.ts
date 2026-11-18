@@ -27,7 +27,7 @@
 import { createRequire } from 'node:module'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
-import { BLOCK_HOST_IMPORTS } from '@pwfabric/core'
+import { BLOCK_HOST_IMPORTS } from '@pwfabric/core/host-imports'
 import { toCommonJs } from '@pwfabric/compiler'
 import {
   FIRST_FRAME_USER,

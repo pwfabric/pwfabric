@@ -37,28 +37,9 @@ export {
   type SerializedError,
 } from './errors/index.js'
 
-// Monitoring infrastructure
-export {
-  type WebVitalName,
-  type MetricRating,
-  type Metric,
-  type WebVitalMetric,
-  type TimingMetric,
-  type RenderMetric,
-  type PerformanceBudget,
-  type MetricsState,
-  DEFAULT_BUDGET,
-  createMetricsState,
-  getRating,
-  type WebVitalCallback,
-  observeLCP,
-  observeFID,
-  observeCLS,
-  observeTTFB,
-  observeINP,
-  observeFCP,
-  observeAllWebVitals,
-} from './monitoring/index.js'
+// Monitoring (Web Vitals observers, metric budgets) is `@pwfabric/core/monitoring`:
+// no visitor's page runs it, and this root is what every page carries whole
+// (embed.js exposes it to blocks as `__pwfabric_core`).
 
 // Observability infrastructure
 export {
@@ -96,12 +77,8 @@ export { isScopeToken, readScopeList, type ScopeListReading } from './oauth-scop
 
 export { CapabilityBuilder, defineCapability } from './capability-builder.js'
 
-export {
-  FieldBuilder,
-  ConfigSchemaBuilder,
-  SimpleConfigSchema,
-  defineConfigSchema,
-} from './config-schema-builder.js'
+// The config-schema builder (`defineConfigSchema`) is `@pwfabric/core/config-schema`:
+// it builds the declarations a host and its tooling read, never a visitor's page.
 
 // State management (PHASE0-WS3)
 export {
@@ -147,18 +124,7 @@ export {
   resolveSpanAtBreakpoint,
   getColumnsAtBreakpoint,
   getBreakpointForWidth,
-  // Block host imports — the one list the bundler, the host import maps and the
-  // shim files all derive from.
-  BLOCK_HOST_IMPORTS,
-  blockBundleExternals,
-  blockImportMap,
-  blockShimFiles,
-  blockHostGlobals,
-  unseededHostGlobals,
-  specifiersForShim,
-  isExportableName,
-  shimSource,
-  type HostImport,
-  type HostImportKind,
-  type HostSeeding,
 } from './blocks/index.js'
+// Block host imports — the one list the bundler, the host import maps and the
+// shim files all derive from — are `@pwfabric/core/host-imports`: a compiler's
+// and a host's, read when a page is built or served, not on the page itself.

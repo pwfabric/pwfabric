@@ -22,6 +22,21 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./monitoring": {
+      "types": "./dist/monitoring/index.d.ts",
+      "import": "./dist/monitoring/index.js",
+      "default": "./dist/monitoring/index.js"
+    },
+    "./config-schema": {
+      "types": "./dist/config-schema-builder.d.ts",
+      "import": "./dist/config-schema-builder.js",
+      "default": "./dist/config-schema-builder.js"
+    },
+    "./host-imports": {
+      "types": "./dist/blocks/host-imports.d.ts",
+      "import": "./dist/blocks/host-imports.js",
+      "default": "./dist/blocks/host-imports.js"
+    },
     "./schemas": {
       "types": "./dist/schemas.d.ts",
       "import": "./dist/schemas.js",

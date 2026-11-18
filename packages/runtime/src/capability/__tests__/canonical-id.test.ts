@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest'
 
 import { canonicalCapabilityId, isCapability } from '../type-mapping.js'
-import { CANONICAL_CAPABILITY_IDS } from '../index.js'
+import { CANONICAL_CAPABILITY_IDS } from '../platform-capabilities.js'
 
 describe('canonicalCapabilityId', () => {
   it('answers the same id for the short and the long spelling', () => {

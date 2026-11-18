@@ -29,7 +29,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { HostError } from './http.js'
-import { prepareRecordWrite } from '@pwfabric/contracts'
+import { prepareRecordWrite } from '@pwfabric/contracts/record-write'
 import { readEntities, readSeed, type AuthDeclaration, type EntityDeclaration } from './definitions.js'
 import { aggregate, matches, parseFilter, parseSort, sortRows, type AggregateResult, type Filter, type Row } from './query.js'
 import type { Principal } from './tokens.js'

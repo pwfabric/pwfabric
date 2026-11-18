@@ -15,7 +15,8 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { isRecordServerField, registrationOf, type IdentityRegistration, type RecordServerField } from '@pwfabric/contracts'
+import { registrationOf, type IdentityRegistration } from '@pwfabric/contracts'
+import { isRecordServerField, type RecordServerField } from '@pwfabric/contracts/record-write'
 
 export interface AuthDeclaration {
   readonly required: boolean

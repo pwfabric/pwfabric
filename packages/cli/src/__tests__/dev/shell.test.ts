@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 vi.setConfig({ testTimeout: 60_000 })
-import { BLOCK_HOST_IMPORTS, blockShimFiles, isExportableName, shimSource } from '@pwfabric/core'
+import { BLOCK_HOST_IMPORTS, blockShimFiles, isExportableName, shimSource } from '@pwfabric/core/host-imports'
 import {
   BOOT_FILES,
   bootScript,

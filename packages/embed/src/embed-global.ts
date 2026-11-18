@@ -62,7 +62,17 @@ import * as ReactDomClient from 'react-dom/client'
 import * as Runtime from '@pwfabric/runtime'
 import * as Contracts from '@pwfabric/contracts'
 import * as Core from '@pwfabric/core'
-import * as Authoring from '@pwfabric/authoring'
+import * as AuthoringBlock from '@pwfabric/authoring/block'
+
+/**
+ * What a block imports from `@pwfabric/authoring` on a visitor's page: the
+ * runtime (the package root re-exports it) and what a block calls when its
+ * bundle loads (`defineBlock`). Not the whole kit — factories, the custom-block
+ * registry and the props validators compose and check blocks in tooling, and
+ * a page runs none of them. One object, so the vendor table and the import-map
+ * global hand blocks the same instance.
+ */
+const Authoring: Readonly<Record<string, unknown>> = Object.freeze({ ...Runtime, ...AuthoringBlock })
 
 declare global {
   var __PW_VENDOR__: Record<string, unknown> | undefined
@@ -118,8 +128,8 @@ if (typeof globalThis !== 'undefined') {
   // `defineBlock` from `@pwfabric/authoring` and calls it when its bundle
   // loads, so a page that renders shipped blocks must seed it — every
   // published app and every `pwf build` export is such a page, and this
-  // bundle is the only thing on it that can. It is already in this bundle
-  // (the vendor table above carries it), so seeding it costs nothing.
+  // bundle is the only thing on it that can. It is the runtime plus
+  // `@pwfabric/authoring/block` (see `Authoring` above), not the whole kit.
   g.__pwfabric_sdk = Authoring
   // Mirrors a host's providers module: @pwfabric/runtime re-exports the public
   // contracts surface, so the SAME module namespace backs both globals.

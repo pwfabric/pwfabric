@@ -51,10 +51,11 @@ export * from './executor.js'
 // Surface rendering pipeline
 export * from './surface/index.js'
 
-// Binding, cache, graph
+// Binding, cache. The Microsoft Graph resolver is `@pwfabric/runtime/graph`:
+// no page draws through it, and this root is what every visitor's page carries
+// (embed.js exposes it whole to blocks).
 export * from './binding/index.js'
 export * from './cache/index.js'
-export * from './graph/index.js'
 
 // Auth is intentionally NOT part of the default export: it holds the
 // MSAL/API-key providers, and pulling them into the default barrel would make
@@ -199,41 +200,14 @@ export {
 // Capability system (definitions, type mapping, validation)
 export * from './capability/index.js'
 
-// Data, routing, SEO, analytics, i18n capabilities
+// Data, routing, i18n capabilities. SEO tags are written at build (the shell's
+// head) and by the runner on navigation, so the SEO generator is
+// `@pwfabric/runtime/seo`; the analytics tracker is `@pwfabric/runtime/analytics`
+// and the performance reporter `@pwfabric/runtime/perf`. None is on a visitor's
+// page, which carries this root whole (embed.js exposes it to blocks).
 export * from './data/index.js'
 export * from './routing/index.js'
-export * from './seo/index.js'
-export * from './analytics/index.js'
 export * from './i18n/index.js'
-
-// Performance monitoring module
-export type {
-  WebVitalName,
-  WebVitalRating,
-  WebVitalMetric,
-  WebVitalCallback,
-  WebVitalsReport,
-  RenderMetrics,
-  RenderTimerConfig,
-  PerformanceBudget,
-  BudgetViolation,
-  BudgetCheckResult,
-  ReportDestination,
-  ReporterConfig,
-  PerformanceReport,
-} from './perf/index.js'
-export {
-  WebVitalsCollector,
-  createWebVitalsCollector,
-  rateMetric,
-  RenderTimer,
-  createRenderTimer,
-  DEFAULT_BUDGET,
-  BudgetChecker,
-  createBudgetChecker,
-  PerformanceReporter,
-  createPerformanceReporter,
-} from './perf/index.js'
 
 // Accessibility (a11y) module
 export type { AnnouncementLevel, LiveRegionConfig } from './a11y/index.js'

@@ -4,7 +4,8 @@
  *
  * @module @pwfabric/pack/validate
  */
-import { checkPropValue, classifyPackPath, propShapeProblems, type AtomRef, type PropShape, type PwpackIdentity } from '@pwfabric/contracts'
+import { checkPropValue, propShapeProblems, type AtomRef, type PropShape, type PwpackIdentity } from '@pwfabric/contracts'
+import { classifyPackPath } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins, safeParsePwpackIdentity } from '@pwfabric/contracts/schemas'
 import type { PackFolder, PackIssue } from './types.js'
 import { findCaseConflicts, findPathConflict, sortedPaths, unsafePathReason } from './paths.js'

@@ -9,7 +9,8 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { ATOM_KINDS, ATOM_KIND_META, atomKindMeta, isBundledKind, resolveSiblingEntry, CONNECTOR_ENTITY_FIELD_TYPES, connectorEntityFields, BLOCK_ORIGIN_INVALID, DEFAULT_APPEARANCE_THEME } from '../../index.js'
+import { DEFAULT_APPEARANCE_THEME } from '../../index.js'
+import { ATOM_KINDS, ATOM_KIND_META, atomKindMeta, isBundledKind, resolveSiblingEntry, CONNECTOR_ENTITY_FIELD_TYPES, connectorEntityFields, BLOCK_ORIGIN_INVALID } from '../../pack.js'
 import { AtomManifestKnowledgeSchema, AtomBlockDefinitionMetadataSchema, AtomManifestConfigSchema, AtomFileManifestSchema, safeParseBlockOrigins } from '../../schemas.js'
 import type { AtomRef } from '../../index.js'
 

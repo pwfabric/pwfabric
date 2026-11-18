@@ -23,7 +23,7 @@ import {
   blockImportMap,
   blockShimFiles,
   shimSource,
-} from '@pwfabric/core'
+} from '@pwfabric/core/host-imports'
 import { webfontStylesheetHref, themeWebfonts } from './theme.js'
 
 const require = createRequire(import.meta.url)

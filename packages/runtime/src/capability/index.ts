@@ -3,10 +3,10 @@
  *
  * ## Single Source of Truth
  *
- * `platform-capabilities.ts` is the canonical source for all platform
- * capabilities. Everything below is derived from `platformCapabilities`
- * or re-exported from siblings. Add/remove a capability there — this file
- * and all consumers stay in sync automatically.
+ * `platform-capabilities.ts` (`@pwfabric/runtime/platform-capabilities`) is the
+ * canonical source for all platform capabilities, and the lists derived from
+ * them live beside it. Add/remove a capability there — every consumer stays
+ * in sync automatically.
  *
  * ## Canonical Count: 4
  *
@@ -26,38 +26,11 @@
  * @module @pwfabric/runtime/capability
  */
 
-import { platformCapabilities } from './platform-capabilities.js'
-
-// ============================================================
-// CANONICAL CAPABILITY EXPORTS (SOURCE OF TRUTH)
-// ============================================================
-
-export {
-  persistenceCapability,
-  entitiesCapability,
-  navigationCapability,
-  interactionCapability,
-  platformCapabilities,
-  registerPlatformCapabilities,
-} from './platform-capabilities.js'
-
-// ============================================================
-// DERIVED CANONICAL CONSTANTS (from platformCapabilities)
-// ============================================================
-
-/**
- * Canonical capability IDs — derived from the `platformCapabilities` array.
- *
- * Drift-proof: if `platformCapabilities` changes, this updates automatically.
- * Consumers should import this constant rather than hardcoding the list.
- */
-export const CANONICAL_CAPABILITY_IDS: readonly string[] = platformCapabilities.map((c) => c.id)
-
-/**
- * Canonical capability count. Should remain 4 until a governance-approved
- * change adds/removes a capability (dropped platform/input).
- */
-export const CAPABILITY_COUNT: number = platformCapabilities.length
+// The four platform capability DECLARATIONS (`platformCapabilities`, their
+// config schemas, `CANONICAL_CAPABILITY_IDS`, `CAPABILITY_COUNT`) are
+// `@pwfabric/runtime/platform-capabilities`. A host's registry and its tooling
+// read them; no visitor's page does, and this module is re-exported by the
+// package root that every page carries whole.
 
 // ============================================================
 // TYPE MAPPING (starter short-form ↔ full IDs)

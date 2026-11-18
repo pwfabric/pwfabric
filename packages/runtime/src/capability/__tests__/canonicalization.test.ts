@@ -22,7 +22,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { platformCapabilities, CANONICAL_CAPABILITY_IDS, CAPABILITY_COUNT } from '../index.js'
+import { platformCapabilities, CANONICAL_CAPABILITY_IDS, CAPABILITY_COUNT } from '../platform-capabilities.js'
 
 describe('Capability canonicalization', () => {
   const EXPECTED_CANONICAL_IDS = [
