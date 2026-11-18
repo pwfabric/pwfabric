@@ -207,8 +207,23 @@ describe('helper parity with the binding evaluator', () => {
     expect(interpolate("${{sumBy(customers,'mrr')}}", ctx)).toEqual({ success: true, value: '$350' })
   })
 
+  it('find(list, field, value) is the first item whose field is the value (E5)', () => {
+    const ctx = createExpressionContext({
+      members: [{ id: 1, email: 'a@x.io', team: { name: 'Ops' } }, { id: 2, email: 'me@x.io', team: { name: 'Web' } }],
+      me: { email: 'me@x.io' },
+      state: { id: '1' },
+    })
+    expect(evaluate("find(members, 'email', me.email).team.name", ctx)).toEqual({ success: true, value: 'Web' })
+    // An id from the address is a string; it still finds the numeric id.
+    expect(evaluate("find(members, 'id', state.id).email", ctx)).toEqual({ success: true, value: 'a@x.io' })
+    expect(evaluate("find(members, 'team.name', 'Ops').id", ctx)).toEqual({ success: true, value: 1 })
+    expect(evaluate("find(members, 'email', 'nobody')", ctx)).toEqual({ success: true, value: undefined })
+    expect(evaluate("find(members, 'email', state.missing)", ctx)).toEqual({ success: true, value: undefined })
+    expect(evaluate("find(state, 'email', me.email)", ctx)).toEqual({ success: true, value: undefined })
+  })
+
   it('exposes every binding helper by name', () => {
-    for (const name of ['sumBy', 'groupCount', 'min', 'max', 'join', 'currency', 'date']) {
+    for (const name of ['sumBy', 'groupCount', 'min', 'max', 'join', 'currency', 'date', 'find']) {
       expect(typeof DEFAULT_HELPERS[name]).toBe('function')
     }
   })

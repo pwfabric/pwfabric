@@ -71,6 +71,13 @@ import { SurfaceAddressContext } from './address.js'
 import { BlockModuleLoader } from './dynamic-block-loader.js'
 import type { FormEntityBridgeConfig } from '../forms/form-entity-bridge.js'
 import { isRepeatExpanded } from './resolve-expressions.js'
+import { useSurfaceLinkHref } from './surface-data-context.js'
+import { appHrefOf, type LinkHref } from './links.js'
+
+/** `context.appHref` for the blocks under this renderer, stable per `linkHref`. */
+function useAppHref(linkHref: LinkHref | null | undefined): LinkHref {
+  return React.useMemo(() => appHrefOf(linkHref), [linkHref])
+}
 
 // ============================================================
 // HELPERS
@@ -871,6 +878,7 @@ export function SurfaceRenderer({
   address,
   onSelection,
   locale,
+  linkHref: linkHrefProp,
 }: SurfaceRendererProps): React.ReactElement {
   // The root, so focus is kept inside the surface when the focused block is
   // hidden (focus-keeper.ts). Only a live surface moves focus.
@@ -921,6 +929,11 @@ export function SurfaceRenderer({
     return map
   }, [capabilities])
 
+  // How this host writes an app link: the data-bound renderer hands it down
+  // through context, a passthrough render as a prop.
+  const contextLinkHref = useSurfaceLinkHref()
+  const appHref = useAppHref(linkHrefProp ?? contextLinkHref)
+
   // Build block context (theme removed from BlockContext)
   const context: BlockContext = React.useMemo(
     () => ({
@@ -931,8 +944,9 @@ export function SurfaceRenderer({
       viewport,
       interactionMode,
       ...(locale ? { locale } : {}),
+      appHref,
     }),
-    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode, locale]
+    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode, locale, appHref]
   )
 
   // Create image component override if adapter is provided
@@ -1247,6 +1261,8 @@ export function BlockRenderer({
     return map
   }, [capabilities])
 
+  const appHref = useAppHref(useSurfaceLinkHref())
+
   // Build block context (theme removed from BlockContext)
   const context: BlockContext = React.useMemo(
     () => ({
@@ -1254,8 +1270,9 @@ export function BlockRenderer({
       basePath,
       onEvent,
       imageAdapter,
+      appHref,
     }),
-    [capabilityMap, basePath, onEvent, imageAdapter]
+    [capabilityMap, basePath, onEvent, imageAdapter, appHref]
   )
 
   // Create image component override if adapter is provided

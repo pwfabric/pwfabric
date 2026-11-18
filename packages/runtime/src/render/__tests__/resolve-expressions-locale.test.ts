@@ -20,9 +20,32 @@ const text = (template: string, data: Record<string, unknown>, locale?: string):
 const DAY = '2026-11-17T12:00:00Z'
 
 describe('locale-aware formatting', () => {
-  it('date() writes in the app locale', () => {
-    expect(text('{{date(state.d)}}', { state: { d: DAY } }, 'en-GB')).toBe('17/11/2026')
-    expect(text('{{date(state.d)}}', { state: { d: DAY } }, 'en-US')).toBe('11/17/2026')
+  it('date() writes in the app locale, in the style a table date column writes (E12)', () => {
+    expect(text('{{date(state.d)}}', { state: { d: DAY } }, 'en-GB')).toBe('17 Nov 2026')
+    expect(text('{{date(state.d)}}', { state: { d: DAY } }, 'en-US')).toBe('Nov 17, 2026')
+  })
+
+  it('date(v, style) picks a style; an unknown style is no style', () => {
+    const d = { state: { d: DAY } }
+    expect(text("{{date(state.d, 'short')}}", d, 'en-GB')).toBe('17/11/2026')
+    expect(text("{{date(state.d, 'medium')}}", d, 'en-GB')).toBe('17 Nov 2026')
+    expect(text("{{date(state.d, 'long')}}", d, 'en-GB')).toBe('17 November 2026')
+    expect(text("{{date(state.d, 'full')}}", d, 'en-GB')).toMatch(/^Tuesday,? 17 November 2026$/)
+    expect(text("{{date(state.d, 'tiny')}}", d, 'en-GB')).toBe('17 Nov 2026')
+  })
+
+  it('a date-only value is that day; no date writes nothing', () => {
+    expect(text('{{date(state.d)}}', { state: { d: '2026-11-18' } }, 'en-GB')).toBe('18 Nov 2026')
+    expect(text('{{date(state.d)}}', { state: { d: 'soon' } }, 'en-GB')).toBe('')
+    expect(text('x{{date(state.missing)}}', { state: {} }, 'en-GB')).toBe('x')
+  })
+
+  it('time() writes hours and minutes, datetime() both; a style picks Intl’s', () => {
+    const local = { state: { d: '2026-11-17T14:30:05' } }
+    expect(text('{{time(state.d)}}', local, 'en-GB')).toBe('14:30')
+    expect(text("{{time(state.d, 'medium')}}", local, 'en-GB')).toBe('14:30:05')
+    expect(text('{{datetime(state.d)}}', local, 'en-GB')).toBe('17 Nov 2026, 14:30')
+    expect(text("{{datetime(state.d, 'short')}}", local, 'en-GB')).toBe('17/11/2026, 14:30')
   })
 
   it('a number written for people uses the app locale — number(), currency(), toLocaleString()', () => {

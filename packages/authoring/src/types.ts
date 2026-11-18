@@ -88,6 +88,12 @@ export interface CustomBlockContext {
   readonly onEvent?:
     | ((event: { type: string; blockId?: string; payload?: unknown }) => void)
     | undefined
+  /**
+   * An app page's path (`/webhooks?x=1`) in the host's router form, for a
+   * link the block builds itself; an absolute URL or a fragment comes back as
+   * given. Without a router the path comes back as given.
+   */
+  readonly appHref: (path: string) => string
 }
 
 /**

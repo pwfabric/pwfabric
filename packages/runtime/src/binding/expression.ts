@@ -817,12 +817,69 @@ function safeLocale(locale: string | undefined): string | undefined {
   }
 }
 
+/** The styles `date()`, `time()` and `datetime()` take (Intl's `dateStyle` / `timeStyle`). */
+export const DATE_STYLES = ['short', 'medium', 'long', 'full'] as const
+type DateStyle = (typeof DATE_STYLES)[number]
+
+/**
+ * ONE DATE STYLE PER APP (expressions §helpers).
+ *
+ * With no style, `date(v)` writes the day, the short month and the year in
+ * the app's locale — `18 Nov 2026` in `en-GB` — the style a table's date
+ * column writes, so a page's dates agree. It wrote the locale's numeric date
+ * (`18/11/2026`) beside a table writing `18 Nov 2026`. `time(v)` writes hours
+ * and minutes (`14:30`), `datetime(v)` both. A style (`'short'`, `'medium'`,
+ * `'long'`, `'full'`) picks Intl's `dateStyle`/`timeStyle` of that name;
+ * an unknown style is no style.
+ *
+ * A date-only value (`2026-11-18`) is that calendar day wherever the page
+ * runs: read as UTC midnight, it was the day before west of Greenwich. A value
+ * that is no date (absent, empty, unparseable) writes `''`, never
+ * "Invalid Date".
+ */
+function dateHelpers(tag: string | undefined): Record<string, (...args: unknown[]) => unknown> {
+  const styleOf = (s: unknown): DateStyle | undefined =>
+    (DATE_STYLES as readonly unknown[]).includes(s) ? (s as DateStyle) : undefined
+  const write = (v: unknown, options: Intl.DateTimeFormatOptions): string => {
+    const d = dateValueOf(v)
+    return d ? new Intl.DateTimeFormat(tag, options).format(d) : ''
+  }
+  const DAY: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' }
+  const CLOCK: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' }
+  return {
+    date: (v: unknown, style?: unknown) => {
+      const s = styleOf(style)
+      return write(v, s ? { dateStyle: s } : DAY)
+    },
+    time: (v: unknown, style?: unknown) => {
+      const s = styleOf(style)
+      return write(v, s ? { timeStyle: s } : CLOCK)
+    },
+    datetime: (v: unknown, style?: unknown) => {
+      const s = styleOf(style)
+      return write(v, s ? { dateStyle: s, timeStyle: s } : { ...DAY, ...CLOCK })
+    },
+  }
+}
+
+/** `v` as a Date, or null when it is none. A `YYYY-MM-DD` is that day, local. */
+function dateValueOf(v: unknown): Date | null {
+  const ok = (d: Date): Date | null => (Number.isNaN(d.getTime()) ? null : d)
+  if (v instanceof Date) return ok(v)
+  if (typeof v === 'number') return ok(new Date(v))
+  if (typeof v !== 'string' || v.trim() === '') return null
+  const s = v.trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return ok(new Date(`${s}T00:00:00`))
+  return ok(new Date(s))
+}
+
 /**
  * The helpers that write dates and numbers for people, in `locale` — the
  * app's declared locale (`app/plan.json` `locale`, carried to the runner as
  * `project.json` `locale`). Without one they write in the visitor's.
  *
- *  - `date(v)`, `time(v)`, `datetime(v)` — `v` read as a date;
+ *  - `date(v, style?)`, `time(v, style?)`, `datetime(v, style?)` — `v` read
+ *    as a date (see dateHelpers for the styles);
  *  - `currency(n, code = 'USD', locale = <app locale, else the visitor's>)`;
  *  - `number(n, decimals?)` — `n` with the locale's grouping and decimal
  *    mark; exactly `decimals` fraction digits when given.
@@ -830,9 +887,7 @@ function safeLocale(locale: string | undefined): string | undefined {
 export function localeHelpers(locale: string | undefined): Record<string, (...args: unknown[]) => unknown> {
   const tag = safeLocale(locale)
   return {
-    date: (v: unknown) => new Date(v as string | number).toLocaleDateString(tag),
-    time: (v: unknown) => new Date(v as string | number).toLocaleTimeString(tag),
-    datetime: (v: unknown) => new Date(v as string | number).toLocaleString(tag),
+    ...dateHelpers(tag),
     currency: (v: unknown, currency?: unknown, explicit?: unknown) => {
       const num = Number(v)
       return new Intl.NumberFormat(explicit !== undefined && explicit !== null ? String(explicit) : tag, {
@@ -851,6 +906,14 @@ export function localeHelpers(locale: string | undefined): Record<string, (...ar
       ).format(num)
     },
   }
+}
+
+/** Equal, or a number and its numeral; `undefined`/`null` match nothing. */
+function sameKey(a: unknown, b: unknown): boolean {
+  if (a === undefined || a === null || b === undefined || b === null) return false
+  if (a === b) return true
+  const scalar = (v: unknown): boolean => typeof v === 'string' || typeof v === 'number'
+  return scalar(a) && scalar(b) && String(a) === String(b)
 }
 
 /**
@@ -923,6 +986,17 @@ export const DEFAULT_BINDING_HELPERS: Record<string, (...args: unknown[]) => unk
   // answered (`undefined`), `null`, a number — has none, and `String(v).length`
   // counted the letters of "undefined" (9) or "null" (4) instead.
   length: (v: unknown) => (Array.isArray(v) || typeof v === 'string' ? v.length : 0),
+  /**
+   * The first item of `list` whose `field` is `value` — `find(members,
+   * 'email', me.email)` is the caller's own row — or `undefined` when none
+   * is (or `list` is no list). A number and its numeral match (`7` and `"7"`:
+   * an id read from the address is a string). `field` may be a dotted path.
+   */
+  find: (list: unknown, field: unknown, value: unknown) => {
+    if (!Array.isArray(list) || typeof field !== 'string' || field === '') return undefined
+    const path = field.split('.')
+    return list.find((item) => sameKey(path.reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), item), value))
+  },
   first: (arr: unknown) => (Array.isArray(arr) ? arr[0] : undefined),
   last: (arr: unknown) => (Array.isArray(arr) ? arr[arr.length - 1] : undefined),
   join: (arr: unknown, sep?: unknown) =>

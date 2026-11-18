@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { createSourceWriter } from '../source-writer.js'
+import { writeFailureFields, writeFailureReason } from '../../forms/form-write-target.js'
 import type { SurfaceDataSourceDefinition } from '../data-binding-types.js'
 
 function dataService() {
@@ -71,5 +72,9 @@ describe('a write sends the record fields only', () => {
     expect(res.success).toBe(false)
     expect(res.success === false && res.error.message).toContain('"logo" holds a file')
     expect(ds.fetchData).not.toHaveBeenCalled()
+    // E9: the form learns which field and why — `validation`, `fields: ['logo']`.
+    if (res.success) throw new Error('expected a refusal')
+    expect(writeFailureReason(res.error)).toBe('validation')
+    expect(writeFailureFields(res.error)).toEqual(['logo'])
   })
 })

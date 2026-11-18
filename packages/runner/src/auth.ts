@@ -161,6 +161,19 @@ export interface AuthBridgeOptions {
   readonly messages?: RunnerMessages
 }
 
+/**
+ * What the console says about an `auth.json` the runner draws no issuer
+ * bridge for, or null when there is nothing to say. Only an `oauth2-pkce`
+ * declaration without an issuer and a client id is a mistake. Any other
+ * `provider` value is the app door (session-protocol §2: read from its
+ * members, not from the value) — a password app used to be told its provider
+ * was "unsupported, falling back to anonymous" while sign-in worked.
+ */
+export function authDeclarationNote(auth: PwappAuth): string | null {
+  if (auth.provider !== 'oauth2-pkce' || (auth.issuer && auth.clientId)) return null
+  return '[pwapp] auth.json declares oauth2-pkce without an issuer and a clientId, so the issuer sign-in is off'
+}
+
 export function createAuthBridge(auth: PwappAuth, options?: AuthBridgeOptions): AuthBridge {
   const scopeKey = authScopeKey(auth)
   const pendingKey = pendingKeyFor(scopeKey)

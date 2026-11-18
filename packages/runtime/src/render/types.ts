@@ -12,6 +12,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import type { ImageAdapter as ImageAdapterType } from '../adapters/types.js'
 import type { EntityFacade } from '../entity/facade.js'
 import type { SurfaceConnectionsValue } from '../connectors/types.js'
+import type { LinkHref } from './links.js'
 
 // Re-export EntityFacade for consumers who import from @pwfabric/runtime/render
 export type { EntityFacade } from '../entity/facade.js'
@@ -163,6 +164,22 @@ export interface BlockContext {
    * the host names none, and the visitor's formats apply.
    */
   readonly locale?: string
+  /**
+   * An app page's address, written the way this host routes (envelope §3):
+   * `appHref('/webhooks?x=1')` is `#/webhooks?x=1` under a hash router,
+   * `<base>/webhooks?x=1` under a path router. A block that draws a link of
+   * its own making — a markdown link in prose, a table cell built from a
+   * template — writes it through this, so the link also works opened in a new
+   * tab or copied, which a bare `/webhooks` does not on a hash-routed static
+   * host. A `href`/`*Href` prop needs nothing: the host has rewritten it.
+   *
+   * Root-relative page paths are rewritten (the query and fragment ride
+   * along); an absolute URL, a fragment (`#x`), a link to the app's media and
+   * `''` come back as given. Always present; without a router (a gallery, a
+   * test) it returns the path as given. It does not make data safe: a link
+   * built from a row is still checked by the block (`safeDataLink`).
+   */
+  readonly appHref: LinkHref
 }
 
 // ============================================================
@@ -248,6 +265,11 @@ export interface SurfaceRendererProps {
   readonly surface: RenderableSurface
   /** The app's locale, handed to every block as `context.locale`. */
   readonly locale?: string
+  /**
+   * How this host writes an app link (its router's form); handed to every
+   * block as `context.appHref`. Absent, a link is written as given.
+   */
+  readonly linkHref?: LinkHref
   /** Capability providers */
   readonly capabilities?: CapabilityProvider[]
   /**

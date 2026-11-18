@@ -40,11 +40,15 @@ export interface RecordWrite {
 
 export type SourceWriter = (sourceId: string, write: RecordWrite) => Promise<EntityMutationResult>
 
-const refused = (type: 'not_found' | 'connector' | 'validation', detail: string): EntityMutationResult => ({
+const refused = (
+  type: 'not_found' | 'connector' | 'validation',
+  detail: string,
+  fields?: readonly string[]
+): EntityMutationResult => ({
   success: false,
   // The reason code is decided by the caller (writeFailureReason);
-  // the detail is for the author.
-  error: { type, message: detail, details: { detail } },
+  // the detail is for the author; `fields` are what `statusKeys.fields` binds.
+  error: { type, message: detail, details: { detail, ...(fields ? { fields: [...fields] } : {}) } },
 })
 
 /**
@@ -120,7 +124,8 @@ export function createSourceWriter(deps: {
     if (file !== undefined) {
       return refused(
         'validation',
-        `"${file}" holds a file. A record stores values, not files: upload the file first and write what the upload answered.`
+        `"${file}" holds a file. A record stores values, not files: upload the file first and write what the upload answered.`,
+        [file]
       )
     }
     const values = recordFieldsOf(write.values ?? {}, source?.fields)

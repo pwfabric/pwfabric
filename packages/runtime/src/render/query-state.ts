@@ -13,13 +13,24 @@
  * the raw value (number stays number, array stays array) so
  * `pagination.limit: "{{state.pageSize}}"` yields a number, not "20".
  * Mixed strings (`"prefix-{{state.x}}"`) resolve to a string.
+ *
+ * THE CALLER'S OWN RECORD (data-protocol §2.2). A query value may read the
+ * signed-in visitor, `{{me.*}}` (`me` is `__auth.user`, `null` while nobody
+ * is signed in): `{ field: "email", operator: "eq", value: "{{me.email}}" }`
+ * finds the caller's own row in a shared collection. It is only a filter
+ * value: who may read which rows is still the server's access rules. A
+ * condition on `me` that resolves to nothing — nobody signed in — matches
+ * NOTHING (queryAsksForNothing), never "no constraint": signed out, "your
+ * team" must not list every team.
  */
 import { createExpressionContext, evaluate, interpolate } from '../surface/expression.js'
 
 const WHOLE = /^\s*\{\{\s*([^{}]+?)\s*\}\}\s*$/
+/** An expression that reads the signed-in visitor. */
+const READS_ME = /(?:^|[^\w.$])me\b/
 
-export function resolveQueryState<T>(query: T, state: Readonly<Record<string, unknown>>): T {
-  const ctx = createExpressionContext({ state })
+export function resolveQueryState<T>(query: T, state: Readonly<Record<string, unknown>>, me?: unknown): T {
+  const ctx = createExpressionContext({ state, me: me ?? null })
   const walk = (v: unknown): unknown => {
     if (typeof v === 'string') {
       if (!v.includes('{{')) return v
@@ -79,18 +90,21 @@ export function resolveQueryState<T>(query: T, state: Readonly<Record<string, un
 export function queryAsksForNothing(
   query: unknown,
   state: Readonly<Record<string, unknown>>,
-  notFoundWhenEmpty = false
+  notFoundWhenEmpty = false,
+  me?: unknown
 ): boolean {
   if (!query || typeof query !== 'object') return false
   const filter = (query as { filter?: unknown }).filter
   if (!filter || typeof filter !== 'object') return false
-  const ctx = createExpressionContext({ state })
+  const ctx = createExpressionContext({ state, me: me ?? null })
   const emptyKey = (n: Record<string, unknown>): boolean => {
-    if (n.operator !== 'eq' || typeof n.field !== 'string' || n.field === '') return false
-    if (!notFoundWhenEmpty && n.field !== 'id') return false
-    if (typeof n.value !== 'string') return false
+    if (typeof n.field !== 'string' || n.field === '' || typeof n.value !== 'string') return false
     const whole = WHOLE.exec(n.value)
     if (!whole || whole[1] === undefined) return false
+    // A condition on the caller (any operator) asks for nothing without one.
+    const onCaller = READS_ME.test(whole[1])
+    if (!onCaller && n.operator !== 'eq') return false
+    if (!onCaller && !notFoundWhenEmpty && n.field !== 'id') return false
     const r = evaluate(whole[1], ctx)
     return !r.success || r.value === '' || r.value === null || r.value === undefined
   }

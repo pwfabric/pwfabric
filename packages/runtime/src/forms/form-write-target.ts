@@ -71,7 +71,7 @@ const VALIDATION_CODES = new Set(['VALIDATION_FAILED', 'INVALID_BODY'])
  * its own words for each (envelope §2: the app owns every word); the engine
  * gives the state, never a sentence.
  */
-export type FormWriteReason = 'validation' | 'unauthenticated' | 'forbidden' | 'server' | 'network' | 'error'
+export type FormWriteReason = 'validation' | 'conflict' | 'unauthenticated' | 'forbidden' | 'server' | 'network' | 'error'
 
 /**
  * The reason of a write failure (data-protocol §4.2): decided by the HTTP
@@ -84,6 +84,10 @@ export function writeFailureReason(error: EntityOperationError): FormWriteReason
   const details = (error.details ?? {}) as { status?: unknown; network?: unknown }
   const status = typeof details.status === 'number' ? details.status : undefined
   if (error.type === 'validation') return 'validation'
+  // A 409: the record would repeat one another holds under a unique key (an
+  // e-mail already on the list). The page says "already signed up", not
+  // "something went wrong".
+  if (status === 409 || error.type === 'conflict') return 'conflict'
   if (status === 401) return 'unauthenticated'
   if (status === 403 || error.type === 'unauthorized') return 'forbidden'
   if (status !== undefined && status >= 500) return 'server'
@@ -122,7 +126,10 @@ export function toFormWriteError(err: DataFetchError): EntityOperationError {
     return { type: 'validation', message, details: { status, code, fields: fieldPathsOf(message), detail: message } }
   }
   const type: EntityOperationError['type'] =
-    status === 404 ? 'not_found' : status === 401 || status === 403 ? 'unauthorized' : 'connector'
+    status === 404 ? 'not_found' : status === 409 ? 'conflict' : status === 401 || status === 403 ? 'unauthorized' : 'connector'
   const detail = `${status}${code ? ` ${code}` : ''}: ${message}`
-  return { type, message: detail, details: { status, code, detail } }
+  // A conflict names the unique key's fields the way a validation refusal
+  // names its fields (`email: is already used …`), so a form can mark them.
+  const fields = status === 409 ? fieldPathsOf(message) : undefined
+  return { type, message: detail, details: { status, code, detail, ...(fields ? { fields } : {}) } }
 }

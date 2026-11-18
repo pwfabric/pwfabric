@@ -49,6 +49,14 @@ describe('rewriteHrefs', () => {
     expect(rewriteHrefs(tree, ENTRY, hashHref)).toEqual({ props: { activeHref: '', items: [{ href: '#/home' }] } })
   })
 
+  it('an empty link stays empty: it is no link to the entry page (E10)', () => {
+    const tree = { props: { href: '', ctaHref: '', action: { type: 'navigate', url: '' }, home: { href: '/' } } }
+    expect(rewriteHrefs(tree, ENTRY, hashHref)).toEqual({
+      props: { href: '', ctaHref: '', action: { type: 'navigate', url: '' }, home: { href: '#/home' } },
+    })
+    expect(linkHrefFor(ENTRY, pathHref)('')).toBe('')
+  })
+
   it('rewrites page hrefs with the injected toHref (path mode)', () => {
     const tree = { props: { href: '/gallery' } }
     expect(rewriteHrefs(tree, ENTRY, pathHref)).toEqual({
@@ -65,9 +73,9 @@ describe('rewriteHrefs', () => {
     }
   })
 
-  it("maps '/' (and '') to the entry page", () => {
+  it("maps '/' to the entry page; '' is no link", () => {
     expect(rewriteHrefs({ href: '/' }, ENTRY, hashHref)).toEqual({ href: '#/home' })
-    expect(rewriteHrefs({ href: '' }, ENTRY, hashHref)).toEqual({ href: '#/home' })
+    expect(rewriteHrefs({ href: '' }, ENTRY, hashHref)).toEqual({ href: '' })
   })
 
   it('leaves absolute-scheme and fragment hrefs untouched', () => {

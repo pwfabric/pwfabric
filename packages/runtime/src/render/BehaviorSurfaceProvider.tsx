@@ -35,7 +35,7 @@ import { createSourceWriter } from './source-writer.js'
 import { resolveLinkTemplate } from './resolve-expressions.js'
 import type { SurfaceDataSourceDefinition } from './data-binding-types.js'
 import type { FormEntityBridgeConfig } from '../forms/form-entity-bridge.js'
-import { completeNamedControlValues } from '../forms/named-control-values.js'
+import { completeNamedControlValues, withChosenFiles } from '../forms/named-control-values.js'
 import type { Block } from '@pwfabric/core'
 
 export interface BehaviorSurfaceProviderProps {
@@ -198,8 +198,9 @@ export function BehaviorSurfaceProvider({
     (formId: string, values: Record<string, unknown>): Record<string, unknown> => {
       const tree = blocksRef.current
       const state = surfaceDataRef.current?.['state']
-      if (!tree || !state || typeof state !== 'object') return values
-      return completeNamedControlValues(tree, formId, values, state as Record<string, unknown>)
+      const withFiles = withChosenFiles(typeof document === 'undefined' ? null : document.getElementById(formId), values)
+      if (!tree || !state || typeof state !== 'object') return withFiles
+      return completeNamedControlValues(tree, formId, withFiles, state as Record<string, unknown>)
     },
     []
   )

@@ -10,7 +10,7 @@
  * user landed on the same anonymous page with no signal at all.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createAuthBridge } from './auth.js'
+import { authDeclarationNote, createAuthBridge } from './auth.js'
 import { runnerMessages } from './messages.js'
 import { pendingKeyFor, authScopeKey, savePendingPkce } from './pkce.js'
 import type { PwappAuth } from './types.js'
@@ -260,5 +260,17 @@ describe('createAuthBridge — the door token', () => {
     bridge.logout()
     expect(await bridge.getDoorToken()).toBeUndefined()
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('authDeclarationNote — E19', () => {
+  it('says nothing about the app door, whatever its provider value', () => {
+    expect(authDeclarationNote({ provider: 'password' } as PwappAuth)).toBeNull()
+    expect(authDeclarationNote({ provider: 'platform' } as PwappAuth)).toBeNull()
+  })
+
+  it('names an issuer declaration that cannot sign anyone in', () => {
+    expect(authDeclarationNote({ provider: 'oauth2-pkce' } as PwappAuth)).toMatch(/oauth2-pkce without an issuer/)
+    expect(authDeclarationNote({ provider: 'oauth2-pkce', issuer: 'https://id.x', clientId: 'c' } as PwappAuth)).toBeNull()
   })
 })
