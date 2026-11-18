@@ -106,6 +106,8 @@ async function checkPage(browser, origin, key, pageInfo) {
       const block = e.closest('[data-block-type]')
       return `${e.tagName.toLowerCase()}${block ? ` in ${block.getAttribute('data-block-type')}#${block.id}` : ''}`
     }
+    // The block a node belongs to (its wrapper's id), for the session check below.
+    const blockOf = (e) => e.closest('[data-block-id]')?.getAttribute('data-block-id') ?? null
     // Hoisted resources (`<link>`, `<style precedence>`) carry no fiber; any adopted element does.
     const adopted = (e) => Object.keys(e).some((k) => k.startsWith('__reactFiber'))
     return {
@@ -113,6 +115,7 @@ async function checkPage(browser, origin, key, pageInfo) {
       kept: root?.isConnected === true,
       hydrated: painted.some((e) => e.isConnected && adopted(e)),
       gone: painted.filter((e) => !e.isConnected).map(describe),
+      goneBlocks: painted.filter((e) => !e.isConnected).map(blockOf),
     }
   })
   await page.close()
@@ -166,10 +169,16 @@ async function checkPage(browser, origin, key, pageInfo) {
   }
   if (!seen.kept && !notFound) problems.push('the painted root was replaced')
   else if (seen.kept && !seen.hydrated) problems.push('the painted root was not hydrated')
-  if (seen.gone.length > 0) {
+  // A SOURCE THAT WAITS FOR THE SESSION (E-6): the build paints a
+  // `requiresSession` source loading, because who the visitor is is not known
+  // to it; right after hydration the runner says (signed out here), and the
+  // blocks drawn for its loading state give way to its signed-out state. That
+  // is an update after hydration, like a record arriving — not a mismatch.
+  const gone = seen.gone.filter((_, i) => !pageInfo.sessionBlocks?.has(seen.goneBlocks[i]))
+  if (gone.length > 0) {
     const counts = new Map()
-    for (const g of seen.gone) counts.set(g, (counts.get(g) ?? 0) + 1)
-    problems.push(`${seen.gone.length} painted node(s) drawn again: ${[...counts].slice(0, 6).map(([g, n]) => `${g} ×${n}`).join(', ')}`)
+    for (const g of gone) counts.set(g, (counts.get(g) ?? 0) + 1)
+    problems.push(`${gone.length} painted node(s) drawn again: ${[...counts].slice(0, 6).map(([g, n]) => `${g} ×${n}`).join(', ')}`)
   }
   return { problems }
 }
@@ -211,7 +220,8 @@ function recordPageInfo(out, key) {
       recordSources.push(source)
     }
   }
-  if (recordSources.length === 0) return { query: '', isRecord: false }
+  const sessionBlocks = sessionStateBlocks(receipt)
+  if (recordSources.length === 0) return { query: '', isRecord: false, sessionBlocks }
 
   // The app folder is two levels up from `out` (.pwf/out → app).
   const appFolder = join(out, '..', '..')
@@ -262,7 +272,33 @@ function recordPageInfo(out, key) {
     }
   }
   const query = params.toString() ? `?${params.toString()}` : ''
-  return { query, isRecord: true, hasFallbackId }
+  return { query, isRecord: true, hasFallbackId, sessionBlocks }
+}
+
+/**
+ * The blocks (and everything inside them) whose own definition reads the
+ * loading or error state of a `requiresSession` source: what the first frame
+ * draws while it waits for the session, and the runner redraws once it knows.
+ */
+function sessionStateBlocks(receipt) {
+  const ids = []
+  for (const cap of receipt.capabilities ?? []) {
+    for (const source of cap?.config?.dataSources ?? []) if (source?.requiresSession === true && source.id) ids.push(source.id)
+  }
+  const out = new Set()
+  if (ids.length === 0) return out
+  const names = ids.map((i) => i.replace(/[^A-Za-z0-9_]/g, '')).join('|')
+  const reads = new RegExp(String.raw`__(?:loading|errors|errorCodes)\.(?:${names})\b`)
+  const walk = (blocks, inside) => {
+    for (const block of Array.isArray(blocks) ? blocks : []) {
+      const { children, ...own } = block ?? {}
+      const marked = inside || reads.test(JSON.stringify(own))
+      if (marked && block?.id) out.add(block.id)
+      walk(children, marked)
+    }
+  }
+  walk(receipt.blocks, false)
+  return out
 }
 
 let failed = 0
