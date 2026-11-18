@@ -5,8 +5,8 @@
  * and reach the renderer in the descriptor the host hands it
  * (`blocks/manifest.json`). Before the block renders, the renderer fills in
  * each missing prop's default, coerces a value to its declared shape where
- * that loses nothing, and replaces a value that still does not fit with its
- * default (`applyBlockProps`, @pwfabric/contracts). A block therefore reads
+ * that loses nothing, and keeps a value that still does not fit as written,
+ * with a developer warning (`applyBlockProps`, @pwfabric/contracts). A block therefore reads
  * `props.size` and gets `'md'` when the receipt left it out — it needs no
  * schema and no `?? 'md'` of its own.
  *

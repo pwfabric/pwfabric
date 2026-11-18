@@ -315,8 +315,8 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   }
   // Every receipt is checked against its blocks' manifests here, at build
   // time, not in the visitor's browser: a prop the manifest does not declare,
-  // a value that does not fit its declared shape (the runtime renders the
-  // default instead), a template on a literal-only prop. Warnings.
+  // a value that does not fit its declared shape (the runtime renders it
+  // as written, with a developer warning), a template on a literal-only prop. Warnings.
   const propCatalog = new Map<string, { atomId: string; props: NonNullable<ReturnType<typeof blockPropDescriptors>> }>()
   for (const [name, list] of byName) {
     const props = list[0] ? blockPropDescriptors(list[0].manifest) : undefined

@@ -362,9 +362,9 @@ function acceptsNull(shape: PropShape | undefined): boolean {
 
 /**
  * The props a block renders with: `props` with every declared prop's default
- * filled in where it is missing, values coerced to their shapes, and a value
- * that still does not fit replaced by its default (kept as written when there
- * is none). A `null` where the shape takes no `null` counts as missing. Props
+ * filled in where it is missing, values coerced to their shapes. A value
+ * that still does not fit is kept as coerced and reported, never replaced by
+ * the default. A `null` where the shape takes no `null` counts as missing. Props
  * the manifest does not declare pass through untouched.
  *
  * Never throws. Each problem goes to `onIssue` (the runtime reports it as a
@@ -398,10 +398,13 @@ export function applyBlockProps(
     const coerced = coercePropValue(value, shape)
     const issues = checkPropValue(coerced, shape, d.name)
     if (issues.length > 0) {
+      // A value that does not fit is KEPT (coerced as far as it goes) and
+      // reported, never swapped for the default: bound data (rows read
+      // through a field mapping, an item missing a member) is the app's, and
+      // replacing it would silently draw something the app did not write.
       for (const issue of issues) onIssue?.(issue)
-      if (fallback !== undefined) set(d.name, fallback)
-      else if (coerced !== value) set(d.name, coerced)
-    } else if (coerced !== value) {
+    }
+    if (coerced !== value) {
       set(d.name, coerced)
     }
   }

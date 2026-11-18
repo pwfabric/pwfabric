@@ -53,7 +53,7 @@ export function validateProps<TProps extends Record<string, unknown>>(
 
 /**
  * The props a block renders with: the declared defaults filled in, values
- * coerced, and a value that does not fit replaced by its default
+ * coerced, and a value that does not fit kept as written and reported
  * (`applyBlockProps`). Never fails.
  *
  * @param props - The props as written

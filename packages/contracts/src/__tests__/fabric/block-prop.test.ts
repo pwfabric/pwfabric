@@ -70,12 +70,12 @@ describe('applyBlockProps — coercion and invalid values', () => {
     expect(out['text']).toBe('42')
   })
 
-  it('replaces a value that does not fit with the default, and reports it — never throws', () => {
+  it('keeps a value that does not fit (never the default), and reports it — never throws', () => {
     const issues: PropIssue[] = []
     const out = applyBlockProps({ variant: 'loud', gap: 400, rounded: 'yes' }, badge, (i) => issues.push(i))
-    expect(out['variant']).toBe('default')
-    expect(out['gap']).toBe(16)
-    expect(out['rounded']).toBe(false)
+    expect(out['variant']).toBe('loud')
+    expect(out['gap']).toBe(400)
+    expect(out['rounded']).toBe('yes')
     expect(issues.map((i) => `${i.path}:${i.code}`)).toEqual(['variant:enum', 'gap:maximum', 'rounded:type'])
   })
 
