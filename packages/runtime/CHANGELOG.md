@@ -29,6 +29,7 @@ Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
 - Fixed: when the focused block is hidden by `visibleWhen`, focus moves to the region that appeared (#51).
 - Fixed: the dev-only notice of `BlockErrorBoundary` names the declared props that did not fit when a block throws (#54).
 - Fixed: the block loader's `fetch` matches the shell's preload, so each block module is requested once (#57).
+- Fixed: a changed `initialState` reaches a mounted page, and not-found is reported only once the host address is known, so a hydrated record page loads the record from the address (#60).
 
 ## 2.2.0
 

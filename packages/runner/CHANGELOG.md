@@ -18,6 +18,7 @@ Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).
 - Changed: `navigate` is followed through `router.follow`, as a link is; an empty `activeHref` marks no nav item (#51).
 - Changed: the session probe treats an answer without a token as no session (#57). Own-records sources carry `requiresSession` (#58).
 - Changed: block modules are preloaded once (`as="fetch"`); the runner skips modules already preloaded (#57).
+- Fixed: a page painted at build takes the address (`?id=` and other keys) after hydration, so a record page opened at phone width loads its record instead of showing not-found (#60).
 
 ## 2.2.0
 
