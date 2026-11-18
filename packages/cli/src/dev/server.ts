@@ -34,6 +34,14 @@ export { contentTypeOf, isPagePath }
 
 export const DEFAULT_PORT = 4600
 export const DEFAULT_HOSTNAME = '127.0.0.1'
+/**
+ * The files the local host seeds its records from (`readSeed`, `readEntities`):
+ * the content, the sample data and the entity declarations.
+ */
+export function seedsRecords(path: string): boolean {
+  return path.startsWith('app/content/') || path.startsWith('app/data/') || path === 'app/definitions/entities.json'
+}
+
 /** Where a host this server creates is mounted. */
 export const HOST_PREFIX = '/_host'
 
@@ -152,6 +160,8 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
    */
   const publishedAt = internals.assemble?.publishedAt ?? new Date().toISOString()
   let servedSig: string | null = null
+  /** The records were seeded again: the open page reloads to read them, whatever the build serves. */
+  let reseeded = false
 
   const broadcast = (event: string, data: unknown): void => {
     const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
@@ -196,8 +206,9 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
     )
     for (const line of logLines(result.diagnostics)) log(`  ${line}`)
     const sig = servedSignature(result)
-    if (sig !== servedSig) {
+    if (sig !== servedSig || reseeded) {
       servedSig = sig
+      reseeded = false
       broadcast('reload', { ok: result.ok })
     }
     return { ok: result.ok, compiled: stats.compiled, diagnostics: result.diagnostics.map(formatDiagnostic), ms: result.ms }
@@ -297,6 +308,12 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
       (paths) => {
         // A pack build changed (or the platform could not say what did): read it again.
         if (paths === null || paths.some((p) => p.startsWith(`${PWF_DIR}/packs`))) packMemo.clear()
+        // The records are seeded from the app folder: an edit there is seen on
+        // the next read, as an edit to a page is.
+        if (host && (paths === null || paths.some(seedsRecords))) {
+          host.reseed()
+          reseeded = true
+        }
         void rebuild()
       },
       internals.watch ?? {}

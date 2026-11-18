@@ -648,6 +648,17 @@ describe('records', () => {
     const list = (await (await fetch(`${s.base}/records/Product`)).json()) as { data: { name: string }[] }
     expect(list.data.map((r) => r.name)).not.toContain('Gone')
   })
+
+  it('reseed() seeds the records again and keeps the session (E17)', async () => {
+    const s = await start('l-shop')
+    const token = await signIn(s.base)
+    await fetch(`${s.base}/records/Product`, json({ name: 'Gone' }))
+    s.host.reseed()
+    expect((await fetch(`${s.base}/session`, withSession(token))).status).toBe(200)
+    const list = (await (await fetch(`${s.base}/records/Product`)).json()) as { data: { name: string }[] }
+    expect(list.data.map((r) => r.name)).not.toContain('Gone')
+    expect(list.data.length).toBeGreaterThan(0)
+  })
 })
 
 describe('pages', () => {

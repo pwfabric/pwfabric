@@ -495,6 +495,10 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
       return true
     },
 
+    reseed(): void {
+      records.reset()
+    },
+
     reset(): void {
       records.reset()
       bearer.clear()

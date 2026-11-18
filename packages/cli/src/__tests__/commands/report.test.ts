@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { checkAccess, checkEntities, checkMessages, checkReservedSources, checkSeeds, reachableMessageIds } from '../../commands/lib/report.js'
+import { checkAccess, checkEntities, checkMessages, checkReservedSources, checkSeeds, checkStatusKeys, reachableMessageIds } from '../../commands/lib/report.js'
 import { tempDir } from './helpers.js'
 
 async function project(files: Record<string, unknown>): Promise<string> {
@@ -170,6 +170,7 @@ describe('MESSAGES_MISSING', () => {
     // The screen is the app's own way in: the fallback pill is not drawn.
     expect(ids.some((id) => id.startsWith('pill.'))).toBe(false)
     expect(ids).toContain('bridge.invalidCallback')
+    expect(ids).toContain('auth.error.access_denied')
   })
 
   it('sign-up words only for a door that takes anyone; the wall sentence only for a required app', async () => {
@@ -183,6 +184,8 @@ describe('MESSAGES_MISSING', () => {
     expect(open).toContain('gate.register')
     expect(open).toContain('gate.close')
     expect(open).not.toContain('gate.body')
+    // A password-only door is never sent back with `?auth_error=` (E18).
+    expect(open.some((id) => id.startsWith('auth.error.'))).toBe(false)
   })
 
   it('SOURCE_ID_RESERVED: a source may not be called me or __anything', async () => {
@@ -215,5 +218,29 @@ describe('MESSAGES_MISSING', () => {
       })
     )
     expect(done).toEqual([])
+  })
+})
+
+describe('STATUS_KEY_UNKNOWN (E6)', () => {
+  it('flags a statusKeys member the runtime never writes — 2.2’s message — on a form binding and a write action', async () => {
+    const root = await project({
+      'app/surfaces/a.receipt.json': {
+        blocks: [{ id: 'b', type: 'button', props: { action: { type: 'write', sourceId: 's', op: 'delete', statusKeys: { error: 'failed', mesage: 'm' } } } }],
+        capabilities: [
+          {
+            capability: 'platform/entities',
+            config: { formBindings: [{ formId: 'f', sourceId: 's', statusKeys: { loading: 'l', success: 'ok', reason: 'why', fields: 'which', detail: 'd', message: 'msg' } }] },
+          },
+        ],
+      },
+    })
+    const issues = checkStatusKeys(root)
+    expect(issues.map((i) => [i.code, i.severity])).toEqual([
+      ['STATUS_KEY_UNKNOWN', 'warning'],
+      ['STATUS_KEY_UNKNOWN', 'warning'],
+    ])
+    expect(issues[0]!.message).toContain('blocks[0].props.action.statusKeys.mesage')
+    expect(issues[1]!.message).toContain('statusKeys.message')
+    expect(issues[1]!.message).toContain('bind reason')
   })
 })

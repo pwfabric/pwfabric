@@ -20,6 +20,8 @@ import {
   type PackValidation,
 } from '@pwfabric/pack'
 import type { AssembleDiagnostic } from './diagnostics.js'
+import { satisfiesSemverRange } from '@pwfabric/contracts/pack'
+import { engineRange } from '../commands/lib/identity.js'
 
 /** The project's working folder; never part of the app. */
 export const PWF_DIR = '.pwf'
@@ -212,4 +214,51 @@ export function isRecord(v: unknown): v is Record<string, unknown> {
 /** The atoms of one source, as validation derived them. */
 export function atomsOf(source: SourcePack): readonly AtomRef[] {
   return source.validation.atoms
+}
+
+/**
+ * ENGINE_RANGE_EXCLUDED (an error): the app, or a pack it pins, declares an
+ * `engines.pwfabric` range the running engine is not in (pwpack-format
+ * `engines`). Such a folder was written for another engine — its receipts and
+ * blocks speak that engine's contract — so `pwf validate` and `pwf build`
+ * refuse it instead of building something that half works. A folder that
+ * declares no range is not judged.
+ */
+export function engineRangeDiagnostics(sources: LoadedSources, engine: string): AssembleDiagnostic[] {
+  const out: AssembleDiagnostic[] = []
+  const judge = (range: string | undefined, label: string, path: string, fix: string): void => {
+    if (typeof range !== 'string' || range.trim() === '' || satisfiesSemverRange(releaseOf(engine), range)) return
+    out.push({
+      severity: 'error',
+      code: 'ENGINE_RANGE_EXCLUDED',
+      path,
+      message: `${label} declares engines.pwfabric "${range}", which excludes this engine (${engine}); ${fix}`,
+    })
+  }
+  if (sources.identity) {
+    judge(
+      sources.identity.engines?.pwfabric,
+      'the app',
+      'pwpack.json',
+      `move the app to this engine and set engines.pwfabric to "${engineRange(engine)}", or run it with an engine the range names`
+    )
+  }
+  for (const pack of sources.packs) {
+    judge(
+      pack.validation.identity?.engines?.pwfabric,
+      `${pack.id}@${pack.version}`,
+      `${pack.label}/pwpack.json`,
+      `pin a version of ${pack.id} made for this engine (\`pwf add ${pack.id}@<version>\`)`
+    )
+  }
+  return out
+}
+
+/**
+ * A prerelease of the engine (`3.0.0-rc.1`) is judged as the release it leads
+ * to: it runs the packs made for 3.0, and by semver's prerelease rule no
+ * `>=3.0.0 <4` range would ever take it.
+ */
+function releaseOf(version: string): string {
+  return version.replace(/[-+].*$/, '')
 }

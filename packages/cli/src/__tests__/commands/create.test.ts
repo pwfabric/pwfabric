@@ -85,6 +85,16 @@ describe('pwf create', () => {
     expect(await main(['validate', 'demo'], capture(cwd).io)).toBe(0)
   })
 
+  it('pwf validate refuses the app once its engines range excludes this engine (E8)', async () => {
+    const cwd = await tempDir()
+    expect(await main(['create', 'demo', '--foundation', FIXTURE_FOUNDATION], capture(cwd).io)).toBe(0)
+    const file = join(cwd, 'demo', 'pwpack.json')
+    await writeFile(file, JSON.stringify({ ...(await readJson(file)), engines: { pwfabric: '>=1.0 <2' } }))
+    const c = capture(cwd)
+    expect(await main(['validate', 'demo'], c.io)).toBe(1)
+    expect(c.text()).toContain('ENGINE_RANGE_EXCLUDED')
+  })
+
   it('accepts a .pwpack foundation from PWF_FOUNDATION and honours --dir', async () => {
     const cwd = await tempDir()
     const archive = join(cwd, 'foundation-1.2.0.pwpack')
