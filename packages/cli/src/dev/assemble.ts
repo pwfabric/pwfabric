@@ -38,7 +38,6 @@ import {
   hashedName,
   importMapText,
   loadRuntimeAssets,
-  runnerLocaleOf,
   shimsFor,
   type RuntimeAssets,
   type ShellAssets,
@@ -127,20 +126,53 @@ function declaredOrigins(atom: CompiledAtom, diagnostics: AssembleDiagnostic[]):
   return {}
 }
 
-function titleOf(plan: unknown, id: string): string {
-  if (isRecord(plan) && typeof plan['title'] === 'string' && plan['title'].trim()) return plan['title'].trim()
-  const last = id.split('/').pop() ?? id
-  return last
-    .split(/[-_]+/)
-    .filter(Boolean)
-    .map((w) => (w[0] as string).toUpperCase() + w.slice(1))
-    .join(' ')
+/**
+ * The app's title (`plan.json` `title`), or `''`. The engine does not make one
+ * up from the pack id: a humanised id ("Cafe Menu") was a word the app never
+ * wrote.
+ */
+function titleOf(plan: unknown): string {
+  return textOf(plan, 'title') ?? ''
 }
 
 /** A non-empty trimmed string member of `doc`, or undefined. */
 function textOf(doc: unknown, key: string): string | undefined {
   const v = isRecord(doc) ? doc[key] : undefined
   return typeof v === 'string' && v.trim() ? v.trim() : undefined
+}
+
+/**
+ * `plan.json` `messages`: the app's words, a flat map from message id to
+ * string (envelope §2). An entry that is not a string is dropped with an
+ * error (MESSAGES_INVALID) — a nested object or a number would only ever
+ * read the fallback, silently. Absent: undefined.
+ */
+function messagesOf(plan: unknown, diagnostics: AssembleDiagnostic[]): Record<string, string> | undefined {
+  const raw = isRecord(plan) ? plan['messages'] : undefined
+  if (raw === undefined) return undefined
+  if (!isRecord(raw)) {
+    diagnostics.push({
+      severity: 'error',
+      code: 'MESSAGES_INVALID',
+      message: 'messages must be an object from message id to string',
+      path: 'app/plan.json',
+    })
+    return undefined
+  }
+  const out: Record<string, string> = {}
+  for (const [id, value] of Object.entries(raw)) {
+    if (typeof value === 'string') {
+      out[id] = value
+      continue
+    }
+    diagnostics.push({
+      severity: 'error',
+      code: 'MESSAGES_INVALID',
+      message: `messages["${id}"] is not a string; the runner reads its fallback`,
+      path: 'app/plan.json',
+    })
+  }
+  return out
 }
 
 /**
@@ -360,8 +392,11 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // ── the served folder ────────────────────────────────────────────
   const runtime = options.runtime ?? (await loadRuntimeAssets())
   const config = appearanceConfigOf(appearance)
-  const title = titleOf(plan, identity.id)
+  const title = titleOf(plan)
   const locale = isRecord(plan) && typeof plan['locale'] === 'string' ? plan['locale'] : undefined
+  // The app's words (`plan.json` `messages`), carried as they are: the runner
+  // reads every word it draws there first (envelope §2).
+  const messages = messagesOf(plan, diagnostics)
   // The app in a sentence (`app/plan.json` `description`); the shell's
   // <meta name="description"> falls back to the entry page's own, which is
   // also what the runner shows on that page.
@@ -380,7 +415,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     runner: hashedName('assets/runner.js', runtime.runnerJs),
     theme: hashedName('assets/theme.css', themeCss),
   }
-  const bootJs = bootScript({ locale: runnerLocaleOf(locale), assets: { ...assets0, boot: '' }, webfontHref })
+  const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref })
   const assets: ShellAssets = { ...assets0, boot: hashedName('assets/boot.js', bootJs) }
   const shell = (csp?: string): Uint8Array =>
     enc.encode(
@@ -408,7 +443,16 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   files.set(
     'pwpack/project.json',
     json({
-      ...buildProjectJson({ id: identity.id, title, entry, pages: routes, notFound: notFoundPage, auth: authDoc, ...(locale !== undefined ? { locale } : {}) }),
+      ...buildProjectJson({
+        id: identity.id,
+        title,
+        entry,
+        pages: routes,
+        notFound: notFoundPage,
+        auth: authDoc,
+        ...(locale !== undefined ? { locale } : {}),
+        ...(messages !== undefined ? { messages } : {}),
+      }),
       ...(appDescription !== undefined ? { description: appDescription } : {}),
     })
   )

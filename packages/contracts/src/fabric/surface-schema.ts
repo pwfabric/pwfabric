@@ -288,7 +288,8 @@ export const surfaceActionSchema = z.discriminatedUnion('type', [
         loading: z.string().min(1).optional(),
         success: z.string().min(1).optional(),
         error: z.string().min(1).optional(),
-        message: z.string().min(1).optional(),
+        reason: z.string().min(1).optional(),
+        fields: z.string().min(1).optional(),
         detail: z.string().min(1).optional(),
       })
       .optional(),

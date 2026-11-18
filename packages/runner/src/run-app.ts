@@ -53,7 +53,7 @@ import {
 } from './app-session.js'
 import { bootSession } from './boot-session.js'
 import { loadEnvelope } from './load-envelope.js'
-import { authErrorMessage } from './copy.js'
+import { authErrorMessage, runnerMessages } from './messages.js'
 import { renderNotFound } from './not-found.js'
 import { isOwnApiRef, ownApiBaseOf } from './api-base.js'
 import { ownRecordsReceipt } from './own-records.js'
@@ -147,7 +147,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   // `boot-session.ts`. It runs before the router exists, so `?auth_error=` is
   // gone before anything reads the query string.
   const appId = project.id ?? project.title ?? 'app'
-  const locale = opts.locale ?? 'en'
+  // The app's words (envelope §2): every word the runner draws reads here
+  // first, then its neutral fallback.
+  const say = runnerMessages(project.messages)
   const dataCache = sessionDataCache(sessionStorage, appId)
   const boot = await bootSession({ project, auth, storage: sessionStorage, appId })
   let appSession: AppSession | null = boot.session
@@ -155,7 +157,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   // evaluated while the page's receipt is on its way rather than after it. A
   // visitor the gate holds does not (renderer.ts).
   if (!isGated(project, null, Boolean(appSession))) void loadRenderer(rendererUrl).catch(() => undefined)
-  const initialError = boot.authError ? authErrorMessage(locale, boot.authError) : undefined
+  const initialError = boot.authError ? authErrorMessage(say, boot.authError) : undefined
 
   /**
    * This app's own API base, read back out of the door it was published with
@@ -233,7 +235,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // (the path router gives every page its own pathname — per-page URIs
       // would each need their own registration at the issuer). returnTo in the
       // pending record brings the user back to the page they logged in from.
-      bridge = createAuthBridge(auth, { redirectUri: location.origin + router.base, locale })
+      bridge = createAuthBridge(auth, { redirectUri: location.origin + router.base, messages: say })
       await bridge.init() // redirect callback / silent restore BEFORE first route
     } else {
       console.info(`[pwapp] auth declared (${auth.provider}) — unsupported provider, falling back to anonymous`)
@@ -271,7 +273,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   const mountGate = (): (() => void) =>
     mountSignInGate(container, project, bridge, {
       auth,
-      locale,
+      messages: say,
       onSignedIn,
       onProviderSignIn: startProvider,
       themeVars,
@@ -286,7 +288,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     closeOnDemandGate?.()
     closeOnDemandGate = mountSignInGate(document.body, project, bridge, {
       auth,
-      locale,
+      messages: say,
       onSignedIn,
       onProviderSignIn: startProvider,
       themeVars,
@@ -429,7 +431,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       user,
       entry,
       toHref: router.toHref,
-      locale,
+      messages: say,
     })
   }
 
@@ -521,7 +523,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       appTitle: project.title,
       entry,
       toHref: router.toHref,
-      locale,
+      messages: say,
     })
     if (project.title) document.title = project.title
     applyDescription(document, undefined, project.description)
@@ -665,6 +667,8 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // value is known (rewriteHrefs left it as written).
       linkHref: linkHrefFor(entry, router.toHref),
       ...(typeof project.locale === 'string' && project.locale ? { locale: project.locale } : {}),
+      // ...and its words, for the words a block draws itself (`ui.*`).
+      ...(project.messages ? { messages: project.messages } : {}),
       onTitle: (resolved: string | undefined) => {
         if (seq !== routeSeq) return
         const next = composeTitle(project.title, resolved)
@@ -819,7 +823,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     onSignOut: () => account.signOut(),
     accountSlot: Boolean(navigation?.account),
     themeVars,
-    locale,
+    messages: say,
   })
 
   await route()

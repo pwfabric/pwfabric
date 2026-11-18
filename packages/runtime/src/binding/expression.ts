@@ -823,7 +823,7 @@ function safeLocale(locale: string | undefined): string | undefined {
  * `project.json` `locale`). Without one they write in the visitor's.
  *
  *  - `date(v)`, `time(v)`, `datetime(v)` — `v` read as a date;
- *  - `currency(n, code = 'USD', locale = <app locale, else en-US>)`;
+ *  - `currency(n, code = 'USD', locale = <app locale, else the visitor's>)`;
  *  - `number(n, decimals?)` — `n` with the locale's grouping and decimal
  *    mark; exactly `decimals` fraction digits when given.
  */
@@ -835,7 +835,7 @@ export function localeHelpers(locale: string | undefined): Record<string, (...ar
     datetime: (v: unknown) => new Date(v as string | number).toLocaleString(tag),
     currency: (v: unknown, currency?: unknown, explicit?: unknown) => {
       const num = Number(v)
-      return new Intl.NumberFormat(explicit !== undefined && explicit !== null ? String(explicit) : (tag ?? 'en-US'), {
+      return new Intl.NumberFormat(explicit !== undefined && explicit !== null ? String(explicit) : tag, {
         style: 'currency',
         currency: String(currency ?? 'USD'),
       }).format(num)

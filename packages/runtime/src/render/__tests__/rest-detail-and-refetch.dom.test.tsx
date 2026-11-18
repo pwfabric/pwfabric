@@ -206,7 +206,7 @@ describe('a detail endpoint with an empty path parameter stays idle', () => {
     )
     await waitFor(() => expect(screen.queryByTestId('find-500')).not.toBeNull())
     await click('find-500')
-    await waitFor(() => expect(textOf('probe')).toContain('err=The server could not be reached. Check your connection and try again.'))
+    await waitFor(() => expect(textOf('probe')).toContain('err=network'))
     expect(textOf('probe')).toContain('status= nf=false')
   })
 
@@ -246,7 +246,7 @@ describe('a detail endpoint with an empty path parameter stays idle', () => {
     await waitFor(() => expect(textOf('probe')).toContain('first=Example Roadster'))
     fail = true
     await click('r')
-    await waitFor(() => expect(textOf('probe')).toContain('err=The server could not be reached. Check your connection and try again.'))
+    await waitFor(() => expect(textOf('probe')).toContain('err=network'))
     expect(textOf('probe')).toContain('first=Example Roadster')
   })
 
@@ -451,20 +451,20 @@ describe('a rest source that fails binds no fallback — the failure is a state'
     'own',
     'first={{orders[0].title}}|err={{__anyError}}|status={{__status.orders}}|code={{__errorCodes.orders}}|msg={{__errors.orders}}'
   )
-  const MESSAGES: Record<number, string> = {
-    401: 'Sign in to see this.',
-    403: 'You do not have access to this.',
-    404: 'This could not be found.',
-    500: 'The server could not answer. Try again later.',
+  const REASONS: Record<number, string> = {
+    401: 'unauthenticated',
+    403: 'forbidden',
+    404: 'not_found',
+    500: 'server',
   }
 
   for (const status of [401, 403, 404, 500]) {
-    it(`a ${status} binds no rows, the code ${status} and a sentence — never the server's words`, async () => {
+    it(`a ${status} binds no rows, the code ${status} and its reason — never the server's words`, async () => {
       serve(() => ({ status, body: { error: { code: 'FORBIDDEN', message: 'HTTP 500: Internal Server Error' } } }))
       render(<DataBoundSurfaceRenderer surface={surface([ORDERS_OWN], [own])} components={components} interactionMode="live" />)
       await waitFor(() => expect(textOf('own')).toContain('err=true'))
       expect(textOf('own')).toBe(
-        `first=|err=true|status=${status}|code=${status}|msg=${MESSAGES[status]}`
+        `first=|err=true|status=${status}|code=${status}|msg=${REASONS[status]}`
       )
     })
   }
@@ -473,6 +473,6 @@ describe('a rest source that fails binds no fallback — the failure is a state'
     serve(() => 'network-error')
     render(<DataBoundSurfaceRenderer surface={surface([ORDERS_OWN], [own])} components={components} interactionMode="live" />)
     await waitFor(() => expect(textOf('own')).toContain('err=true'))
-    expect(textOf('own')).toBe(`first=|err=true|status=|code=network|msg=The server could not be reached. Check your connection and try again.`)
+    expect(textOf('own')).toBe(`first=|err=true|status=|code=network|msg=network`)
   })
 })

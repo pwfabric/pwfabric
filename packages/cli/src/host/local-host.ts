@@ -240,7 +240,7 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
         const returnTo = safeReturnTo(url.searchParams.get('returnTo'))
         const auth = readAuth(root)
         if (!auth || auth.topology !== 'app' || !providersOf(auth).includes(method)) {
-          redirect(res, withAuthError(returnTo, 'provider_unavailable'))
+          redirect(res, withAuthError(returnTo, 'method_unavailable'))
           return
         }
         // The provider's own leg is played by the callback below: the browser
@@ -251,7 +251,7 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
       }
       const tx = transactions.take(url.searchParams.get('tx') ?? undefined)
       if (!tx || tx.method !== method) {
-        redirect(res, withAuthError('/', 'invalid_transaction'))
+        redirect(res, withAuthError('/', 'invalid_state'))
         return
       }
       const session = startSession()

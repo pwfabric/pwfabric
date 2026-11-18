@@ -36,6 +36,15 @@ against its block's manifest (definition.props[].jsonSchema): an undeclared
 prop (BLOCK_PROP_UNKNOWN), a value outside the prop's enum (BLOCK_PROP_ENUM)
 or of the wrong JSON type (BLOCK_PROP_TYPE) is a warning; {{…}} bindings are
 not checked, except that a {{…}} in a prop the manifest declares
-bindable: false is a warning (BLOCK_PROP_NOT_BINDABLE): it renders as written. Exit code 1 when there is any error, 0 otherwise.`,
+bindable: false is a warning (BLOCK_PROP_NOT_BINDABLE): it renders as written.
+
+The app writes every word. MESSAGES_MISSING lists the runner message ids the
+app can reach (its sign-in screen, account labels, not-found page …) that
+app/plan.json messages does not set: an error when plan.locale is not
+English, a warning otherwise. BLOCK_DEFAULT_COPY (warning): a placed block
+shows its manifest's default for a copy prop the receipt does not set.
+ERROR_BOUND_AS_TEXT (warning): a receipt shows {{__errors.*}} or a
+statusKeys.reason/detail value as text instead of branching on it.
+Exit code 1 when there is any error, 0 otherwise.`,
   run: (args, io) => guard('validate', io, () => runValidate(args, io)),
 }

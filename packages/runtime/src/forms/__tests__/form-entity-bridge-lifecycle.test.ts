@@ -84,10 +84,32 @@ describe('form-entity-bridge status lifecycle (API-bound)', () => {
   })
 })
 
-describe('form-entity-bridge — statusKeys.message is a sentence, statusKeys.detail the writer words', () => {
-  const keys = { ...statusKeys, message: 'saveMessage', detail: 'saveDetail' }
+describe('form-entity-bridge — statusKeys.reason is a code, .fields the refused fields, .detail the writer words', () => {
+  const keys = { ...statusKeys, reason: 'saveReason', fields: 'saveFields', detail: 'saveDetail' }
 
-  it('failure → message a visitor sentence, detail the error the writer returned', async () => {
+  it('failure → reason a code (no sentence), fields the named fields, detail the error the writer returned', async () => {
+    const bus = createSurfaceEventBus()
+    const events: SurfaceEventDescriptor[] = []
+    bus.on('*', (e) => events.push(e))
+    const writer = {
+      write: vi.fn(async () => ({
+        success: false,
+        error: { type: 'validation', message: 'otp: unknown', details: { status: 400, fields: ['otp'], detail: 'otp: unknown' } },
+      })),
+    } as unknown as FormWriter
+    attachFormEntityBridge(bus, writer, { formId: 'add-form', sourceId: 'contact' as never, statusKeys: keys })
+    submit(bus)
+    await flush()
+    const states = setStates(events)
+    expect(states).toContainEqual({ key: 'saveReason', value: 'validation' })
+    expect(states).toContainEqual({ key: 'saveFields', value: ['otp'] })
+    expect(states).toContainEqual({ key: 'saveDetail', value: 'otp: unknown' })
+    // Cleared at the start of the attempt, before the result lands.
+    expect(states[states.findIndex((s) => s.key === 'saveReason')]).toEqual({ key: 'saveReason', value: '' })
+    expect(states[states.findIndex((s) => s.key === 'saveFields')]).toEqual({ key: 'saveFields', value: [] })
+  })
+
+  it('a refusal by status is its reason code', async () => {
     const bus = createSurfaceEventBus()
     const events: SurfaceEventDescriptor[] = []
     bus.on('*', (e) => events.push(e))
@@ -101,14 +123,11 @@ describe('form-entity-bridge — statusKeys.message is a sentence, statusKeys.de
     submit(bus)
     await flush()
     const states = setStates(events)
-    expect(states).toContainEqual({ key: 'saveMessage', value: 'This could not be saved.' })
+    expect(states).toContainEqual({ key: 'saveReason', value: 'error' })
     expect(states).toContainEqual({ key: 'saveDetail', value: '404 NOT_FOUND: Route not found' })
-    // Cleared at the start of the attempt, before the result lands.
-    const first = states.findIndex((s) => s.key === 'saveMessage')
-    expect(states[first]).toEqual({ key: 'saveMessage', value: '' })
   })
 
-  it('success → message cleared, never set', async () => {
+  it('success → reason cleared, never set', async () => {
     const bus = createSurfaceEventBus()
     const events: SurfaceEventDescriptor[] = []
     bus.on('*', (e) => events.push(e))
@@ -119,7 +138,7 @@ describe('form-entity-bridge — statusKeys.message is a sentence, statusKeys.de
     })
     submit(bus)
     await flush()
-    const messages = setStates(events).filter((s) => s.key === 'saveMessage')
-    expect(messages).toEqual([{ key: 'saveMessage', value: '' }])
+    const reasons = setStates(events).filter((s) => s.key === 'saveReason')
+    expect(reasons).toEqual([{ key: 'saveReason', value: '' }])
   })
 })

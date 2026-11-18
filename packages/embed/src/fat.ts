@@ -29,6 +29,7 @@ import type {
   SurfaceDataCache,
   LinkHref,
   SurfaceAddress,
+  AppMessages,
 } from '@pwfabric/runtime'
 import type { DynamicBlockDescriptor } from '@pwfabric/contracts'
 
@@ -84,6 +85,8 @@ export interface RenderFatOptions {
   readonly onDescription?: (description: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
+  /** The app's words (`plan.json` `messages`) the blocks' own words read first. */
+  readonly messages?: AppMessages
   /**
    * The page's address as the host owns it (runtime render/address.ts): where
    * a split shell's selection and the page's `urlState` live, and where a page
@@ -202,6 +205,7 @@ export function fatCoreOptions(opts: RenderFatOptions): RenderCoreOptions {
     ...(opts.onTitle !== undefined ? { onTitle: opts.onTitle } : {}),
     ...(opts.onDescription !== undefined ? { onDescription: opts.onDescription } : {}),
     ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
+    ...(opts.messages !== undefined ? { messages: opts.messages } : {}),
     ...(opts.address !== undefined ? { address: opts.address } : {}),
     ...(opts.theme !== undefined ? { theme: opts.theme } : {}),
     ...(opts.viewport !== undefined ? { viewport: opts.viewport } : {}),

@@ -32,6 +32,14 @@ export interface PwappProject {
    */
   readonly locale?: string
   /**
+   * THE APP'S WORDS, from `app/plan.json` `messages`: message id → string, in
+   * `locale` (envelope §2). Every word the runner draws (`gate.*`, `pill.*`,
+   * `account.*`, `notFound.*`, `session.*`, `bridge.*`, `auth.error.*`) and
+   * every word a block draws itself (`ui.*`) is read here first; an id the
+   * app does not set reads the engine's neutral fallback.
+   */
+  readonly messages?: Readonly<Record<string, string>>
+  /**
    * What the app is, in a sentence, for a visitor's search result or link
    * preview: the document's `<meta name="description">` wherever a page
    * states none of its own (envelope §2).
@@ -139,6 +147,8 @@ export interface AccountProp {
   readonly signInLabel?: string
   readonly signOutLabel?: string
   readonly profileLabel?: string
+  /** `account.greeting` with the visitor's name (`Welcome, Ada`); signed in only. */
+  readonly greetingLabel?: string
 }
 
 /**
@@ -390,12 +400,6 @@ export interface RunAppOptions {
   readonly router?: RouterMode
   /** Mount container selector. Default `'#root'`. */
   readonly mount?: string
-  /**
-   * Content locale of the delivered app (world-preferences.locale) — selects
-   * locale-dependent runtime fallbacks (e.g. the greeting fallback name in
-   * apply-auth). Default `'en'`.
-   */
-  readonly locale?: 'en' | 'tr'
   /**
    * PREVIEW ONLY. Lets the framing page push the page it holds in memory and
    * the project theme into this app, re-rendered without a rebuild (see

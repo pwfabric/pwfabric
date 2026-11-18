@@ -37,6 +37,14 @@ export interface BlockPropDescriptor {
   readonly jsonSchema?: unknown
   /** `false`: the prop takes a literal only (block-manifest, "Prop descriptor"). Absent means bindable. */
   readonly bindable?: boolean
+  /**
+   * `true`: the prop is words a visitor reads (a label, a heading, an
+   * accessible name) — the app's to write, in its language (block-manifest,
+   * "Prop descriptor"; BLOCK_DEFAULT_COPY).
+   */
+  readonly copy?: boolean
+  /** The prop's default as the descriptor states it (`jsonSchema.default` is read too). */
+  readonly default?: unknown
 }
 
 /** A block type as the check resolves it. */

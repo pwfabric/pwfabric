@@ -83,7 +83,7 @@ the same way. The shell the export writes is, in essence:
 ```
 
 and the boot module calls
-`runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', renderer: './assets/embed.4f99b147.js', router: 'hash', locale: 'en' })`.
+`runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', renderer: './assets/embed.4f99b147.js', router: 'hash' })`.
 The renderer loads `async`, so nothing large holds the first paint; an app
 that requires sign-in does not name it at all, and the runner adds it only
 when it draws a page, so a visitor stopped at the gate never downloads it. The runtime files carry a hash of their content in their
@@ -92,7 +92,7 @@ The import map is the only inline script, so the app's Content Security
 Policy can allow it by hash; start-up code of your own goes in a file too.
 
 `runApp()` takes `source`, `blocks`, `engines`, `router` (`'hash'` ·
-`'path'` · `'auto'`), `mount` and `locale`; every one has a default that
+`'path'` · `'auto'`) and `mount`; every one has a default that
 matches the folder above, so `runApp()` with no arguments is equivalent. Clean
 URLs (`router: 'path'`) need the host to serve `index.html` for every path
 and to declare the app's base with `<base href="/">` (the app's sub-path, if

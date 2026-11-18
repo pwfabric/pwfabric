@@ -8,13 +8,15 @@
  * 500 looked like a working catalogue.
  *
  * What a failed source binds instead:
- *  - `__errors.<id>` — a sentence a visitor can read. Never the internal
- *    detail: "No entity facade available" and "HTTP 500: Internal Server
- *    Error" are for the console, not the page.
- *  - `__errorCodes.<id>` — why, as a value a page can branch on: the HTTP
- *    status (`401`, `403`, `404`, `500` …), `"network"` when no answer
- *    arrived, `"error"` for any other failure, and `"unconnected"` when the
- *    source has nothing to serve it at all.
+ *  - `__errors.<id>` — WHY, as a code the page branches on and writes its
+ *    own words for: `unauthenticated` (401), `forbidden` (403), `not_found`
+ *    (404), `server` (5xx), `network` (no answer), `unconnected` (nothing to
+ *    serve it) or `error` (anything else). Always truthy, so `if:` on it
+ *    still tells "failed" from "fetched, empty". The engine writes no
+ *    sentence here: the app owns every word (envelope §2), and a sentence
+ *    in the engine's language was the one thing a page could not override.
+ *  - `__errorCodes.<id>` — the HTTP status itself (`401`, `403`, `404`,
+ *    `500` …), or `"network"`, `"error"`, `"unconnected"` as above.
  *
  * `"unconnected"` is the one case that binds `fallback`: no connection is
  * configured (a pack gallery, a preview, a runner with no records base), so
@@ -42,13 +44,22 @@ export function failureCodeOf(err: unknown, status?: number | null): SourceFailu
   return 'error'
 }
 
-/** The visitor-readable sentence `__errors.<id>` binds for a code. */
-export function sourceFailureMessage(code: SourceFailureCode): string {
-  if (code === 'unconnected') return 'Not connected — showing sample data.'
-  if (code === 'network') return 'The server could not be reached. Check your connection and try again.'
-  if (code === 401) return 'Sign in to see this.'
-  if (code === 403) return 'You do not have access to this.'
-  if (code === 404) return 'This could not be found.'
-  if (typeof code === 'number' && code >= 500) return 'The server could not answer. Try again later.'
-  return 'This could not be loaded.'
+/** What `__errors.<id>` binds: the failure as a code a page branches on. */
+export type SourceFailureReason =
+  | 'unauthenticated'
+  | 'forbidden'
+  | 'not_found'
+  | 'server'
+  | 'network'
+  | 'unconnected'
+  | 'error'
+
+/** The reason `__errors.<id>` binds for a failure code. */
+export function sourceFailureReason(code: SourceFailureCode): SourceFailureReason {
+  if (code === 'unconnected' || code === 'network' || code === 'error') return code
+  if (code === 401) return 'unauthenticated'
+  if (code === 403) return 'forbidden'
+  if (code === 404) return 'not_found'
+  if (code >= 500) return 'server'
+  return 'error'
 }

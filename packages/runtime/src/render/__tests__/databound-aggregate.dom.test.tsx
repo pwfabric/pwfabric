@@ -251,7 +251,7 @@ describe('an aggregate entity source binds the number', () => {
       />
     )
     await waitFor(() =>
-      expect(screen.getByTestId('text-block').textContent).toBe('n:|e:You do not have access to this.')
+      expect(screen.getByTestId('text-block').textContent).toBe('n:|e:forbidden')
     )
   })
 
@@ -269,7 +269,7 @@ describe('an aggregate entity source binds the number', () => {
         entityFacade={{ resolveAggregate, resolveBinding: vi.fn() } as never}
       />
     )
-    await waitFor(() => expect(screen.getByTestId('text-block').textContent).toBe('n:|e:This could not be loaded.'))
+    await waitFor(() => expect(screen.getByTestId('text-block').textContent).toBe('n:|e:error'))
   })
 
   it('the list-wrap exemption is entity-only: a rest source carrying aggregate is still a list', async () => {

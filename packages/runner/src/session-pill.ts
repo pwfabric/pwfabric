@@ -25,7 +25,7 @@ import type { AuthBridge } from './auth.js'
 import { signOut, type AppSession } from './app-session.js'
 import type { PwappAuth } from './types.js'
 import { applyThemeVars, ensureShellStyles } from './shell-theme.js'
-import { copyFor, type RunnerLocale } from './copy.js'
+import { NEUTRAL_MESSAGES, type RunnerMessages } from './messages.js'
 
 const PILL_ID = 'pwapp-session-pill'
 const ERROR_ID = 'pwapp-login-error'
@@ -50,8 +50,8 @@ export interface SessionPillOptions {
   readonly accountSlot?: boolean | undefined
   /** The app's resolved appearance variables (see `shellThemeVars`). */
   readonly themeVars?: Readonly<Record<string, string>> | undefined
-  /** The app's content locale. Default `en`. */
-  readonly locale?: RunnerLocale | undefined
+  /** The app's words (`pill.*`). Default: the neutral fallbacks. */
+  readonly messages?: RunnerMessages | undefined
 }
 
 export interface SessionPill {
@@ -65,13 +65,13 @@ export interface SessionPill {
 export function sessionLabel(
   bridgeUser: { name?: string | undefined; email?: string | undefined } | undefined,
   appSession: AppSession | null,
-  locale?: RunnerLocale
+  say: RunnerMessages = NEUTRAL_MESSAGES
 ): string {
   return (
     appSession?.principal?.email ??
     bridgeUser?.email ??
     bridgeUser?.name ??
-    copyFor(locale).pill.signedIn
+    say('pill.signedIn')
   )
 }
 
@@ -79,7 +79,7 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
   const { bridge } = options
   if (options.accountSlot) return { refresh: () => {}, unmount: () => {} }
   ensureShellStyles()
-  const copy = copyFor(options.locale).pill
+  const say = options.messages ?? NEUTRAL_MESSAGES
 
   let pill = document.getElementById(PILL_ID) as HTMLDivElement | null
   if (!pill) {
@@ -141,11 +141,11 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
       pill.setAttribute('data-session', 'in')
       const who = document.createElement('span')
       who.setAttribute('data-session-label', '')
-      who.textContent = sessionLabel(bridge?.session?.user, app, options.locale)
+      who.textContent = sessionLabel(bridge?.session?.user, app, say)
       const out = document.createElement('button')
       out.type = 'button'
       out.setAttribute('data-session-signout', '')
-      out.textContent = copy.signOut
+      out.textContent = say('pill.signOut')
       out.addEventListener('click', () => void signOutEverywhere())
       pill.append(who, out)
       pill.style.display = 'flex'
@@ -154,7 +154,7 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
       const login = document.createElement('button')
       login.type = 'button'
       login.setAttribute('data-session-signin', '')
-      login.textContent = copy.signIn
+      login.textContent = say('pill.signIn')
       login.addEventListener('click', () => bridge.loginWithPkce())
       pill.append(login)
       pill.style.display = 'flex'

@@ -1,19 +1,19 @@
 /**
  * Who is signed in, put where the app's shell shows it.
  *
- * TWO PATHS, ONE SOURCE OF TRUTH.
+ * An app that declares `navigation.account` gets an `account` prop injected
+ * into every block of the declared placement (`navbar`, `bottom-bar`,
+ * `app-rail`). The block draws sign-in / the visitor / sign-out in the app's
+ * own appearance, with the app's words (`account.*` messages).
  *
- *  - An app that declares `navigation.account` gets an `account` prop injected
- *    into every block of the declared placement (`navbar`, `bottom-bar`,
- *    `app-rail`). The block draws sign-in / the visitor / sign-out in the
- *    app's own appearance. This is the path new apps take.
- *  - An app that declares nothing keeps the legacy behaviour: the navbar's
- *    static greeting placeholder ("Hoş geldin, …" / "Welcome, …") and
- *    `avatarName` are swapped for the real visitor.
+ * The runner rewrites none of the app's own text. A greeting the app writes
+ * in its navbar is the app's, bound to the visitor with `{{me.name}}`; the
+ * runner used to find "Welcome, …" by its English prefix and overwrite it,
+ * which no app in another language could ever opt into or out of.
  *
- * Both read the visitor from EITHER door (`accountUserFrom`), so a visitor who
+ * The visitor is read from EITHER door (`accountUserFrom`), so a visitor who
  * came in through the host door (password, or a host provider door) reaches
- * the navbar just like a PKCE bridge session.
+ * the account control just like a PKCE bridge session.
  *
  * @module @pwfabric/runner/apply-auth
  */
@@ -21,7 +21,7 @@
 import type { AuthSession } from '@pwfabric/runtime/auth'
 import type { AppSession } from './app-session.js'
 import { rewriteHrefs, type ToHref } from './helpers.js'
-import { copyFor, type RunnerLocale } from './copy.js'
+import { NEUTRAL_MESSAGES, type RunnerMessages } from './messages.js'
 import type {
   AccountPlacement,
   AccountProp,
@@ -29,21 +29,12 @@ import type {
   SurfaceBlockNode,
 } from './types.js'
 
-export type ApplyAuthLocale = RunnerLocale
-
-export interface ApplyAuthOptions {
-  /** Content locale of the delivered app. Defaults to 'en'. */
-  locale?: ApplyAuthLocale
-}
-
 /** What the shell may show about a signed-in visitor. Every field optional. */
 export interface AccountUser {
   readonly name?: string
   readonly email?: string
   readonly avatarSrc?: string
 }
-
-const GREETING_PREFIXES = ['Hoş geldin', 'Welcome'] as const
 
 const nonEmpty = (v: unknown): v is string => typeof v === 'string' && v.length > 0
 
@@ -93,10 +84,12 @@ export function buildAccountProp(input: {
   readonly user: AccountUser | null
   readonly entry: string
   readonly toHref: ToHref
-  readonly locale?: ApplyAuthLocale | undefined
+  /** The app's words (`account.*`). Default: the neutral fallbacks. */
+  readonly messages?: RunnerMessages | undefined
 }): AccountProp {
   const { declaration, user, entry, toHref } = input
-  const labels = copyFor(input.locale).account
+  const say = input.messages ?? NEUTRAL_MESSAGES
+  const who = user?.name ?? user?.email
   const profileHref = nonEmpty(declaration.profileHref)
     ? rewriteHrefs({ href: declaration.profileHref }, entry, toHref).href
     : undefined
@@ -114,9 +107,10 @@ export function buildAccountProp(input: {
     ...(user?.avatarSrc ? { avatarSrc: user.avatarSrc } : {}),
     ...(profileHref ? { profileHref } : {}),
     ...(links ? { links } : {}),
-    signInLabel: labels.signIn,
-    signOutLabel: labels.signOut,
-    profileLabel: labels.profile,
+    signInLabel: say('account.signIn'),
+    signOutLabel: say('account.signOut'),
+    profileLabel: say('account.profile'),
+    ...(user && who ? { greetingLabel: say('account.greeting', { name: who }) } : {}),
   }
 }
 
@@ -135,67 +129,16 @@ export function applyAccountToSurface(
   return blocks.map(walk)
 }
 
-// ============================================================
-// THE GREETING FALLBACK (apps with no account slot)
-// ============================================================
-
-function displayName(user: AccountUser, locale: ApplyAuthLocale): string {
-  return user.name ?? user.email ?? copyFor(locale).account.fallbackName
-}
-
 /**
- * Only the greeting rightInfo entry (its value starts with the receipt's own
- * greeting placeholder text) and avatarName are overridden — every other
- * navbar prop (weather/FX rightInfo chips, logoText, links) is left exactly
- * as the receipt authored it.
- */
-function patchNavbarProps(
-  props: Record<string, unknown>,
-  user: AccountUser,
-  locale: ApplyAuthLocale
-): Record<string, unknown> {
-  const name = displayName(user, locale)
-  const rightInfo = Array.isArray(props.rightInfo)
-    ? (props.rightInfo as Array<Record<string, unknown>>).map((item) => {
-        if (typeof item.value !== 'string') return item
-        const prefix = GREETING_PREFIXES.find((p) => (item.value as string).startsWith(p))
-        return prefix ? { ...item, value: `${prefix}, ${name}` } : item
-      })
-    : props.rightInfo
-  return { ...props, rightInfo, avatarName: name }
-}
-
-/** The greeting patch, for a visitor from either door. Non-mutating. */
-export function applyGreeting(
-  blocks: SurfaceBlockNode[],
-  user: AccountUser,
-  locale: ApplyAuthLocale = 'en'
-): SurfaceBlockNode[] {
-  const walk = (block: SurfaceBlockNode): SurfaceBlockNode => {
-    const patched: SurfaceBlockNode =
-      // a navbar without props is patched too — see the same gate in helpers.assembleNav.
-      block.type === 'navbar'
-        ? { ...block, props: patchNavbarProps(block.props ?? {}, user, locale) }
-        : block
-    if (!Array.isArray(patched.children)) return patched
-    return { ...patched, children: patched.children.map(walk) }
-  }
-  return blocks.map(walk)
-}
-
-/**
- * The account control, or the greeting fallback, for one rendered page.
+ * The account control for one rendered page.
  *
  * THE SLOT IS DRAWN ONLY WHERE THERE IS A DOOR. `navigation.account` says where
  * the control goes; it does not say the app signs anyone in. An app with no
  * `auth.json` (a world without the identity pack builds exactly these) used to
  * get the control anyway, and signed out it is a "Sign in" button that opens
  * onto "no provider is configured". With no door the declared slot is left
- * empty — the block draws no account — and the greeting fallback applies as it
- * does for an app that declares no slot at all. `door` is `hasDoor` from the
- * account controller, decided once per boot by the runner.
- *
- * With a door this is exactly the inline branch `runApp` had before.
+ * empty — the block draws no account. `door` is `hasDoor` from the account
+ * controller, decided once per boot by the runner.
  */
 export function applyAccountControl(
   blocks: SurfaceBlockNode[],
@@ -205,7 +148,7 @@ export function applyAccountControl(
     readonly user: AccountUser | null
     readonly entry: string
     readonly toHref: ToHref
-    readonly locale?: ApplyAuthLocale | undefined
+    readonly messages?: RunnerMessages | undefined
   }
 ): SurfaceBlockNode[] {
   const { declaration, user } = input
@@ -215,24 +158,9 @@ export function applyAccountControl(
       user,
       entry: input.entry,
       toHref: input.toHref,
-      locale: input.locale,
+      messages: input.messages,
     })
     return applyAccountToSurface(blocks, account, declaration.placement)
   }
-  // No slot, or a slot with no door behind it: the legacy greeting patch.
-  return user ? applyGreeting(blocks, user, input.locale ?? 'en') : blocks
-}
-
-/**
- * The original bridge-session entry point, kept for hosts that call it.
- * Logged-out render is untouched.
- */
-export function applyAuthToSurface<T extends { blocks: SurfaceBlockNode[] }>(
-  surface: T,
-  session: AuthSession | undefined,
-  options?: ApplyAuthOptions
-): T {
-  if (!session?.user) return surface
-  const user = accountUserFrom({ bridgeSession: session }) ?? {}
-  return { ...surface, blocks: applyGreeting(surface.blocks, user, options?.locale ?? 'en') }
+  return blocks
 }

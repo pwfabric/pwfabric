@@ -248,8 +248,9 @@ shows just the buttons. When `registerUrl` is present the password form
 offers "create an account" and posts to `registerUrl` instead. It removes itself the moment a session appears and
 re-runs the refused route. A returning visitor never sees the wall: the
 bridge callback/restore and `completeProviderSignIn` both run before the gate
-mounts. Every word the gate and the session pill draw follows the app's
-locale (`en` or `tr`, default `en`).
+mounts. Every word the gate and the session pill draw is the app's own:
+`project.json` `messages` (`gate.*`, `pill.*`, `session.*`, `auth.error.*` …),
+else a neutral English fallback.
 
 The gate protects the *view*. A host MAY also refuse
 `pwpack/surfaces/*.receipt.json` without a session that `GET …/session`

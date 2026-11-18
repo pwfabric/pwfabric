@@ -13,7 +13,7 @@
 
 import type { SurfaceEventBus } from '@pwfabric/contracts'
 import type { EntityMutationResult, EntityOperationError } from '../entity/types.js'
-import { writeFailureSentence } from './form-write-target.js'
+import { writeFailureDetail, writeFailureFields, writeFailureReason } from './form-write-target.js'
 
 // Re-export Unsubscribe from contracts for convenience
 export type { Unsubscribe } from '@pwfabric/contracts'
@@ -63,17 +63,23 @@ export interface FormEntityBridgeConfig {
     success?: string
     error?: string
     /**
-     * Where the VISITOR'S sentence goes on failure — "Check the highlighted
-     * fields: email.", "You are not allowed to save this." — never the
-     * server's or the runtime's internal words (writeFailureSentence).
-     * Cleared (`''`) when an attempt starts and on success, so a toast bound
-     * to it never shows yesterday's refusal.
+     * Where WHY goes on failure — a code the page writes its own words for:
+     * `validation`, `unauthenticated`, `forbidden`, `server`, `network` or
+     * `error` (writeFailureReason). The engine writes no sentence. Cleared
+     * (`''`) when an attempt starts and on success, so a toast bound to it
+     * never shows yesterday's refusal.
      */
-    message?: string
+    reason?: string
+    /**
+     * Where the field names a refusal named go (`['email']`) — what a form
+     * highlights. Cleared (`[]`) like `reason`.
+     */
+    fields?: string
     /**
      * Where the writer's OWN WORDS go on failure — the server's status, code
-     * and message (`403 FORBIDDEN: You may not create Order records.`), for
-     * a developer or a details disclosure. Cleared like `message`.
+     * and message (`403 FORBIDDEN: You may not create Order records.`). For
+     * the developer: a page branches on `reason`, it does not show this.
+     * Cleared like `reason`.
      */
     detail?: string
   }
@@ -147,7 +153,8 @@ export function attachFormEntityBridge(
     if (sk?.loading) setState(descriptor.surfaceId, descriptor.blockId, sk.loading, true)
     if (sk?.success) setState(descriptor.surfaceId, descriptor.blockId, sk.success, false)
     if (sk?.error) setState(descriptor.surfaceId, descriptor.blockId, sk.error, false)
-    if (sk?.message) setState(descriptor.surfaceId, descriptor.blockId, sk.message, '')
+    if (sk?.reason) setState(descriptor.surfaceId, descriptor.blockId, sk.reason, '')
+    if (sk?.fields) setState(descriptor.surfaceId, descriptor.blockId, sk.fields, [])
     if (sk?.detail) setState(descriptor.surfaceId, descriptor.blockId, sk.detail, '')
 
     const result = await writer.write(config.sourceId, mapped, config.method ?? 'POST')
@@ -182,13 +189,11 @@ export function attachFormEntityBridge(
       }
     } else {
       config.onError?.(result.error)
-      // Failure is bound to the API result — and so are its words.
+      // Failure is bound to the API result: why, which fields, and the detail.
       if (sk?.error) setState(descriptor.surfaceId, descriptor.blockId, sk.error, true)
-      if (sk?.message) setState(descriptor.surfaceId, descriptor.blockId, sk.message, writeFailureSentence(result.error))
-      if (sk?.detail) {
-        const detail = (result.error.details as { detail?: unknown } | undefined)?.detail
-        setState(descriptor.surfaceId, descriptor.blockId, sk.detail, typeof detail === 'string' ? detail : result.error.message)
-      }
+      if (sk?.reason) setState(descriptor.surfaceId, descriptor.blockId, sk.reason, writeFailureReason(result.error))
+      if (sk?.fields) setState(descriptor.surfaceId, descriptor.blockId, sk.fields, writeFailureFields(result.error))
+      if (sk?.detail) setState(descriptor.surfaceId, descriptor.blockId, sk.detail, writeFailureDetail(result.error))
     }
   })
 }

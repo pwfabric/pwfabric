@@ -42,7 +42,7 @@ export type SourceWriter = (sourceId: string, write: RecordWrite) => Promise<Ent
 
 const refused = (type: 'not_found' | 'connector' | 'validation', detail: string): EntityMutationResult => ({
   success: false,
-  // The visitor's sentence is decided by the caller (writeFailureSentence);
+  // The reason code is decided by the caller (writeFailureReason);
   // the detail is for the author.
   error: { type, message: detail, details: { detail } },
 })

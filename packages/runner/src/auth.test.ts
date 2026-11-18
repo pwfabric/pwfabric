@@ -11,8 +11,15 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createAuthBridge } from './auth.js'
+import { runnerMessages } from './messages.js'
 import { pendingKeyFor, authScopeKey, savePendingPkce } from './pkce.js'
 import type { PwappAuth } from './types.js'
+
+/** An app that writes its bridge words in Turkish (`plan.json` `messages`). */
+const TR = runnerMessages({
+  'bridge.invalidCallback': 'Oturum açma bağlantısı geçersiz ya da süresi geçmiş.',
+  'bridge.exchangeFailed': 'Oturum açılamadı: jeton değişimi başarısız.',
+})
 
 const AUTH: PwappAuth = {
   provider: 'oauth2-pkce',
@@ -85,7 +92,7 @@ describe('createAuthBridge — failure visibility', () => {
     // A ?code=&state= pair with NO matching pending record — the stale or
     // replayed callback. Nothing is stored, so takePendingPkce returns null.
     ;(g.location as Record<string, unknown>).search = '?code=abc&state=does-not-match'
-    const bridge = createAuthBridge(AUTH, { locale: 'tr' })
+    const bridge = createAuthBridge(AUTH, { messages: TR })
     const listener = vi.fn()
     bridge.subscribe(listener)
 
@@ -97,7 +104,7 @@ describe('createAuthBridge — failure visibility', () => {
     expect(console.error).toHaveBeenCalled()
   })
 
-  it('reports a rejected callback in English unless told otherwise', async () => {
+  it('reports a rejected callback with the neutral fallback when the app sets no words', async () => {
     ;(g.location as Record<string, unknown>).search = '?code=abc&state=does-not-match'
     const bridge = createAuthBridge(AUTH)
     await bridge.init()
@@ -115,7 +122,7 @@ describe('createAuthBridge — failure visibility', () => {
     ;(g.location as Record<string, unknown>).search = '?code=abc&state=st-1'
     g.fetch = vi.fn().mockResolvedValue({ ok: false, status: 400, text: async () => 'invalid_grant' })
 
-    const bridge = createAuthBridge(AUTH, { locale: 'tr' })
+    const bridge = createAuthBridge(AUTH, { messages: TR })
     await bridge.init()
 
     expect(bridge.lastError).toMatch(/jeton değişimi/i)

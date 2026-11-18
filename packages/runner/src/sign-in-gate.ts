@@ -20,7 +20,7 @@ import type { AuthBridge } from './auth.js'
 import type { PwappAuth, PwappProject } from './types.js'
 import { signIn, type AppSession } from './app-session.js'
 import { applyThemeVars, ensureShellStyles } from './shell-theme.js'
-import { copyFor, type ProviderLabelKey, type RunnerCopy, type RunnerLocale } from './copy.js'
+import { NEUTRAL_MESSAGES, providerLabel, type RunnerMessages } from './messages.js'
 
 const GATE_ID = 'pwapp-sign-in-gate'
 
@@ -47,8 +47,14 @@ export function isGated(
 export interface SignInGateOptions {
   /** The platform door's addresses, when the export declared one. */
   readonly auth?: PwappAuth | null | undefined
-  /** The app's content locale; every word the gate draws follows it. Default `en`. */
-  readonly locale?: RunnerLocale | undefined
+  /**
+   * The app's words (`gate.*`, `session.*`); every word the gate draws is
+   * read here. A provider a visitor recognises ("Google", not `google`) is
+   * `gate.provider.<method>`; an unknown method is named as itself rather
+   * than hidden — a door we cannot label is still a door. Default: the
+   * neutral fallbacks.
+   */
+  readonly messages?: RunnerMessages | undefined
   /**
    * A message to show the moment the gate mounts — how a failed arrival from a
    * provider becomes visible instead of a wall that simply reappeared.
@@ -75,20 +81,6 @@ export interface SignInGateOptions {
   readonly onDemand?: boolean | undefined
   /** Called when an on-demand gate is dismissed without signing in. */
   readonly onDismiss?: (() => void) | undefined
-}
-
-/**
- * What each button says.
- *
- * A visitor recognises "Google", not `google`. Unknown methods fall back to
- * their own name rather than being hidden — a door we cannot label is still a
- * door, and hiding it would be the silent kind of failure this gate exists to
- * end.
- */
-function providerLabel(copy: RunnerCopy, method: string): string {
-  return Object.prototype.hasOwnProperty.call(copy.gate.providers, method)
-    ? copy.gate.providers[method as ProviderLabelKey]
-    : method
 }
 
 /**
@@ -126,7 +118,7 @@ export function mountSignInGate(
   const registerUrl = options.auth?.registerUrl
   const usesPassword = Boolean(loginUrl) && project.identity?.topology !== 'external'
   const onDemand = options.onDemand === true
-  const copy = copyFor(options.locale)
+  const say = options.messages ?? NEUTRAL_MESSAGES
   const providers = byProviderOrder(options.auth?.providers ?? [])
   const offersProviders = providers.length > 0 && Boolean(options.onProviderSignIn)
   const ids = `pwapp-gate-${++gateSeq}`
@@ -189,12 +181,12 @@ export function mountSignInGate(
     const title = document.createElement('h1')
     title.id = `${ids}-title`
     title.className = 'pwapp-gate-title'
-    title.textContent = project.title ?? copy.gate.title
+    title.textContent = project.title ?? say('gate.title')
 
     const body = document.createElement('p')
     body.id = `${ids}-body`
     body.className = 'pwapp-gate-body'
-    body.textContent = copy.gate.body
+    body.textContent = say('gate.body')
 
     const error = document.createElement('p')
     error.setAttribute('data-gate-error', '')
@@ -227,13 +219,13 @@ export function mountSignInGate(
         return input
       }
       const registering = mode === 'register' && Boolean(registerUrl)
-      const displayName = registering ? field('text', 'displayName', copy.gate.name, 'name') : null
+      const displayName = registering ? field('text', 'displayName', say('gate.name'), 'name') : null
       if (displayName) displayName.required = false
-      const email = field('email', 'email', copy.gate.email, 'username')
+      const email = field('email', 'email', say('gate.email'), 'username')
       const password = field(
         'password',
         'password',
-        copy.gate.password,
+        say('gate.password'),
         registering ? 'new-password' : 'current-password'
       )
 
@@ -241,7 +233,7 @@ export function mountSignInGate(
       submit.type = 'submit'
       submit.className = 'pwapp-gate-primary'
       submit.setAttribute('data-gate-submit', '')
-      submit.textContent = registering ? copy.gate.register : copy.gate.signIn
+      submit.textContent = registering ? say('gate.register') : say('gate.signIn')
 
       form.addEventListener('submit', (event) => {
         event.preventDefault()
@@ -257,7 +249,7 @@ export function mountSignInGate(
             password: password.value,
             ...(registering && name ? { displayName: name } : {}),
           },
-          options.locale
+          say
         ).then((result) => {
           busy = false
           if (!result.ok) {
@@ -285,7 +277,7 @@ export function mountSignInGate(
         toggle.type = 'button'
         toggle.className = 'pwapp-gate-link'
         toggle.setAttribute('data-gate-toggle', '')
-        toggle.textContent = registering ? copy.gate.toSignIn : copy.gate.toRegister
+        toggle.textContent = registering ? say('gate.toSignIn') : say('gate.toRegister')
         toggle.addEventListener('click', () => {
           mode = registering ? 'login' : 'register'
           message = null
@@ -307,14 +299,14 @@ export function mountSignInGate(
       button.type = 'button'
       button.className = 'pwapp-gate-primary'
       button.setAttribute('data-gate-submit', '')
-      button.textContent = copy.gate.signIn
+      button.textContent = say('gate.signIn')
       // No bridge and no password door means the export declared sign-in but
       // shipped no way in — a broken export, not an anonymous app. The gate
       // stays and says so, rather than letting the visitor through on a
       // technicality.
       if (bridge) button.addEventListener('click', () => bridge.loginWithPkce())
       else button.disabled = true
-      error.textContent = bridge ? (bridge.lastError ?? '') : copy.gate.noProvider
+      error.textContent = bridge ? (bridge.lastError ?? '') : say('gate.noProvider')
       panel.append(title, body, button, error)
     }
     // A failed arrival is shown from the first frame, whichever door is drawn.
@@ -332,7 +324,7 @@ export function mountSignInGate(
       if (usesPassword || bridge) {
         const or = document.createElement('div')
         or.className = 'pwapp-gate-or'
-        or.textContent = copy.gate.or
+        or.textContent = say('gate.or')
         panel.append(or)
       }
 
@@ -341,7 +333,7 @@ export function mountSignInGate(
         b.type = 'button'
         b.className = 'pwapp-gate-secondary'
         b.setAttribute('data-gate-provider', provider.method)
-        b.textContent = providerLabel(copy, provider.method)
+        b.textContent = providerLabel(say, provider.method)
         b.addEventListener('click', () => options.onProviderSignIn?.(provider.method))
         panel.append(b)
       }
@@ -354,7 +346,7 @@ export function mountSignInGate(
       close.type = 'button'
       close.className = 'pwapp-gate-close'
       close.setAttribute('data-gate-close', '')
-      close.setAttribute('aria-label', copy.gate.close)
+      close.setAttribute('aria-label', say('gate.close'))
       close.textContent = '×'
       close.addEventListener('click', dismiss)
       panel.append(close)

@@ -56,10 +56,8 @@ export { sessionDataCache } from './data-cache.js'
 export type { DataCache } from './data-cache.js'
 export type { AuthBridge } from './auth.js'
 export {
-  applyAuthToSurface,
   applyAccountControl,
   applyAccountToSurface,
-  applyGreeting,
   accountUserFrom,
   buildAccountProp,
 } from './apply-auth.js'
@@ -131,5 +129,14 @@ export {
 } from './app-session.js'
 export { bootSession } from './boot-session.js'
 export type { BootSessionInput, BootSessionResult } from './boot-session.js'
-export { RUNNER_COPY, AUTH_ERROR_CODES, copyFor, authErrorMessage } from './copy.js'
-export type { RunnerLocale, RunnerCopy, AuthErrorCode, ProviderLabelKey } from './copy.js'
+export {
+  RUNNER_MESSAGES,
+  RUNNER_MESSAGE_IDS,
+  NEUTRAL_MESSAGES,
+  AUTH_ERROR_CODES,
+  PROVIDER_LABEL_METHODS,
+  runnerMessages,
+  authErrorMessage,
+  providerLabel,
+} from './messages.js'
+export type { RunnerMessageId, RunnerMessages, AuthErrorCode } from './messages.js'
