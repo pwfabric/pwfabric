@@ -1,5 +1,24 @@
 import { defineConfig } from 'tsup'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+import type { Plugin } from 'esbuild'
 import { visitorBundlePlugins } from './visitor-bundle'
+
+/**
+ * `react-dom/server` as its string renderer alone. The package entry also
+ * carries the streaming renderer, which needs a `MessageChannel` when it
+ * loads (and keeps a Node process alive with it); the static first paint
+ * only ever calls `renderToString`.
+ */
+const reactDomServerString: Plugin = {
+  name: 'pwfabric-react-dom-server-string',
+  setup(build) {
+    const root = dirname(createRequire(import.meta.url).resolve('react-dom/package.json'))
+    build.onResolve({ filter: /^react-dom\/server$/ }, () => ({
+      path: join(root, 'cjs', 'react-dom-server-legacy.browser.production.js'),
+    }))
+  },
+}
 
 /**
  * Two build outputs:
@@ -15,6 +34,35 @@ import { visitorBundlePlugins } from './visitor-bundle'
  *    the surface-export "embed" snippet ultimately points at.
  */
 export default defineConfig([
+  // ── the static first paint (dist/static.js) ───────────────────────
+  // The renderer of embed.js plus react-dom/server, as one script the build
+  // evaluates in an isolated context to write each page's first frame
+  // (see src/static-render.ts). Built from the same sources, in the same
+  // build, as embed.js: its HTML is what embed.js hydrates.
+  {
+    entry: { static: 'src/static-render.ts' },
+    format: ['iife'],
+    globalName: 'PWFabricStatic',
+    platform: 'browser',
+    target: 'es2022',
+    dts: false,
+    sourcemap: false,
+    clean: false,
+    minify: true,
+    splitting: false,
+    treeshake: true,
+    outExtension() {
+      return { js: '.js' }
+    },
+    noExternal: [/.*/],
+    esbuildPlugins: [reactDomServerString, ...visitorBundlePlugins],
+    define: {
+      'process.env.NODE_ENV': '"production"',
+    },
+    esbuildOptions(options) {
+      options.jsx = 'automatic'
+    },
+  },
   // ── ESM library build (externalised React + runtime) ──────────────
   {
     entry: { index: 'src/index.ts' },

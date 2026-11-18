@@ -35,3 +35,4 @@ export {
 } from './companions.js'
 export { buildWrapperSource, isValidEngineName, isValidSourceBase, type WrapperContext } from './wrappers.js'
 export { COMPILER_VERSION, ESBUILD_VERSION } from './version.js'
+export { toCommonJs } from './common-js.js'

@@ -13,7 +13,24 @@ export { ownApiBaseOf, isOwnApiRef } from './api-base.js'
 export { ownRecordsSource, ownRecordsCapabilities, ownRecordsReceipt } from './own-records.js'
 
 // Pure envelope helpers
-export { pageKeyOf, rewriteHrefs, assembleNav, assembleFooter, FOOTER_BAND_ID, receiptFilesOf, composeTitle, fetchJson, doorHeaders, withVersion } from './helpers.js'
+export { pageKeyOf, rewriteHrefs, assembleNav, assembleFooter, FOOTER_BAND_ID, receiptFilesOf, composeTitle, fetchJson, doorHeaders, withVersion, addressStateKeys } from './helpers.js'
+
+// The first frame of a page, as the runner hydrates it and the build paints it
+export {
+  STATIC_VIEWPORT,
+  STATIC_VIEWPORT_MAX_WIDTH,
+  STATIC_PAGE_ATTR,
+  FIRST_FRAME_USER,
+  pageBlocksOf,
+  pageSurfaceOf,
+  declaresBridge,
+  doorOf,
+  firstFrameAuthState,
+  firstFrameOptions,
+  firstFrameLocale,
+} from './first-frame.js'
+export type { PageContext, PageSurface } from './first-frame.js'
+export { projectAppearanceRef } from './run-app.js'
 export type { ToHref } from './helpers.js'
 
 // Router

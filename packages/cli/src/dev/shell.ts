@@ -37,6 +37,12 @@ export interface RuntimeAssets {
   readonly runnerJs: string
   /** `assets/embed.<hash>.js` — the classic script that defines `window.PWFabric`. */
   readonly embedJs: string
+  /**
+   * `@pwfabric/embed/static.js`, the same renderer with React's string
+   * renderer, which writes each page's first frame at build (static-paint.ts).
+   * It never ships. Without it no page is painted at build.
+   */
+  readonly staticJs?: string
 }
 
 let cachedAssets: Promise<RuntimeAssets> | null = null
@@ -46,9 +52,14 @@ export function loadRuntimeAssets(): Promise<RuntimeAssets> {
   cachedAssets ??= (async () => {
     const runnerPath = require.resolve('@pwfabric/runner')
     const embedPath = require.resolve('@pwfabric/embed/embed.js')
-    const [runnerJs, embedJs] = await Promise.all([readFile(runnerPath, 'utf8'), readFile(embedPath, 'utf8')])
+    const staticPath = require.resolve('@pwfabric/embed/static.js')
+    const [runnerJs, embedJs, staticJs] = await Promise.all([
+      readFile(runnerPath, 'utf8'),
+      readFile(embedPath, 'utf8'),
+      readFile(staticPath, 'utf8'),
+    ])
     // The bundle names its map in a trailing comment; the map does not ship.
-    return { runnerJs: runnerJs.replace(/\n?\/\/# sourceMappingURL=\S+\s*$/, '\n'), embedJs }
+    return { runnerJs: runnerJs.replace(/\n?\/\/# sourceMappingURL=\S+\s*$/, '\n'), embedJs, staticJs }
   })()
   cachedAssets.catch(() => {
     cachedAssets = null
@@ -237,7 +248,59 @@ export interface ShellOptions {
   readonly themeCss?: string
   /** What the ENTRY page needs, fetched with the document (see {@link PageHints}). */
   readonly entryHints?: PageHints
+  /**
+   * The static first paint (pwapp-format §2.5): the entry page's first frame,
+   * written into `#root`, and what {@link FIRST_PAINT_SCRIPT} reads to keep,
+   * swap or drop it before the browser paints. Absent: `#root` is empty.
+   */
+  readonly firstPaint?: { readonly rootHtml: string; readonly data: Record<string, unknown> }
 }
+
+/**
+ * The shell's one inline script besides the import map, run where it stands
+ * — right after `#root`, before the first paint. It keeps the build's first
+ * frame only where it is this visit's first frame:
+ * - the address names the entry page: kept as written;
+ * - another page (or one the app does not have, when it ships a not-found
+ *   page): the entry's frame is dropped and that page's is fetched
+ *   (`pwpack/surfaces/<key>.html`) and put in place when it arrives — unless
+ *   the runner has drawn into the root by then;
+ * - a window wider than the painted breakpoint, or an address whose query
+ *   seeds the page's state: dropped; the runner draws the page.
+ * Constant text, so the Content Security Policy allows it by one hash.
+ */
+export const FIRST_PAINT_SCRIPT = String.raw`(function () {
+  var root = document.getElementById('root')
+  var data = document.getElementById('pw-first-paint')
+  if (!root || !data) return
+  var drop = function () { root.textContent = '' }
+  try {
+    var d = JSON.parse(data.textContent || '{}')
+    var own = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k) }
+    var m = /^#\/([^#?]*)(?:\?([^#]*))?/.exec(location.hash)
+    var key = m ? m[1].replace(/\/+$/, '') : ''
+    if (key === '') key = d.entry
+    if (d.routes.indexOf(key) < 0 && d.notFound) key = d.notFound
+    var page = own(d.pages, key) ? d.pages[key] : null
+    if (!page || window.innerWidth > d.maxWidth) return drop()
+    if (m && m[2]) {
+      var query = new URLSearchParams(m[2])
+      for (var i = 0; i < page.keys.length; i++) if (query.has(page.keys[i])) return drop()
+    }
+    if (!page.file) return
+    drop()
+    fetch('./' + page.file).then(function (r) { return r.ok ? r.text() : '' }).then(function (html) {
+      if (!html || root.firstChild) return
+      var el = document.createElement('div')
+      el.id = 'pw-root'
+      el.setAttribute('data-pw-static', key)
+      el.innerHTML = html
+      root.appendChild(el)
+    }).catch(function () {})
+  } catch (e) {
+    drop()
+  }
+})()`
 
 /**
  * What a page needs before it can draw, so the shell (or boot.js) can ask for
@@ -452,6 +515,11 @@ export function buildShellHtml(options: ShellOptions): string {
     <link rel="preload" as="fetch" href="./${escapeHtml(f)}" crossorigin />`)
     .join('')
   const lang = htmlLangOf(options.lang)
+  const firstPaint = options.firstPaint
+    ? `
+    <script type="application/json" id="pw-first-paint">${scriptJson(options.firstPaint.data)}</script>
+    <script>${FIRST_PAINT_SCRIPT}</script>`
+    : ''
   return `<!doctype html>
 <html${lang ? ` lang="${escapeHtml(lang)}"` : ''}>
   <head>
@@ -464,7 +532,7 @@ export function buildShellHtml(options: ShellOptions): string {
     <link rel="modulepreload" href="./${escapeHtml(assets.runner)}" />${renderer}${shims}${boot}${hintLinks(options.entryHints)}
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">${options.firstPaint?.rootHtml ?? ''}</div>${firstPaint}
     <script type="module" src="./${escapeHtml(assets.boot)}"></script>${options.bodyExtra ?? ''}
   </body>
 </html>

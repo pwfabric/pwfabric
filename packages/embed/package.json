@@ -22,7 +22,8 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./embed.js": "./dist/embed.js"
+    "./embed.js": "./dist/embed.js",
+    "./static.js": "./dist/static.js"
   },
   "files": [
     "dist",

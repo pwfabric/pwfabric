@@ -524,6 +524,24 @@ export function unseedableStateKeys(receipt: SurfaceReceipt): Set<string> {
 }
 
 /**
+ * The query keys that seed this page's state (see {@link queryStateSeed}):
+ * every key the page reads or declares in `urlState`, minus reserved,
+ * `__`-prefixed, prototype and unseedable keys. An address that carries none
+ * of them seeds nothing — which is also when the build's first frame of the
+ * page is this visit's (pwapp-format §2.5).
+ */
+export function addressStateKeys(receipt: SurfaceReceipt): string[] {
+  const blocked = unseedableStateKeys(receipt)
+  const out: string[] = []
+  for (const key of new Set([...stateKeysRead(receipt), ...urlStateKeys(receipt)])) {
+    if (RESERVED_QUERY_KEYS.has(key) || blocked.has(key)) continue
+    if (key.startsWith('__') || key === 'constructor' || key === 'prototype') continue
+    out.push(key)
+  }
+  return out
+}
+
+/**
  * What the address seeds on this page: `{ key: rawString }` for every key the
  * page READS or declares as living in its address (`urlState`, an allow-list
  * either way), minus reserved, `__`-prefixed, prototype and
@@ -532,11 +550,8 @@ export function unseedableStateKeys(receipt: SurfaceReceipt): Set<string> {
  * `''`. An unread parameter (`utm_source`) seeds nothing.
  */
 export function queryStateSeed(receipt: SurfaceReceipt, params: URLSearchParams): Record<string, string> {
-  const blocked = unseedableStateKeys(receipt)
   const seed: Record<string, string> = {}
-  for (const key of new Set([...stateKeysRead(receipt), ...urlStateKeys(receipt)])) {
-    if (RESERVED_QUERY_KEYS.has(key) || blocked.has(key)) continue
-    if (key.startsWith('__') || key === 'constructor' || key === 'prototype') continue
+  for (const key of addressStateKeys(receipt)) {
     const raw = params.get(key)
     if (raw === null) continue
     const value = raw.slice(0, MAX_SEED_LENGTH)

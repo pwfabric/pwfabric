@@ -27,10 +27,21 @@ import type {
 import type { RunAppOptions, SurfaceReceipt } from './types.js'
 import { loadRenderer, warmBlockModules } from './renderer.js'
 import { applyDescription } from './description.js'
-import { assembleFooter, assembleNav, composeTitle, doorHeaders, fetchJson, linkHrefFor, queryStateSeed, receiptFilesOf, rewriteHrefs, seedStateFromQuery, withVersion } from './helpers.js'
+import { composeTitle, doorHeaders, fetchJson, queryStateSeed, receiptFilesOf, rewriteHrefs, seedStateFromQuery, withVersion } from './helpers.js'
+import {
+  FIRST_FRAME_USER,
+  STATIC_PAGE_ATTR,
+  STATIC_VIEWPORT,
+  STATIC_VIEWPORT_MAX_WIDTH,
+  firstFrameAuthState,
+  firstFrameLocale,
+  firstFrameOptions,
+  pageBlocksOf,
+  pageSurfaceOf,
+} from './first-frame.js'
 import { createRouter, resolveRouterMode, type RouteChange } from './router.js'
 import { createAuthBridge, type AuthBridge } from './auth.js'
-import { accountUserFrom, applyAccountControl } from './apply-auth.js'
+import { accountUserFrom } from './apply-auth.js'
 import { createAccountController, hasDoor, type SignInMode } from './account-controller.js'
 import { authErrorCode, authMethodsOf, authStateOf } from './auth-state.js'
 import { applyShellDarkMode, shellDarkThemeVars, shellModePolicy, shellThemeVars } from './shell-theme.js'
@@ -488,22 +499,35 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
    * One pipeline for a fetched receipt and for a surface the preview bridge pushed.
    */
   function pageBlocks(raw: SurfaceReceipt['blocks'], pageKey: string): SurfaceReceipt['blocks'] {
-    let blocks = rewriteHrefs(raw, entry, router.toHref)
-    blocks = assembleNav(blocks, navigation, entry, router.toHref)
-    blocks = assembleFooter(blocks, navigation, pageKey, entry, router.toHref)
-    // EITHER DOOR — not the bridge session only, so a visitor who came in
-    // through the host's password door reaches the navbar too.
-    const user = accountUserFrom({ appSession, bridgeSession: bridge?.session })
-    // The declared slot is drawn only when the app has a door (`hasDoor`); an
-    // app without one gets the greeting fallback, never a dead "Sign in".
-    return applyAccountControl(blocks, {
-      declaration: navigation?.account,
-      door,
-      user,
-      entry,
-      toHref: router.toHref,
-      messages: say,
-    })
+    return pageBlocksOf(raw, pageKey, pageContext())
+  }
+
+  /**
+   * What a page is assembled from beside its receipt (first-frame.ts). EITHER
+   * DOOR — not the bridge session only, so a visitor who came in through the
+   * host's password door reaches the navbar too.
+   */
+  function pageContext(user = accountUserFrom({ appSession, bridgeSession: bridge?.session })): Parameters<typeof pageBlocksOf>[2] {
+    return { entry, toHref: router.toHref, navigation, door, user, messages: say }
+  }
+
+  /**
+   * THE BUILD'S FIRST FRAME OF THIS PAGE, when the shell holds one
+   * (pwapp-format §2.5): `#pw-root` naming the page. Taken once — by the
+   * first page drawn — and only when the window is at the breakpoint it was
+   * drawn at and the address seeds nothing (the shell's first-paint script
+   * left the root empty otherwise; checked again here, by the page's own rule).
+   */
+  let staticTaken = false
+  function staticRootFor(key: string, receipt: SurfaceReceipt, params: URLSearchParams): HTMLElement | null {
+    if (staticTaken) return null
+    staticTaken = true
+    const root = container.firstElementChild
+    if (!(root instanceof HTMLElement) || root.id !== 'pw-root' || root.getAttribute(STATIC_PAGE_ATTR) !== key) return null
+    if (container.childElementCount !== 1) return null
+    if (Object.keys(queryStateSeed(receipt, params)).length > 0) return null
+    if (window.innerWidth > STATIC_VIEWPORT_MAX_WIDTH) return null
+    return root
   }
 
   /** The receipt a page was fetched from, for the not-found page and every route. */
@@ -677,12 +701,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     const fabric = await loadRenderer(rendererUrl)
     await engineConnections()
     if (seq !== routeSeq) return
-    // A capability's config carries links too (a form's successRedirect, a
-    // behavior's navigate url): rewritten like the blocks' hrefs.
-    const seededCapabilities = rewriteHrefs(seedStateFromQuery(receipt, params).capabilities, entry, router.toHref)
     const address = pageAddress(seq, key, receipt, notFoundPage)
-
-    const blocks = pageBlocks(receipt.blocks, key)
     const session = bridge?.session
 
     // A PER-RECORD TITLE (`{{dish.0.name}}`) is known only once its record
@@ -735,44 +754,35 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // still on screen. Drawn before they are in, a page arrived in one wave
     // per nesting level and shifted under the visitor at each (embed
     // load-blocks.ts); drawn after, it is one commit.
-    await fabric.loadBlocks(blocks, blockManifest)
+    // The page as this visitor sees it (first-frame.ts): its blocks, the
+    // address's seed, the links in its capabilities' config. capabilities
+    // MUST travel: DataBound derives its dataSources from them.
+    const surface = pageSurfaceOf(receipt, key, params, pageContext())
+    await fabric.loadBlocks(surface.blocks, blockManifest)
     if (seq !== routeSeq) return
 
-    container.replaceChildren()
-    const mount = document.createElement('div')
-    mount.id = 'pw-root'
-    container.appendChild(mount)
-    // capabilities MUST travel: DataBound derives its dataSources from
-    // surface.capabilities — omitting them leaves every `{{source}}`
-    // expression unresolved and data blocks stuck in their error state.
-    const surface = {
-      blocks,
-      appearance: receipt.appearance,
-      capabilities: seededCapabilities ?? [],
-      ...(titleTemplate !== undefined ? { title: titleTemplate } : {}),
-      ...(descriptionTemplate !== undefined ? { description: descriptionTemplate } : {}),
+    // The build's first frame of this page, when the shell holds it: hydrated,
+    // not drawn again.
+    const staticRoot = staticRootFor(key, receipt, params)
+    if (!staticRoot) {
+      container.replaceChildren()
+      const mount = document.createElement('div')
+      mount.id = 'pw-root'
+      container.appendChild(mount)
     }
     const renderOptions: Record<string, unknown> = {
       mode: 'fat',
       blocks: blockManifest,
-      appearance: appearanceRef ?? receipt.appearance ?? {},
-      // PAINT FIRST, FILL IN AFTER. The gate held every page behind
-      // "Loading data..." for the whole round trip to the records API —
-      // seconds on every page change. The chrome, headings
-      // and static cards are in the receipt already; only the lists wait.
-      loadingStrategy: 'immediate',
+      // The appearance, the loading strategy (paint first, fill in after),
+      // the link writer, the app's locale and words: the options the first
+      // frame is drawn with, the same in the build (first-frame.ts).
+      ...firstFrameOptions({ project, appearanceRef, receipt, entry, toHref: router.toHref }),
       // And a page the visitor has already seen shows yesterday's rows
       // while today's load, so going back and forth costs nothing visible.
       dataCache,
-      // A link whose page is an expression is written for the router once its
-      // value is known (rewriteHrefs left it as written).
-      linkHref: linkHrefFor(entry, router.toHref),
       // A `navigate` action is followed as a link to its address would be
       // (router.follow): `location.assign('#rsvp')` replaced the hash route.
       onNavigateAction: (url: string) => router.follow(url),
-      ...(typeof project.locale === 'string' && project.locale ? { locale: project.locale } : {}),
-      // ...and its words, for the words a block draws itself (`ui.*`).
-      ...(project.messages ? { messages: project.messages } : {}),
       onTitle: (resolved: string | undefined) => {
         if (seq !== routeSeq) return
         const next = composeTitle(project.title, resolved)
@@ -840,7 +850,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // DataBoundSurfaceRenderer, which exposes it via SurfaceConnectionsContext.
       ...(connectionsValue ? { connections: connectionsValue } : {}),
     }
-    const rendered = fabric.render('#pw-root', { surface }, renderOptions)
+    const rendered = staticRoot
+      ? hydrateFirstFrame(staticRoot, receipt, key, surface, renderOptions)
+      : fabric.render('#pw-root', { surface }, renderOptions)
     current = { seq, surface, options: renderOptions, handle: rendered }
     if (preview && !notFoundPage) {
       // Kept, not discarded: the bridge re-renders through this handle.
@@ -861,6 +873,46 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // when it names one. An unconditional scrollTo(0,0) here is what undid an
     // in-page link even once the router resolved it.
     router.applyScroll()
+  }
+
+  /**
+   * HYDRATES the build's first frame of the page, then brings it to this
+   * visit. The hydrating render gets exactly the build's inputs — nobody
+   * signed in, nothing read from the address, no cached rows, the phone
+   * breakpoint, the first frame's locale — so React adopts the HTML node for
+   * node; the visit's own (the signed-in visitor, the data cache, the
+   * visitor's formats) arrive right after, as an update of the same tree,
+   * the way a sign-in would.
+   */
+  function hydrateFirstFrame(
+    root: HTMLElement,
+    receipt: SurfaceReceipt,
+    key: string,
+    surface: ReturnType<typeof pageSurfaceOf>,
+    options: Record<string, unknown>
+  ): Promise<unknown> {
+    const fabric = window.PWFabric as NonNullable<Window['PWFabric']>
+    const first = pageSurfaceOf(receipt, key, new URLSearchParams(), pageContext(FIRST_FRAME_USER))
+    const identity = authHost()
+    const { dataCache: _cache, ...rest } = options
+    const handle: Promise<unknown> = Promise.resolve(
+      fabric.render(root, { surface: first }, {
+        ...rest,
+        identity: { ...identity, state: firstFrameAuthState(identity.state.methods, auth) },
+        viewport: STATIC_VIEWPORT,
+        locale: firstFrameLocale(project),
+        hydrate: true,
+        // After the hydrating commit (an update before it would make React
+        // drop the HTML and draw the page again).
+        onHydrated: () => {
+          void handle.then((h) => {
+            const update = (h as { update?: (o: Record<string, unknown>) => void } | null)?.update
+            if (current?.handle === handle && typeof update === 'function') update({ ...options, surface })
+          })
+        },
+      })
+    )
+    return handle
   }
 
   if (opts.previewBridge) {
