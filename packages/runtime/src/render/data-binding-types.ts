@@ -168,6 +168,15 @@ export interface SurfaceAuthState {
    * `expired`, … lower-case). Null when there is nothing to report.
    */
   readonly error: string | null
+  /**
+   * The host does not know yet who the visitor is (its session probe has not
+   * answered): the build's first frame, and the render that adopts it. A
+   * source only a session can be answered for (`requiresSession`) is then
+   * neither asked nor settled as unauthenticated — it stays loading until the
+   * host says, so a signed-in visitor never sees the signed-out state first
+   * (data-protocol §2.6). `signedIn` reads false meanwhile.
+   */
+  readonly pending?: boolean
 }
 
 /** The signed-in visitor. Fields a door did not supply are absent; `roles` is always a list. */

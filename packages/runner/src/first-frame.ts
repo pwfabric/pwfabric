@@ -16,8 +16,9 @@
  * - nothing read from the address (the page's `initialState` as written);
  * - every fetched source loading, a static source's rows in place, and a
  *   source the runtime settles without a request settled: idle (an empty
- *   record key), or refused as `unauthenticated` (`requiresSession`) —
- *   the runtime's first render decides both (data-protocol §1.1, §2.6);
+ *   record key) — the runtime's first render decides it (data-protocol
+ *   §1.1). A `requiresSession` source is loading too: who is signed in is
+ *   not known to the build (`pending`, {@link firstFrameAuthState}, §2.6);
  * - the phone layout, `xs` ({@link STATIC_VIEWPORT}): mobile first;
  * - the app's locale, `en` when it names none ({@link firstFrameLocale}).
  *
@@ -148,9 +149,18 @@ export function firstFrameDoorOf(project: PwappProject): FirstFrameDoor {
   return { door: methods.length > 0, methods: [...new Set(methods)], registration }
 }
 
-/** `__auth` in the first frame: nobody signed in, nothing to report, the declared ways in. */
+/**
+ * `__auth` in the first frame: nobody signed in, nothing to report, the
+ * declared ways in — and, for an app with a way in, `pending`: the build
+ * cannot know who the visitor is, so a source only a session can answer
+ * (`requiresSession`) is drawn loading, not "sign in" (E-6). A signed-in
+ * visitor saw the signed-out state first and then their own data; now the
+ * frame waits, and the session the runner knows settles it right after
+ * hydration — refused without a request signed out, asked signed in.
+ */
 export function firstFrameAuthState(door: FirstFrameDoor): ReturnType<typeof authStateOf> {
-  return authStateOf({ appSession: null, bridgeSession: null, methods: door.methods, registration: door.registration, error: null })
+  const state = authStateOf({ appSession: null, bridgeSession: null, methods: door.methods, registration: door.registration, error: null })
+  return door.door ? { ...state, pending: true } : state
 }
 
 /**

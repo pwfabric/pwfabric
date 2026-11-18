@@ -466,8 +466,26 @@ function definitionJson(source: SurfaceDataSourceDefinition): string {
  * request key changes). `signedIn` undefined: the host says nothing about who
  * is signed in (an editor, a pack gallery), and the source is asked as written.
  */
-function isRefusedWithoutSession(source: SurfaceDataSourceDefinition, signedIn: boolean | undefined): boolean {
+function isRefusedWithoutSession(source: SurfaceDataSourceDefinition, signedIn: SessionKnown): boolean {
   return signedIn === false && source.requiresSession === true && (source.kind === 'rest' || source.kind === 'entity')
+}
+
+/**
+ * Who the host says is signed in: `true`, `false`, `'pending'` while its
+ * session probe has not answered (`SurfaceAuthState.pending`), or `undefined`
+ * when it says nothing.
+ */
+type SessionKnown = boolean | 'pending' | undefined
+
+/**
+ * A SOURCE ONLY A SESSION CAN BE ANSWERED FOR, WHILE THE HOST DOES NOT KNOW
+ * YET WHO IS SIGNED IN (E-6). Asked, it would be refused before the session
+ * is known; settled as unauthenticated, a signed-in visitor would read "sign
+ * in" before their own data. It stays loading — no request, no refusal —
+ * and its request key changes once the host knows.
+ */
+function awaitsSession(source: SurfaceDataSourceDefinition, signedIn: SessionKnown): boolean {
+  return signedIn === 'pending' && source.requiresSession === true && (source.kind === 'rest' || source.kind === 'entity')
 }
 
 /**
@@ -483,7 +501,7 @@ function settledWithoutRequest(
   state: Readonly<Record<string, unknown>>,
   key: string,
   me: unknown,
-  signedIn: boolean | undefined
+  signedIn: SessionKnown
 ): SourceData | undefined {
   if (isIdleSource(source, state, me)) {
     return { data: null, loading: false, error: null, status: null, meta: null, idle: true, key }
@@ -535,11 +553,12 @@ function requestKeyOf(
   source: SurfaceDataSourceDefinition,
   state: Readonly<Record<string, unknown>>,
   me?: unknown,
-  signedIn?: boolean
+  signedIn?: SessionKnown
 ): string {
   const def = definitionJson(source)
   if (isIdleSource(source, state, me)) return `${def}|idle`
   if (isRefusedWithoutSession(source, signedIn)) return `${def}|unauthenticated`
+  if (awaitsSession(source, signedIn)) return `${def}|awaiting-session`
   switch (source.kind) {
     case 'rest': {
       if (!source.endpoint) return def
@@ -581,11 +600,12 @@ function useSurfaceData(
    */
   me: unknown = null,
   /**
-   * Whether the host says a visitor is signed in; `undefined` when it says
-   * nothing (no identity host). Signed out, a `requiresSession` source is
-   * not asked (isRefusedWithoutSession).
+   * Whether the host says a visitor is signed in; `'pending'` while it does
+   * not know yet; `undefined` when it says nothing (no identity host). Signed
+   * out, a `requiresSession` source is not asked (isRefusedWithoutSession);
+   * pending, it waits, loading (awaitsSession).
    */
-  signedIn?: boolean
+  signedIn?: SessionKnown
 ): SurfaceDataResult {
   const meRef = React.useRef(me)
   meRef.current = me
@@ -978,6 +998,11 @@ function useSurfaceData(
         controllersRef.current.delete(source.id)
         const key = requestKeyOf(source, state, meRef.current, signedInRef.current)
         requestKeysRef.current[source.id] = key
+        // Waiting for the host to say who is signed in: loading, not asked.
+        if (awaitsSession(source, signedInRef.current)) {
+          registerSource(source, state)
+          continue
+        }
         const without = settledWithoutRequest(source, state, key, meRef.current, signedInRef.current)
         if (without) {
           settled.push({ source, data: without })
@@ -1540,7 +1565,7 @@ function DataBoundInner({
       writeOnly,
       locale,
       authState.user,
-      auth ? authState.signedIn : undefined
+      auth ? (authState.pending === true ? 'pending' : authState.signedIn) : undefined
     )
   const pageScope = React.useMemo<Record<string, unknown>>(
     () => ({ ...pageData, __auth: authState, me: authState.user }),

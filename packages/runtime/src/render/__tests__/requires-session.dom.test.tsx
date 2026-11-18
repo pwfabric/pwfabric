@@ -96,4 +96,46 @@ describe('requiresSession', () => {
     await waitFor(() => expect(screen.getByTestId('out').textContent).toBe('mine=0 error=unauthenticated sessions=1'))
     expect(asked(fetch, 'Rsvp')).toBe(1)
   })
+
+  it('E-6: while the host does not know yet who is signed in, it waits — loading, not asked, not refused — then settles', async () => {
+    const fetch = answering()
+    vi.stubGlobal('fetch', fetch as never)
+    const pending: SurfaceAuthHost = { ...host(null), state: { ...host(null).state, pending: true } }
+    const page = (identity: SurfaceAuthHost) => (
+      <DataBoundSurfaceRenderer surface={loading} components={components} identity={identity} loadingStrategy="immediate" />
+    )
+    const view = render(page(pending))
+    await waitFor(() => expect(asked(fetch, 'Session')).toBe(1))
+    // The signed-out state ("sign in") is never drawn first, and nothing was asked for it.
+    expect(screen.getByTestId('out').textContent).toBe('loading=true error=')
+    expect(asked(fetch, 'Rsvp')).toBe(0)
+
+    // The host knows: signed in — asked, and the rows show.
+    view.rerender(page(host('ada@x.io')))
+    await waitFor(() => expect(screen.getByTestId('out').textContent).toBe('loading=false error='))
+    expect(asked(fetch, 'Rsvp')).toBe(1)
+    cleanup()
+
+    // The host knows: signed out — refused without a request, as before.
+    const again = render(page(pending))
+    again.rerender(page(host(null)))
+    await waitFor(() => expect(screen.getByTestId('out').textContent).toBe('loading=false error=unauthenticated'))
+    expect(asked(fetch, 'Rsvp')).toBe(1)
+  })
 })
+
+const loading = {
+  id: 'ticket',
+  blocks: [{ id: 'out', type: 'text', layout: DEFAULT_BLOCK_LAYOUT, props: { text: 'loading={{__loading.mine}} error={{__errors.mine}}' } }],
+  capabilities: [
+    {
+      capability: 'platform/persistence',
+      config: {
+        dataSources: [
+          { id: 'mine', kind: 'rest', endpoint: '/api/records/Rsvp', returns: 'data', requiresSession: true },
+          { id: 'sessions', kind: 'rest', endpoint: '/api/records/Session', returns: 'data' },
+        ],
+      },
+    },
+  ],
+} as never
