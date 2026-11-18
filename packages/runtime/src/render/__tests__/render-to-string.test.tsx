@@ -20,7 +20,7 @@ const Broken: BlockComponent = () => {
 }
 
 const descriptor = (blockType: string): DynamicBlockDescriptor =>
-  ({ blockType, moduleUrl: `blocks/${blockType}.js`, integrity: '0'.repeat(64) }) as unknown as DynamicBlockDescriptor
+  ({ blockType, moduleUrl: `blocks/${blockType}.js`, integrity: '0'.repeat(64), definition: { props: [] } }) as unknown as DynamicBlockDescriptor
 
 afterEach(() => BlockModuleLoader.invalidate())
 
