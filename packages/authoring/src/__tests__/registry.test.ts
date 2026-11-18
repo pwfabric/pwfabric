@@ -229,7 +229,7 @@ describe('CustomBlockRegistry', () => {
       expect(ctx).not.toHaveProperty('basePath')
     })
 
-    it('should apply declared defaults and replace a bad value before rendering', () => {
+    it('should apply declared defaults and keep a bad value before rendering', () => {
       const propsBlock = defineBlock<{ title: string; size: string; count: number }>({
         type: 'props-block',
         name: 'Props Block',
@@ -246,13 +246,13 @@ describe('CustomBlockRegistry', () => {
 
       const element = wrapper({
         block: { id: 'b1', type: 'props-block', props: {} },
-        // title missing -> default; size outside the enum -> default; "24" coerced to 24
+        // title missing -> default; size outside the enum -> kept (a dev warning); "24" coerced to 24
         props: { size: 'xl', count: '24', extra: 'kept' },
         children: undefined,
         context: undefined,
       }) as { props?: { props?: Record<string, unknown> } }
 
-      expect(element.props?.props).toEqual({ title: 'Untitled', size: 'md', count: 24, extra: 'kept' })
+      expect(element.props?.props).toEqual({ title: 'Untitled', size: 'xl', count: 24, extra: 'kept' })
     })
 
     it('should handle missing context gracefully', () => {

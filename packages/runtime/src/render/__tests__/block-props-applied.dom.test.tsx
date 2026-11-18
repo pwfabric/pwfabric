@@ -4,7 +4,7 @@
  *
  * The manifest is the block's only definition of its props: the descriptor
  * the host hands the renderer carries them (`definition.props`), and
- * `DynamicBlockWrapper` fills defaults, coerces and replaces a value that does
+ * `DynamicBlockWrapper` fills defaults, coerces, and keeps a value that does
  * not fit before the block sees its props. A bad prop never throws; under
  * `pwf dev` it is a warning, for a visitor it is silent.
  */
@@ -71,7 +71,7 @@ describe('DynamicBlockWrapper applies the manifest props', () => {
     expect(screen.getByTestId('badge').textContent).toBe('|md|8')
   })
 
-  it('coerces and replaces values that do not fit — no throw, silent for a visitor', () => {
+  it('coerces, and keeps values that do not fit — no throw, silent for a visitor', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     render(
       <DynamicBlockWrapper
@@ -80,7 +80,7 @@ describe('DynamicBlockWrapper applies the manifest props', () => {
         context={context}
       />
     )
-    expect(screen.getByTestId('badge').textContent).toBe('3|md|12')
+    expect(screen.getByTestId('badge').textContent).toBe('3|huge|12')
     expect(warn).not.toHaveBeenCalled()
   })
 

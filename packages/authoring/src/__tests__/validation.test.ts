@@ -110,10 +110,10 @@ describe('validatePropsWithDefaults', () => {
     expect(result).toEqual({ invalid: true, title: 'Default', count: 0 })
   })
 
-  it('should replace a value that does not fit with its default (never fails)', () => {
+  it('should keep a value that does not fit, never its default (never fails)', () => {
     const result = validatePropsWithDefaults({ title: { not: 'a string' }, count: 'many' }, descriptors)
 
-    expect(result).toEqual({ title: 'Default', count: 0 })
+    expect(result).toEqual({ title: { not: 'a string' }, count: 'many' })
   })
 
   it('should coerce a lossless value to its shape', () => {
