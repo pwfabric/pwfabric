@@ -605,13 +605,12 @@ async function cspProbe(browser, s) {
 // `@pwfabric/authoring`, exporting only the definition, on a page that runs
 // only the renderer and the runner — as every published app does.
 const SDK_BLOCK = `import { defineBlock } from '@pwfabric/authoring'
-import { z } from 'zod'
 
 export const QuoteCard = defineBlock({
   type: 'quote-card',
   name: 'Quote card',
   category: 'text',
-  schema: z.object({ quote: z.string() }),
+  props: [{ name: 'quote', type: 'string', required: false, default: 'A great product to work with.', bindable: true }],
   defaultProps: { quote: 'A great product to work with.' },
   component: ({ props, block }) => (
     <blockquote data-block-id={block?.id ?? 'quote'} data-block-type="quote-card">{props.quote}</blockquote>
