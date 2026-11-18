@@ -3,8 +3,9 @@
  * block that its manifest does not describe.
  *
  * A runtime renders such a prop without a word — an unknown name is ignored, a
- * value outside an enum falls back to the block's default — so the author never
- * learns that `size: "sm"` on a button rendered as `medium`. This check reads
+ * value outside an enum reaches the block as written and draws whatever the
+ * block's code makes of it — so the author never learns that `size: "sm"` on a
+ * button rendered as `medium`. This check reads
  * only declarative files (each block's `manifest.json` and the app's receipts);
  * no block code runs. Every finding is a WARNING, because the runtime tolerates
  * the prop.
@@ -26,7 +27,7 @@ import type { PackFolder, PackIssue } from './types.js'
 
 /** A prop is named that the block's manifest does not declare; the block ignores it. */
 export const BLOCK_PROP_UNKNOWN = 'BLOCK_PROP_UNKNOWN'
-/** A value is outside the prop's `enum` (or `const`); the block falls back to its default. */
+/** A value is outside the prop's `enum` (or `const`); the block still gets it as written. */
 export const BLOCK_PROP_ENUM = 'BLOCK_PROP_ENUM'
 /** A value's JSON type is not one the prop's `jsonSchema` accepts. */
 export const BLOCK_PROP_TYPE = 'BLOCK_PROP_TYPE'
@@ -35,7 +36,7 @@ export const BLOCK_PROP_NOT_BINDABLE = 'BLOCK_PROP_NOT_BINDABLE'
 /**
  * A value of the right type that does not fit the rest of its declared
  * shape: a bound, a length, a pattern, a format, or a member of a nested
- * object or array item. The runtime renders the prop's default instead.
+ * object or array item. The runtime keeps the value as written (it is the app's).
  */
 export const BLOCK_PROP_SHAPE = 'BLOCK_PROP_SHAPE'
 
@@ -287,7 +288,7 @@ function valueIssue(
   if (sameKind) {
     return {
       code: BLOCK_PROP_ENUM,
-      message: `${where} sets ${prop} = ${short(value)}, which ${atomId} does not accept (allowed: ${acceptLine(a)}); the block renders its default instead`,
+      message: `${where} sets ${prop} = ${short(value)}, which ${atomId} does not accept (allowed: ${acceptLine(a)}); the block gets it as written`,
     }
   }
   return {
@@ -344,7 +345,7 @@ export function checkReceiptBlockProps(receipt: unknown, catalog: BlockPropsCata
               severity: 'warning',
               code: BLOCK_PROP_SHAPE,
               path,
-              message: `${where} sets ${issue.message.replace(/^([^:]+): /, '$1, which ')}; ${entry.atomId} renders its default instead`,
+              message: `${where} sets ${issue.message.replace(/^([^:]+): /, '$1, which ')}; ${entry.atomId} gets it as written`,
             })
           }
         }

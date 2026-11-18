@@ -30,7 +30,7 @@ export async function runMigrate(args: ParsedArgs, io: CommandIO): Promise<numbe
   const migrated = results.filter((r) => !r.error)
   const changed = migrated.filter((r) => r.changed).length
   io.out(`${results.length} blocks: ${migrated.length} with a schema, ${changed} ${check ? 'to change' : 'changed'}, ${results.length - migrated.length} without one`)
-  io.out('Next: delete the zod import and the schema from each block, read props as the manifest gives them (defaults applied), and run `pwf validate`.')
+  io.out('Next: review each default and constraint finding, delete the zod import and the schema from each block, read props as the manifest gives them (defaults applied), and run `pwf validate`.')
   return check && changed > 0 ? 1 : 0
 }
 
@@ -45,11 +45,17 @@ export const migrate: Command = {
   --json   print the raw result per block
 
 For each block, reads its props schema (the definition's schema, or the one
-*PropsSchema export) and its manifest's definition.props, reports every
-disagreement (only-in-schema, only-in-manifest, type, default, enum,
-required, unrepresentable) and writes the merged definition.props: shape,
-default and required from the schema (what rendered until now), bindable,
-copy, description and the type string from the manifest. Only module-level
-code of the block runs: React and the engine are inert stand-ins.`,
+*PropsSchema export), its manifest's definition.props and the component's
+literal fallbacks (props.x ?? <literal>, a destructuring default), reports
+every disagreement (only-in-schema, only-in-manifest, type, default, enum,
+required, constraint, type-string, unrepresentable) and writes the merged
+definition.props. Before 3.0 the render never parsed props with the schema:
+what drew for a missing prop was the code's fallback. So the shape comes from
+the schema, the default from the code's literal fallback (else the manifest,
+else the schema, reported), a constraint the render never enforced (format,
+.int(), a bound, required) only where the manifest already had it, and
+bindable, copy and description from the manifest; the type string is
+regenerated when the shape changed under it. Only module-level code of the
+block runs: React and the engine are inert stand-ins.`,
   run: (args, io) => guard('migrate', io, () => runMigrate(args, io)),
 }

@@ -646,7 +646,7 @@ function renderBlock(
     return emitBlockWrapper(
       block,
       { ...baseWrapperProps(block, layoutStyle, scopeAttr), 'data-dynamic-block': block.type },
-      <BlockErrorBoundary blockId={block.id} blockType={block.type}>
+      <BlockErrorBoundary blockId={block.id} blockType={block.type} props={block.props} declared={dynamicDescriptor.definition?.props}>
         <DynamicBlockWrapper descriptor={dynamicDescriptor} block={stripHoistedStyle(block)} context={context}>
           {dynamicChildren}
         </DynamicBlockWrapper>
