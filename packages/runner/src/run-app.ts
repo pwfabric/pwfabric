@@ -887,6 +887,16 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
    * node; the visit's own (the signed-in visitor, the data cache, the
    * visitor's formats) arrive right after, as an update of the same tree,
    * the way a sign-in would.
+   *
+   * ADDRESS NOT PASSED TO THE HYDRATING RENDER. The first frame was built
+   * without any address seed (`?id=` or other query keys), so the hydrating
+   * render must start with the same state the build used: nothing read from
+   * the address. If the live `address` were passed here, the runtime's
+   * `useNotFoundReport` would see the record source as idle (empty key,
+   * state not yet seeded) and immediately call `address.notFound()` —
+   * replacing the page before the address seed has a chance to arrive. The
+   * address (and the URL-seeded `initialState`) arrive in the update that
+   * fires inside `onHydrated`, after React has adopted the painted tree.
    */
   function hydrateFirstFrame(
     root: HTMLElement,
@@ -899,7 +909,11 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     const firstDoor = firstFrameDoorOf(project)
     const first = pageSurfaceOf(receipt, key, new URLSearchParams(), { ...pageContext(FIRST_FRAME_USER), door: firstDoor.door })
     const identity = authHost()
-    const { dataCache: _cache, ...rest } = options
+    // Strip `address` and `dataCache` from the hydrating render: the former would
+    // trigger a premature not-found report (see block comment above); the latter
+    // is the session cache, which carries yesterday's rows — the hydrating render
+    // must match the HTML the build wrote.
+    const { dataCache: _cache, address: _addr, ...rest } = options
     const handle: Promise<unknown> = Promise.resolve(
       fabric.render(root, { surface: first }, {
         ...rest,
