@@ -160,8 +160,8 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   // `boot-session.ts`. It runs before the router exists, so `?auth_error=` is
   // gone before anything reads the query string.
   const appId = project.id ?? project.title ?? 'app'
-  // The app's words (envelope §2): every word the runner draws reads here
-  // first, then its neutral fallback.
+  // The app's words (envelope §2): every word the runner draws is read
+  // here, and one the app does not set is drawn as nothing.
   const say = runnerMessages(project.messages)
   const dataCache = sessionDataCache(sessionStorage, appId)
   const boot = await bootSession({ project, auth, storage: sessionStorage, appId })

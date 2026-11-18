@@ -140,15 +140,36 @@ describe('content security policy', () => {
   })
 
   it('writes the header file and leaves header-only directives out of a meta policy', () => {
-    const headers = headersFile("default-src 'none'")
+    const headers = headersFile("default-src 'none'", "default-src 'none'; frame-ancestors 'self'")
     expect(headers.startsWith("/*\n  Content-Security-Policy: default-src 'none'\n")).toBe(true)
     expect(serializeCsp({ 'default-src': ["'none'"], 'frame-ancestors': ["'none'"], sandbox: ['allow-scripts'] }, { meta: true })).toBe(
       "default-src 'none'"
     )
   })
 
+  it("E-1: the app's own media may be framed by the app, the page by nobody — one policy per path", () => {
+    const csp = deriveCsp({ importMapText: '{}', receipts: new Map(), engines: [], media: [] })
+    expect(csp.header).toContain("frame-ancestors 'none'")
+    expect(csp.mediaHeader).toBe(csp.header.replace("frame-ancestors 'none'", "frame-ancestors 'self'"))
+    const rules = parseHeadersFile(headersFile(csp.header, csp.mediaHeader))
+    // As a static host applies them: every matching rule in order, `! Name` detaching.
+    const policiesOf = (path: string): string[] => {
+      let values: string[] = []
+      for (const r of rules) {
+        if (!headerPatternMatches(r.pattern, path)) continue
+        for (const [name, value] of r.headers) {
+          if (name === '! Content-Security-Policy') values = []
+          else if (name === 'Content-Security-Policy') values.push(value)
+        }
+      }
+      return values
+    }
+    expect(policiesOf('/pwpack/media/print-issue-12.pdf')).toEqual([csp.mediaHeader])
+    for (const p of ['/', '/index.html', '/menu', '/pwpack/project.json', '/assets/runner.js']) expect(policiesOf(p), p).toEqual([csp.header])
+  })
+
   it('says how long each part of the folder may be kept, one Cache-Control per path', () => {
-    const rules = parseHeadersFile(headersFile("default-src 'none'"))
+    const rules = parseHeadersFile(headersFile("default-src 'none'", "default-src 'none'"))
     // A static host applies every matching rule and joins a header two set,
     // honouring `! Name` (detach) in file order.
     const cacheOf = (path: string): string[] => {

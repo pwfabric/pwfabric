@@ -16,8 +16,9 @@ export const RELOAD_PATH = '/_pwf/reload.js'
 /** The reload client's script: reloads the page when the server announces a new build. */
 export const RELOAD_JS = `(function () {
   // The page runs under pwf dev: the runtime prints developer warnings (a
-  // block prop that does not fit its manifest) only when this is set. A
-  // classic script, so it runs before the deferred module that starts the app.
+  // block prop that does not fit its manifest, a message the app does not
+  // set) only when this is set. A classic script, so it runs before the
+  // deferred module that starts the app.
   globalThis.__pwfabric_dev = true
   if (typeof EventSource === 'undefined') return
   var es = new EventSource('${EVENTS_PATH}')

@@ -158,3 +158,26 @@ describe('the lazy path still carries the load', () => {
     expect(BlockModuleLoader.preload).not.toHaveBeenCalled()
   })
 })
+
+describe('a block module that fails to load (E-4: the engine writes no word)', () => {
+  it('names its retry button in the app’s words, else by the id — never an English sentence', async () => {
+    const { AppMessagesContext } = await import('../app-messages.js')
+    ;(BlockModuleLoader.load as unknown as { mockRejectedValue: (e: unknown) => void }).mockRejectedValue(new Error('offline'))
+    const surface: RenderableSurface = { blocks: [{ id: 'a-1', type: 'chart-a', layout: DEFAULT_BLOCK_LAYOUT, props: {} }] }
+    const page = (messages: Record<string, string> | null) =>
+      render(
+        <AppMessagesContext.Provider value={messages}>
+          <DynamicArtifactProvider dynamicBlocks={CATALOG}>
+            <SurfaceRenderer surface={surface} components={{}} />
+          </DynamicArtifactProvider>
+        </AppMessagesContext.Provider>
+      )
+    const bare = page(null)
+    await waitFor(() => expect(bare.container.querySelector('[data-state="error"] button')).not.toBeNull())
+    expect(bare.container.querySelector('[data-state="error"] button')?.getAttribute('aria-label')).toBe('ui.retry')
+    cleanup()
+    const own = page({ 'ui.retry': 'Yeniden dene' })
+    await waitFor(() => expect(own.container.querySelector('[data-state="error"] button')).not.toBeNull())
+    expect(own.container.querySelector('[data-state="error"] button')?.getAttribute('aria-label')).toBe('Yeniden dene')
+  })
+})

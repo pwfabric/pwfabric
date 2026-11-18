@@ -120,12 +120,14 @@ export function starterPlan(name: string, title: string, blocks: readonly BlockN
   return {
     title: title.slice(0, 80),
     // The app writes every word, the runner's too (envelope §2.1): a starter
-    // app reaches only the runner's not-found page, so it says those words.
+    // app reaches the runner's not-found page and the renderer's retry
+    // button (a block that failed to load), so it says those words.
     locale: 'en',
     messages: {
       'notFound.title': 'Page not found',
       'notFound.body': 'This address does not name a page in this app.',
       'notFound.home': 'Go to the home page',
+      'ui.retry': 'Try again',
     },
     intent: {
       purpose: `${title}: describe what this app is for`,

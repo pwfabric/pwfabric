@@ -55,14 +55,17 @@ describe('the first frame (pwapp-format §2.5)', () => {
     expect(Object.keys(queryStateSeed(receipt, new URLSearchParams('utm_source=x')))).toEqual([])
   })
 
-  it('nobody is signed in, and nothing is reported', () => {
+  it('nobody is signed in, nothing is reported, and who the visitor is is not known yet (E-6)', () => {
     expect(firstFrameAuthState({ door: true, methods: ['password'], registration: 'open' })).toEqual({
       signedIn: false,
       user: null,
       methods: ['password'],
       registration: 'open',
       error: null,
+      pending: true,
     })
+    // An app with no way in has nobody to wait for.
+    expect(firstFrameAuthState({ door: false, methods: [], registration: 'closed' })).not.toHaveProperty('pending')
     expect(FIRST_FRAME_USER).toBeNull()
   })
 

@@ -30,6 +30,10 @@
  *                the browser ignore it and break path routing.
  *   object-src   'none'
  *   frame-ancestors 'none'  — header only: browsers ignore it in a `<meta>`.
+ *                The app's OWN MEDIA (`/pwpack/media/*`) is served with
+ *                `'self'` instead (`mediaHeader`): a page of the app frames
+ *                its own PDF in place, and nothing else may frame it. Under
+ *                `'none'` everywhere the app's own embed was a blank box.
  *
  * Origins come from: absolute `rest` endpoints in the receipts; declared
  * engines' `host` templates filled from `connections.json` config;
@@ -63,6 +67,8 @@ export interface AppCsp {
   readonly directives: CspDirectives
   /** The policy as a header value (every directive). */
   readonly header: string
+  /** The policy the app's own media is served with: `header` with `frame-ancestors 'self'`. */
+  readonly mediaHeader: string
   /** The policy for a `<meta http-equiv>` (without the directives a meta cannot carry). */
   readonly meta: string
   readonly unresolved: readonly CspUnresolved[]
@@ -327,6 +333,7 @@ export function deriveCsp(input: CspInputs): AppCsp {
   return {
     directives,
     header: serializeCsp(directives),
+    mediaHeader: serializeCsp({ ...directives, 'frame-ancestors': ["'self'"] }),
     meta: serializeCsp(directives, { meta: true }),
     unresolved,
   }
@@ -340,8 +347,10 @@ export const REVALIDATE = 'no-cache'
 export const MEDIA = 'public, max-age=3600'
 
 /**
- * The static-host `_headers` file: the policy on every path, then how long
- * each part of the folder may be kept (pwapp-format §2.2).
+ * The static-host `_headers` file: the policy on every path — the app's own
+ * media with its own policy (`mediaPolicy`, `frame-ancestors 'self'`), the
+ * page's taken back first so a host sends one — then how long each part of
+ * the folder may be kept (pwapp-format §2.1, §2.2).
  *
  * A host applies EVERY rule that matches a path and joins a header two rules
  * set, so the caching rules match disjoint paths: the shell, the hashed
@@ -350,10 +359,11 @@ export const MEDIA = 'public, max-age=3600'
  * which are revalidated. Media comes last and replaces the envelope's rule
  * (`! Cache-Control`), since it lives under `pwpack/` too.
  */
-export function headersFile(policy: string): string {
+export function headersFile(policy: string, mediaPolicy: string): string {
   const rule = (path: string, ...lines: string[]): string => `${path}\n${lines.map((l) => `  ${l}\n`).join('')}`
   return [
     rule('/*', `Content-Security-Policy: ${policy}`),
+    rule('/pwpack/media/*', '! Content-Security-Policy', `Content-Security-Policy: ${mediaPolicy}`),
     rule('/', `Cache-Control: ${REVALIDATE}`),
     rule('/index.html', `Cache-Control: ${REVALIDATE}`),
     rule('/assets/*', `Cache-Control: ${IMMUTABLE}`),

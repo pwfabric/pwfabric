@@ -281,17 +281,21 @@ export class FocusRestorer {
  * is given a `tabindex` of `-1` if it does not already have one so
  * it can receive programmatic focus.
  *
+ * The label is the caller's — the app's word (`useAppMessage('ui.skipToContent')`
+ * in a block): the engine writes no visitor word.
+ *
  * @param targetId - The ID of the element to skip to
+ * @param label - The link's text, in the app's words
  * @returns Skip link configuration object
  */
-export function createSkipLink(targetId: string): {
+export function createSkipLink(targetId: string, label: string): {
   href: string
   label: string
   handleClick: (e: Event) => void
 } {
   return {
     href: `#${targetId}`,
-    label: 'Skip to content',
+    label,
     handleClick: (e: Event) => {
       if (typeof document === 'undefined') return
 

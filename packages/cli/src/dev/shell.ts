@@ -252,6 +252,8 @@ export interface ShellOptions {
    */
   readonly pageHints?: {
     readonly entry: string
+    /** The widest window the build painted a first frame for (pwapp-format §2.5). */
+    readonly maxWidth?: number
     readonly routes: readonly string[]
     readonly notFound?: string
     readonly pages: Readonly<Record<string, PageHints>>
@@ -301,9 +303,17 @@ export const PAGE_HINTS_SCRIPT = String.raw`(function () {
       document.head.appendChild(link)
     }
     if (typeof page.receipt === 'string') add(page.receipt, 'fetch')
-    for (var i = 0; i < (page.modules || []).length; i++) if (typeof page.modules[i] === 'string') add(page.modules[i], 'fetch')
+    for (var j = 0; j < (page.modules || []).length; j++) if (typeof page.modules[j] === 'string') add(page.modules[j], 'fetch')
     if (typeof page.image === 'string') add(page.image, 'image', page.imagePriority === true)
-    if (typeof page.frame === 'string') add(page.frame, 'fetch')
+    // The frame only where the first-paint script puts it in: at the painted
+    // width, with no query key that changes it. Anywhere else the runner
+    // draws the page and the frame was "preloaded but not used".
+    var painted = typeof page.frame === 'string' && window.innerWidth <= d.maxWidth
+    if (painted && m && m[2]) {
+      var query = new URLSearchParams(m[2])
+      for (var i = 0; i < (page.frameKeys || []).length; i++) if (query.has(page.frameKeys[i])) painted = false
+    }
+    if (painted) add(page.frame, 'fetch')
   } catch (e) {}
 })()`
 
@@ -370,9 +380,13 @@ export interface PageHints {
    * The page's first frame (`pwpack/surfaces/<key>.html`, pwapp-format §2.5),
    * for a page painted at build that is not the entry: asked for with the
    * document, so the first-paint script's fetch of it is not one more round
-   * trip behind the runner.
+   * trip behind the runner. Only where that script will put it in: at the
+   * painted width (`maxWidth` of the hints) and with none of `frameKeys` in
+   * the address's query.
    */
   readonly frame?: string
+  /** The query keys that change the page's first frame (the first-paint data's `keys`). */
+  readonly frameKeys?: readonly string[]
 }
 
 /** An app file as the shell addresses it (`./…`); an absolute address as written. */

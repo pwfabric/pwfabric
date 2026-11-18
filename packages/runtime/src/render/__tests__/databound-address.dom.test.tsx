@@ -153,6 +153,74 @@ describe('notFoundWhenEmpty', () => {
     expect(address.notFound).not.toHaveBeenCalled()
   })
 
+  it('E-3: a missing record keeps the loading frame until the host replaces the page (no shift to an empty body)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'No such dish.' } }), { status: 404 }))
+    )
+    const blocks = [{ id: 't', type: 'text', layout: L, props: { content: '{{__loading.dish}}|{{__notFound.dish}}|{{dish.length}}' } }]
+    const surface = page({ dataSources: [{ id: 'dish', kind: 'rest', endpoint: 'https://api.example.com/missing', notFoundWhenEmpty: true }] }, blocks)
+    const address = memoryAddress('id=nope')
+    render(<DataBoundSurfaceRenderer surface={surface} components={components} address={address} />)
+    await waitFor(() => expect(address.notFound).toHaveBeenCalledTimes(1))
+    await new Promise((r) => setTimeout(r, 20))
+    // The frame the page loaded in is what stays on screen until the host
+    // draws its not-found page in its place: nothing collapses first.
+    expect(screen.getByTestId('text').textContent).toBe('true|false|')
+    cleanup()
+
+    // With no host address to replace it, the page shows what it found.
+    render(<DataBoundSurfaceRenderer surface={surface} components={components} />)
+    await waitFor(() => expect(screen.getByTestId('text').textContent).toBe('false|true|'))
+  })
+
+  it('E-3: a list keyed by the same unknown id does not settle empty first — the whole frame waits for the record', async () => {
+    let answerRecord: (r: Response) => void = () => {}
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        url.includes('/hours')
+          ? Promise.resolve(new Response(JSON.stringify([]), { status: 200 }))
+          : new Promise<Response>((resolve) => (answerRecord = resolve))
+      )
+    )
+    const blocks = [{ id: 't', type: 'text', layout: L, props: { content: '{{__loading.hours}}|{{hours.length}}|{{__loading.city}}' } }]
+    const surface = page(
+      {
+        dataSources: [
+          { id: 'hours', kind: 'rest', endpoint: 'https://api.example.com/hours' },
+          { id: 'city', kind: 'rest', endpoint: 'https://api.example.com/city', notFoundWhenEmpty: true },
+        ],
+      },
+      blocks
+    )
+    const address = memoryAddress('city=nope')
+    // Painted at once, as the runner paints (first-frame.ts).
+    render(<DataBoundSurfaceRenderer surface={surface} components={components} address={address} loadingStrategy="immediate" />)
+    await new Promise((r) => setTimeout(r, 30))
+    // The hours answered (empty); the record has not: the page is still the frame it loaded in.
+    expect(screen.getByTestId('text').textContent).toBe('true||true')
+    answerRecord(new Response(JSON.stringify({ name: 'Ankara' }), { status: 200 }))
+    // The record came: everything the page fetched shows at once.
+    await waitFor(() => expect(screen.getByTestId('text').textContent).toBe('false|0|false'))
+    expect(address.notFound).not.toHaveBeenCalled()
+  })
+
+  it('E-3: an idle record (its key not seeded yet) keeps the frame even before the host hands an address', async () => {
+    const blocks = [{ id: 't', type: 'text', layout: L, props: { content: '{{__loading.dish}}|{{__idle.dish}}' } }]
+    const surface = page(
+      { initialState: { id: '' }, dataSources: [{ id: 'dish', kind: 'rest', endpoint: 'https://api.example.com/dishes/{{state.id}}', notFoundWhenEmpty: true }] },
+      blocks
+    )
+    render(<DataBoundSurfaceRenderer surface={surface} components={components} />)
+    await new Promise((r) => setTimeout(r, 30))
+    expect(screen.getByTestId('text').textContent).toBe('true|false')
+    cleanup()
+    // An inert canvas shows what the source answered.
+    render(<DataBoundSurfaceRenderer surface={surface} components={components} interactionMode="inert" />)
+    await waitFor(() => expect(screen.getByTestId('text').textContent).not.toBe(''))
+  })
+
   it('a 404 is not found; a refused read is the source error, not not-found', async () => {
     const fetchMock = vi.fn(async (url: string) =>
       url.includes('missing')

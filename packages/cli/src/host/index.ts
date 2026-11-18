@@ -9,7 +9,10 @@
  *   Access     `accessOf`, `parseRule` — what a caller may do with a model
  *              under the app's `auth.json` `access` rules.
  *   Records    `RecordStore` — an in-memory record store that enforces those
- *              rules (seeded from the app folder; throws `HostError`).
+ *              rules (throws `HostError`). It reads the app folder by
+ *              default; a host with no disk (a Worker) hands it the entity
+ *              list, the seed rows and a `relationReadable` check
+ *              (`RecordStoreOptions`) instead.
  *   Receipts   `rewriteEntitySources` — a receipt's `entity` sources rewritten
  *              to `rest` sources against `<base>/records/…`, with
  *              `authProviderRef: <base>` so the runner sends the visitor's
@@ -21,19 +24,22 @@
  *   Addresses  `authAddresses` — the envelope `auth.json` for a declaration,
  *              pointed at `<base>`.
  *   Definitions `readAuth`, `readEntities`, `readSeed` — the app folder's
- *              declarations as the pieces above take them.
+ *              declarations as the pieces above take them;
+ *              `authDeclarationOf`, `entityDeclarationsOf` — the same from
+ *              the parsed `auth.json` / `entities.json`, for a host that
+ *              holds the files rather than a folder.
  *
  * These are Node modules (`node:fs`, `node:crypto`). Nothing here is a
  * production server: see `createLocalHost` for what the local host is not.
  */
 
 export { accessOf, parseRule, RecordStore } from './records.js'
-export type { Access, AccessReach, AccessVerb, AggregateAnswer, Caller, ListAnswer, Scope, Target } from './records.js'
+export type { Access, AccessReach, AccessVerb, AggregateAnswer, Caller, ListAnswer, RecordStoreOptions, Scope, Target } from './records.js'
 export { rewriteEntitySources } from './receipts.js'
 export { declaredRecordFields, withRecordFields } from './record-fields.js'
 export { withSessionSources } from './session-sources.js'
 export { authAddresses, createLocalHost, DEFAULT_DEV_USER, SESSION_COOKIE } from './local-host.js'
-export { readAuth, readEntities, readSeed } from './definitions.js'
+export { authDeclarationOf, entityDeclarationsOf, readAuth, readEntities, readSeed } from './definitions.js'
 export type { AuthDeclaration, EntityDeclaration, EntityField } from './definitions.js'
 export { HostError } from './http.js'
 export type { Principal } from './tokens.js'

@@ -42,11 +42,13 @@ describe('pwf validate', () => {
     await writeFile(join(cwd, 'pwpack.json'), JSON.stringify({ id: '@pwpack/a/b', version: '1.0.0', app: { entry: 'home', surfaceOrder: ['home'] } }))
     const c = capture(cwd)
     expect(await main(['validate'], c.io)).toBe(1)
-    expect(c.err[0]).toBe('Errors (1):')
-    expect(c.err[1]).toContain('APP_SURFACE_MISSING app/surfaces/home.receipt.json')
+    expect(c.err[0]).toBe('Errors (2):')
+    expect(c.err.join(' ')).toContain('APP_SURFACE_MISSING app/surfaces/home.receipt.json')
+    // No plan, so no words: the runner's not-found page would be blank (E-4).
+    expect(c.err.join(' ')).toContain('MESSAGES_MISSING app/plan.json')
     expect(c.out).toContain('Warnings (1):')
     expect(c.out).toContain('Notes (1):')
-    expect(c.err.at(-1)).toContain('@pwpack/a/b@1.0.0: invalid (1 error, 1 warning; layout rootless; 1 atoms)')
+    expect(c.err.at(-1)).toContain('@pwpack/a/b@1.0.0: invalid (2 errors, 1 warning; layout rootless; 1 atoms)')
   })
 
   it('warns about block props that do not fit the manifests of the app and its packs', async () => {

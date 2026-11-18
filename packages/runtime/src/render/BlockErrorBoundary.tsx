@@ -105,7 +105,7 @@ export class BlockErrorBoundary extends React.Component<
           }}
           data-block-error={this.props.blockId}
           data-block-error-type={this.props.blockType}
-          title={this.state.error?.message ?? 'Unknown error'}
+          {...(this.state.error?.message ? { title: this.state.error.message } : {})}
         />
       )
     }

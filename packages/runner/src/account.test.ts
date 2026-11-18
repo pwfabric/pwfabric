@@ -116,9 +116,10 @@ describe('buildAccountProp', () => {
     const prop = buildAccountProp({ declaration, user: null, entry: 'home', toHref: hashHref })
     expect(prop.state).toBe('signed-out')
     expect(prop.name).toBeUndefined()
-    expect(prop.signInLabel).toBe('Sign in')
-    expect(prop.signOutLabel).toBe('Sign out')
-    expect(prop.profileLabel).toBe('Profile')
+    // The app set no words: none (the engine writes no visitor word).
+    expect(prop.signInLabel).toBe('')
+    expect(prop.signOutLabel).toBe('')
+    expect(prop.profileLabel).toBe('')
     // Links still travel: an app may list public destinations in the menu.
     expect(prop.profileHref).toBe('#/profile')
   })
@@ -199,8 +200,9 @@ describe('the runner rewrites none of the app’s text', () => {
 
   it('the greeting the account control draws is the app’s account.greeting, signed in only', () => {
     const declaration: PwappAccountDeclaration = { placement: 'navbar' }
-    const signedIn = buildAccountProp({ declaration, user: { email: 'a@x' }, entry: 'home', toHref: hashHref })
-    expect(signedIn.greetingLabel).toBe('Welcome, a@x')
+    const messages = runnerMessages({ 'account.greeting': 'Hoş geldin, {name}' })
+    const signedIn = buildAccountProp({ declaration, user: { email: 'a@x' }, entry: 'home', toHref: hashHref, messages })
+    expect(signedIn.greetingLabel).toBe('Hoş geldin, a@x')
     const out = buildAccountProp({ declaration, user: null, entry: 'home', toHref: hashHref })
     expect(out).not.toHaveProperty('greetingLabel')
   })
@@ -591,10 +593,10 @@ describe('applyAccountControl — the slot is drawn only where there is a door',
   })
 
   it('a door + account declared + signed out: the "Sign in" control is still drawn', () => {
-    const out = applyAccountControl(page(), { ...common, declaration: account, door: true, user: null })
+    const out = applyAccountControl(page(), { ...common, declaration: account, door: true, user: null, messages: runnerMessages({ 'account.signIn': 'Oturum aç' }) })
     const prop = out[0]?.props?.['account'] as { state: string; signInLabel: string }
     expect(prop.state).toBe('signed-out')
-    expect(prop.signInLabel).toBe('Sign in')
+    expect(prop.signInLabel).toBe('Oturum aç')
   })
 
   it('a door + signed in: exactly what buildAccountProp + applyAccountToSurface produce', () => {

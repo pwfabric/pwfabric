@@ -223,9 +223,10 @@ describe('createSkipLink', () => {
   })
 
   it('should return correct href and label', () => {
-    const skipLink = createSkipLink('main-content')
+    const skipLink = createSkipLink('main-content', 'İçeriğe geç')
     expect(skipLink.href).toBe('#main-content')
-    expect(skipLink.label).toBe('Skip to content')
+    // The app's word, never one the engine writes.
+    expect(skipLink.label).toBe('İçeriğe geç')
   })
 
   it('should handle click, prevent default, and set tabindex on target', () => {
@@ -233,7 +234,7 @@ describe('createSkipLink', () => {
     target.id = 'main-content'
     document.body.appendChild(target)
 
-    const skipLink = createSkipLink('main-content')
+    const skipLink = createSkipLink('main-content', 'İçeriğe geç')
     const event = new MouseEvent('click', { bubbles: true, cancelable: true })
     skipLink.handleClick(event)
 
@@ -247,7 +248,7 @@ describe('createSkipLink', () => {
     target.setAttribute('tabindex', '0')
     document.body.appendChild(target)
 
-    const skipLink = createSkipLink('main-content')
+    const skipLink = createSkipLink('main-content', 'İçeriğe geç')
     const event = new MouseEvent('click', { bubbles: true, cancelable: true })
     skipLink.handleClick(event)
 
@@ -255,7 +256,7 @@ describe('createSkipLink', () => {
   })
 
   it('should not throw when target element does not exist', () => {
-    const skipLink = createSkipLink('nonexistent-id')
+    const skipLink = createSkipLink('nonexistent-id', 'İçeriğe geç')
     const event = new MouseEvent('click', { bubbles: true, cancelable: true })
     expect(() => skipLink.handleClick(event)).not.toThrow()
   })

@@ -32,7 +32,7 @@
 
 import type { AuthSession, AuthToken, UserIdentity } from '@pwfabric/runtime/auth'
 import type { PwappAuth } from './types.js'
-import { NEUTRAL_MESSAGES, type RunnerMessages } from './messages.js'
+import { NO_MESSAGES, type RunnerMessages } from './messages.js'
 import {
   authScopeKey,
   buildAuthorizeUrl,
@@ -157,7 +157,7 @@ export interface AuthBridgeOptions {
    * falls back to the historical per-location behavior (origin + pathname).
    */
   readonly redirectUri?: string
-  /** The app's words, for the errors the bridge reports (`bridge.*`). Default: the neutral fallbacks. */
+  /** The app's words, for the errors the bridge reports (`bridge.*`). Default: none (every word empty). */
   readonly messages?: RunnerMessages
 }
 
@@ -178,7 +178,7 @@ export function createAuthBridge(auth: PwappAuth, options?: AuthBridgeOptions): 
   const scopeKey = authScopeKey(auth)
   const pendingKey = pendingKeyFor(scopeKey)
   const rtKey = refreshTokenKeyFor(scopeKey)
-  const say = options?.messages ?? NEUTRAL_MESSAGES
+  const say = options?.messages ?? NO_MESSAGES
 
   let session: AuthSession | undefined
   let lastError: string | undefined

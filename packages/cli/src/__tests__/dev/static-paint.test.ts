@@ -164,7 +164,7 @@ export default function Bar(p: { props?: { account?: { signedIn?: boolean } } })
     expect(hints.pages.dish.frame).toBe('pwpack/surfaces/dish.html')
     expect(hints.pages.home.frame).toBeUndefined()
   })
-  it('a source settled without a request is settled in the frame: idle with no ?id=, refused when only a session can read it', async () => {
+  it('a source settled without a request is settled in the frame (idle with no ?id=); one only a session can read waits, loading (E-6)', async () => {
     const root = await app()
     // headphone-shop #/confirmation: an empty record key asks for no record, so
     // the page shows "no order" — painted so, not as a spinner hydration redraws.
@@ -179,7 +179,7 @@ export default function Bar(p: { props?: { account?: { signedIn?: boolean } } })
             props: {},
             children: [
               { id: 'o', type: 'title', props: { text: "{{__idle.order ? 'No order to confirm' : 'Loading order'}}" } },
-              { id: 'r', type: 'title', props: { text: "rsvps={{__errors.mine || 'asked'}}" } },
+              { id: 'r', type: 'title', props: { text: "rsvps={{__errors.mine || (__loading.mine ? 'waiting' : 'asked')}}" } },
             ],
           },
         ],
@@ -217,7 +217,9 @@ export default function Bar(p: { props?: { account?: { signedIn?: boolean } } })
     expect(r.ok, codes(r).join()).toBe(true)
     const frame = text(r.files.get('pwpack/surfaces/confirmation.html'))
     expect(frame).toContain('No order to confirm')
-    expect(frame).toContain('rsvps=unauthenticated')
+    // The build cannot know who the visitor is: not "sign in" for a visitor
+    // who is signed in — loading, until the runner knows (E-6).
+    expect(frame).toContain('rsvps=waiting')
     // The served receipt says which source only a session can be answered for.
     const served = JSON.parse(text(r.files.get('pwpack/surfaces/confirmation.receipt.json'))) as {
       capabilities: { config: { dataSources: { id: string; requiresSession?: boolean }[] } }[]

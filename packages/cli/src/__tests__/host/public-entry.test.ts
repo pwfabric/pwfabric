@@ -12,6 +12,8 @@ import * as host from '../../host/index.js'
 import {
   accessOf,
   authAddresses,
+  authDeclarationOf,
+  entityDeclarationsOf,
   HostError,
   readAuth,
   readEntities,
@@ -46,8 +48,10 @@ describe('@pwfabric/cli/host', () => {
         'SESSION_COOKIE',
         'accessOf',
         'authAddresses',
+        'authDeclarationOf',
         'createLocalHost',
         'declaredRecordFields',
+        'entityDeclarationsOf',
         'parseRule',
         'readAuth',
         'readEntities',
@@ -87,5 +91,42 @@ describe('@pwfabric/cli/host', () => {
       ],
     })
     expect(authAddresses(auth, '/api')).toMatchObject({ loginUrl: '/api/login', apiBase: '/api' })
+  })
+
+  it('a host with no disk hands the store its declarations: no app folder is read', () => {
+    const root = fixture('l-shop')
+    // What a Worker holds: the parsed files, not a folder.
+    const auth = authDeclarationOf(JSON.parse(readFileSync(`${root}/app/definitions/auth.json`, 'utf8'))) as AuthDeclaration
+    const entities = entityDeclarationsOf(JSON.parse(readFileSync(`${root}/app/definitions/entities.json`, 'utf8')))
+    expect(auth).toEqual(readAuth(root))
+    expect(entities).toEqual(readEntities(root))
+    const dev = { id: 'dev-user', email: 'dev@localhost', displayName: 'Developer' }
+    const asked: string[] = []
+    const store = new RecordStore(undefined, dev, { entities, seed: (typeId) => (typeId === 'Product' ? [{ id: 'p1', name: 'Tea' }] : []) })
+    const product = { entity: entities.find((e) => e.typeId === 'Product')!, auth, caller: { principal: undefined } }
+    expect(store.list(product, new URLSearchParams()).data.map((r) => r.name)).toEqual(['Tea'])
+    // A relation's target is checked by the host's own callback.
+    const line: EntityDeclaration = { typeId: 'Line', fields: [{ name: 'product', type: 'relation', required: true, targetTypeId: 'Product' }] }
+    const lines = new RecordStore(undefined, dev, { entities: [line], relationReadable: (typeId, id) => (asked.push(`${typeId}/${id}`), id === 'p1') })
+    const target = { entity: line, auth: undefined, caller: { principal: dev } }
+    expect(lines.create(target, { product: 'p1' })).toMatchObject({ product: 'p1' })
+    expect(() => lines.create(target, { product: 'p2' })).toThrow(HostError)
+    expect(asked).toEqual(['Product/p1', 'Product/p2'])
+    expect(() => new RecordStore(undefined, dev)).toThrow(/entity declarations/)
+
+    // Read-only: who may write is answered first, then READ_ONLY.
+    const readOnly = new RecordStore(undefined, dev, { entities, readOnly: true })
+    const order = (principal?: typeof dev) => ({ entity: entities.find((e) => e.typeId === 'Order')!, auth, caller: { principal } })
+    const codeOf = (f: () => unknown): string | undefined => {
+      try {
+        f()
+        return undefined
+      } catch (e) {
+        return (e as HostError).code
+      }
+    }
+    expect(codeOf(() => readOnly.create(order(), { item: 'Tea' }))).toBe('SIGN_IN_REQUIRED')
+    expect(codeOf(() => readOnly.create(order(dev), { item: 'Tea' }))).toBe('READ_ONLY')
+    expect(codeOf(() => readOnly.update(order(dev), 'nope', { item: 'Tea' }))).toBe('NOT_FOUND')
   })
 })

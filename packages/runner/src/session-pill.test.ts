@@ -55,7 +55,7 @@ describe('sessionLabel', () => {
     expect(sessionLabel(undefined, { token: 't', expiresAt: '', principal: { id: 'p', email: 'a@x' } })).toBe('a@x')
     expect(sessionLabel({ email: 'b@x' }, null)).toBe('b@x')
     expect(sessionLabel({ name: 'Ayşe' }, null)).toBe('Ayşe')
-    expect(sessionLabel(undefined, null)).toBe('Signed in')
+    expect(sessionLabel(undefined, null)).toBe('')
     expect(sessionLabel(undefined, null, TR)).toBe('Oturum açık')
   })
 })
@@ -123,7 +123,7 @@ describe('mountSessionPill', () => {
     ;(bridge as { session: AuthSession | undefined }).session = issuerSession()
     bridge.fire()
     expect(pill()?.getAttribute('data-session')).toBe('in')
-    expect(pill()?.querySelector('[data-session-label]')?.textContent).toBe('Signed in')
+    expect(pill()?.querySelector('[data-session-label]')?.textContent).toBe('')
     expect(note.style.display).toBe('none')
   })
 
@@ -175,7 +175,8 @@ describe('mountSessionPill', () => {
     // "Sign out" was 53×14 px on a phone.
     mountSessionPill({ bridge: fakeBridge(), getAppSession: () => null, onSignedOut: vi.fn() })
     expect(pill()?.tagName).toBe('ASIDE')
-    expect(pill()?.getAttribute('aria-label')).toBe('Account')
+    // Named by the app (pill.region); without its word, by the id — never unnamed.
+    expect(pill()?.getAttribute('aria-label')).toBe('pill.region')
     const css = document.getElementById('pwapp-shell-css')?.textContent ?? ''
     const button = /#pwapp-session-pill button\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
     expect(button).toMatch(/min-height:44px/)
@@ -210,17 +211,21 @@ describe('mountSessionPill', () => {
 })
 
 describe('the pill speaks the app’s language', () => {
-  it('is English by default', () => {
+  it('writes no word of its own: a control the app left unworded is named by its id (E-4)', () => {
     mountSessionPill({ bridge: fakeBridge(), getAppSession: () => null, onSignedOut: vi.fn() })
-    expect(pill()?.querySelector('[data-session-signin]')?.textContent).toBe('Sign in')
+    const signIn = pill()?.querySelector('[data-session-signin]')
+    expect(signIn?.textContent).toBe('')
+    expect(signIn?.getAttribute('aria-label')).toBe('pill.signIn')
     document.body.innerHTML = ''
     mountSessionPill({
       bridge: null,
       getAppSession: () => ({ token: 't', expiresAt: '' }),
       onSignedOut: vi.fn(),
     })
-    expect(pill()?.querySelector('[data-session-signout]')?.textContent).toBe('Sign out')
-    expect(pill()?.querySelector('[data-session-label]')?.textContent).toBe('Signed in')
+    const signOut = pill()?.querySelector('[data-session-signout]')
+    expect(signOut?.textContent).toBe('')
+    expect(signOut?.getAttribute('aria-label')).toBe('pill.signOut')
+    expect(pill()?.querySelector('[data-session-label]')?.textContent).toBe('')
   })
 
   it('writes the app’s own words (messages) when it sets them', () => {

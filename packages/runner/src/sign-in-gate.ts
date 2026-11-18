@@ -20,7 +20,7 @@ import type { AuthBridge } from './auth.js'
 import type { PwappAuth, PwappProject } from './types.js'
 import { signIn, type AppSession } from './app-session.js'
 import { applyThemeVars, ensureShellStyles } from './shell-theme.js'
-import { NEUTRAL_MESSAGES, providerLabel, type RunnerMessages } from './messages.js'
+import { NO_MESSAGES, labelWith, providerLabel, type RunnerMessages } from './messages.js'
 
 const GATE_ID = 'pwapp-sign-in-gate'
 
@@ -122,7 +122,7 @@ export function mountSignInGate(
   const registerUrl = options.auth?.registration === 'open' ? options.auth.registerUrl : undefined
   const usesPassword = Boolean(loginUrl) && project.identity?.topology !== 'external'
   const onDemand = options.onDemand === true
-  const say = options.messages ?? NEUTRAL_MESSAGES
+  const say = options.messages ?? NO_MESSAGES
   const providers = byProviderOrder(options.auth?.providers ?? [])
   const offersProviders = providers.length > 0 && Boolean(options.onProviderSignIn)
   const ids = `pwapp-gate-${++gateSeq}`
@@ -188,7 +188,7 @@ export function mountSignInGate(
     const title = document.createElement('h1')
     title.id = `${ids}-title`
     title.className = 'pwapp-gate-title'
-    title.textContent = project.title ?? say('gate.title')
+    labelWith(title, project.title ?? say('gate.title'), 'gate.title')
 
     const intro: HTMLElement[] = [title]
     if (!onDemand) {
@@ -225,7 +225,7 @@ export function mountSignInGate(
         input.name = name
         input.required = true
         input.placeholder = label
-        input.setAttribute('aria-label', label)
+        labelWith(input, label, `gate.${name === 'displayName' ? 'name' : name}`, 'aria-label')
         input.autocomplete = autocomplete
         return input
       }
@@ -244,7 +244,7 @@ export function mountSignInGate(
       submit.type = 'submit'
       submit.className = 'pwapp-gate-primary'
       submit.setAttribute('data-gate-submit', '')
-      submit.textContent = registering ? say('gate.register') : say('gate.signIn')
+      labelWith(submit, registering ? say('gate.register') : say('gate.signIn'), registering ? 'gate.register' : 'gate.signIn')
 
       form.addEventListener('submit', (event) => {
         event.preventDefault()
@@ -288,7 +288,7 @@ export function mountSignInGate(
         toggle.type = 'button'
         toggle.className = 'pwapp-gate-link'
         toggle.setAttribute('data-gate-toggle', '')
-        toggle.textContent = registering ? say('gate.toSignIn') : say('gate.toRegister')
+        labelWith(toggle, registering ? say('gate.toSignIn') : say('gate.toRegister'), registering ? 'gate.toSignIn' : 'gate.toRegister')
         toggle.addEventListener('click', () => {
           mode = registering ? 'login' : 'register'
           message = null
@@ -310,7 +310,7 @@ export function mountSignInGate(
       button.type = 'button'
       button.className = 'pwapp-gate-primary'
       button.setAttribute('data-gate-submit', '')
-      button.textContent = say('gate.signIn')
+      labelWith(button, say('gate.signIn'), 'gate.signIn')
       // No bridge and no password door means the export declared sign-in but
       // shipped no way in — a broken export, not an anonymous app. The gate
       // stays and says so, rather than letting the visitor through on a
@@ -344,7 +344,7 @@ export function mountSignInGate(
         b.type = 'button'
         b.className = 'pwapp-gate-secondary'
         b.setAttribute('data-gate-provider', provider.method)
-        b.textContent = providerLabel(say, provider.method)
+        labelWith(b, providerLabel(say, provider.method), `gate.provider.${provider.method}`)
         b.addEventListener('click', () => options.onProviderSignIn?.(provider.method))
         panel.append(b)
       }
@@ -357,7 +357,7 @@ export function mountSignInGate(
       close.type = 'button'
       close.className = 'pwapp-gate-close'
       close.setAttribute('data-gate-close', '')
-      close.setAttribute('aria-label', say('gate.close'))
+      labelWith(close, say('gate.close'), 'gate.close', 'aria-label')
       close.textContent = '×'
       close.addEventListener('click', dismiss)
       panel.append(close)

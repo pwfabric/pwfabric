@@ -21,7 +21,7 @@
 import type { AuthSession } from '@pwfabric/runtime/auth'
 import type { AppSession } from './app-session.js'
 import { rewriteHrefs, type ToHref } from './helpers.js'
-import { NEUTRAL_MESSAGES, type RunnerMessages } from './messages.js'
+import { NO_MESSAGES, type RunnerMessages } from './messages.js'
 import type {
   AccountPlacement,
   AccountProp,
@@ -84,11 +84,11 @@ export function buildAccountProp(input: {
   readonly user: AccountUser | null
   readonly entry: string
   readonly toHref: ToHref
-  /** The app's words (`account.*`). Default: the neutral fallbacks. */
+  /** The app's words (`account.*`). Default: none (every word empty). */
   readonly messages?: RunnerMessages | undefined
 }): AccountProp {
   const { declaration, user, entry, toHref } = input
-  const say = input.messages ?? NEUTRAL_MESSAGES
+  const say = input.messages ?? NO_MESSAGES
   const who = user?.name ?? user?.email
   const profileHref = nonEmpty(declaration.profileHref)
     ? rewriteHrefs({ href: declaration.profileHref }, entry, toHref).href

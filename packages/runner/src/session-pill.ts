@@ -25,7 +25,7 @@ import type { AuthBridge } from './auth.js'
 import { signOut, type AppSession } from './app-session.js'
 import type { PwappAuth } from './types.js'
 import { applyThemeVars, ensureShellStyles } from './shell-theme.js'
-import { NEUTRAL_MESSAGES, type RunnerMessages } from './messages.js'
+import { NO_MESSAGES, labelWith, type RunnerMessages } from './messages.js'
 
 const PILL_ID = 'pwapp-session-pill'
 const ERROR_ID = 'pwapp-login-error'
@@ -65,7 +65,7 @@ export interface SessionPill {
 export function sessionLabel(
   bridgeUser: { name?: string | undefined; email?: string | undefined } | undefined,
   appSession: AppSession | null,
-  say: RunnerMessages = NEUTRAL_MESSAGES
+  say: RunnerMessages = NO_MESSAGES
 ): string {
   return (
     appSession?.principal?.email ??
@@ -79,7 +79,7 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
   const { bridge } = options
   if (options.accountSlot) return { refresh: () => {}, unmount: () => {} }
   ensureShellStyles()
-  const say = options.messages ?? NEUTRAL_MESSAGES
+  const say = options.messages ?? NO_MESSAGES
 
   // A LANDMARK OF ITS OWN. Outside every landmark it was content no
   // landmark held (axe `region`, on every page): it is complementary to the
@@ -88,7 +88,7 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
   if (!pill) {
     pill = document.createElement('aside')
     pill.id = PILL_ID
-    pill.setAttribute('aria-label', say('pill.region'))
+    labelWith(pill, say('pill.region'), 'pill.region', 'aria-label')
     document.body.appendChild(pill)
   }
 
@@ -149,7 +149,7 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
       const out = document.createElement('button')
       out.type = 'button'
       out.setAttribute('data-session-signout', '')
-      out.textContent = say('pill.signOut')
+      labelWith(out, say('pill.signOut'), 'pill.signOut')
       out.addEventListener('click', () => void signOutEverywhere())
       pill.append(who, out)
       pill.style.display = 'flex'
@@ -158,7 +158,7 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
       const login = document.createElement('button')
       login.type = 'button'
       login.setAttribute('data-session-signin', '')
-      login.textContent = say('pill.signIn')
+      labelWith(login, say('pill.signIn'), 'pill.signIn')
       login.addEventListener('click', () => bridge.loginWithPkce())
       pill.append(login)
       pill.style.display = 'flex'

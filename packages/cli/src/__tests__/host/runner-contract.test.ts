@@ -364,9 +364,12 @@ describe('the external issuer stand-in, end to end', () => {
     expect(again.session).toBeUndefined()
     loc.search = callback.search
     const replay = createAuthBridge(auth, { redirectUri: `${s.origin}/` })
-    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     await replay.init()
     expect(replay.session).toBeUndefined()
-    expect(replay.lastError).toBeTruthy()
+    // Refused, and said in the console; the visitor's words are the app's
+    // (bridge.invalidCallback), and this app sets none.
+    expect(logged).toHaveBeenCalled()
+    expect(replay.lastError).toBe('')
   })
 })
