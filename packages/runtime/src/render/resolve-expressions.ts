@@ -29,6 +29,14 @@ import { isExpressionLink, isLinkMember, safeDataLink, type LinkHref } from './l
 type ResolveContext = ExpressionContext & {
   readonly linkHref?: LinkHref
   readonly literalProps?: LiteralProps
+  /** Inside a `repeat`: the innermost row and its index (see rowScopeOf). */
+  readonly row?: RowScope
+}
+
+/** The row a block inside a `repeat` was drawn for: `item` and `index`, the names its props read. */
+export interface RowScope {
+  readonly item: unknown
+  readonly index: number
 }
 
 /** Block type → the names of its props that take a literal only (`bindable: false`). */
@@ -383,6 +391,7 @@ function resolveVisibleBlock(block: Block, context: ResolveContext, insideForm: 
       const itemContext: ResolveContext = {
         ...context,
         data: { ...context.data, item: items[index], index },
+        row: { item: items[index], index },
       }
       for (const child of template) {
         const clone = resolveBlock(suffixIds(child, index), itemContext, insideForm)
@@ -390,23 +399,52 @@ function resolveVisibleBlock(block: Block, context: ResolveContext, insideForm: 
       }
     }
     const { repeat: _repeat, ...rest } = block as Block & { repeat?: unknown }
-    return markRepeatExpanded({ ...(rest as Block), props: resolvedProps, children: expanded })
+    return withRow(markRepeatExpanded({ ...(rest as Block), props: resolvedProps, children: expanded }), context.row)
   }
 
   if (block.children) {
-    return {
-      ...block,
-      props: resolvedProps,
-      children: block.children
-        .map((child) => resolveBlock(child, context, insideForm))
-        .filter((b): b is Block => b !== null),
-    }
+    return withRow(
+      {
+        ...block,
+        props: resolvedProps,
+        children: block.children
+          .map((child) => resolveBlock(child, context, insideForm))
+          .filter((b): b is Block => b !== null),
+      },
+      context.row
+    )
   }
 
-  return {
-    ...block,
-    props: resolvedProps,
-  }
+  return withRow(
+    {
+      ...block,
+      props: resolvedProps,
+    },
+    context.row
+  )
+}
+
+/**
+ * A BLOCK DRAWN FOR A ROW REMEMBERS THE ROW (envelope, behaviors).
+ *
+ * A block's props read `{{item.*}}` and `{{index}}` inside a `repeat`; a
+ * behavior aimed at that block is resolved when its event fires, against the
+ * page scope — which has no `item`, so a per-row write (delete this cart
+ * line) could not be said. The resolved block carries its row under a symbol
+ * key (it survives spread, never reaches JSON, like REPEAT_EXPANDED), and the
+ * dispatcher adds `item` and `index` to a behavior's scope from the block
+ * the event came from (`rowScopeOf`). In a nested repeat it is the innermost
+ * row, the one the block's own props read.
+ */
+const ROW_SCOPE: unique symbol = Symbol.for('pwfabric.rowScope')
+
+function withRow(block: Block, row: RowScope | undefined): Block {
+  return row ? ({ ...block, [ROW_SCOPE]: row } as Block) : block
+}
+
+/** The row a resolved block was drawn for, or undefined outside a `repeat`. */
+export function rowScopeOf(block: Block | undefined): RowScope | undefined {
+  return (block as { [ROW_SCOPE]?: RowScope } | undefined)?.[ROW_SCOPE]
 }
 
 /**

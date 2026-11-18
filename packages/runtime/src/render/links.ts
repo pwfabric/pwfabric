@@ -105,3 +105,16 @@ export function safeDataLink(href: string): string | undefined {
   if (url.startsWith('/') && !url.startsWith('//') && !url.startsWith('/\\')) return kept
   return undefined
 }
+
+/**
+ * A block's `context.appHref`: an app page's path in the host's router form
+ * (`linkHref`), or the path as given when the host has no router. What is not
+ * a string comes back as `''`; the host's rule decides what else it leaves
+ * alone (absolute URLs, fragments, media links, `''`).
+ */
+export function appHrefOf(linkHref: LinkHref | null | undefined): LinkHref {
+  return (path) => {
+    if (typeof path !== 'string') return ''
+    return linkHref ? linkHref(path) : path
+  }
+}

@@ -21,7 +21,7 @@
 
 import * as React from 'react'
 import { SurfaceRenderer } from './renderer.js'
-import { literalPropsOf, resolveBlockExpressions } from './resolve-expressions.js'
+import { literalPropsOf, resolveBlockExpressions, rowScopeOf, type RowScope } from './resolve-expressions.js'
 import { useDynamicBlocks } from './dynamic-artifact-context.js'
 import { readableUrl, urlSchemeOf, type LinkHref } from './links.js'
 import { endpointMissingPathValue, resolveEndpoint } from './endpoint.js'
@@ -55,7 +55,7 @@ import { writeFailureDetail, writeFailureFields, writeFailureReason } from '../f
 import type { EntityFacade } from '../entity/facade.js'
 import type { EntityAggregate, EntityFilter, EntityQuery, EntityTypeId } from '../entity/types.js'
 import type { SurfaceConnectionsValue } from '../connectors/types.js'
-import { PLATFORM_PERSISTENCE_CAPABILITY_ID } from '@pwfabric/contracts'
+import { applyBlockProps, PLATFORM_PERSISTENCE_CAPABILITY_ID, type DynamicBlockDescriptor } from '@pwfabric/contracts'
 import { isCapability } from '../capability/type-mapping.js'
 import { writeOnlySourceIds } from './write-only-sources.js'
 import { failureCodeOf, sourceFailureReason, type SourceFailureCode, type SourceFailureReason } from './source-failure.js'
@@ -352,7 +352,8 @@ interface SourceData {
  */
 function mapSurfaceSourceToDefinition(
   source: SurfaceDataSourceDefinition,
-  currentState: Record<string, unknown>
+  currentState: Record<string, unknown>,
+  me?: unknown
 ): DataSourceDefinition | null {
   switch (source.kind) {
     case 'static':
@@ -363,7 +364,7 @@ function mapSurfaceSourceToDefinition(
         // A static source's query was dropped here, so its rows were bound
         // unsorted and unfiltered. Resolved like a rest source's.
         ...(source.query
-          ? { query: resolveQueryState(source.query, currentState) as EntityQuery }
+          ? { query: resolveQueryState(source.query, currentState, me) as EntityQuery }
           : {}),
       }
     case 'state':
@@ -393,7 +394,7 @@ function mapSurfaceSourceToDefinition(
         // here. Resolved the same way, applied by the data service after the
         // fetch.
         ...(source.query
-          ? { query: resolveQueryState(source.query, currentState) as EntityQuery }
+          ? { query: resolveQueryState(source.query, currentState, me) as EntityQuery }
           : {}),
       }
     }
@@ -460,14 +461,14 @@ function definitionJson(source: SurfaceDataSourceDefinition): string {
  * Not fetched: a REST source whose required path value is empty, or a fetched
  * source whose query asks for no record (an empty record key, query-state.ts).
  */
-function isIdleSource(source: SurfaceDataSourceDefinition, state: Readonly<Record<string, unknown>>): boolean {
+function isIdleSource(source: SurfaceDataSourceDefinition, state: Readonly<Record<string, unknown>>, me?: unknown): boolean {
   if (source.kind === 'rest' && Boolean(source.endpoint) && endpointMissingPathValue(source.endpoint as string, state)) {
     return true
   }
   return (
     (source.kind === 'rest' || source.kind === 'entity') &&
     source.aggregate === undefined &&
-    queryAsksForNothing(source.query, state, source.notFoundWhenEmpty === true)
+    queryAsksForNothing(source.query, state, source.notFoundWhenEmpty === true, me)
   )
 }
 
@@ -485,27 +486,27 @@ function isIdleSource(source: SurfaceDataSourceDefinition, state: Readonly<Recor
  * key-name extraction is not: `{{state.a ? state.b : state.c}}` depends on `c`
  * only while `a` is false, and the resolved value knows that.
  */
-function requestKeyOf(source: SurfaceDataSourceDefinition, state: Readonly<Record<string, unknown>>): string {
+function requestKeyOf(source: SurfaceDataSourceDefinition, state: Readonly<Record<string, unknown>>, me?: unknown): string {
   const def = definitionJson(source)
-  if (isIdleSource(source, state)) return `${def}|idle`
+  if (isIdleSource(source, state, me)) return `${def}|idle`
   switch (source.kind) {
     case 'rest': {
       if (!source.endpoint) return def
-      const query = source.query ? safeJson(resolveQueryState(source.query, state)) : ''
+      const query = source.query ? safeJson(resolveQueryState(source.query, state, me)) : ''
       return `${def}|${resolveEndpoint(source.endpoint, state)}|${query}`
     }
     case 'entity': {
-      const query = source.query ? safeJson(resolveQueryState(source.query, state)) : ''
+      const query = source.query ? safeJson(resolveQueryState(source.query, state, me)) : ''
       // The resolved aggregate too: a counter whose filter reads
       // `{{state.status}}` must ask again when the status changes.
-      const aggregate = source.aggregate ? safeJson(resolveQueryState(source.aggregate, state)) : ''
+      const aggregate = source.aggregate ? safeJson(resolveQueryState(source.aggregate, state, me)) : ''
       return `${def}|${query}|${aggregate}`
     }
     case 'state':
       return `${def}|${safeJson(state[source.id])}`
     case 'static':
       // A query reading `{{state.x}}` re-applies when x changes.
-      return source.query ? `${def}|${safeJson(resolveQueryState(source.query, state))}` : def
+      return source.query ? `${def}|${safeJson(resolveQueryState(source.query, state, me))}` : def
     default:
       return def
   }
@@ -521,8 +522,16 @@ function useSurfaceData(
   /** Sources only a form writes to (see write-only-sources): settled, never fetched. */
   writeOnly?: ReadonlySet<string>,
   /** The app's locale, for an `initialState` expression that formats. */
-  locale?: string
+  locale?: string,
+  /**
+   * The signed-in visitor (`me`, `null` signed out), for a query value that
+   * reads it (`{{me.email}}`, query-state.ts). A sign-in or sign-out changes
+   * the resolved request, so such a source is asked again.
+   */
+  me: unknown = null
 ): SurfaceDataResult {
+  const meRef = React.useRef(me)
+  meRef.current = me
   const dataService = useDataService()
   const writeOnlyRef = React.useRef(writeOnly)
   writeOnlyRef.current = writeOnly
@@ -557,17 +566,17 @@ function useSurfaceData(
       const rows = source.staticData
       const data =
         source.query && Array.isArray(rows)
-          ? applyEntityQuery(rows as Record<string, unknown>[], resolveQueryState(source.query, state) as EntityQuery).items
+          ? applyEntityQuery(rows as Record<string, unknown>[], resolveQueryState(source.query, state, me) as EntityQuery).items
           : rows
-      seeded[source.id] = { data, loading: false, error: null, key: requestKeyOf(source, state) }
+      seeded[source.id] = { data, loading: false, error: null, key: requestKeyOf(source, state, me) }
     }
     if (!dataCache) return seeded
     for (const source of dataSources) {
-      const key = dataSourceCacheKey(source, initialState ?? {})
+      const key = dataSourceCacheKey(source, initialState ?? {}, me)
       if (!key) continue
       const hit = dataCache.get(key)
       if (hit !== undefined) {
-        seeded[source.id] = { data: hit, loading: true, error: null, key: requestKeyOf(source, initialState ?? {}) }
+        seeded[source.id] = { data: hit, loading: true, error: null, key: requestKeyOf(source, initialState ?? {}, me) }
       }
     }
     return seeded
@@ -577,8 +586,8 @@ function useSurfaceData(
   // wait for that the visitor has not already seen.
   const [initialLoaded, setInitialLoaded] = React.useState(() => {
     if (!dataCache || !dataSources) return false
-    const fetched = dataSources.filter((s) => dataSourceCacheKey(s, initialState ?? {}) !== undefined)
-    return fetched.length > 0 && fetched.every((s) => dataCache.get(dataSourceCacheKey(s, initialState ?? {})!) !== undefined)
+    const fetched = dataSources.filter((s) => dataSourceCacheKey(s, initialState ?? {}, me) !== undefined)
+    return fetched.length > 0 && fetched.every((s) => dataCache.get(dataSourceCacheKey(s, initialState ?? {}, me)!) !== undefined)
   })
 
   // Stable ref to current state for use in fetch callbacks
@@ -619,7 +628,7 @@ function useSurfaceData(
   const registerSource = React.useCallback(
     (source: SurfaceDataSourceDefinition, state: Record<string, unknown>) => {
       if (dataService.hasSource(source.id)) dataService.unregisterSource(source.id)
-      const definition = mapSurfaceSourceToDefinition(source, state)
+      const definition = mapSurfaceSourceToDefinition(source, state, meRef.current)
       if (definition) dataService.registerSource(definition)
     },
     [dataService]
@@ -660,7 +669,7 @@ function useSurfaceData(
         // a pagination block writing `state.page` or a segmented-control
         // writing `state.severity` reaches `query.pagination` / `query.filter`.
         // Before this, only REST endpoints saw state; connector queries went raw.
-        const query = source.query ? (resolveQueryState(source.query, state) as EntityQuery) : undefined
+        const query = source.query ? (resolveQueryState(source.query, state, meRef.current) as EntityQuery) : undefined
         // An AGGREGATE source asks for one number, never the rows. Its
         // filter resolves against state like `query` does, and the answer
         // binds `{ fn, field?, value, count }` (`{{<id>.value}}`), exempt
@@ -668,7 +677,7 @@ function useSurfaceData(
         // allowed what a list of it is not, and a public one no longer hands
         // every row to a stranger so the page can count them.
         const aggregate = source.aggregate
-          ? (resolveQueryState(source.aggregate, state) as unknown as EntityAggregate)
+          ? (resolveQueryState(source.aggregate, state, meRef.current) as unknown as EntityAggregate)
           : undefined
         const entityType = source.entityType as EntityTypeId
         // A REAL failure binds no rows, whatever `fallback` says
@@ -814,9 +823,9 @@ function useSurfaceData(
       for (const source of sources) {
         controllersRef.current.get(source.id)?.abort()
         controllersRef.current.delete(source.id)
-        const key = requestKeyOf(source, state)
+        const key = requestKeyOf(source, state, meRef.current)
         requestKeysRef.current[source.id] = key
-        if (isIdleSource(source, state)) {
+        if (isIdleSource(source, state, meRef.current)) {
           idle.push(source)
           registerSource(source, state)
           continue
@@ -904,7 +913,7 @@ function useSurfaceData(
             return next
           })
           if (outcome.kind === 'ok') {
-            const cacheKey = dataSourceCacheKey(source, state)
+            const cacheKey = dataSourceCacheKey(source, state, meRef.current)
             if (cacheKey) dataCacheRef.current?.set(cacheKey, outcome.data)
           }
         })
@@ -953,9 +962,9 @@ function useSurfaceData(
       setInitialLoaded(true)
       return
     }
-    const changed = sources.filter((s) => requestKeyOf(s, surfaceState) !== requestKeysRef.current[s.id])
+    const changed = sources.filter((s) => requestKeyOf(s, surfaceState, me) !== requestKeysRef.current[s.id])
     if (changed.length > 0) void fetchSources(changed)
-  }, [dataSources, surfaceState, fetchSources, dataService])
+  }, [dataSources, surfaceState, me, fetchSources, dataService])
 
   // ---- Unmount: abort what is in flight, forget what was fetched ----
   // Forgetting matters under StrictMode's mount → unmount → mount: the second
@@ -1362,12 +1371,12 @@ function DataBoundInner({
     () => new Set(writeOnlyKey === '' ? [] : writeOnlyKey.split('\n')),
     [writeOnlyKey]
   )
-  const { expressionData: pageData, surfaceState, initialLoaded, setStateValue, refreshSource, fetchAllSources } =
-    useSurfaceData(dataSources, initialState, interactionMode, entityFacade, connections, dataCache, writeOnly, locale)
   // WHO IS SIGNED IN, beside the page's data: `{{__auth.*}}` and its shorthand
   // `{{me.*}}` (= `__auth.user`). The host's state, read-only — no source
-  // fetches it and no action writes it.
+  // fetches it and no action writes it; a query value may read it.
   const authState = auth?.state ?? SIGNED_OUT
+  const { expressionData: pageData, surfaceState, initialLoaded, setStateValue, refreshSource, fetchAllSources } =
+    useSurfaceData(dataSources, initialState, interactionMode, entityFacade, connections, dataCache, writeOnly, locale, authState.user)
   const expressionData = React.useMemo<Record<string, unknown>>(
     () => ({ ...pageData, __auth: authState, me: authState.user }),
     [pageData, authState]
@@ -1521,12 +1530,20 @@ function DataBoundInner({
    * into state. A block's own `action` prop needs none of this: it is
    * resolved with the block's other props (inside a repeat, per row).
    */
+  //
+  // A behavior on a block drawn for a row of a `repeat` reads that row as the
+  // block's props do: `item` and `index` (rowScopeOf). Outside a repeat
+  // neither is in scope.
   const resolveBehaviorAction = React.useCallback(
-    (action: SurfaceAction): SurfaceAction =>
-      resolveValueIn(action, expressionDataRef.current, {
-        ...(linkHref ? { linkHref } : {}),
-        ...(locale ? { locale } : {}),
-      }) as SurfaceAction,
+    (action: SurfaceAction, row: RowScope | undefined): SurfaceAction =>
+      resolveValueIn(
+        action,
+        row ? { ...expressionDataRef.current, item: row.item, index: row.index } : expressionDataRef.current,
+        {
+          ...(linkHref ? { linkHref } : {}),
+          ...(locale ? { locale } : {}),
+        }
+      ) as SurfaceAction,
     [linkHref, locale]
   )
 
@@ -1560,8 +1577,9 @@ function DataBoundInner({
         // or a value change would have fired its click action on each of them.
         // Looked up in the RESOLVED tree, so a repeat clone (`id--N`) carries
         // its own row's values.
+        const source = findResolvedBlock(resolvedBlocks, event.blockId)
         if (fired === 'block:click') {
-          blockActionsOf(findBlockAction(resolvedBlocks, event.blockId)).forEach((a) => dispatchAction(a))
+          blockActionsOf(appliedBlockAction(source, descriptors)).forEach((a) => dispatchAction(a))
         }
 
         // Execute stored behaviors whose trigger matches this canonical event.
@@ -1569,7 +1587,7 @@ function DataBoundInner({
           for (const b of behaviors) {
             if (canonicalizeEventType(b.event) !== fired) continue
             if (b.targetBlockId && !behaviorTargets(b.targetBlockId, event.blockId)) continue
-            for (const action of b.actions) dispatchAction(resolveBehaviorAction(action), eventValues(event))
+            for (const action of b.actions) dispatchAction(resolveBehaviorAction(action, rowScopeOf(source)), eventValues(event))
           }
         }
       }
@@ -1578,7 +1596,7 @@ function DataBoundInner({
       // host decides what side-effects, if any, to run).
       onEvent?.(event)
     },
-    [interactionMode, onEvent, dispatchAction, resolvedBlocks, behaviors, resolveBehaviorAction]
+    [interactionMode, onEvent, dispatchAction, resolvedBlocks, descriptors, behaviors, resolveBehaviorAction]
   )
 
   // The gate's one word is the app's (`ui.loading`), like every word a
@@ -1648,15 +1666,31 @@ function DataBoundInner({
 /**
  * Find the action prop of a block by ID in the resolved block tree.
  */
-function findBlockAction(blocks: readonly Block[], blockId: string): unknown {
+function findResolvedBlock(blocks: readonly Block[], blockId: string): Block | undefined {
   for (const block of blocks) {
-    if (block.id === blockId) {
-      return block.props?.action
-    }
+    if (block.id === blockId) return block
     if (block.children) {
-      const found = findBlockAction(block.children, blockId)
-      if (found !== undefined) return found
+      const found = findResolvedBlock(block.children, blockId)
+      if (found) return found
     }
   }
   return undefined
+}
+
+/**
+ * THE ACTION A CLICK DISPATCHES IS THE ONE THE BLOCK RENDERED WITH.
+ *
+ * A block renders with its manifest's declarations applied — the default
+ * filled in when the receipt leaves `action` out, a value coerced to its
+ * shape (block-props.ts). The click read the receipt's raw `action`, so a
+ * button drawn with its declared default action did nothing, and a coerced
+ * value was dispatched uncoerced. Both read the applied props now.
+ */
+export function appliedBlockAction(
+  block: Block | undefined,
+  descriptors: ReadonlyMap<string, DynamicBlockDescriptor>
+): unknown {
+  if (!block) return undefined
+  const declared = descriptors.get(block.type)?.definition?.props
+  return applyBlockProps(block.props ?? {}, declared).action
 }

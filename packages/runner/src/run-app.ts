@@ -40,7 +40,7 @@ import {
   pageSurfaceOf,
 } from './first-frame.js'
 import { createRouter, resolveRouterMode, type RouteChange } from './router.js'
-import { createAuthBridge, type AuthBridge } from './auth.js'
+import { authDeclarationNote, createAuthBridge, type AuthBridge } from './auth.js'
 import { accountUserFrom } from './apply-auth.js'
 import { createAccountController, hasDoor, type SignInMode } from './account-controller.js'
 import { authErrorCode, authMethodsOf, authStateOf } from './auth-state.js'
@@ -264,7 +264,8 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       bridge = createAuthBridge(auth, { redirectUri: location.origin + router.base, messages: say })
       await bridge.init() // redirect callback / silent restore BEFORE first route
     } else {
-      console.info(`[pwapp] auth declared (${auth.provider}) — unsupported provider, falling back to anonymous`)
+      const note = authDeclarationNote(auth)
+      if (note) console.warn(note)
     }
   }
 

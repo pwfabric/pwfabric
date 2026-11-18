@@ -402,6 +402,38 @@ describe('assemblePwapp', () => {
   })
 })
 
+describe('ENGINE_RANGE_EXCLUDED (E8)', () => {
+  const setEngines = async (file: string, range: string): Promise<void> => {
+    const json = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>
+    await writeFile(file, JSON.stringify({ ...json, engines: { pwfabric: range } }))
+  }
+
+  it('refuses an app whose engines range excludes the running engine, naming the fix', async () => {
+    const root = await app()
+    await setEngines(join(root, 'pwpack.json'), '>=2.1 <3')
+    const r = await assemblePwapp(root, { engineVersion: '3.0.0' })
+    expect(r.ok).toBe(false)
+    const d = r.diagnostics.find((x) => x.code === 'ENGINE_RANGE_EXCLUDED')
+    expect(d).toMatchObject({ severity: 'error', path: 'pwpack.json' })
+    expect(d!.message).toContain('">=2.1 <3"')
+    expect(d!.message).toContain('">=3.0 <4"')
+  })
+
+  it('refuses a pinned pack made for another engine; a range that names the engine passes', async () => {
+    const root = await app()
+    await setEngines(join(root, ...PACK_REL, 'pwpack.json'), '>=2.1 <3')
+    const r = await assemblePwapp(root, { engineVersion: '3.0.0' })
+    expect(r.diagnostics.filter((x) => x.code === 'ENGINE_RANGE_EXCLUDED').map((x) => x.message)).toEqual([
+      expect.stringContaining('@pwpack/k/kit@1.0.0 declares engines.pwfabric ">=2.1 <3"'),
+    ])
+    const fine = await assemblePwapp(root, { engineVersion: '2.4.0' })
+    expect(codes(fine)).not.toContain('ENGINE_RANGE_EXCLUDED')
+    // A prerelease of the engine runs what its release runs.
+    await setEngines(join(root, ...PACK_REL, 'pwpack.json'), '>=3.0.0 <4')
+    expect(codes(await assemblePwapp(root, { engineVersion: '3.0.0-rc.2' }))).not.toContain('ENGINE_RANGE_EXCLUDED')
+  })
+})
+
 describe('loadSources', () => {
   it('reuses a remembered pack build and warns on a pin that disagrees with the cache', async () => {
     const root = await app()

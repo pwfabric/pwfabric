@@ -10,7 +10,7 @@
  * What a failed source binds instead:
  *  - `__errors.<id>` — WHY, as a code the page branches on and writes its
  *    own words for: `unauthenticated` (401), `forbidden` (403), `not_found`
- *    (404), `server` (5xx), `network` (no answer), `unconnected` (nothing to
+ *    (404), `conflict` (409), `server` (5xx), `network` (no answer), `unconnected` (nothing to
  *    serve it) or `error` (anything else). Always truthy, so `if:` on it
  *    still tells "failed" from "fetched, empty". The engine writes no
  *    sentence here: the app owns every word (envelope §2), and a sentence
@@ -49,6 +49,7 @@ export type SourceFailureReason =
   | 'unauthenticated'
   | 'forbidden'
   | 'not_found'
+  | 'conflict'
   | 'server'
   | 'network'
   | 'unconnected'
@@ -60,6 +61,7 @@ export function sourceFailureReason(code: SourceFailureCode): SourceFailureReaso
   if (code === 401) return 'unauthenticated'
   if (code === 403) return 'forbidden'
   if (code === 404) return 'not_found'
+  if (code === 409) return 'conflict'
   if (code >= 500) return 'server'
   return 'error'
 }

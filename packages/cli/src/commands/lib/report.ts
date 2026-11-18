@@ -21,8 +21,8 @@ import {
 import { PROVIDER_LABEL_METHODS, RUNNER_MESSAGE_IDS, type RunnerMessageId } from '@pwfabric/runner'
 import type { CommandIO } from '../types.js'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
-import { pinsOf } from './identity.js'
-import { loadSources } from '../../dev/sources.js'
+import { engineVersion, pinsOf } from './identity.js'
+import { engineRangeDiagnostics, loadSources, type LoadedSources } from '../../dev/sources.js'
 import { readAuth, readEntities, readReceipt, readSeed, surfaceKeys, type AuthDeclaration } from '../../host/definitions.js'
 
 /**
@@ -144,6 +144,48 @@ export function checkEntities(root: string): PackIssue[] {
   return issues
 }
 
+/** The members a `statusKeys` may name (data-protocol §4.2). */
+export const STATUS_KEY_MEMBERS: readonly string[] = ['loading', 'success', 'error', 'reason', 'fields', 'detail']
+
+/**
+ * STATUS_KEY_UNKNOWN (a warning): a form binding's or a `write` action's
+ * `statusKeys` names a member the runtime never writes, so whatever the page
+ * binds to that state key never changes. The usual one is 2.2's `message`,
+ * gone in 3.0: the failure is a code in `reason`, and the page writes its own
+ * words for it.
+ */
+export function checkStatusKeys(root: string): PackIssue[] {
+  const issues: PackIssue[] = []
+  const known = new Set(STATUS_KEY_MEMBERS)
+  for (const key of surfaceKeys(root)) {
+    let receipt: unknown
+    try { receipt = readReceipt(root, key) } catch { continue }
+    const path = `app/surfaces/${key}.receipt.json`
+    const walk = (v: unknown, at: string): void => {
+      if (Array.isArray(v)) return v.forEach((x, i) => walk(x, `${at}[${i}]`))
+      if (!isObj(v)) return
+      for (const [k, x] of Object.entries(v)) {
+        if (k === 'statusKeys' && isObj(x)) {
+          for (const member of Object.keys(x)) {
+            if (known.has(member)) continue
+            const hint = member === 'message'
+              ? '; 3.0 has no message: bind reason (a code) and write the words in the page'
+              : ''
+            issues.push({
+              severity: 'warning',
+              code: 'STATUS_KEY_UNKNOWN',
+              path,
+              message: `${at ? `${at}.` : ''}statusKeys.${member} is never written (a statusKeys names ${STATUS_KEY_MEMBERS.join(', ')})${hint}`,
+            })
+          }
+        } else walk(x, at ? `${at}.${k}` : k)
+      }
+    }
+    walk(receipt, '')
+  }
+  return issues
+}
+
 /** Names the page scope already gives: the visitor's identity (`me`, `__auth`) and every `__…` key. */
 const RESERVED_ROOT = /^(?:me|__.*)$/
 
@@ -228,7 +270,9 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
  * runner draws for it, from what it declares:
  *
  *  - `notFound.*` unless `pwpack.json` `app.notFound` names its own page;
- *  - with a way in (`auth.json` methods, or an issuer): `auth.error.*`, and the runner's own
+ *  - with a way in (`auth.json` methods, or an issuer): `auth.error.*` when a
+ *    sign-in round trip can send the visitor back with `?auth_error=` (a
+ *    provider method or an issuer; a password-only door never does), and the runner's own
  *    sign-in screen (`gate.*`) unless `app.signIn` names the app's — its
  *    password fields and `session.*` with a password method, one
  *    `gate.provider.<method>` per provider, `gate.title` only when the plan
@@ -257,9 +301,10 @@ export function reachableMessageIds(root: string): RunnerMessageId[] {
   // carries access rules signs nobody in, so the runner draws none of these.
   const door = auth !== undefined && (auth.topology === 'external' ? auth.issuer !== undefined : auth.methods.length > 0)
   if (auth && door) {
-    all('auth.error.')
     const password = auth.topology === 'app' && auth.methods.includes('password')
     const providers = auth.methods.filter((m) => m !== 'password')
+    // `?auth_error=` comes back from a provider or an issuer only.
+    if (providers.length > 0 || auth.topology === 'external') all('auth.error.')
     if (!named(app['signIn'])) {
       if (!(isObj(plan) && named(plan['title']))) ids.add('gate.title')
       // The wall's sentence only on the wall; the on-demand dialog has none.
@@ -340,6 +385,11 @@ async function atomSources(root: string, identity: PackValidation['identity']): 
   if (!identity) return []
   const sources = await loadSources(root)
   if (!sources.app) return []
+  return blockSourcesOf(sources)
+}
+
+function blockSourcesOf(sources: LoadedSources): BlockSource[] {
+  if (!sources.app) return []
   return [
     { folder: sources.app.folder, atoms: sources.app.validation.atoms },
     ...sources.packs.map((s) => ({ folder: s.folder, atoms: s.validation.atoms, label: s.label })),
@@ -357,9 +407,13 @@ async function atomSources(root: string, identity: PackValidation['identity']): 
 export async function validateProject(root: string, pack: PackFolder): Promise<PackValidation> {
   const result = validatePack(pack)
   const pinIssues = await checkPins(root, result.identity)
-  const sources = await atomSources(root, result.identity)
+  const loaded = result.identity ? await loadSources(root) : null
+  const sources = loaded ? blockSourcesOf(loaded) : []
   const fieldIssues = checkRowFields(pack, connectionFieldSets(pack, sources))
-  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkReservedSources(root), ...propIssues(sources), ...fieldIssues]
+  const engineIssues: PackIssue[] = loaded
+    ? engineRangeDiagnostics(loaded, engineVersion()).map((d) => ({ severity: 'error', code: d.code, message: d.message, ...(d.path ? { path: d.path } : {}) }))
+    : []
+  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkReservedSources(root), ...checkStatusKeys(root), ...propIssues(sources), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 

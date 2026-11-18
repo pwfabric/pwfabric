@@ -32,6 +32,12 @@ export interface LocalHost {
   handle(req: IncomingMessage, res: ServerResponse): Promise<boolean>
   /** Clears records and sessions. */
   reset(): void
+  /**
+   * Drops the records so the next read seeds them again from the app folder
+   * (`app/content/`, `app/data/`, the entities). Sessions stay: `pwf dev`
+   * calls it when those files change, and the developer stays signed in.
+   */
+  reseed(): void
 }
 
 /** Implemented in ./local-host.ts. */

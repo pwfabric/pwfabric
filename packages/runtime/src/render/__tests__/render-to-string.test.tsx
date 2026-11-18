@@ -70,3 +70,43 @@ describe('rendering a page to a string', () => {
     }
   })
 })
+
+describe('context.appHref (E3, E14)', () => {
+  const Link: BlockComponent = ({ context }: BlockComponentProps) =>
+    React.createElement(
+      'p',
+      null,
+      ['/webhooks?x=1', '/', 'https://example.com/a', '#top', ''].map((to, i) =>
+        React.createElement('a', { key: i, 'data-i': i, href: context.appHref(to) }, 'x')
+      )
+    )
+  const draw = (linkHref?: (href: string) => string): string => {
+    BlockModuleLoader.register('link', { Component: Link, definition: null })
+    return renderToString(
+      React.createElement(
+        DynamicArtifactProvider,
+        { dynamicBlocks: [descriptor('link')] },
+        React.createElement(SurfaceRenderer, {
+          surface: { blocks: [{ id: 'l', type: 'link', props: {} }] } as never,
+          viewport: 'xs',
+          ...(linkHref ? { linkHref } : {}),
+        })
+      )
+    )
+  }
+
+  it('writes a page path in the host router form, the same in the first paint as in the browser', () => {
+    // The runner's rule: a page path becomes its route, anything else is kept.
+    const hash = (href: string): string =>
+      href === '' || /^[a-z]+:|^#/i.test(href) ? href : `#/${href.replace(/^\//, '') || 'home'}`
+    const html = draw(hash)
+    expect(html).toContain('href="#/webhooks?x=1"')
+    expect(html).toContain('href="#/home"')
+    expect(html).toContain('href="https://example.com/a"')
+    expect(html).toContain('href="#top"')
+  })
+
+  it('without a router, a path is written as given', () => {
+    expect(draw()).toContain('href="/webhooks?x=1"')
+  })
+})

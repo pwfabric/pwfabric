@@ -33,7 +33,9 @@ export interface SurfaceDataCache {
  */
 export function dataSourceCacheKey(
   source: SurfaceDataSourceDefinition,
-  state: Readonly<Record<string, unknown>>
+  state: Readonly<Record<string, unknown>>,
+  /** The signed-in visitor, for a query that reads `me` (query-state.ts). */
+  me?: unknown
 ): string | undefined {
   if (source.kind === 'state' || source.kind === 'static') return undefined
   // An idle source (a required path value is empty) is not fetched either.
@@ -44,12 +46,12 @@ export function dataSourceCacheKey(
   if (
     (source.kind === 'rest' || source.kind === 'entity') &&
     source.aggregate === undefined &&
-    queryAsksForNothing(source.query, state, source.notFoundWhenEmpty === true)
+    queryAsksForNothing(source.query, state, source.notFoundWhenEmpty === true, me)
   ) {
     return undefined
   }
-  const query = source.query ? resolveQueryState(source.query, state) : null
-  const aggregate = source.aggregate ? resolveQueryState(source.aggregate, state) : null
+  const query = source.query ? resolveQueryState(source.query, state, me) : null
+  const aggregate = source.aggregate ? resolveQueryState(source.aggregate, state, me) : null
   return JSON.stringify([
     source.kind,
     source.id,

@@ -73,3 +73,29 @@ export function completeNamedControlValues(
   collect(form.children as readonly Block[] | undefined, state, added, seen)
   return Object.keys(added).length > 0 ? { ...values, ...added } : values
 }
+
+/**
+ * A FILE PICKED IN A FORM IS NEVER DROPPED (data-protocol §4.1).
+ *
+ * A form block may leave a file control out of the values it gathers (a
+ * `File` serialises to `{}`), and the record was then saved without a word
+ * while the visitor believed the file went with it. The files chosen in the
+ * form's own `<input type="file" name>` controls are added under their names
+ * here, where the block gathered nothing, so the writer refuses the write
+ * before sending (`reason: 'validation'`, `fields` naming the control): a
+ * record stores values; a file is uploaded first and the record stores what
+ * the upload answered. A disabled control, or one with no file chosen, adds
+ * nothing. Returns `values` itself when there is nothing to add.
+ */
+export function withChosenFiles(form: Element | null, values: Record<string, unknown>): Record<string, unknown> {
+  if (!form || typeof HTMLFormElement === 'undefined' || !(form instanceof HTMLFormElement)) return values
+  let added: Record<string, unknown> | null = null
+  for (const el of Array.from(form.elements)) {
+    if (!(el instanceof HTMLInputElement) || el.type !== 'file' || el.disabled || !el.name) continue
+    const files = el.files ? Array.from(el.files) : []
+    if (files.length === 0 || Object.prototype.hasOwnProperty.call(values, el.name)) continue
+    added ??= { ...values }
+    added[el.name] = el.multiple ? files : files[0]
+  }
+  return added ?? values
+}

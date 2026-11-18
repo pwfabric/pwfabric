@@ -206,6 +206,7 @@ describe('dev server', () => {
         return true
       },
       reset: () => undefined,
+      reseed: () => undefined,
     }
     const server = track(await createDevServer({ root, port: 0, localHost: host }, { watch: false }))
     expect(await (await fetch(new URL('/_host/session', server.url))).json()).toEqual({ host: true })
@@ -231,7 +232,7 @@ describe('dev server', () => {
           watch: false,
           createHost: (o) => {
             made.push({ root: o.root, prefix: o.prefix })
-            return { envelopeEntries: () => ({}), handle: async () => false, reset: () => undefined }
+            return { envelopeEntries: () => ({}), handle: async () => false, reset: () => undefined, reseed: () => undefined }
           },
         }
       )
@@ -262,6 +263,7 @@ describe('dev server', () => {
                 return true
               },
               reset: () => undefined,
+              reseed: () => undefined,
             }
           },
         }
@@ -279,6 +281,45 @@ describe('dev server', () => {
     expect(lines.some((l) => l.startsWith('local host mounted at'))).toBe(true)
     await server.rebuild()
     expect(made).toEqual(['/_host'])
+  })
+
+  it('seeds the records again when the content, the sample data or the entities change (E17)', async () => {
+    const root = await app()
+    let reseeds = 0
+    const lines: string[] = []
+    const host: LocalHost = {
+      envelopeEntries: () => ({}),
+      handle: async () => false,
+      reset: () => undefined,
+      reseed: () => {
+        reseeds++
+      },
+    }
+    const server = track(await createDevServer({ root, port: 0, localHost: host, log: (l) => lines.push(l) }, { watch: { debounceMs: 50 } }))
+    const events = sse(new URL('/_pwf/events', server.url).href)
+    cleanups.push(async () => events.close())
+    await new Promise((r) => setTimeout(r, 200))
+    const builds = (): number => lines.filter((l) => /^(built|build failed) in/.test(l)).length
+
+    // A file the records do not come from: no reseed.
+    let before = builds()
+    await mkdir(join(root, 'shots'), { recursive: true })
+    await writeFile(join(root, 'shots/x.png'), new Uint8Array([1]))
+    await vi.waitFor(() => expect(builds()).toBeGreaterThan(before), { timeout: 30_000 })
+    expect(reseeds).toBe(0)
+
+    // Content: reseeded, and the open page reloads to read it.
+    before = builds()
+    const reload = events.next('reload')
+    await mkdir(join(root, 'app/content'), { recursive: true })
+    await writeFile(join(root, 'app/content/Note.json'), JSON.stringify([{ id: 'n1', text: 'hi' }]))
+    await vi.waitFor(() => expect(builds()).toBeGreaterThan(before), { timeout: 30_000 })
+    expect(reseeds).toBeGreaterThan(0)
+    await reload
+
+    const after = reseeds
+    await writeFile(join(root, 'app/definitions/entities.json'), JSON.stringify({ entities: [{ typeId: 'Note', fields: [] }] }))
+    await vi.waitFor(() => expect(reseeds).toBeGreaterThan(after), { timeout: 30_000 })
   })
 
   it('refuses a port that is taken', async () => {

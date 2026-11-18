@@ -52,6 +52,10 @@ export interface BlockComponentContext {
   readonly imageAdapter?: unknown
   /** Capabilities (optional, runtime-provided) */
   readonly capabilities?: Map<string, unknown>
+  /** The app's locale (BCP 47); see the runtime's `BlockContext.locale`. */
+  readonly locale?: string
+  /** An app page's path in the host's router form; see the runtime's `BlockContext.appHref`. */
+  readonly appHref?: (path: string) => string
 }
 
 // ============================================================

@@ -105,7 +105,20 @@ describe('writeFailureReason — a code for the page to write its own words for'
     expect(reason(403)).toBe('forbidden')
     expect(reason(500)).toBe('server')
     expect(reason(undefined)).toBe('network')
-    expect(reason(409, 'CONFLICT')).toBe('error')
+    expect(reason(409, 'CONFLICT')).toBe('conflict')
+    expect(reason(404)).toBe('error')
     expect(writeFailureReason({ type: 'unauthorized', message: '' })).toBe('forbidden')
+    expect(writeFailureReason({ type: 'conflict', message: '' })).toBe('conflict')
+  })
+
+  it('a 409 names the unique key’s fields, as a validation refusal names its own (E13)', () => {
+    const error = toFormWriteError({
+      type: 'network',
+      status: 409,
+      code: 'CONFLICT',
+      message: 'owner: another Rsvp record already has this owner and sessionId; sessionId: another Rsvp record already has this owner and sessionId',
+    } as never)
+    expect(writeFailureReason(error)).toBe('conflict')
+    expect(writeFailureFields(error)).toEqual(['owner', 'sessionId'])
   })
 })

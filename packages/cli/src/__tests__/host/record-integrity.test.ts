@@ -86,6 +86,8 @@ describe('unique keys', () => {
     const rsvp = (caller: typeof ada, sessionId: string) => store.create({ entity: entity('Rsvp'), auth, caller }, { sessionId })
     rsvp(ada, 's1')
     expect(refusal(() => rsvp(ada, 's1'))).toMatchObject({ status: 409, code: 'CONFLICT' })
+    // Each field of the key, in the `<field>: <reason>` form a form reads its fields from (E13).
+    expect((refusal(() => rsvp(ada, 's1')) as { message: string }).message).toMatch(/^who: .+; sessionId: .+$/)
     expect(rsvp(ada, 's2')).toMatchObject({ sessionId: 's2' })
     expect(rsvp(bob, 's1')).toMatchObject({ sessionId: 's1' })
   })

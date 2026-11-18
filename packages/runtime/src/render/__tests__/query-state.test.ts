@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveQueryState, queryHasState } from '../query-state.js'
+import { resolveQueryState, queryHasState, queryAsksForNothing } from '../query-state.js'
 
 describe('resolveQueryState — {{state.x}} inside a data-source query', () => {
   const state = { page: 3, pageSize: 20, severity: 'high', tags: ['a', 'b'], empty: undefined }
@@ -58,5 +58,33 @@ describe('an emptied control is no constraint', () => {
   it('a literal empty string an author wrote is left alone', () => {
     const q = resolveQueryState({ filter: { field: 'note', operator: 'eq', value: '' } }, { note: 'x' })
     expect(q.filter.value).toBe('')
+  })
+})
+
+describe('the caller in a query value: {{me.*}} (E5)', () => {
+  const mine = { filter: { field: 'email', operator: 'eq', value: '{{me.email}}' } }
+
+  it('resolves against the signed-in visitor', () => {
+    expect(resolveQueryState(mine, {}, { id: 'u-1', email: 'ada@x.io' })).toEqual({
+      filter: { field: 'email', operator: 'eq', value: 'ada@x.io' },
+    })
+    expect(queryAsksForNothing(mine, {}, false, { email: 'ada@x.io' })).toBe(false)
+  })
+
+  it('signed out, a condition on the caller matches nothing — it never lists everyone', () => {
+    expect(queryAsksForNothing(mine, {}, false, null)).toBe(true)
+    expect(queryAsksForNothing(mine, {}, false)).toBe(true)
+    const any = { filter: { field: 'members', operator: 'contains', value: '{{me.id}}' } }
+    expect(queryAsksForNothing(any, {}, false, null)).toBe(true)
+    // Inside an `and`, one such member is enough; an `or` needs every branch.
+    const and = { filter: { and: [{ field: 'status', operator: 'eq', value: 'open' }, mine.filter] } }
+    expect(queryAsksForNothing(and, {}, false, null)).toBe(true)
+    const or = { filter: { or: [{ field: 'public', operator: 'eq', value: true }, mine.filter] } }
+    expect(queryAsksForNothing(or, {}, false, null)).toBe(false)
+  })
+
+  it('a state value named `me` is not the caller', () => {
+    const q = { filter: { field: 'tag', operator: 'eq', value: '{{state.me}}' } }
+    expect(queryAsksForNothing(q, {}, false, null)).toBe(false)
   })
 })

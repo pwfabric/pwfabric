@@ -207,6 +207,10 @@ function mapToCustomBlockContext(runtimeContext: unknown): CustomBlockContext | 
             ;(ctx.onEvent as (e: unknown) => void)(event)
           }
         : undefined,
+    appHref:
+      typeof ctx.appHref === 'function'
+        ? (ctx.appHref as (path: string) => string)
+        : (path: string) => path,
   }
 }
 

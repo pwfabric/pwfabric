@@ -55,6 +55,10 @@ English, a warning otherwise. BLOCK_DEFAULT_COPY (warning): a placed block
 shows its manifest's default for a copy prop the receipt does not set.
 ERROR_BOUND_AS_TEXT (warning): a receipt shows {{__errors.*}} or a
 statusKeys.reason/detail value as text instead of branching on it.
+STATUS_KEY_UNKNOWN (warning): a statusKeys names a member the runtime never
+writes (2.2's message). ENGINE_RANGE_EXCLUDED (error): the app or a pinned
+pack declares an engines.pwfabric range this engine is not in; \`pwf build\`
+refuses it too.
 Exit code 1 when there is any error, 0 otherwise.`,
   run: (args, io) => guard('validate', io, () => runValidate(args, io)),
 }

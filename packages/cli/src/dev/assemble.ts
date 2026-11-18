@@ -49,7 +49,8 @@ import {
   type PageHints,
   type ShellAssets,
 } from './shell.js'
-import { isRecord, jsonOf, loadSources, PWF_DIR, type PackMemo, type SourcePack } from './sources.js'
+import { engineRangeDiagnostics, isRecord, jsonOf, loadSources, PWF_DIR, type PackMemo, type SourcePack } from './sources.js'
+import { engineVersion } from '../commands/lib/identity.js'
 import {
   appearanceConfigOf,
   buildThemeCss,
@@ -76,6 +77,8 @@ export interface AssembleOptions {
   readonly runtime?: RuntimeAssets
   /** Pack builds read by an earlier build of the same session. */
   readonly packMemo?: PackMemo
+  /** The engine version the folder is judged against (ENGINE_RANGE_EXCLUDED); default: this CLI's. */
+  readonly engineVersion?: string
 }
 
 export interface AssembleStats {
@@ -210,6 +213,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
 
   const sources = await loadSources(root, options.packMemo)
   diagnostics.push(...sources.diagnostics)
+  diagnostics.push(...engineRangeDiagnostics(sources, options.engineVersion ?? engineVersion()))
   const { app, identity } = sources
   if (!app || !identity) return done(EMPTY_STATS)
   if (!identity.app) {

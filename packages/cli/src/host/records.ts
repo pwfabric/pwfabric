@@ -319,7 +319,13 @@ export class RecordStore {
       for (const [id, other] of this.collection(entity)) {
         if (id === selfId) continue
         if (key.every((f, i) => valueOf(other.record, other.owner, f) === mine[i])) {
-          throw new HostError(409, 'CONFLICT', `A ${entity.typeId} record with this ${key.join(' and ')} already exists.`)
+          // Each field of the key in the `<field>: <reason>` form a refusal
+          // names its fields in (data-protocol §4.2): the form marks them.
+          throw new HostError(
+            409,
+            'CONFLICT',
+            key.map((f) => `${f}: another ${entity.typeId} record already has this ${key.length > 1 ? `${key.join(' and ')}` : 'value'}`).join('; ')
+          )
         }
       }
     }
