@@ -178,16 +178,19 @@ describe('what a page needs first', () => {
     expect(firstImageOf({ blocks: [img('{{dish.photo}}'), img('data:image/png;base64,AA')] })).toBeUndefined()
   })
 
-  it('the shell asks for the entry page, boot.js for a deep-linked one', async () => {
-    const { buildShellHtml, bootScript } = await import('../../dev/shell.js')
-    const hints = { receipt: 'pwpack/surfaces/menu.receipt.json', modules: ['blocks/text.1.mjs'], image: 'pwpack/media/hero.jpg', imagePriority: true }
-    const html = buildShellHtml({ title: 'x', entryHints: hints, themeCss: ':root{--a:1}' })
-    expect(html).toContain('<link rel="preload" as="fetch" href="./pwpack/surfaces/menu.receipt.json" crossorigin />')
-    expect(html).toContain('<link rel="modulepreload" href="./blocks/text.1.mjs" />')
-    expect(html).toContain('<link rel="preload" as="image" href="./pwpack/media/hero.jpg" fetchpriority="high" />')
+  it('the shell names every page’s needs once, and asks for none of them itself (E2)', async () => {
+    const { buildShellHtml, bootScript, PAGE_HINTS_SCRIPT } = await import('../../dev/shell.js')
+    const hints = { receipt: 'pwpack/surfaces/menu.receipt.json', modules: ['blocks/text.1.mjs'], image: './pwpack/media/hero.jpg', imagePriority: true }
+    const pageHints = { entry: 'menu', routes: ['menu'], pages: { menu: hints } }
+    const html = buildShellHtml({ title: 'x', pageHints, themeCss: ':root{--a:1}' })
+    const head = html.slice(0, html.indexOf('</head>'))
+    // Decided where the address is known: no static hint for any one page.
+    expect(head).not.toContain('menu.receipt.json" crossorigin')
+    expect(head).not.toContain('blocks/text.1.mjs" />')
+    expect(head).toContain(`<script type="application/json" id="pw-page-hints">${JSON.stringify(pageHints)}</script>`)
+    expect(head).toContain(`<script>${PAGE_HINTS_SCRIPT}</script>`)
     expect(html).toContain('<style>:root{--a:1}</style>')
-    const boot = bootScript({ pageHints: { dish: hints } })
-    expect(boot).toContain('"dish":')
-    expect(boot).toContain("location.hash.slice(2).split(/[?#]/)[0]")
+    expect(bootScript({})).not.toContain('preload')
   })
+
 })

@@ -246,49 +246,101 @@ export interface ShellOptions {
    * the first paint waits for nothing but the document.
    */
   readonly themeCss?: string
-  /** What the ENTRY page needs, fetched with the document (see {@link PageHints}). */
-  readonly entryHints?: PageHints
+  /**
+   * What each page needs first, by page key (see {@link PageHints}): the
+   * shell asks for the OPENED page's only ({@link PAGE_HINTS_SCRIPT}).
+   */
+  readonly pageHints?: {
+    readonly entry: string
+    readonly routes: readonly string[]
+    readonly notFound?: string
+    readonly pages: Readonly<Record<string, PageHints>>
+  }
   /**
    * The static first paint (pwapp-format §2.5): the entry page's first frame,
-   * written into `#root`, and what {@link FIRST_PAINT_SCRIPT} reads to keep,
-   * swap or drop it before the browser paints. Absent: `#root` is empty.
+   * written into `<template id="pw-entry-frame">`, and what
+   * {@link FIRST_PAINT_SCRIPT} reads to put it, or another page's, into
+   * `#root` before the browser paints. Absent: `#root` is empty.
    */
   readonly firstPaint?: { readonly rootHtml: string; readonly data: Record<string, unknown> }
 }
 
 /**
- * The shell's one inline script besides the import map, run where it stands
- * — right after `#root`, before the first paint. It keeps the build's first
- * frame only where it is this visit's first frame:
- * - the address names the entry page: kept as written;
- * - another page (or one the app does not have, when it ships a not-found
- *   page): the entry's frame is dropped and that page's is fetched
+ * The page an address names, as both inline scripts read it: the hash
+ * router's key (`#/<key>?<query>`), the entry for none, the app's not-found
+ * page for a key that is not a route. A page is then looked up as an OWN key
+ * of its table only (`#/constructor` names none).
+ */
+const ADDRESS_KEY = String.raw`var own = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k) }
+    var m = /^#\/([^#?]*)(?:\?([^#]*))?/.exec(location.hash)
+    var key = m ? m[1].replace(/\/+$/, '') : ''
+    if (key === '') key = d.entry
+    if (d.routes.indexOf(key) < 0 && d.notFound) key = d.notFound`
+
+/**
+ * The shell's inline script in `<head>`: asks for what the OPENED page needs
+ * — its receipt, its block modules, its first image, its first frame — and nothing of any
+ * other page's (pwapp-format §2.1). It reads `<script type="application/json"
+ * id="pw-page-hints">` (`{ entry, routes, notFound?, pages: { <key>: PageHints } }`).
+ * A hint is only a head start: nothing here can stop the app from starting.
+ * Constant text, so the Content Security Policy allows it by one hash.
+ */
+export const PAGE_HINTS_SCRIPT = String.raw`(function () {
+  try {
+    var d = JSON.parse(document.getElementById('pw-page-hints').textContent || '{}')
+    ${ADDRESS_KEY}
+    var page = own(d.pages, key) ? d.pages[key] : null
+    if (!page) return
+    var add = function (href, as, high) {
+      var link = document.createElement('link')
+      link.rel = 'preload'
+      link.setAttribute('as', as)
+      link.href = /^(https?:|\.\/)/.test(href) ? href : './' + href
+      if (as === 'fetch') link.crossOrigin = 'anonymous'
+      if (high) link.setAttribute('fetchpriority', 'high')
+      document.head.appendChild(link)
+    }
+    if (typeof page.receipt === 'string') add(page.receipt, 'fetch')
+    for (var i = 0; i < (page.modules || []).length; i++) if (typeof page.modules[i] === 'string') add(page.modules[i], 'fetch')
+    if (typeof page.image === 'string') add(page.image, 'image', page.imagePriority === true)
+    if (typeof page.frame === 'string') add(page.frame, 'fetch')
+  } catch (e) {}
+})()`
+
+/**
+ * The shell's inline script after `#root`, run where it stands — before the
+ * first paint. It puts the build's first frame of the opened page into the
+ * (empty) root, only where it is this visit's first frame:
+ * - the address names the entry page: its frame, from
+ *   `<template id="pw-entry-frame">` — a template, so a visitor who opened
+ *   another page never downloads the entry page's pictures;
+ * - another painted page (or one the app does not have, when it ships a
+ *   not-found page): that page's frame is fetched
  *   (`pwpack/surfaces/<key>.html`) and put in place when it arrives — unless
  *   the runner has drawn into the root by then;
- * - a window wider than the painted breakpoint, or an address whose query
- *   seeds the page's state: dropped; the runner draws the page.
+ * - a window wider than the painted breakpoint, a page that is not painted,
+ *   or an address whose query carries a key that changes the page's first
+ *   frame: nothing; the runner draws the page.
  * Constant text, so the Content Security Policy allows it by one hash.
  */
 export const FIRST_PAINT_SCRIPT = String.raw`(function () {
   var root = document.getElementById('root')
   var data = document.getElementById('pw-first-paint')
   if (!root || !data) return
-  var drop = function () { root.textContent = '' }
   try {
     var d = JSON.parse(data.textContent || '{}')
-    var own = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k) }
-    var m = /^#\/([^#?]*)(?:\?([^#]*))?/.exec(location.hash)
-    var key = m ? m[1].replace(/\/+$/, '') : ''
-    if (key === '') key = d.entry
-    if (d.routes.indexOf(key) < 0 && d.notFound) key = d.notFound
+    ${ADDRESS_KEY}
     var page = own(d.pages, key) ? d.pages[key] : null
-    if (!page || window.innerWidth > d.maxWidth) return drop()
+    if (!page || window.innerWidth > d.maxWidth) return
     if (m && m[2]) {
       var query = new URLSearchParams(m[2])
-      for (var i = 0; i < page.keys.length; i++) if (query.has(page.keys[i])) return drop()
+      for (var i = 0; i < page.keys.length; i++) if (query.has(page.keys[i])) return
     }
-    if (!page.file) return
-    drop()
+    var frame = document.getElementById('pw-entry-frame')
+    if (!page.file) {
+      if (frame && frame.content) root.appendChild(frame.content)
+      return
+    }
     fetch('./' + page.file).then(function (r) { return r.ok ? r.text() : '' }).then(function (html) {
       if (!html || root.firstChild) return
       var el = document.createElement('div')
@@ -297,9 +349,7 @@ export const FIRST_PAINT_SCRIPT = String.raw`(function () {
       el.innerHTML = html
       root.appendChild(el)
     }).catch(function () {})
-  } catch (e) {
-    drop()
-  }
+  } catch (e) {}
 })()`
 
 /**
@@ -316,10 +366,17 @@ export interface PageHints {
   readonly image?: string
   /** The image is one a block marked `priority: true`: fetched at high priority. */
   readonly imagePriority?: boolean
+  /**
+   * The page's first frame (`pwpack/surfaces/<key>.html`, pwapp-format §2.5),
+   * for a page painted at build that is not the entry: asked for with the
+   * document, so the first-paint script's fetch of it is not one more round
+   * trip behind the runner.
+   */
+  readonly frame?: string
 }
 
 /** An app file as the shell addresses it (`./…`); an absolute address as written. */
-function servedHref(href: string): string {
+export function servedHref(href: string): string {
   return /^https?:\/\//i.test(href) ? href : `./${href.replace(/^\.?\//, '')}`
 }
 
@@ -368,22 +425,6 @@ export function firstImageOf(receipt: unknown): { readonly src: string; readonly
   return first !== undefined ? { src: first, priority: false } : undefined
 }
 
-/** The preload links for a page. */
-function hintLinks(hints: PageHints | undefined): string {
-  if (!hints) return ''
-  const image = hints.image
-    ? `
-    <link rel="preload" as="image" href="${escapeHtml(servedHref(hints.image))}"${hints.imagePriority ? ' fetchpriority="high"' : ''} />`
-    : ''
-  return (
-    `
-    <link rel="preload" as="fetch" href="./${escapeHtml(hints.receipt)}" crossorigin />` +
-    hints.modules.map((m) => `
-    <link rel="modulepreload" href="./${escapeHtml(m)}" />`).join('') +
-    image
-  )
-}
-
 /** The exact text of the shell's inline import map (the CSP hashes this). */
 export function importMapText(): string {
   return scriptJson(importMap())
@@ -394,11 +435,6 @@ export interface BootOptions {
   readonly assets?: ShellAssets
   /** The webfont stylesheet the theme names, linked by the boot module so it never holds the first paint. */
   readonly webfontHref?: string | null
-  /**
-   * Every page but the entry, by key: what boot.js asks for at once when the
-   * address names that page (a deep link), the way the shell does for the entry.
-   */
-  readonly pageHints?: Readonly<Record<string, PageHints>>
 }
 
 /** `assets/boot.<hash>.js`: the module that starts the runner. */
@@ -418,39 +454,9 @@ fonts.href = ${JSON.stringify(options.webfontHref)}
 document.head.appendChild(fonts)
 `
     : ''
-  const pages = options.pageHints && Object.keys(options.pageHints).length > 0 ? options.pageHints : undefined
-  const deepLink = pages
-    ? `
-// A deep link: the page the address names, its receipt and its block modules
-// asked for now, beside the runner, instead of one after another.
-// The address is the visitor's: only an OWN key of the table is a page
-// (\`#/constructor\` names none), its shape is checked, and nothing here can
-// stop the app from starting.
-try {
-  const hints = new Map(Object.entries(${JSON.stringify(pages)}))
-  const key = location.hash.startsWith('#/') ? location.hash.slice(2).split(/[?#]/)[0] : ''
-  const page = hints.get(key)
-  if (page && typeof page.receipt === 'string' && Array.isArray(page.modules)) {
-    const add = (rel, href, as) => {
-      const link = document.createElement('link')
-      link.rel = rel
-      link.href = href
-      if (as) link.as = as
-      if (as === 'fetch') link.crossOrigin = 'anonymous'
-      document.head.appendChild(link)
-    }
-    add('preload', './' + page.receipt, 'fetch')
-    for (const m of page.modules) if (typeof m === 'string') add('modulepreload', './' + m)
-    if (typeof page.image === 'string') add('preload', /^https?:/.test(page.image) ? page.image : './' + page.image, 'image')
-  }
-} catch {
-  // A hint is only a head start; the runner fetches what it needs anyway.
-}
-`
-    : ''
   return `// Generated by pwf: starts the app.
 import { runApp } from ${JSON.stringify(runner)}
-${fonts}${deepLink}
+${fonts}
 runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', renderer: ${JSON.stringify(`./${assets.embed}`)}, router: 'hash' })
 `
 }
@@ -516,9 +522,15 @@ export function buildShellHtml(options: ShellOptions): string {
     .join('')
   const lang = htmlLangOf(options.lang)
   const firstPaint = options.firstPaint
-    ? `
+    ? `${options.firstPaint.rootHtml ? `
+    <template id="pw-entry-frame">${options.firstPaint.rootHtml}</template>` : ''}
     <script type="application/json" id="pw-first-paint">${scriptJson(options.firstPaint.data)}</script>
     <script>${FIRST_PAINT_SCRIPT}</script>`
+    : ''
+  const hints = options.pageHints && Object.keys(options.pageHints.pages).length > 0
+    ? `
+    <script type="application/json" id="pw-page-hints">${scriptJson(options.pageHints)}</script>
+    <script>${PAGE_HINTS_SCRIPT}</script>`
     : ''
   return `<!doctype html>
 <html${lang ? ` lang="${escapeHtml(lang)}"` : ''}>
@@ -529,10 +541,10 @@ export function buildShellHtml(options: ShellOptions): string {
     <link rel="icon" href="data:," />
     ${options.themeCss !== undefined ? `<style>${options.themeCss.replace(/<\//g, '<\\/')}</style>` : `<link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />`}${fonts}
     <script type="importmap">${importMapText()}</script>
-    <link rel="modulepreload" href="./${escapeHtml(assets.runner)}" />${renderer}${shims}${boot}${hintLinks(options.entryHints)}
+    <link rel="modulepreload" href="./${escapeHtml(assets.runner)}" />${renderer}${shims}${boot}${hints}
   </head>
   <body>
-    <div id="root">${options.firstPaint?.rootHtml ?? ''}</div>${firstPaint}
+    <div id="root"></div>${firstPaint}
     <script type="module" src="./${escapeHtml(assets.boot)}"></script>${options.bodyExtra ?? ''}
   </body>
 </html>

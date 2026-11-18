@@ -279,10 +279,13 @@ export function startSocialSignIn(
 /**
  * Who the gateway's cookie belongs to, or null.
  *
- * Asked once on boot when nothing is stored. A 401 is the ordinary answer for
- * a visitor who has not signed in; any other failure — a static host that
- * serves its index page for every path, a network error — is also null, since
- * none of them is a session and none of them should stop the app rendering.
+ * Asked once on boot when nothing is stored. A visitor who has not signed in
+ * is the ordinary answer, and a door says so with a 200 —
+ * `{ data: { signedIn: false } }` (session-protocol §4.2), not a 4xx the
+ * browser logs as a failed request. Anything that carries no token is null:
+ * that answer, a 401 from a door that still refuses, a static host that
+ * serves its index page for every path, a network error — none of them is a
+ * session and none of them should stop the app rendering.
  */
 export async function readGatewaySession(
   auth: Pick<PwappAuth, 'gatewaySessionUrl'> | null | undefined,

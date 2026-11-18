@@ -34,6 +34,7 @@ import {
   STATIC_VIEWPORT,
   STATIC_VIEWPORT_MAX_WIDTH,
   firstFrameAuthState,
+  firstFrameDoorOf,
   firstFrameLocale,
   firstFrameOptions,
   pageBlocksOf,
@@ -516,17 +517,19 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
    * THE BUILD'S FIRST FRAME OF THIS PAGE, when the shell holds one
    * (pwapp-format §2.5): `#pw-root` naming the page. Taken once — by the
    * first page drawn — and only when the window is at the breakpoint it was
-   * drawn at and the address seeds nothing (the shell's first-paint script
-   * left the root empty otherwise; checked again here, by the page's own rule).
+   * drawn at. Whether the address lets the build's frame stand is the shell's
+   * first-paint script's to decide — it knows which query keys change a
+   * page's first frame, and puts no frame in the root otherwise. The
+   * hydrating render reads no address either way; the address's seed arrives
+   * in the update after it.
    */
   let staticTaken = false
-  function staticRootFor(key: string, receipt: SurfaceReceipt, params: URLSearchParams): HTMLElement | null {
+  function staticRootFor(key: string): HTMLElement | null {
     if (staticTaken) return null
     staticTaken = true
     const root = container.firstElementChild
     if (!(root instanceof HTMLElement) || root.id !== 'pw-root' || root.getAttribute(STATIC_PAGE_ATTR) !== key) return null
     if (container.childElementCount !== 1) return null
-    if (Object.keys(queryStateSeed(receipt, params)).length > 0) return null
     if (window.innerWidth > STATIC_VIEWPORT_MAX_WIDTH) return null
     return root
   }
@@ -764,7 +767,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
 
     // The build's first frame of this page, when the shell holds it: hydrated,
     // not drawn again.
-    const staticRoot = staticRootFor(key, receipt, params)
+    const staticRoot = staticRootFor(key)
     if (!staticRoot) {
       container.replaceChildren()
       const mount = document.createElement('div')
@@ -893,13 +896,14 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     options: Record<string, unknown>
   ): Promise<unknown> {
     const fabric = window.PWFabric as NonNullable<Window['PWFabric']>
-    const first = pageSurfaceOf(receipt, key, new URLSearchParams(), pageContext(FIRST_FRAME_USER))
+    const firstDoor = firstFrameDoorOf(project)
+    const first = pageSurfaceOf(receipt, key, new URLSearchParams(), { ...pageContext(FIRST_FRAME_USER), door: firstDoor.door })
     const identity = authHost()
     const { dataCache: _cache, ...rest } = options
     const handle: Promise<unknown> = Promise.resolve(
       fabric.render(root, { surface: first }, {
         ...rest,
-        identity: { ...identity, state: firstFrameAuthState(identity.state.methods, auth) },
+        identity: { ...identity, state: firstFrameAuthState(firstDoor) },
         viewport: STATIC_VIEWPORT,
         locale: firstFrameLocale(project),
         hydrate: true,

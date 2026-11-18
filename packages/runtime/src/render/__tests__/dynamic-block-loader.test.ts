@@ -7,7 +7,7 @@
  * @module @pwfabric/runtime/render/__tests__/dynamic-block-loader
  */
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { BlockModuleLoader } from '../dynamic-block-loader.js'
 import type { DynamicBlockDescriptor } from '@pwfabric/contracts'
 
@@ -68,6 +68,18 @@ describe('BlockModuleLoader', () => {
   })
 
   describe('load', () => {
+    it('asks for the module exactly as `<link rel="preload" as="fetch" crossorigin>` does, so a preload answers it', async () => {
+      const spy = vi.fn(async () => new Response('', { status: 404 }))
+      vi.stubGlobal('fetch', spy)
+      try {
+        await expect(BlockModuleLoader.load(createDescriptor())).rejects.toThrow(/404/)
+        // No init: CORS with same-origin credentials, the preload's request.
+        expect(spy).toHaveBeenCalledWith('https://example.com/blocks/test-block/1.0.0/dist/bundle.mjs')
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+
     it('should reject when module URL cannot be loaded', async () => {
       const descriptor = createDescriptor()
 

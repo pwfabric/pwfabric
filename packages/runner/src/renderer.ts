@@ -77,26 +77,34 @@ function blockTypesIn(nodes: unknown, out = new Set<string>()): Set<string> {
 
 /**
  * Starts downloading the page's block modules the moment its receipt is in —
- * while the renderer may still be on its way. The renderer's own load of a
- * module (fetch, SHA-256 check, import) is the same request to the same
- * address, so the browser answers it from its cache: a build serves the
- * modules as immutable (pwapp-format §2.2). Nothing is evaluated here, and a
- * failure is the renderer's to report.
+ * while the renderer may still be on its way — as `<link rel="preload"
+ * as="fetch" crossorigin>`: the very request the block loader makes
+ * (runtime dynamic-block-loader: `fetch(url)`, CORS, same-origin
+ * credentials), so the loader's fetch is ANSWERED BY the preload instead of
+ * asking again. A module the page already asks for — the shell's hint for
+ * the opened page (pwapp-format §2.1), or an earlier page's warm-up — gets no
+ * second link: each module is requested once per load. Nothing is evaluated
+ * here, and a failure is the renderer's to report.
  */
 export function warmBlockModules(
   blocks: unknown,
   manifest: readonly { readonly blockType: string; readonly moduleUrl: string }[],
-  fetchImpl: typeof fetch = fetch
+  doc: Document = document
 ): void {
   const byType = new Map(manifest.map((d) => [d.blockType, d.moduleUrl]))
+  const asked = new Set<string>()
+  for (const link of doc.querySelectorAll<HTMLLinkElement>('link[rel="preload"][as="fetch"]')) asked.add(link.href)
   for (const type of blockTypesIn(blocks)) {
     const url = byType.get(type)
-    if (!url || warmed.has(url)) continue
-    warmed.add(url)
-    // The same request the block loader makes (runtime dynamic-block-loader).
-    fetchImpl(url, { credentials: 'omit' }).then(
-      (res) => void res.arrayBuffer().catch(() => undefined),
-      () => warmed.delete(url)
-    )
+    if (!url) continue
+    const href = new URL(url, doc.baseURI).href
+    if (asked.has(href) || warmed.has(href)) continue
+    warmed.add(href)
+    const link = doc.createElement('link')
+    link.rel = 'preload'
+    link.setAttribute('as', 'fetch')
+    link.crossOrigin = 'anonymous'
+    link.href = href
+    doc.head.appendChild(link)
   }
 }

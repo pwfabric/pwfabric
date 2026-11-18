@@ -20,7 +20,7 @@
  *     GET  <base>/session                  the principal behind the token
  *     GET  <base>/_auth/start/<method>     provider sign-in, through the same redirects
  *     GET  <base>/_auth/callback/<method>  …ends here: HttpOnly cookie, back to returnTo
- *     GET  <base>/_auth/session            the cookie's session (needs x-pwapp-request: 1)
+ *     GET  <base>/_auth/session            the cookie's session, or { signedIn: false } (needs x-pwapp-request: 1)
  *     POST <base>/_auth/logout             deletes the cookie (needs x-pwapp-request: 1)
  *   External issuer stand-in (session-protocol §3) — see ./oidc.ts
  *     GET  <base>/oidc/.well-known/openid-configuration, GET <base>/oidc/authorize,
@@ -300,11 +300,16 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
       requireRunnerRequest(req)
       const token = cookiesOf(req)[SESSION_COOKIE]
       const grant = bearer.get(token)
+      // THE SIGNED-OUT PROBE (session-protocol §4.2): the runner asks on every
+      // boot with nothing stored, so "no session" is the ordinary answer — a
+      // 200, not a 401 the browser logs as a failed request (Lighthouse
+      // best practices 96 on every sign-in app).
       if (!token || !grant || grant.kind !== 'session') {
-        throw new HostError(401, 'SIGN_IN_REQUIRED', 'No session cookie.')
+        sendJson(res, 200, { data: { signedIn: false } })
+        return
       }
       sendJson(res, 200, {
-        data: { token, expiresAt: new Date(grant.expiresAt).toISOString(), principal: answered(grant.principal) },
+        data: { signedIn: true, token, expiresAt: new Date(grant.expiresAt).toISOString(), principal: answered(grant.principal) },
       })
       return
     }

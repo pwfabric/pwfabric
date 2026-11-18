@@ -18,7 +18,9 @@
  * never reaches a visitor's HTML); nobody signed in; nothing read from the
  * address; the phone layout. An app that requires sign-in has no first frame
  * the build can know (who is signed in decides what is drawn): it is not
- * painted.
+ * painted. A record page (`notFoundWhenEmpty`) is: its first frame is the
+ * shell and its loading frame, whichever record the address names; a record
+ * that is not there replaces it with the not-found page, in the browser.
  *
  * A block whose render throws here (it reads `window` while rendering) is
  * left to the browser and reported: the rule for blocks is "render is pure;
@@ -35,8 +37,8 @@ import {
   STATIC_VIEWPORT,
   STATIC_VIEWPORT_MAX_WIDTH,
   addressStateKeys,
-  doorOf,
   firstFrameAuthState,
+  firstFrameDoorOf,
   firstFrameLocale,
   firstFrameOptions,
   ownApiBaseOf,
@@ -63,6 +65,9 @@ export function loadStaticRenderer(): Promise<string> {
 
 /** The hash router's address of a page (runner router.ts): what every built shell routes with. */
 const hashHref = (key: string): string => `#/${key}`
+
+/** A value no app's address carries: what a query key is seeded with to learn whether it changes a page's first frame. */
+const ADDRESS_PROBE = 'pw-address-probe'
 
 /** One page the static paint renders. */
 export interface StaticPage {
@@ -191,10 +196,13 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
   renderer.registerBlocks(blocks)
 
   const project = input.project
-  const auth = (input.auth ?? null) as Parameters<typeof doorOf>[1]
-  const runnerProject = project as unknown as Parameters<typeof doorOf>[0]
+  const auth = (input.auth ?? null) as Parameters<typeof ownApiBaseOf>[0]
+  const runnerProject = project as unknown as Parameters<typeof firstFrameDoorOf>[0]
   const entry = String(project['entrySurfaceId'] ?? '')
-  const { door, methods } = doorOf(runnerProject, auth)
+  // The ways in the app DECLARES (project.json identity), not this build's
+  // auth.json — which `pwf build` does not write and a host replaces.
+  const firstDoor = firstFrameDoorOf(runnerProject)
+  const door = firstDoor.door
   const ownApiBase = ownApiBaseOf(auth)
   const appearanceRef = projectAppearanceRef(input.appearance)
   const ctx = {
@@ -210,30 +218,33 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
   const failedBlocks = new Map<string, { message: string; pages: string[] }>()
   const painted: PaintedPage[] = []
   for (const page of input.pages) {
-    // A RECORD PAGE is not painted: what it shows is decided by its record
-    // (`notFoundWhenEmpty`) — the record the address names, or the not-found
-    // page when it names none — and the build knows neither.
-    if (readsOneRecord(page.receipt)) continue
     const served = page.receipt as unknown as Parameters<typeof pageSurfaceOf>[0]
     // As the runner fetches it: the app's own records read from its API base.
     const receipt = ownApiBase ? ownRecordsReceipt(served, ownApiBase) : served
-    try {
-      const surface = pageSurfaceOf(receipt, page.key, new URLSearchParams(), ctx)
-      const result = renderer.renderStatic(surface, {
+    const render = (params: URLSearchParams): ReturnType<StaticRenderer['renderStatic']> =>
+      renderer.renderStatic(pageSurfaceOf(receipt, page.key, params, ctx), {
         mode: 'fat',
         blocks: input.blockManifest,
         ...firstFrameOptions({ project: runnerProject, appearanceRef, receipt, entry, toHref: hashHref }),
-        identity: { state: firstFrameAuthState(methods, auth), onAction: () => undefined },
+        identity: { state: firstFrameAuthState(firstDoor), onAction: () => undefined },
         viewport: STATIC_VIEWPORT,
         locale: firstFrameLocale(runnerProject),
         address,
       })
+    try {
+      const result = render(new URLSearchParams())
       for (const f of result.failed) {
         const seen = failedBlocks.get(f.blockType) ?? { message: f.message, pages: [] }
         seen.pages.push(page.key)
         failedBlocks.set(f.blockType, seen)
       }
-      painted.push({ key: page.key, html: result.html, addressKeys: addressStateKeys(receipt) })
+      // THE KEYS THAT CHANGE THIS FRAME. A query key the page reads makes a
+      // visit's first frame not the build's only when its value changes what
+      // the frame draws: a record page's `?id=` seeds the source that is still
+      // loading, so its frame — the shell and the loading frame — stands
+      // (E16); a `?tab=` its tabs read does not.
+      const keys = addressStateKeys(receipt).filter((k) => render(new URLSearchParams({ [k]: ADDRESS_PROBE })).html !== result.html)
+      painted.push({ key: page.key, html: result.html, addressKeys: keys })
     } catch (err) {
       diagnostics.push({
         severity: 'warning',
@@ -253,17 +264,7 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
   return { pages: painted, diagnostics }
 }
 
-/** Whether a receipt has a source that stands for one record (`notFoundWhenEmpty`). */
-export function readsOneRecord(receipt: Record<string, unknown>): boolean {
-  const caps = Array.isArray(receipt['capabilities']) ? (receipt['capabilities'] as unknown[]) : []
-  return caps.some((cap) => {
-    const config = cap && typeof cap === 'object' ? (cap as Record<string, unknown>)['config'] : undefined
-    const sources = config && typeof config === 'object' ? (config as Record<string, unknown>)['dataSources'] : undefined
-    return Array.isArray(sources) && sources.some((s) => Boolean(s && typeof s === 'object' && (s as Record<string, unknown>)['notFoundWhenEmpty'] === true))
-  })
-}
-
-/** The element the entry page's first frame is written into `#root` as. */
+/** The entry page's first frame, as the shell holds it (`<template id="pw-entry-frame">`) until the first-paint script puts it into `#root`. */
 export function staticRootHtml(page: PaintedPage): string {
   return `<div id="pw-root" ${STATIC_PAGE_ATTR}="${escapeHtml(page.key)}">${page.html}</div>`
 }

@@ -38,6 +38,8 @@ import { firstPaintData, paintPages, staticPageFile, staticRootHtml, type Painte
 import {
   BOOT_FILES,
   FIRST_PAINT_SCRIPT,
+  PAGE_HINTS_SCRIPT,
+  servedHref,
   bootScript,
   buildShellHtml,
   firstImageOf,
@@ -467,14 +469,20 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     return {
       receipt: `pwpack/surfaces/${page.key}.receipt.json`,
       modules: [...new Set(blockTypesOf(receipt).map((t) => moduleOf.get(t)).filter((m): m is string => m !== undefined))].sort(),
-      ...(image ? { image: image.src, ...(image.priority ? { imagePriority: true } : {}) } : {}),
+      ...(image ? { image: servedHref(image.src), ...(image.priority ? { imagePriority: true } : {}) } : {}),
     }
   }
-  const entryPageOf = routes.find((p) => p.key === entry)
-  const entryHints = entryPageOf && !gated ? hintsOf(entryPageOf) : undefined
-  const pageHints: Record<string, PageHints> = {}
-  if (!gated) for (const page of routes) if (page !== entryPageOf) pageHints[page.key] = hintsOf(page)
-  const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref, pageHints })
+  // Every route's and the not-found page's, for the shell to ask for the
+  // OPENED page's only (pwapp-format §2.1): never the entry page's on another.
+  const hinted: Record<string, PageHints> = {}
+  if (!gated) for (const page of [...routes, ...(notFoundPage ? [notFoundPage] : [])]) hinted[page.key] = hintsOf(page)
+  const pageHints = {
+    entry,
+    routes: routes.map((p) => p.key),
+    ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
+    pages: hinted,
+  }
+  const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref })
   const assets: ShellAssets = { ...assets0, boot: hashedName('assets/boot.js', bootJs) }
   let firstPaint: { rootHtml: string; data: Record<string, unknown> } | undefined
   const shell = (csp?: string): Uint8Array =>
@@ -490,7 +498,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         preloadRenderer: !gated,
         bootFiles: BOOT_FILES.filter((f) => files.has(f)),
         themeCss: new TextDecoder().decode(themeCss),
-        ...(entryHints ? { entryHints } : {}),
+        pageHints,
         ...(firstPaint ? { firstPaint } : {}),
       })
     )
@@ -589,6 +597,11 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     diagnostics.push(...painted.diagnostics)
     const entryPainted = painted.pages.find((p) => p.key === entry)
     for (const page of painted.pages) if (page !== entryPainted) files.set(staticPageFile(page.key), enc.encode(page.html))
+    // A deep link's frame is asked for with the document (shell.ts PageHints.frame).
+    for (const page of painted.pages) {
+      const hint = hinted[page.key]
+      if (page !== entryPainted && hint) hinted[page.key] = { ...hint, frame: staticPageFile(page.key) }
+    }
     if (painted.pages.length > 0) {
       firstPaint = {
         rootHtml: entryPainted ? staticRootHtml(entryPainted) : '',
@@ -604,7 +617,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
 
   const csp = deriveCsp({
     importMapText: importMapText(),
-    ...(firstPaint ? { inlineScripts: [FIRST_PAINT_SCRIPT] } : {}),
+    inlineScripts: [...(Object.keys(hinted).length > 0 ? [PAGE_HINTS_SCRIPT] : []), ...(firstPaint ? [FIRST_PAINT_SCRIPT] : [])],
     receipts: servedReceipts,
     connections,
     engines: engineManifest,

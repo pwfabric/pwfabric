@@ -3,7 +3,7 @@
  * `navigation.json`, `connections.json`, the two module manifests), built
  * from the app folder's declaration.
  */
-import type { DynamicBlockProp, PropShape } from '@pwfabric/contracts'
+import { registrationOf, type DynamicBlockProp, type IdentityRegistration, type PropShape } from '@pwfabric/contracts'
 import { blockPropDescriptors } from '@pwfabric/pack'
 import type { AssembleDiagnostic } from './diagnostics.js'
 import { isRecord } from './sources.js'
@@ -50,7 +50,9 @@ export function deriveNavigation(pages: readonly Page[], entry: string): { navba
  * What the app declares about who may enter (`app/definitions/auth.json`), as `project.json` carries it.
  * A file that says nothing about entry (only `access`) is no identity: the app has no door and no wall.
  */
-export function identityOf(auth: unknown): { required: boolean; topology: 'app' | 'external'; methods?: string[] } | undefined {
+export function identityOf(
+  auth: unknown
+): { required: boolean; topology: 'app' | 'external'; methods?: string[]; registration: IdentityRegistration } | undefined {
   if (!isRecord(auth)) return undefined
   const topology = auth['topology'] === 'external' ? 'external' : 'app'
   const methods = Array.isArray(auth['methods']) ? auth['methods'].filter((m): m is string => typeof m === 'string') : []
@@ -59,6 +61,9 @@ export function identityOf(auth: unknown): { required: boolean; topology: 'app' 
     required: auth['required'] === true,
     topology,
     ...(topology === 'app' ? { methods } : {}),
+    // The first frame's `__auth.registration` (pwapp-format §2.5): the build
+    // has no `auth.json` to read it from.
+    registration: registrationOf(auth),
   }
 }
 

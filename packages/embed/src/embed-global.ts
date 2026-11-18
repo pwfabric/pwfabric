@@ -63,6 +63,16 @@ import * as Runtime from '@pwfabric/runtime'
 import * as Contracts from '@pwfabric/contracts'
 import * as Core from '@pwfabric/core'
 import * as AuthoringBlock from '@pwfabric/authoring/block'
+import { blockJsxRuntime, blockReact } from './stable-html.js'
+
+/**
+ * The React a BLOCK imports: this bundle's, with raw HTML kept stable across
+ * renders (stable-html.ts) — React 19 rewrites `dangerouslySetInnerHTML`
+ * for every new object, which threw away the nodes the static first paint
+ * had drawn. The renderer itself uses React as it is.
+ */
+const BlockReact = blockReact(React)
+const BlockJsxRuntime = blockJsxRuntime(ReactJsxRuntime)
 
 /**
  * What a block imports from `@pwfabric/authoring` on a visitor's page: the
@@ -80,8 +90,8 @@ declare global {
 
 if (typeof globalThis !== 'undefined') {
   globalThis.__PW_VENDOR__ = {
-    react: React,
-    'react/jsx-runtime': ReactJsxRuntime,
+    react: BlockReact,
+    'react/jsx-runtime': BlockJsxRuntime,
     'react-dom': ReactDom,
     'react-dom/client': ReactDomClient,
     '@pwfabric/runtime': Runtime,
@@ -116,8 +126,8 @@ if (typeof globalThis !== 'undefined') {
 // import map, pointing at these globals.
 if (typeof globalThis !== 'undefined') {
   const g = globalThis as Record<string, unknown>
-  g.__pwfabric_react = React
-  g.__pwfabric_jsx_runtime = ReactJsxRuntime
+  g.__pwfabric_react = BlockReact
+  g.__pwfabric_jsx_runtime = BlockJsxRuntime
   // Every global a block may import is seeded here, so the page needs no
   // second script before the first block loads (the shell used to seed these
   // two from the vendor table in `seed.js`, a render-blocking request of its

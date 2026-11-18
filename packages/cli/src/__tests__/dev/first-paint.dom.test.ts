@@ -1,7 +1,8 @@
 /**
- * The shell's first-paint script (pwapp-format §2.5) keeps the build's first
- * frame only where it is this visit's: the entry page as written, another
- * page fetched, nothing for a wide window or an address that seeds the page.
+ * The shell's first-paint script (pwapp-format §2.5) puts the build's first
+ * frame into the empty root only where it is this visit's: the entry page
+ * from its template, another page fetched, nothing for a wide window or an
+ * address whose query changes the page's frame.
  *
  * @vitest-environment jsdom
  */
@@ -25,7 +26,7 @@ async function run(hash: string, width = 390, served: Record<string, string> = {
   history.replaceState(null, '', `/${hash}`)
   Object.defineProperty(window, 'innerWidth', { value: width, configurable: true })
   document.body.innerHTML =
-    `<div id="root"><div id="pw-root" data-pw-static="menu"><p>menu</p></div></div>` +
+    `<div id="root"></div><template id="pw-entry-frame"><div id="pw-root" data-pw-static="menu"><p>menu</p></div></template>` +
     `<script type="application/json" id="pw-first-paint">${JSON.stringify(data)}</script>`
   vi.stubGlobal(
     'fetch',
@@ -47,7 +48,7 @@ afterEach(() => {
 })
 
 describe('the first-paint script', () => {
-  it('keeps the entry page as written', async () => {
+  it('puts the entry page’s frame in place from its template', async () => {
     expect((await run('')).innerHTML).toContain('<p>menu</p>')
     expect((await run('#/menu')).innerHTML).toContain('<p>menu</p>')
     expect((await run('#/menu?utm_source=x')).innerHTML).toContain('<p>menu</p>')
@@ -65,8 +66,13 @@ describe('the first-paint script', () => {
     expect(root.querySelector('#pw-root')?.getAttribute('data-pw-static')).toBe('notfound')
   })
 
-  it('a page the build did not paint (a record page) leaves the root empty', async () => {
-    expect((await run('#/dish?id=3')).innerHTML).toBe('')
+  it('a page the build did not paint leaves the root empty', async () => {
+    expect((await run('#/dish')).innerHTML).toBe('')
+  })
+
+  it('a query key that does not change the frame keeps it (a record page’s ?id=)', async () => {
+    const root = await run('#/visit?id=3', 390, { './pwpack/surfaces/visit.html': '<p>visit</p>' })
+    expect(root.innerHTML).toContain('<p>visit</p>')
   })
 
   it('an address that seeds the page’s state is not the build’s first frame', async () => {

@@ -333,7 +333,8 @@ describe('provider sign-in through the gateway', () => {
     expect(refused.status).toBe(403)
     const session = await fetch(`${s.base}/_auth/session`, { headers: { cookie: pair, 'x-pwapp-request': '1' } })
     expect(session.status).toBe(200)
-    const body = (await session.json()) as { data: { token: string; principal: { id: string } } }
+    const body = (await session.json()) as { data: { signedIn: boolean; token: string; principal: { id: string } } }
+    expect(body.data.signedIn).toBe(true)
     expect(body.data.principal.id).toBe('dev-user')
     expect(pair.endsWith(body.data.token)).toBe(true)
 
@@ -341,7 +342,9 @@ describe('provider sign-in through the gateway', () => {
     const out = await fetch(`${s.base}/_auth/logout`, { method: 'POST', headers: { cookie: pair, 'x-pwapp-request': '1' } })
     expect(out.status).toBe(200)
     expect(out.headers.get('set-cookie')).toMatch(/Max-Age=0/)
-    expect((await fetch(`${s.base}/_auth/session`, { headers: { cookie: pair, 'x-pwapp-request': '1' } })).status).toBe(401)
+    // Signed out again: nobody, said with a 200 (E4).
+    const after = await fetch(`${s.base}/_auth/session`, { headers: { cookie: pair, 'x-pwapp-request': '1' } })
+    expect([after.status, await after.json()]).toEqual([200, { data: { signedIn: false } }])
   })
 
   it('keeps returnTo on this origin and reports an undeclared provider', async () => {
@@ -368,8 +371,12 @@ describe('provider sign-in through the gateway', () => {
 
   it('answers only the cookie of an app session, and the right methods', async () => {
     const s = await start('l-social')
-    expect((await fetch(`${s.base}/_auth/session`, { headers: { 'x-pwapp-request': '1' } })).status).toBe(401)
-    expect((await fetch(`${s.base}/_auth/session`, { headers: { 'x-pwapp-request': '1', cookie: 'other=1; broken; pwf_dev_session=%E0%A4%A' } })).status).toBe(401)
+    // THE SIGNED-OUT PROBE is not an HTTP error (session-protocol §4.2): a 401 here was
+    // a failed request in every signed-out visitor's console (E4).
+    for (const cookie of [undefined, 'other=1; broken; pwf_dev_session=%E0%A4%A']) {
+      const probe = await fetch(`${s.base}/_auth/session`, { headers: { 'x-pwapp-request': '1', ...(cookie ? { cookie } : {}) } })
+      expect([probe.status, await probe.json()]).toEqual([200, { data: { signedIn: false } }])
+    }
     expect((await fetch(`${s.base}/_auth/session`, { method: 'POST' })).status).toBe(405)
     expect((await fetch(`${s.base}/_auth/logout`)).status).toBe(405)
     expect((await fetch(`${s.base}/_auth/start/github`, { method: 'POST' })).status).toBe(405)

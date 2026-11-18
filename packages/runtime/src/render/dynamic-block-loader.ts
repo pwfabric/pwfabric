@@ -172,7 +172,11 @@ class BlockModuleLoaderImpl {
       // only then create a Blob URL and feed it to `import()`. Skipping
       // this would let a CDN-side compromise execute attacker code under
       // our origin.
-      const res = await fetch(descriptor.moduleUrl, { credentials: 'omit' })
+      // A plain CORS fetch (same-origin credentials: none leave for another
+      // origin) — exactly the request `<link rel="preload" as="fetch"
+      // crossorigin>` makes, so a shell's or the runner's preload of the
+      // module answers it instead of a second download (pwapp-format §2.1).
+      const res = await fetch(descriptor.moduleUrl)
       if (!res.ok) {
         throw new Error(`Bundle fetch failed for ${descriptor.blockType}: ${res.status}`)
       }
