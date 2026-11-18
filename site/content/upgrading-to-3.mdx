@@ -109,7 +109,8 @@ gives `defineFactory`, the custom-block registry or the props validators.
 `app/plan.json` `messages` is a flat map from id to string, written in the
 plan's `locale`. The runner reads every word it draws there first (`gate.*`,
 `pill.*`, `account.*`, `notFound.*`, `session.*`, `bridge.*`, `auth.error.*`),
-then a neutral English fallback; blocks read `ui.*`. Placeholders are `{name}`,
+and nowhere else: since 3.0.1 the engine has no fallback words, a missing id is
+drawn empty and `pwf validate` reports it as an error. Blocks read `ui.*`. Placeholders are `{name}`,
 `{code}` and `{n}`.
 
 - `pwf validate` reports `MESSAGES_MISSING` for the ids your app can reach
@@ -271,7 +272,8 @@ The package roots carry what a visitor's page runs; tooling moved to subpaths.
 
 Types stay on the package roots. The runner's `doorOf` and `declaresBridge`
 are replaced by `firstFrameDoorOf(project)`; `runApp({ locale })` and the
-runner copy exports are replaced by `RUNNER_MESSAGES` and `runnerMessages`.
+runner copy exports are replaced by `runnerMessages` and the id list
+`RUNNER_MESSAGE_IDS` (3.0.1 removed `RUNNER_MESSAGES`, the English defaults).
 
 ## Checking the result
 

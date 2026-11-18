@@ -1,5 +1,13 @@
 # @pwfabric/cli
 
+## 3.0.1
+
+- Changed: `pwf validate` reports `MESSAGES_MISSING` as an error, in every language and also for apps with no `plan.json`; `session.*` is asked for whenever the app has a password method, its own sign-in screen included. The `pwf create` starter writes `ui.retry` (#61).
+- Added: `@pwfabric/cli/host` exports `authDeclarationOf` and `entityDeclarationsOf`; `RecordStore` takes `{ entities, seed, relationReadable, readOnly }`, so a host without the app folder on disk can use it (#61).
+- Fixed: the app's own media (`/pwpack/media/*`) is served with `frame-ancestors 'self'`, so a page can embed its own PDF; pages keep `'none'` (#61).
+- Fixed: under `pwf run`, a signed-out write answers 401 before the read-only refusal, as `pwf dev` does; a signed-in caller still gets `READ_ONLY` (#61).
+- Fixed: the page-hints script preloads a deep link's frame only where the first-paint script uses it (#61).
+
 ## 3.0.0
 
 Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).

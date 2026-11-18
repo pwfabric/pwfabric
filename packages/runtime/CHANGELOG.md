@@ -1,5 +1,11 @@
 # @pwfabric/runtime
 
+## 3.0.1
+
+- Changed: no engine words. `ui.loading` has no fallback, `createSkipLink` takes a required `label`, the retry control is named by the app's `ui.retry`, and `BlockErrorBoundary` draws no "Unknown error" title. `useAppMessage` and `messageOf` take an optional fallback (#61).
+- Added: `SurfaceAuthState.pending`. While it is set, a `requiresSession` source is neither requested nor settled; it settles once the host knows who is signed in (#61).
+- Fixed: a record page keeps its loading frame for the record and every source it fetches until the record arrives or the host replaces the page, so an unknown id goes to not-found without a layout shift (#61).
+
 ## 3.0.0
 
 Upgrading from 2.x: see [Upgrading to 3.0](https://pwfabric.com/upgrading-to-3).

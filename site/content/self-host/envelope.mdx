@@ -73,7 +73,7 @@ The runner's read contract is `PwappProject`. Two fields are required.
 | `id` | `string` | no | the app's slug; keys the app session in session storage |
 | `title` | `string` | no | document title, and the prefix of every page title |
 | `locale` | `string` | no | BCP 47 tag (`en-GB`): the language dates and numbers are written in, and the page's `lang` |
-| `messages` | `Record<id, string>` | no | the app's words, from `app/plan.json` `messages`: every word the runner draws (`gate.*`, `pill.*`, `account.*`, `notFound.*`, `session.*`, `bridge.*`, `auth.error.*`) and every word a block draws itself (`ui.*`, through `useAppMessage`) is read here first, else a neutral English fallback. Placeholders `{name}`, `{code}`, `{n}` |
+| `messages` | `Record<id, string>` | no | the app's words, from `app/plan.json` `messages`: every word the runner draws (`gate.*`, `pill.*`, `account.*`, `notFound.*`, `session.*`, `bridge.*`, `auth.error.*`) and every word a block draws itself (`ui.*`, through `useAppMessage`) is read here only: the engine has no words of its own, so a missing id is drawn empty and `pwf validate` reports it (`MESSAGES_MISSING`). Placeholders `{name}`, `{code}`, `{n}` |
 | `identity` | `{ required, topology?, methods? }` | no | `required: boolean`; `topology` is `'app'` (the default) or `'external'`; `methods` only when `topology === 'app'`. |
 
 A host may write further fields for its own use (for example ids its record
