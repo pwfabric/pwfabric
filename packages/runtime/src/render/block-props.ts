@@ -35,7 +35,7 @@ function warnOnce(blockType: string, issue: PropIssue): void {
   const key = `${blockType}\u0000${issue.path}\u0000${issue.code}`
   if (warned.has(key)) return
   warned.add(key)
-  console.warn(`[pwfabric] block "${blockType}": ${issue.message} — it renders with its default. Fix the receipt or the manifest.`)
+  console.warn(`[pwfabric] block "${blockType}": ${issue.message} — the value is kept as written. Fix the receipt or the manifest.`)
 }
 
 /**

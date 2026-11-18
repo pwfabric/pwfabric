@@ -13,15 +13,42 @@
  * The rest of the page is still painted before any script runs. In the
  * browser the Suspense is inert — no block suspends.
  *
+ * UNDER `pwf dev`, a crash also names the props that did not fit their
+ * declared shape (`declared`, the block's manifest props). Applying props
+ * keeps a misfit value as written (block-manifest, "Applying props"), so a
+ * block that assumed a bound value's type — `props.items.map` on a string —
+ * throws here; the notice points at the prop instead of the stack.
+ *
  * @module @pwfabric/runtime/render/BlockErrorBoundary
  */
 
 import * as React from 'react'
+import { applyBlockProps, type BlockPropDescriptor } from '@pwfabric/contracts'
+import { isDevHost } from './block-props.js'
 
 interface BlockErrorBoundaryProps {
   readonly blockId: string
   readonly blockType: string
   readonly children: React.ReactNode
+  /** The props the block was given, before its declarations were applied. */
+  readonly props?: Readonly<Record<string, unknown>> | undefined
+  /** The block's declared props (its manifest's `definition.props`), read only to explain a crash under `pwf dev`. */
+  readonly declared?: readonly BlockPropDescriptor[] | undefined
+}
+
+/** The declared props whose given value does not fit its shape, as applying props reports them. */
+export function misfitProps(
+  props: Readonly<Record<string, unknown>> | undefined,
+  declared: readonly BlockPropDescriptor[] | undefined
+): string[] {
+  if (!declared || declared.length === 0) return []
+  const names = new Set<string>()
+  applyBlockProps(props ?? {}, declared, (issue) => {
+    if (issue.code === 'required') return
+    const name = declared.find((d) => issue.path === d.name || issue.path.startsWith(`${d.name}.`) || issue.path.startsWith(`${d.name}[`))?.name
+    names.add(name ?? issue.path)
+  })
+  return [...names]
 }
 
 interface BlockErrorBoundaryState {
@@ -48,6 +75,16 @@ export class BlockErrorBoundary extends React.Component<
       error,
       info.componentStack
     )
+    if (isDevHost()) {
+      const misfits = misfitProps(this.props.props, this.props.declared)
+      if (misfits.length > 0) {
+        console.warn(
+          `[pwfabric] block "${this.props.blockType}" (#${this.props.blockId}) threw while ${misfits.map((n) => `"${n}"`).join(', ')} ` +
+            `did not fit ${misfits.length === 1 ? 'its' : 'their'} declared shape. A value that does not fit is kept as written: ` +
+            "the block must not assume a bound value's type. Fix the receipt, or make the block tolerate it."
+        )
+      }
+    }
   }
 
   override render(): React.ReactNode {

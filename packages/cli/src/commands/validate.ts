@@ -39,7 +39,7 @@ not checked, except that a {{…}} in a prop the manifest declares
 bindable: false is a warning (BLOCK_PROP_NOT_BINDABLE): it renders as written.
 A value of the right type that breaks the rest of its declared shape (a
 bound, length, pattern, format, or a member of a nested object or array
-item) is a warning too (BLOCK_PROP_SHAPE): the block renders its default.
+item) is a warning too (BLOCK_PROP_SHAPE): the block gets it as written.
 \`pwf build\` reports the same findings, so receipts are judged before they
 ship, not in the visitor's browser.
 

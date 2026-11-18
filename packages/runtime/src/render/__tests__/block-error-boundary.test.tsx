@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import * as React from 'react'
 import { renderToString } from 'react-dom/server'
-import { BlockErrorBoundary } from '../BlockErrorBoundary.js'
+import { BlockErrorBoundary, misfitProps } from '../BlockErrorBoundary.js'
 
 // Suppress console.error from error boundary
 afterEach(() => {
@@ -122,5 +122,43 @@ describe('BlockErrorBoundary', () => {
       err,
       expect.any(String)
     )
+  })
+
+  describe('under pwf dev, a crash names the props that did not fit their shape', () => {
+    const declared = [
+      { name: 'items', jsonSchema: { type: 'array' as const, items: { type: 'object' as const, properties: { label: { type: 'string' as const } } } } },
+      { name: 'title', jsonSchema: { type: 'string' as const } },
+    ]
+    afterEach(() => {
+      delete (globalThis as { __pwfabric_dev?: unknown }).__pwfabric_dev
+    })
+
+    it('misfitProps lists the declared props whose value does not fit, by prop name', () => {
+      expect(misfitProps({ items: 'oops', title: 'ok' }, declared)).toEqual(['items'])
+      expect(misfitProps({ items: [{ label: { a: 1 } }], title: 'ok' }, declared)).toEqual(['items'])
+      expect(misfitProps({ items: [], title: 'ok' }, declared)).toEqual([])
+      expect(misfitProps({ items: 'x' }, undefined)).toEqual([])
+    })
+
+    it('warns with the misfit prop under pwf dev, and says nothing to a visitor', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const instance = new BlockErrorBoundary({ blockId: 'b1', blockType: 'list', children: null, props: { items: 'oops' }, declared })
+      instance.componentDidCatch(new Error('items.map is not a function'), { componentStack: '' })
+      expect(warn).not.toHaveBeenCalled()
+      ;(globalThis as { __pwfabric_dev?: unknown }).__pwfabric_dev = true
+      instance.componentDidCatch(new Error('items.map is not a function'), { componentStack: '' })
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0]?.[0]).toMatch(/block "list" \(#b1\) threw while "items" did not fit its declared shape/)
+    })
+
+    it('stays quiet under pwf dev when every prop fits (the crash is its own)', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      ;(globalThis as { __pwfabric_dev?: unknown }).__pwfabric_dev = true
+      const instance = new BlockErrorBoundary({ blockId: 'b2', blockType: 'list', children: null, props: { items: [] }, declared })
+      instance.componentDidCatch(new Error('boom'), { componentStack: '' })
+      expect(warn).not.toHaveBeenCalled()
+    })
   })
 })

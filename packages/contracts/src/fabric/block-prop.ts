@@ -12,8 +12,10 @@
  * - the runtime applies it before a block renders ({@link applyBlockProps}):
  *   a missing prop gets its default, a value of the wrong JSON type is coerced
  *   where the coercion is lossless (`"24"` → `24`, `"true"` → `true`,
- *   `24` → `"24"`), and a value that still does not fit is replaced by the
- *   default. It never throws: a bad prop is a developer warning, not a crash;
+ *   `24` → `"24"`), and a value that still does not fit is KEPT as coerced
+ *   (bound data is the app's), never replaced by the default — so a block
+ *   reads a declared default, but must not assume a bound value's type. It
+ *   never throws: a bad prop is a developer warning, not a crash;
  * - `pwf validate` and `pwf build` check every receipt against it
  *   ({@link checkPropValue}), so a receipt is judged before it ships, not in
  *   the visitor's browser;

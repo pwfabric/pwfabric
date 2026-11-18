@@ -108,7 +108,7 @@ describe('checkReceiptBlockProps', () => {
   })
 
   it('warns about a value of the right type that breaks the rest of its shape, as the runtime reads it (BLOCK_PROP_SHAPE)', () => {
-    // A member of a nested object: the runtime renders the default instead.
+    // A member of a nested object: the runtime keeps the value as written.
     expect(codes({ action: { type: 'navigate' } })).toEqual(['BLOCK_PROP_SHAPE'])
     // An array item that is not an object.
     expect(codes({ items: [{}, 3] })).toEqual(['BLOCK_PROP_SHAPE'])
