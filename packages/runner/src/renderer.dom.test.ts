@@ -8,7 +8,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { loadRenderer, resetRendererLoad } from './renderer.js'
+import { loadRenderer, resetRendererLoad, warmBlockModules } from './renderer.js'
 import type { PWFabricGlobal } from './types.js'
 
 const win = window as unknown as { PWFabric?: PWFabricGlobal }
@@ -84,5 +84,37 @@ describe('runner.js imports nothing the renderer seeds', () => {
     const statics = [...code.matchAll(/^\s*(import|export)\s+(?!type\b)[^;'"]*?from\s+['"]([^'"]+)['"]/gm)].map((m) => m[2])
     const sideEffects = [...code.matchAll(/^\s*import\s+['"]([^'"]+)['"]/gm)].map((m) => m[1])
     expect([...statics, ...sideEffects].filter((s) => SEEDED.test(s ?? ''))).toEqual([])
+  })
+})
+
+describe('warmBlockModules', () => {
+  const manifest = [
+    { blockType: 'text', moduleUrl: 'blocks/text.1.mjs' },
+    { blockType: 'card', moduleUrl: 'blocks/card.2.mjs' },
+    { blockType: 'hero', moduleUrl: 'blocks/hero.3.mjs' },
+  ]
+  const links = (): string[] =>
+    [...document.head.querySelectorAll('link')].map((l) => `${l.rel} ${l.getAttribute('as')} ${new URL(l.href).pathname}${l.crossOrigin === 'anonymous' ? ' cors' : ''}`)
+  afterEach(() => {
+    for (const l of document.head.querySelectorAll('link')) l.remove()
+  })
+
+  it('asks for each module once per load, as the fetch the block loader makes (E2: each was requested 3×)', () => {
+    // The shell already asked for the opened page's text module.
+    const shell = document.createElement('link')
+    shell.rel = 'preload'
+    shell.setAttribute('as', 'fetch')
+    shell.crossOrigin = 'anonymous'
+    shell.href = './blocks/text.1.mjs'
+    document.head.appendChild(shell)
+
+    warmBlockModules([{ type: 'text', children: [{ type: 'card' }, { type: 'card' }] }], manifest)
+    // The next page: only what is new.
+    warmBlockModules([{ type: 'card' }, { type: 'hero' }, { type: 'unknown' }], manifest)
+    expect(links()).toEqual([
+      'preload fetch /blocks/text.1.mjs cors',
+      'preload fetch /blocks/card.2.mjs cors',
+      'preload fetch /blocks/hero.3.mjs cors',
+    ])
   })
 })

@@ -11,7 +11,8 @@
  * markup. Both sides build them here.
  *
  * THE FIRST FRAME IS THE SAME FOR EVERY VISITOR:
- * - nobody signed in (`__auth` signed out, no error);
+ * - nobody signed in (`__auth` signed out, no error), with the ways in the
+ *   app declares ({@link firstFrameDoorOf});
  * - nothing read from the address (the page's `initialState` as written);
  * - every fetched source loading, a static source's rows in place;
  * - the phone layout, `xs` ({@link STATIC_VIEWPORT}): mobile first;
@@ -27,12 +28,10 @@
  */
 
 import { accountUserFrom, applyAccountControl, type AccountUser } from './apply-auth.js'
-import { hasDoor } from './account-controller.js'
-import { authMethodsOf, authStateOf } from './auth-state.js'
+import { authStateOf } from './auth-state.js'
 import { assembleFooter, assembleNav, linkHrefFor, rewriteHrefs, seedStateFromQuery, type ToHref } from './helpers.js'
 import type { RunnerMessages } from './messages.js'
-import type { AuthBridge } from './auth.js'
-import type { PwappAuth, PwappNavigation, PwappProject, SurfaceReceipt } from './types.js'
+import type { PwappNavigation, PwappProject, SurfaceReceipt } from './types.js'
 
 /** The breakpoint the static first paint is drawn at: the phone's (mobile first). */
 export const STATIC_VIEWPORT = 'xs'
@@ -111,31 +110,44 @@ export function pageSurfaceOf(
   }
 }
 
+/** The ways in the first frame shows: the app's declaration, never the deployment's door. */
+export interface FirstFrameDoor {
+  /** Whether the app has a way in at all (the account control's slot is drawn). */
+  readonly door: boolean
+  /** `__auth.methods`, in the order the runner lists them. */
+  readonly methods: readonly string[]
+  /** `__auth.registration`. */
+  readonly registration: 'open' | 'invite' | 'closed'
+}
+
 /**
- * Whether the runner will have a PKCE bridge: `auth.json` names an issuer
- * and a client. The bridge is made from this declaration alone (run-app.ts),
- * so the build reads the same answer from the same file.
+ * THE DOOR THE FIRST FRAME SHOWS — read from `project.json` `identity`, what
+ * the app DECLARES (envelope §2), not from `auth.json`.
+ *
+ * `auth.json` holds the deployment's addresses: `pwf build` writes none, and
+ * the publisher, `pwf run` or `pwf dev` puts its own in. Read from there, the
+ * build painted an app with a password door as an app with no door (the
+ * navbar's plain "Ticket" item) while the browser, which has the host's
+ * `auth.json`, drew the signed-out "Sign in" — and the hydration failed
+ * (conference-companion, React #418). Read from the declaration, the build
+ * and the hydrating render draw the same control; a deployment that ships
+ * no door after all (`identity.door: false`) loses it in the update after
+ * hydration, like any other way the visit differs.
  */
-export function declaresBridge(auth: PwappAuth | null | undefined): boolean {
-  return Boolean(auth && auth.provider === 'oauth2-pkce' && auth.issuer && auth.clientId)
+export function firstFrameDoorOf(project: PwappProject): FirstFrameDoor {
+  const identity = project.identity
+  const registration = identity?.registration ?? (identity?.required === true ? 'closed' : 'open')
+  if (!identity) return { door: false, methods: [], registration }
+  if (identity.topology === 'external') return { door: true, methods: ['issuer'], registration }
+  const declared = (identity.methods ?? []).filter((m): m is string => typeof m === 'string' && m !== '')
+  // The runner's order (auth-state.ts authMethodsOf): the password door first.
+  const methods = [...(declared.includes('password') ? ['password'] : []), ...declared.filter((m) => m !== 'password')]
+  return { door: methods.length > 0, methods: [...new Set(methods)], registration }
 }
 
-/** The app's door and ways in, as the first frame shows them. */
-export function doorOf(
-  project: PwappProject,
-  auth: PwappAuth | null | undefined
-): { readonly door: boolean; readonly methods: string[] } {
-  // Only whether a bridge exists is read here, never the bridge itself.
-  const bridge = declaresBridge(auth) ? ({} as AuthBridge) : null
-  return { door: hasDoor({ project, auth, bridge }), methods: authMethodsOf({ project, auth, bridge }) }
-}
-
-/** `__auth` in the first frame: nobody signed in, nothing to report. */
-export function firstFrameAuthState(
-  methods: readonly string[],
-  auth: PwappAuth | null | undefined
-): ReturnType<typeof authStateOf> {
-  return authStateOf({ appSession: null, bridgeSession: null, methods, registration: auth?.registration, error: null })
+/** `__auth` in the first frame: nobody signed in, nothing to report, the declared ways in. */
+export function firstFrameAuthState(door: FirstFrameDoor): ReturnType<typeof authStateOf> {
+  return authStateOf({ appSession: null, bridgeSession: null, methods: door.methods, registration: door.registration, error: null })
 }
 
 /**

@@ -97,7 +97,7 @@ describe('assemblePwapp', () => {
 
     // One policy, three places: the shell's meta (no frame-ancestors), `_headers`, publish.json.
     const csp = publish['csp'] as { policy: string; unresolved?: { source: string }[] }
-    expect(csp.policy).toMatch(/^default-src 'none'; script-src 'self' blob: 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*'; style-src 'self' 'unsafe-inline' https:\/\/fonts\.googleapis\.com;/)
+    expect(csp.policy).toMatch(/^default-src 'none'; script-src 'self' blob: 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*'; style-src 'self' 'unsafe-inline' https:\/\/fonts\.googleapis\.com;/)
     expect(csp.policy).toContain("font-src 'self' https://fonts.gstatic.com")
     expect(csp.policy).toContain("frame-ancestors 'none'")
     // The compiled engine's reach is not declared, so it is listed, not guessed.
@@ -117,10 +117,10 @@ describe('assemblePwapp', () => {
     // The theme is written into the head: the first paint waits on no stylesheet.
     expect(html).not.toContain('rel="stylesheet"')
     expect(html).toContain(`<style>${text(r.files.get(asset(r, 'theme')))}</style>`)
-    // The entry page's receipt and its block modules are asked for with the document.
-    expect(html).toContain('<link rel="preload" as="fetch" href="./pwpack/surfaces/home.receipt.json" crossorigin />')
+    // What each page needs is named once; the shell asks for the opened page's (page-hints.dom.test.ts).
+    const hints = JSON.parse(html.match(/<script type="application\/json" id="pw-page-hints">(.*?)<\/script>/)?.[1] ?? '{}')
     const manifest = parse(r.files.get('blocks/manifest.json')) as { moduleUrl: string }[]
-    for (const m of manifest) expect(html).toContain(`<link rel="modulepreload" href="./${m.moduleUrl}" />`)
+    expect(hints.pages.home).toEqual({ receipt: 'pwpack/surfaces/home.receipt.json', modules: manifest.map((m) => m.moduleUrl).sort() })
     expect(html).not.toMatch(/<script src=/)
     // A hashed name is the hash of the bytes.
     const { createHash } = await import('node:crypto')

@@ -1,16 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   FIRST_FRAME_USER,
-  declaresBridge,
-  doorOf,
   firstFrameAuthState,
+  firstFrameDoorOf,
   firstFrameLocale,
   firstFrameOptions,
   pageSurfaceOf,
 } from './first-frame.js'
 import { addressStateKeys, queryStateSeed } from './helpers.js'
 import { runnerMessages } from './messages.js'
-import type { PwappAuth, PwappProject, SurfaceReceipt } from './types.js'
+import type { PwappProject, SurfaceReceipt } from './types.js'
 
 const project = (over: Partial<PwappProject> = {}): PwappProject =>
   ({ id: 'app', surfaceOrder: ['home', 'dish'], entrySurfaceId: 'home', ...over }) as PwappProject
@@ -57,7 +56,7 @@ describe('the first frame (pwapp-format §2.5)', () => {
   })
 
   it('nobody is signed in, and nothing is reported', () => {
-    expect(firstFrameAuthState(['password'], { registration: 'open' } as PwappAuth)).toEqual({
+    expect(firstFrameAuthState({ door: true, methods: ['password'], registration: 'open' })).toEqual({
       signedIn: false,
       user: null,
       methods: ['password'],
@@ -67,12 +66,22 @@ describe('the first frame (pwapp-format §2.5)', () => {
     expect(FIRST_FRAME_USER).toBeNull()
   })
 
-  it('the door is read from auth.json alone, as the runner will have it', () => {
-    const pkce = { provider: 'oauth2-pkce', issuer: 'https://id.example', clientId: 'c' } as PwappAuth
-    expect(declaresBridge(pkce)).toBe(true)
-    expect(declaresBridge({ provider: 'oauth2-pkce' } as PwappAuth)).toBe(false)
-    expect(doorOf(project(), pkce)).toEqual({ door: true, methods: ['issuer'] })
-    expect(doorOf(project(), null)).toEqual({ door: false, methods: [] })
+  it('the door is the app’s declaration (project.json identity), never the deployment’s auth.json', () => {
+    // conference-companion: a password door the build has no auth.json for.
+    const declared = project({ identity: { required: false, topology: 'app', methods: ['google', 'password'], registration: 'closed', door: false } })
+    expect(firstFrameDoorOf(declared)).toEqual({ door: true, methods: ['password', 'google'], registration: 'closed' })
+    expect(firstFrameDoorOf(project({ identity: { required: true, topology: 'external' } }))).toEqual({
+      door: true,
+      methods: ['issuer'],
+      registration: 'closed',
+    })
+    // Declared entry with no way in, and no identity at all.
+    expect(firstFrameDoorOf(project({ identity: { required: false, topology: 'app', methods: [] } }))).toEqual({
+      door: false,
+      methods: [],
+      registration: 'open',
+    })
+    expect(firstFrameDoorOf(project())).toEqual({ door: false, methods: [], registration: 'open' })
   })
 
   it('is written in the app’s locale, and in English when it names none (never the build machine’s)', () => {

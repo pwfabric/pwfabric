@@ -313,7 +313,14 @@ describe('readGatewaySession', () => {
     expect(session).toEqual({ token: 'tok-2', expiresAt: '2099-01-01T00:00:00Z' })
   })
 
-  it('answers null for a visitor with no cookie', async () => {
+  it('answers null for a visitor with no cookie: the door’s `200 { data: { signedIn: false } }` (E4)', async () => {
+    expect(await readGatewaySession({}, answer(200, { data: { signedIn: false } }) as unknown as typeof fetch)).toBeNull()
+    // A signed-in answer that says so is read as before.
+    const signedIn = answer(200, { data: { signedIn: true, token: 't', expiresAt: '2099-01-01T00:00:00Z' } })
+    expect(await readGatewaySession({}, signedIn as unknown as typeof fetch)).toEqual({ token: 't', expiresAt: '2099-01-01T00:00:00Z' })
+  })
+
+  it('and for a host that still refuses with a 401, or any other failure', async () => {
     expect(await readGatewaySession({}, answer(401, {}) as unknown as typeof fetch)).toBeNull()
   })
 

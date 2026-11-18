@@ -153,7 +153,7 @@ describe('pwf dev', () => {
         const auth = (await (await fetch(`${base}pwpack/auth.json`)).json()) as Record<string, unknown>
         expect(auth).toMatchObject({ provider: 'password', loginUrl: '/_host/login', methods: ['password'] })
         const project = (await (await fetch(`${base}pwpack/project.json`)).json()) as Record<string, unknown>
-        expect(project['identity']).toEqual({ required: false, topology: 'app', methods: ['password'] })
+        expect(project['identity']).toEqual({ required: false, topology: 'app', methods: ['password'], registration: 'open' })
         const receipt = (await (await fetch(`${base}pwpack/surfaces/home.receipt.json`)).json()) as {
           capabilities: { config: { dataSources: Record<string, unknown>[] } }[]
         }

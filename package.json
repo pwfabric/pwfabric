@@ -11,13 +11,15 @@
     "lint": "pnpm -r lint",
     "publish": "pnpm -r publish --no-git-checks",
     "spec:conformance": "node scripts/spec-conformance.mjs",
-    "smoke:cli": "node scripts/cli-smoke.mjs"
+    "smoke:cli": "node scripts/cli-smoke.mjs",
+    "check:hydration": "node scripts/hydration-check.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "eslint": "^9.18.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "globals": "^15.0.0",
+    "playwright": "1.60.0",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.21.0"
   },

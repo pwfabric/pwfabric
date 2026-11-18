@@ -75,6 +75,8 @@ export interface PwappProject {
     readonly required: boolean
     readonly topology?: 'app' | 'external'
     readonly methods?: readonly string[]
+    /** Who may make an account, as declared (`definitions/auth.json`); the first frame's `__auth.registration`. */
+    readonly registration?: 'open' | 'invite' | 'closed'
     /**
      * `false` when the envelope ships no `auth.json` — the app declares who
      * may enter but has no way in (a build no host serves). The runner then

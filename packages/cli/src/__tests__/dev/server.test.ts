@@ -240,7 +240,7 @@ describe('dev server', () => {
     expect(made).toEqual([{ root, prefix: '/_host' }])
     const project = (await (await fetch(new URL('/pwpack/project.json', server.url))).json()) as { identity: unknown }
     // This host adds no auth.json, so the identity says it has no door.
-    expect(project.identity).toEqual({ required: true, topology: 'app', methods: ['password'], door: false })
+    expect(project.identity).toEqual({ required: true, topology: 'app', methods: ['password'], registration: 'closed', door: false })
   })
 
   it('mounts the host on a later build when the app gains its first entity while running', async () => {
