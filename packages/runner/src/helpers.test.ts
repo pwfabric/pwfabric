@@ -44,6 +44,11 @@ describe('rewriteHrefs', () => {
     expect(rewriteHrefs(tree, ENTRY, hashHref)).toEqual({ props: { href: '#/about' } })
   })
 
+  it('an empty activeHref marks no item: a not-found page leaves the entry not current', () => {
+    const tree = { props: { activeHref: '', items: [{ href: '/home' }] } }
+    expect(rewriteHrefs(tree, ENTRY, hashHref)).toEqual({ props: { activeHref: '', items: [{ href: '#/home' }] } })
+  })
+
   it('rewrites page hrefs with the injected toHref (path mode)', () => {
     const tree = { props: { href: '/gallery' } }
     expect(rewriteHrefs(tree, ENTRY, pathHref)).toEqual({

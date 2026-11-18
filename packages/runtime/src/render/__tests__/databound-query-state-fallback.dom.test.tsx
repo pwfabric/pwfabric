@@ -191,6 +191,40 @@ describe('fallback payload', () => {
     await waitFor(() => expect(screen.getByTestId('rows').textContent).toBe('sample-2'))
   })
 
+  it('a connector parameter written as a filter does not cut the sample rows; a row field still does', async () => {
+    render(
+      <DataBoundSurfaceRenderer
+        surface={surfaceWith(
+          {
+            dataSources: [
+              {
+                id: 'alerts',
+                kind: 'entity',
+                entityType: 'DriveItems',
+                connector: 'graph-drive',
+                fallback: [{ id: 'a', kind: 'file' }, { id: 'b', kind: 'folder' }, { id: 'c', kind: 'file' }],
+                query: {
+                  filter: {
+                    and: [
+                      { field: 'path', operator: 'eq', value: '/Shared Documents' },
+                      { field: 'top', operator: 'eq', value: 5 },
+                      { field: 'kind', operator: 'eq', value: 'file' },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+          blocks
+        )}
+        components={components as never}
+        connections={{ connections: [], engines: stubRegistry({}) }}
+        interactionMode="live"
+      />
+    )
+    await waitFor(() => expect(screen.getByTestId('rows').textContent).toBe('a,c'))
+  })
+
   it('binds NO fallback when a connected engine refuses — the code is its status', async () => {
     const engine: ConnectorEngine = {
       name: 'graph-security',

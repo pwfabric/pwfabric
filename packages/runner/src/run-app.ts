@@ -767,6 +767,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // A link whose page is an expression is written for the router once its
       // value is known (rewriteHrefs left it as written).
       linkHref: linkHrefFor(entry, router.toHref),
+      // A `navigate` action is followed as a link to its address would be
+      // (router.follow): `location.assign('#rsvp')` replaced the hash route.
+      onNavigateAction: (url: string) => router.follow(url),
       ...(typeof project.locale === 'string' && project.locale ? { locale: project.locale } : {}),
       // ...and its words, for the words a block draws itself (`ui.*`).
       ...(project.messages ? { messages: project.messages } : {}),

@@ -13,7 +13,9 @@
  *   Receipts   `rewriteEntitySources` — a receipt's `entity` sources rewritten
  *              to `rest` sources against `<base>/records/…`, with
  *              `authProviderRef: <base>` so the runner sends the visitor's
- *              session there.
+ *              session there. `withRecordFields` writes each own-records
+ *              source's declared field names on it as `fields`, so a write
+ *              sends only those (data-protocol §4.1).
  *   Addresses  `authAddresses` — the envelope `auth.json` for a declaration,
  *              pointed at `<base>`.
  *   Definitions `readAuth`, `readEntities`, `readSeed` — the app folder's
@@ -26,6 +28,7 @@
 export { accessOf, parseRule, RecordStore } from './records.js'
 export type { Access, AccessReach, AccessVerb, AggregateAnswer, Caller, ListAnswer, Scope, Target } from './records.js'
 export { rewriteEntitySources } from './receipts.js'
+export { declaredRecordFields, withRecordFields } from './record-fields.js'
 export { authAddresses, createLocalHost, DEFAULT_DEV_USER, SESSION_COOKIE } from './local-host.js'
 export { readAuth, readEntities, readSeed } from './definitions.js'
 export type { AuthDeclaration, EntityDeclaration, EntityField } from './definitions.js'

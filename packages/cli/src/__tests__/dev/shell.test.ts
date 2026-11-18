@@ -166,3 +166,28 @@ describe('shell', () => {
     expect(htmlLangOf(undefined)).toBe('')
   })
 })
+
+describe('what a page needs first', () => {
+  it('the first image: a priority block wins, else the first image block, only a literal address', async () => {
+    const { firstImageOf } = await import('../../dev/shell.js')
+    const img = (src: unknown, extra: Record<string, unknown> = {}) => ({ type: 'image', props: { src, ...extra } })
+    expect(firstImageOf({ blocks: [{ type: 'section', children: [img('pwpack/media/a.jpg')] }, img('pwpack/media/b.jpg')] })).toEqual({ src: 'pwpack/media/a.jpg', priority: false })
+    expect(
+      firstImageOf({ blocks: [img('pwpack/media/a.jpg'), { type: 'hero', props: { image: 'pwpack/media/hero.webp', priority: true } }] })
+    ).toEqual({ src: 'pwpack/media/hero.webp', priority: true })
+    expect(firstImageOf({ blocks: [img('{{dish.photo}}'), img('data:image/png;base64,AA')] })).toBeUndefined()
+  })
+
+  it('the shell asks for the entry page, boot.js for a deep-linked one', async () => {
+    const { buildShellHtml, bootScript } = await import('../../dev/shell.js')
+    const hints = { receipt: 'pwpack/surfaces/menu.receipt.json', modules: ['blocks/text.1.mjs'], image: 'pwpack/media/hero.jpg', imagePriority: true }
+    const html = buildShellHtml({ title: 'x', entryHints: hints, themeCss: ':root{--a:1}' })
+    expect(html).toContain('<link rel="preload" as="fetch" href="./pwpack/surfaces/menu.receipt.json" crossorigin />')
+    expect(html).toContain('<link rel="modulepreload" href="./blocks/text.1.mjs" />')
+    expect(html).toContain('<link rel="preload" as="image" href="./pwpack/media/hero.jpg" fetchpriority="high" />')
+    expect(html).toContain('<style>:root{--a:1}</style>')
+    const boot = bootScript({ pageHints: { dish: hints } })
+    expect(boot).toContain('"dish":')
+    expect(boot).toContain("location.hash.slice(2).split(/[?#]/)[0]")
+  })
+})

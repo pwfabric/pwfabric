@@ -235,6 +235,17 @@ export const dataSourceSchema = z.object({
    */
   notFoundWhenEmpty: z.boolean().optional(),
   /**
+   * THE RECORD'S FIELDS, name → declared type (`entities.json` "Field
+   * types"). A write to this source — a form binding, the `write` action —
+   * sends only these, each as its type (a number field's `"10"` goes as
+   * `10`, a checkbox's `"on"` as `true`); any other named value (a one-time
+   * code, a confirmation box) stays on the page (data-protocol §4.1).
+   * Absent: the write sends what it gathered, as gathered. A builder writes
+   * it onto an own-records `entity` source from the type's declaration; an
+   * author MAY write it on any source.
+   */
+  fields: z.record(z.string(), z.string()).optional(),
+  /**
    * Ask for ONE NUMBER over the collection instead of its rows. The
    * source binds `{ fn, field?, value, count }` — `{{<id>.value}}` is the
    * number — and is exempt from the list wrap. `count` needs no field; the

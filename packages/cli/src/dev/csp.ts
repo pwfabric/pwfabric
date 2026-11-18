@@ -21,7 +21,7 @@
  *   media-src    'self' data: blob: [+ media origins]
  *   frame-src    [media origins + declared frame origins] — only when there are any;
  *                'self' when a page frames a document of the app's OWN media
- *                (a block prop holding `pwpack/media/<file>.pdf|.html|.htm|.txt`),
+ *                (a block prop holding `pwpack/media/<file>.pdf|.txt`),
  *                so a receipt or a report can be shown in place
  *   font-src     'self' [+ the webfont file origin]
  *   connect-src  'self' [+ every origin the app's data and sign-in reach]
@@ -167,10 +167,13 @@ function collectUrls(value: Record<string, unknown> | unknown[], out: string[]):
 /**
  * A document of the app's own media that a frame can show: `pwpack/media/…`
  * (as a block's `src` is written, `./` or `/` before it naming the same file)
- * ending in a document type. An image, a sound or a video is not framed — it
- * has its own element and directive.
+ * ending in a document type a frame shows inertly: `.pdf` or `.txt`. An
+ * image, a sound or a video is not framed — it has its own element and
+ * directive. An `.html` file is not either: same-origin HTML in a frame runs
+ * with the app's origin (an XSS door), and packs refuse to frame it, so the
+ * policy does not open `frame-src 'self'` for one.
  */
-const OWN_FRAMED_DOCUMENT = /^(?:\.?\/)?pwpack\/media\/(?!.*\.\.)[^?#]+\.(?:pdf|html?|txt)(?:[?#].*)?$/i
+const OWN_FRAMED_DOCUMENT = /^(?:\.?\/)?pwpack\/media\/(?!.*\.\.)[^?#]+\.(?:pdf|txt)(?:[?#].*)?$/i
 
 /** Whether any non-link prop of the receipt's blocks holds a document of the app's own media. */
 function framesOwnMedia(blocks: unknown): boolean {

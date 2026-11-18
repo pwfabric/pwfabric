@@ -269,23 +269,17 @@ describe('DefaultEntityStore', () => {
       expect(result.items).toHaveLength(3)
     })
 
-    it('should return empty result for unregistered entity type', async () => {
-      const result = await store.query('unknown_type' as EntityTypeId, {})
-
-      expect(result.items).toEqual([])
-      expect(result.total).toBe(0)
+    it('rejects for an unregistered entity type (a list that cannot be served is not empty)', async () => {
+      await expect(store.query('unknown_type' as EntityTypeId, {})).rejects.toThrow(/not registered/)
     })
 
-    it('should return empty result when no connector available', async () => {
+    it('rejects when no connector is available', async () => {
       const registry = new InMemoryEntityRegistry()
       const connectorRegistry = new InMemoryConnectorRegistry()
       const noConnectorStore = new DefaultEntityStore(registry, connectorRegistry)
       registry.register(productDefinition)
 
-      const result = await noConnectorStore.query(PRODUCT_TYPE, {})
-
-      expect(result.items).toEqual([])
-      expect(result.total).toBe(0)
+      await expect(noConnectorStore.query(PRODUCT_TYPE, {})).rejects.toThrow(/No connector/)
     })
 
     it('should support filtering', async () => {
@@ -475,16 +469,23 @@ describe('DefaultEntityStore — error branches', () => {
   })
 
   describe('query — error paths', () => {
-    it('should return empty result when connector.query fails', async () => {
-      // Test the no-connector path
+    it('rejects with the connector code when connector.query fails', async () => {
       const registry = new InMemoryEntityRegistry()
       const connectorRegistry = new InMemoryConnectorRegistry()
       registry.register(productDefinition)
-      const storeNoConn = new DefaultEntityStore(registry, connectorRegistry)
+      connectorRegistry.register({
+        name: 'down',
+        type: 'custom',
+        create: async () => ({ success: false, error: 'x' }),
+        read: async () => ({ success: false, error: 'x' }),
+        update: async () => ({ success: false, error: 'x' }),
+        delete: async () => ({ success: false, error: 'x' }),
+        query: async () => ({ success: false, error: 'HTTP 503', code: 503 }),
+      })
+      connectorRegistry.bind(PRODUCT_TYPE, 'down')
+      const storeDown = new DefaultEntityStore(registry, connectorRegistry)
 
-      const result = await storeNoConn.query(PRODUCT_TYPE, {})
-      // Without connector, returns empty result
-      expect(result.items).toHaveLength(0)
+      await expect(storeDown.query(PRODUCT_TYPE, {})).rejects.toMatchObject({ message: 'HTTP 503', status: 503 })
     })
   })
 })

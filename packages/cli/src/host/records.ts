@@ -30,7 +30,7 @@
 import { randomUUID } from 'node:crypto'
 import { HostError } from './http.js'
 import { prepareRecordWrite } from '@pwfabric/contracts'
-import { readSeed, type AuthDeclaration, type EntityDeclaration } from './definitions.js'
+import { readEntities, readSeed, type AuthDeclaration, type EntityDeclaration } from './definitions.js'
 import { aggregate, matches, parseFilter, parseSort, sortRows, type AggregateResult, type Filter, type Row } from './query.js'
 import type { Principal } from './tokens.js'
 
@@ -71,7 +71,8 @@ function prepared(
   body: Record<string, unknown>,
   op: 'create' | 'update',
   caller: Caller,
-  now: string
+  now: string,
+  relationReadable?: (targetTypeId: string, id: string) => boolean
 ): Record<string, unknown> {
   const result = prepareRecordWrite({
     fields: entity.fields,
@@ -80,6 +81,7 @@ function prepared(
     ...(caller.principal ? { callerId: caller.principal.id } : {}),
     ...(caller.principal ? { callerName: caller.principal.displayName || caller.principal.email } : {}),
     now,
+    ...(relationReadable ? { relationReadable } : {}),
   })
   if (!result.ok) throw new HostError(400, result.code, result.message)
   return result.fields
@@ -283,13 +285,54 @@ export class RecordStore {
     return this.find(target, 'view', id).record
   }
 
+  /**
+   * RELATIONS POINT AT A RECORD THE CALLER CAN READ. The target exists and the
+   * caller's `view` reach covers it — an owner-scoped target is therefore one
+   * of the caller's own: a member could attach a courier note to another
+   * account's order (201).
+   */
+  private relationReadable(target: Target): (targetTypeId: string, id: string) => boolean {
+    return (targetTypeId, id) => {
+      const entity = readEntities(this.root).find((e) => e.typeId === targetTypeId)
+      if (!entity) return false
+      try {
+        this.find({ ...target, entity }, 'view', id)
+        return true
+      } catch {
+        return false
+      }
+    }
+  }
+
+  /**
+   * UNIQUE KEYS. An entity's `unique` lists field-name sets no two records may
+   * share (`[["owner", "sessionId"]]`: one reply per person and session). A
+   * write that would make a second is refused with 409 `CONFLICT`. A key any
+   * of whose fields the record leaves empty constrains nothing.
+   */
+  private checkUnique(entity: EntityDeclaration, record: Row, owner: string | undefined, selfId?: string): void {
+    for (const key of entity.unique ?? []) {
+      const valueOf = (r: Row, o: string | undefined, f: string): unknown =>
+        r[f] !== undefined ? r[f] : f === ownerFieldOf(entity) ? o : undefined
+      const mine = key.map((f) => valueOf(record, owner, f))
+      if (mine.some((v) => v === undefined || v === null || v === '')) continue
+      for (const [id, other] of this.collection(entity)) {
+        if (id === selfId) continue
+        if (key.every((f, i) => valueOf(other.record, other.owner, f) === mine[i])) {
+          throw new HostError(409, 'CONFLICT', `A ${entity.typeId} record with this ${key.join(' and ')} already exists.`)
+        }
+      }
+    }
+  }
+
   create(target: Target, body: Record<string, unknown>): Row {
     const { entity, caller } = target
     this.allow(target, 'create')
     const now = new Date().toISOString()
-    const fields = prepared(entity, body, 'create', caller, now)
+    const fields = prepared(entity, body, 'create', caller, now, this.relationReadable(target))
     const id = randomUUID()
     const record: Row = { ...fields, id, entityType: entity.typeId, createdAt: now, updatedAt: now }
+    this.checkUnique(entity, record, caller.principal?.id)
     this.collection(entity).set(id, { record, owner: caller.principal?.id })
     return record
   }
@@ -297,7 +340,8 @@ export class RecordStore {
   update(target: Target, id: string, body: Record<string, unknown>): Row {
     const stored = this.find(target, 'update', id)
     const now = new Date().toISOString()
-    const fields = prepared(target.entity, body, 'update', target.caller, now)
+    const fields = prepared(target.entity, body, 'update', target.caller, now, this.relationReadable(target))
+    this.checkUnique(target.entity, { ...stored.record, ...fields }, stored.owner, id)
     stored.record = {
       ...stored.record,
       ...fields,

@@ -58,6 +58,7 @@ import {
 } from './definitions.js'
 import { RecordStore, type Target } from './records.js'
 import { rewriteEntitySources } from './receipts.js'
+import { declaredRecordFields, withRecordFields } from './record-fields.js'
 import { DevIssuer, type Grant } from './oidc.js'
 import { TokenStore, type Principal } from './tokens.js'
 import type { CreateLocalHost, LocalHost, LocalHostOptions } from './types.js'
@@ -411,7 +412,11 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
   function receiptFor(key: string, base: string): Record<string, unknown> | undefined {
     const receipt = readReceipt(root, key)
     if (!receipt) return undefined
-    return rewriteEntitySources(receipt, base, new Set(readEntities(root).map((e) => e.typeId)))
+    const entities = readEntities(root)
+    // The record's fields ride on the source, as `pwf build` writes them
+    // (record-fields.ts), so a form here sends the same body it will there.
+    const fields = declaredRecordFields({ entities })
+    return rewriteEntitySources(withRecordFields(receipt, fields), base, new Set(entities.map((e) => e.typeId)))
   }
 
   function surface(req: IncomingMessage, res: ServerResponse, parts: string[]): void {

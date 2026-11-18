@@ -229,6 +229,96 @@ export interface ShellOptions {
   readonly preloadRenderer?: boolean
   /** Envelope files to preload; default {@link BOOT_FILES}. Only files the folder has. */
   readonly bootFiles?: readonly string[]
+  /**
+   * The theme stylesheet's text, written into `<head>` as a `<style>` instead
+   * of a `<link>`: the one render-blocking request of the shell is gone, and
+   * the first paint waits for nothing but the document.
+   */
+  readonly themeCss?: string
+  /** What the ENTRY page needs, fetched with the document (see {@link PageHints}). */
+  readonly entryHints?: PageHints
+}
+
+/**
+ * What a page needs before it can draw, so the shell (or boot.js) can ask for
+ * all of it at once instead of in a chain — runner, then receipt, then one
+ * module per block type.
+ */
+export interface PageHints {
+  /** The page's receipt, as the runner fetches it (`pwpack/surfaces/<key>.receipt.json`). */
+  readonly receipt: string
+  /** Every block module the page places. */
+  readonly modules: readonly string[]
+  /** The image the page shows first (its likely largest paint), when one is known at build. */
+  readonly image?: string
+  /** The image is one a block marked `priority: true`: fetched at high priority. */
+  readonly imagePriority?: boolean
+}
+
+/** An app file as the shell addresses it (`./…`); an absolute address as written. */
+function servedHref(href: string): string {
+  return /^https?:\/\//i.test(href) ? href : `./${href.replace(/^\.?\//, '')}`
+}
+
+/** The props a block names its picture by. */
+const IMAGE_PROPS = ['src', 'image', 'imageSrc', 'backgroundImage'] as const
+
+/**
+ * The image a page shows first, as the build can know it: the first block
+ * that says it is the page's priority image (`priority: true`), else the
+ * first `image` block, depth first — with a literal address (an expression
+ * or a `data:` URI cannot be preloaded).
+ */
+export function firstImageOf(receipt: unknown): { readonly src: string; readonly priority: boolean } | undefined {
+  // A literal address of the app's own (relative) or an http(s) one; never an
+  // expression, a `data:` URI or another scheme.
+  const literal = (v: unknown): string | undefined => {
+    if (typeof v !== 'string' || v.trim() === '' || v.includes('{{')) return undefined
+    const src = v.trim()
+    if (/^[a-z][a-z0-9+.-]*:/i.test(src) && !/^https?:\/\//i.test(src)) return undefined
+    return src.startsWith('//') ? undefined : src
+  }
+  const srcOf = (props: Record<string, unknown>): string | undefined => {
+    for (const k of IMAGE_PROPS) {
+      const v = literal(props[k])
+      if (v) return v
+    }
+    return undefined
+  }
+  let first: string | undefined
+  let priority: string | undefined
+  const walk = (node: unknown): void => {
+    if (priority !== undefined) return
+    if (Array.isArray(node)) return node.forEach(walk)
+    if (!node || typeof node !== 'object') return
+    const block = node as Record<string, unknown>
+    const props = (block['props'] && typeof block['props'] === 'object' ? block['props'] : {}) as Record<string, unknown>
+    if (props['priority'] === true) {
+      const src = srcOf(props)
+      if (src) priority = src
+    }
+    if (first === undefined && block['type'] === 'image') first = literal(props['src'])
+    walk(block['children'])
+  }
+  if (receipt && typeof receipt === 'object') walk((receipt as Record<string, unknown>)['blocks'])
+  if (priority !== undefined) return { src: priority, priority: true }
+  return first !== undefined ? { src: first, priority: false } : undefined
+}
+
+/** The preload links for a page. */
+function hintLinks(hints: PageHints | undefined): string {
+  if (!hints) return ''
+  const image = hints.image
+    ? `
+    <link rel="preload" as="image" href="${escapeHtml(servedHref(hints.image))}"${hints.imagePriority ? ' fetchpriority="high"' : ''} />`
+    : ''
+  return (
+    `
+    <link rel="preload" as="fetch" href="./${escapeHtml(hints.receipt)}" crossorigin />` +
+    hints.modules.map((m) => `
+    <link rel="modulepreload" href="./${escapeHtml(m)}" />`).join('') +
+    image
+  )
 }
 
 /** The exact text of the shell's inline import map (the CSP hashes this). */
@@ -241,6 +331,11 @@ export interface BootOptions {
   readonly assets?: ShellAssets
   /** The webfont stylesheet the theme names, linked by the boot module so it never holds the first paint. */
   readonly webfontHref?: string | null
+  /**
+   * Every page but the entry, by key: what boot.js asks for at once when the
+   * address names that page (a deep link), the way the shell does for the entry.
+   */
+  readonly pageHints?: Readonly<Record<string, PageHints>>
 }
 
 /** `assets/boot.<hash>.js`: the module that starts the runner. */
@@ -260,9 +355,39 @@ fonts.href = ${JSON.stringify(options.webfontHref)}
 document.head.appendChild(fonts)
 `
     : ''
+  const pages = options.pageHints && Object.keys(options.pageHints).length > 0 ? options.pageHints : undefined
+  const deepLink = pages
+    ? `
+// A deep link: the page the address names, its receipt and its block modules
+// asked for now, beside the runner, instead of one after another.
+// The address is the visitor's: only an OWN key of the table is a page
+// (\`#/constructor\` names none), its shape is checked, and nothing here can
+// stop the app from starting.
+try {
+  const hints = new Map(Object.entries(${JSON.stringify(pages)}))
+  const key = location.hash.startsWith('#/') ? location.hash.slice(2).split(/[?#]/)[0] : ''
+  const page = hints.get(key)
+  if (page && typeof page.receipt === 'string' && Array.isArray(page.modules)) {
+    const add = (rel, href, as) => {
+      const link = document.createElement('link')
+      link.rel = rel
+      link.href = href
+      if (as) link.as = as
+      if (as === 'fetch') link.crossOrigin = 'anonymous'
+      document.head.appendChild(link)
+    }
+    add('preload', './' + page.receipt, 'fetch')
+    for (const m of page.modules) if (typeof m === 'string') add('modulepreload', './' + m)
+    if (typeof page.image === 'string') add('preload', /^https?:/.test(page.image) ? page.image : './' + page.image, 'image')
+  }
+} catch {
+  // A hint is only a head start; the runner fetches what it needs anyway.
+}
+`
+    : ''
   return `// Generated by pwf: starts the app.
 import { runApp } from ${JSON.stringify(runner)}
-${fonts}
+${fonts}${deepLink}
 runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', renderer: ${JSON.stringify(`./${assets.embed}`)}, router: 'hash' })
 `
 }
@@ -334,9 +459,9 @@ export function buildShellHtml(options: ShellOptions): string {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(options.title)}</title>${description}
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />${fonts}
+    ${options.themeCss !== undefined ? `<style>${options.themeCss.replace(/<\//g, '<\\/')}</style>` : `<link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />`}${fonts}
     <script type="importmap">${importMapText()}</script>
-    <link rel="modulepreload" href="./${escapeHtml(assets.runner)}" />${renderer}${shims}${boot}
+    <link rel="modulepreload" href="./${escapeHtml(assets.runner)}" />${renderer}${shims}${boot}${hintLinks(options.entryHints)}
   </head>
   <body>
     <div id="root"></div>

@@ -98,6 +98,7 @@ describe('envelopeEntries', () => {
         returns: 'data',
         query: { sort: [{ field: 'name', direction: 'asc' }] },
         fallback: [],
+        fields: { name: 'text', price: 'number' },
       },
       {
         id: 'spend',
@@ -452,7 +453,7 @@ describe('records', () => {
     const token = await signIn(s.base)
     const code = async (res: Response) => ({ status: res.status, body: (await res.json()) as { error?: { code: string; message: string } } })
 
-    const created = await fetch(`${s.base}/records/Order`, withSession(token, json({ item: 'A40', qty: '2', finish: 'sand', gift: 'on' })))
+    const created = await fetch(`${s.base}/records/Order`, withSession(token, json({ item: 'A40', qty: 2, finish: 'sand', gift: true })))
     expect(created.status).toBe(201)
     const order = ((await created.json()) as { data: Record<string, unknown> }).data
     expect(order).toMatchObject({ item: 'A40', qty: 2, finish: 'sand', gift: true, buyer: 'dev-user', status: 'placed' })
@@ -467,6 +468,9 @@ describe('records', () => {
     expect(undeclared.body.error?.message).toBe('total: is not a field of this record')
     const typed = await code(await fetch(`${s.base}/records/Order`, withSession(token, json({ item: 'A40', qty: 'two', finish: 'red' }))))
     expect(typed.body.error?.message).toBe('qty: must be a number; finish: must be one of "graphite", "sand"')
+    // Strict: the writer converts a form's strings; the host refuses them.
+    const numeral = await code(await fetch(`${s.base}/records/Order`, withSession(token, json({ item: 'A40', qty: '2', gift: 'on' }))))
+    expect(numeral.body.error?.message).toBe('qty: must be a number; gift: must be true or false')
 
     // An update may move a default field on, never the owner or the creation time.
     const moved = await fetch(`${s.base}/records/Order/${String(order['id'])}`, withSession(token, { ...json({ status: 'shipped' }), method: 'PATCH' }))
@@ -653,7 +657,15 @@ describe('pages', () => {
     expect(res.status).toBe(200)
     const receipt = (await res.json()) as { capabilities: { config: { dataSources?: unknown[] } }[] }
     expect(receipt.capabilities[0]!.config.dataSources).toEqual([
-      { id: 'orders', kind: 'rest', method: 'GET', endpoint: `${s.base}/records/Order`, authProviderRef: s.base, returns: 'data' },
+      {
+        id: 'orders',
+        kind: 'rest',
+        method: 'GET',
+        endpoint: `${s.base}/records/Order`,
+        authProviderRef: s.base,
+        returns: 'data',
+        fields: { item: 'text', qty: 'number', finish: 'enum', gift: 'boolean', status: 'text' },
+      },
     ])
   })
 

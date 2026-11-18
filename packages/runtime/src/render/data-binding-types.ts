@@ -76,6 +76,12 @@ export interface SurfaceDataSourceDefinition {
   /** world auth binding BY NAME — never credential values. */
   readonly authProviderRef?: string
   /**
+   * Contract parity with `dataSourceSchema.fields`: the record's fields,
+   * name → declared type. A write to the source sends these, each as its
+   * type, and no other named value (render/source-writer.ts).
+   */
+  readonly fields?: Readonly<Record<string, string>>
+  /**
    * Contract parity with `dataSourceSchema.aggregate`: ask for ONE
    * NUMBER over the collection instead of its rows. The source binds
    * `{ fn, field?, value, count }` — `{{<id>.value}}` — and is exempt from

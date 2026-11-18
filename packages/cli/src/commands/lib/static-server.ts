@@ -3,7 +3,9 @@
  * directory listings, no path escapes, and an SPA fallback to `index.html`
  * for page paths.
  */
+import { createHash } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib'
 import { readFile, stat } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import type { AddressInfo } from 'node:net'
@@ -172,15 +174,64 @@ async function handle(source: StaticSource, req: IncomingMessage, res: ServerRes
   }
   // A page path answered with the shell gets the app's base (see withBaseHref).
   const built = found.path === 'index.html' && rel !== '' && rel !== 'index.html' ? withBaseHref(found.body) : found.body
-  const body = host?.envelopeFile(found.path, built) ?? built
-  res.writeHead(200, {
-    ...(await extraHeaders(source, rel ?? '')),
-    'content-type': contentTypeOf(found.path),
-    'content-length': String(body.byteLength),
+  const plain = host?.envelopeFile(found.path, built) ?? built
+  const type = contentTypeOf(found.path)
+  // AS A PRODUCTION HOST SERVES IT: the build's `_headers` (its cache rules
+  // included — a fixed `no-cache` used to overwrite them) and a compressed
+  // body, so one `pwf run` is a measurement with records, not a static copy
+  // without them.
+  const encoding =
+    COMPRESSIBLE.test(type) && plain.byteLength >= MIN_COMPRESSED ? acceptedEncoding(req.headers['accept-encoding']) : undefined
+  const body = encoding ? compressed(plain, encoding) : plain
+  const headers: Record<string, string> = {
     'cache-control': 'no-cache',
-  })
+    ...(await extraHeaders(source, rel ?? '')),
+    'content-type': type,
+    'content-length': String(body.byteLength),
+  }
+  if (encoding) {
+    headers['content-encoding'] = encoding
+    headers['vary'] = 'Accept-Encoding'
+  }
+  res.writeHead(200, headers)
   if (req.method === 'HEAD') res.end()
   else res.end(body)
+}
+
+/** Below this a host sends the bytes as they are (a compressed tiny file is no smaller). */
+const MIN_COMPRESSED = 1024
+
+/** Text a host compresses: markup, scripts, styles, JSON, SVG. */
+const COMPRESSIBLE = /^(?:text\/|application\/(?:json|javascript|xml|manifest\+json)|image\/svg\+xml)/
+
+/** `br` when the client takes it, else `gzip`, else none. */
+function acceptedEncoding(header: string | string[] | undefined): 'br' | 'gzip' | undefined {
+  const value = (Array.isArray(header) ? header.join(',') : (header ?? '')).toLowerCase()
+  const takes = (name: string): boolean =>
+    value.split(',').some((part) => {
+      const [token, ...params] = part.trim().split(';')
+      const q = params.find((p) => p.trim().startsWith('q='))
+      return token?.trim() === name && (q === undefined || Number(q.trim().slice(2)) > 0)
+    })
+  if (takes('br')) return 'br'
+  if (takes('gzip')) return 'gzip'
+  return undefined
+}
+
+/** Compressed bodies by content, so a file is compressed once per run. */
+const compressedCache = new Map<string, Uint8Array>()
+
+function compressed(body: Uint8Array, encoding: 'br' | 'gzip'): Uint8Array {
+  const key = `${encoding}:${createHash('sha256').update(body).digest('hex')}`
+  let out = compressedCache.get(key)
+  if (!out) {
+    out =
+      encoding === 'br'
+        ? brotliCompressSync(body, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 11, [zlibConstants.BROTLI_PARAM_SIZE_HINT]: body.byteLength } })
+        : gzipSync(body, { level: 9 })
+    compressedCache.set(key, out)
+  }
+  return out
 }
 
 /** Starts the server; resolves once it is listening. */

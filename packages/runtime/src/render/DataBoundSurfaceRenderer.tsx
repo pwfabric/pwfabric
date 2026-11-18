@@ -25,7 +25,7 @@ import { literalPropsOf, resolveBlockExpressions } from './resolve-expressions.j
 import { useDynamicBlocks } from './dynamic-artifact-context.js'
 import { readableUrl, urlSchemeOf, type LinkHref } from './links.js'
 import { endpointMissingPathValue, resolveEndpoint } from './endpoint.js'
-import { resolveQueryState } from './query-state.js'
+import { queryAsksForNothing, resolveQueryState } from './query-state.js'
 import { dataSourceCacheKey, type SurfaceDataCache } from './data-cache.js'
 import { DataCapabilityProvider, useDataService } from '../data/DataCapabilityProvider.js'
 import type {
@@ -53,7 +53,7 @@ import { createSourceWriter } from './source-writer.js'
 import { resolveValueIn } from './resolve-expressions.js'
 import { writeFailureDetail, writeFailureFields, writeFailureReason } from '../forms/form-write-target.js'
 import type { EntityFacade } from '../entity/facade.js'
-import type { EntityAggregate, EntityQuery, EntityTypeId } from '../entity/types.js'
+import type { EntityAggregate, EntityFilter, EntityQuery, EntityTypeId } from '../entity/types.js'
 import type { SurfaceConnectionsValue } from '../connectors/types.js'
 import { PLATFORM_PERSISTENCE_CAPABILITY_ID } from '@pwfabric/contracts'
 import { isCapability } from '../capability/type-mapping.js'
@@ -104,6 +104,25 @@ function extractPersistenceSeeds(surface: {
 }
 
 /**
+ * The `initialState` entries whose value carries an expression — seeds
+ * derived from the page's data (data-protocol §1.1), by key.
+ */
+function derivedSeedsOf(initialState: Readonly<Record<string, unknown>> | undefined): Readonly<Record<string, unknown>> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(initialState ?? {})) {
+    if (carriesExpression(value)) out[key] = value
+  }
+  return out
+}
+
+function carriesExpression(value: unknown): boolean {
+  if (typeof value === 'string') return /\{\{.+?\}\}/.test(value)
+  if (Array.isArray(value)) return value.some(carriesExpression)
+  if (value && typeof value === 'object') return Object.values(value as Record<string, unknown>).some(carriesExpression)
+  return false
+}
+
+/**
  * A source's `fallback`, as the source's query would have cut it (see
  * source-failure: bound only when nothing is connected to serve the source).
  * A list is filtered, sorted and paged like live rows, so a detail page
@@ -112,7 +131,39 @@ function extractPersistenceSeeds(surface: {
  */
 function fallbackRows(fallback: unknown, query: EntityQuery | undefined): unknown {
   if (!query || !Array.isArray(fallback)) return fallback
-  return applyEntityQuery(fallback as Record<string, unknown>[], query).items
+  const rows = fallback as Record<string, unknown>[]
+  const fields = new Set<string>()
+  for (const row of rows) if (row && typeof row === 'object') for (const k of Object.keys(row)) fields.add(k)
+  const filter = query.filter ? fieldFilterOf(query.filter, fields) : undefined
+  const { filter: _all, ...rest } = query
+  return applyEntityQuery(rows, filter ? { ...rest, filter } : rest).items
+}
+
+/**
+ * ONLY A FILTER ON A ROW FIELD CUTS SAMPLE ROWS.
+ *
+ * A connector reads some of its request from the filter — Graph's `top`, a
+ * drive's `path`, a sheet's `sheet` and `address` are parameters, not
+ * fields — so applied to the fallback rows, which have no such member, those
+ * conditions matched nothing and the demo drew an empty panel. A condition
+ * whose field (its first segment) no sample row has is dropped here; `and` /
+ * `or` children are kept as they are judged.
+ */
+function fieldFilterOf(filter: EntityFilter, fields: ReadonlySet<string>): EntityFilter {
+  const node = filter as unknown as Record<string, unknown>
+  const out: Record<string, unknown> = { ...node }
+  if (typeof node.field === 'string' && node.field !== '' && !fields.has(node.field.split('.')[0] as string)) {
+    delete out.field
+    delete out.operator
+    delete out.value
+  }
+  const keep = (list: unknown): unknown[] =>
+    (Array.isArray(list) ? list : [])
+      .filter((c): c is object => Boolean(c) && typeof c === 'object')
+      .map((c) => fieldFilterOf(c as EntityFilter, fields))
+  if (Array.isArray(node.and)) out.and = keep(node.and)
+  if (Array.isArray(node.or)) out.or = keep(node.or)
+  return out as unknown as EntityFilter
 }
 
 /**
@@ -405,9 +456,19 @@ function definitionJson(source: SurfaceDataSourceDefinition): string {
   return json
 }
 
-/** A REST source whose required path value is empty is not fetched. */
+/**
+ * Not fetched: a REST source whose required path value is empty, or a fetched
+ * source whose query asks for no record (an empty record key, query-state.ts).
+ */
 function isIdleSource(source: SurfaceDataSourceDefinition, state: Readonly<Record<string, unknown>>): boolean {
-  return source.kind === 'rest' && Boolean(source.endpoint) && endpointMissingPathValue(source.endpoint as string, state)
+  if (source.kind === 'rest' && Boolean(source.endpoint) && endpointMissingPathValue(source.endpoint as string, state)) {
+    return true
+  }
+  return (
+    (source.kind === 'rest' || source.kind === 'entity') &&
+    source.aggregate === undefined &&
+    queryAsksForNothing(source.query, state, source.notFoundWhenEmpty === true)
+  )
 }
 
 /**
@@ -426,10 +487,10 @@ function isIdleSource(source: SurfaceDataSourceDefinition, state: Readonly<Recor
  */
 function requestKeyOf(source: SurfaceDataSourceDefinition, state: Readonly<Record<string, unknown>>): string {
   const def = definitionJson(source)
+  if (isIdleSource(source, state)) return `${def}|idle`
   switch (source.kind) {
     case 'rest': {
       if (!source.endpoint) return def
-      if (isIdleSource(source, state)) return `${def}|idle`
       const query = source.query ? safeJson(resolveQueryState(source.query, state)) : ''
       return `${def}|${resolveEndpoint(source.endpoint, state)}|${query}`
     }
@@ -458,7 +519,9 @@ function useSurfaceData(
   connections?: SurfaceConnectionsValue,
   dataCache?: SurfaceDataCache,
   /** Sources only a form writes to (see write-only-sources): settled, never fetched. */
-  writeOnly?: ReadonlySet<string>
+  writeOnly?: ReadonlySet<string>,
+  /** The app's locale, for an `initialState` expression that formats. */
+  locale?: string
 ): SurfaceDataResult {
   const dataService = useDataService()
   const writeOnlyRef = React.useRef(writeOnly)
@@ -466,10 +529,16 @@ function useSurfaceData(
   const dataCacheRef = React.useRef(dataCache)
   dataCacheRef.current = dataCache
 
-  // State store
-  const [surfaceState, setSurfaceState] = React.useState<Record<string, unknown>>(() => ({
-    ...initialState,
-  }))
+  // State store. A DERIVED seed — an `initialState` value carrying an
+  // expression (`"{{dishes.length}}"`, a facet's counts) — is not a value
+  // yet: it is left out here and written once the first data pass has
+  // settled (see the effect after the expression context).
+  const derivedSeeds = React.useMemo(() => derivedSeedsOf(initialState), [initialState])
+  const [surfaceState, setSurfaceState] = React.useState<Record<string, unknown>>(() => {
+    const plain: Record<string, unknown> = { ...initialState }
+    for (const key of Object.keys(derivedSeeds)) delete plain[key]
+    return plain
+  })
 
   // Source data store — seeded from the host's cache when it has yesterday's
   // rows for a source, so the first frame is not an empty table. The seed is
@@ -816,20 +885,20 @@ function useSurfaceData(
             if (outcome.kind === 'ok') {
               next[source.id] = { data: outcome.data, loading: false, error: null, status: outcome.status, meta: outcome.meta, key }
             } else {
-              const p = prev[source.id]
-              // ON ERROR, DATA FROM ANOTHER REQUEST IS CLEARED: a search
-              // for cart 999 must not leave cart 1 on screen under the error.
-              // The SAME request failing again (a refresh, a poll) keeps its
-              // last good answer — that answer is still the right record.
-              const keep = p?.key === key
+              // A REAL FAILURE BINDS NO ROWS (source-failure) — none of
+              // another request's, and none of this one's from before either:
+              // a refresh or a poll that fails, or rows seeded from the data
+              // cache, left yesterday's record on screen next to
+              // `__errorCodes.<id>`, and the page drew a session under a 500.
+              // Only "unconnected" binds rows: its `fallback`, cut by the query.
               next[source.id] = {
-                data: outcome.fallback ? outcome.fallback.data : keep ? (p?.data ?? null) : null,
+                data: outcome.fallback ? outcome.fallback.data : null,
                 loading: false,
                 error: outcome.message,
                 errorCode: outcome.code,
                 status: outcome.status,
-                meta: keep ? (p?.meta ?? null) : null,
-                ...(keep ? { key } : {}),
+                meta: null,
+                key,
               }
             }
             return next
@@ -1012,6 +1081,22 @@ function useSurfaceData(
     ctx['__meta'] = metaMap
     return ctx
   }, [surfaceState, sourceData, dataSources, writeOnly])
+
+  // ---- Derived seeds: evaluated ONCE, when the first data pass has settled ----
+  // Against the whole page scope (state, every source, `__meta` …), so a seed
+  // can count the rows it will filter. A key something already wrote — the
+  // address, a control that mounted first — keeps that value.
+  const derivedDoneRef = React.useRef(false)
+  React.useEffect(() => {
+    if (!initialLoaded || derivedDoneRef.current) return
+    derivedDoneRef.current = true
+    for (const [key, template] of Object.entries(derivedSeeds)) {
+      if (stateRef.current[key] !== undefined) continue
+      // A seed that cannot be evaluated is no value — never its template.
+      const value = resolveValueIn(template, expressionData, locale ? { locale } : {})
+      setStateValue(key, carriesExpression(value) ? undefined : value)
+    }
+  }, [initialLoaded, derivedSeeds, expressionData, setStateValue, locale])
 
   return {
     expressionData,
@@ -1278,7 +1363,7 @@ function DataBoundInner({
     [writeOnlyKey]
   )
   const { expressionData: pageData, surfaceState, initialLoaded, setStateValue, refreshSource, fetchAllSources } =
-    useSurfaceData(dataSources, initialState, interactionMode, entityFacade, connections, dataCache, writeOnly)
+    useSurfaceData(dataSources, initialState, interactionMode, entityFacade, connections, dataCache, writeOnly, locale)
   // WHO IS SIGNED IN, beside the page's data: `{{__auth.*}}` and its shorthand
   // `{{me.*}}` (= `__auth.user`). The host's state, read-only — no source
   // fetches it and no action writes it.
