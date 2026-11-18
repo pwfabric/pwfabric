@@ -102,7 +102,7 @@ describe('the app door, end to end', () => {
     // A session without a profile is completed from sessionUrl.
     const bare: AppSession = { token: session.token, expiresAt: session.expiresAt }
     const full = await withProfile(bare, auth.sessionUrl)
-    expect(full.principal).toEqual({ id: 'dev-user', email: 'dev@localhost', displayName: 'Developer' })
+    expect(full.principal).toEqual({ id: 'dev-user', email: 'dev@localhost', displayName: 'Developer', roles: [] })
 
     // A reload finds the stored session with no request.
     const reboot = await bootSession({ project, auth, storage, appId: 'contract-app', location: nowhere, history: noHistory })
@@ -230,7 +230,7 @@ describe('the app door, end to end', () => {
     const project = projectOf(auth as unknown as Record<string, unknown>, false, 'app')
     const storage = memoryStorage()
     const boot = await bootSession({ project, auth, storage, appId: 'social', fetchImpl: withCookie, location: nowhere, history: noHistory })
-    expect(boot.session?.principal).toEqual({ id: 'dev-user', email: 'dev@localhost', displayName: 'Developer' })
+    expect(boot.session?.principal).toEqual({ id: 'dev-user', email: 'dev@localhost', displayName: 'Developer', roles: [] })
     expect(readAppSession(storage, 'social')?.token).toBe(boot.session?.token)
 
     // Sign-out deletes the cookie's session (gateway logout, x-pwapp-request).

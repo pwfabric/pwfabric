@@ -31,7 +31,8 @@ import { assembleFooter, assembleNav, composeTitle, doorHeaders, fetchJson, link
 import { createRouter, resolveRouterMode, type RouteChange } from './router.js'
 import { createAuthBridge, type AuthBridge } from './auth.js'
 import { accountUserFrom, applyAccountControl } from './apply-auth.js'
-import { accountActionOf, createAccountController, hasDoor } from './account-controller.js'
+import { createAccountController, hasDoor, type SignInMode } from './account-controller.js'
+import { authErrorCode, authMethodsOf, authStateOf } from './auth-state.js'
 import { applyShellDarkMode, shellDarkThemeVars, shellModePolicy, shellThemeVars } from './shell-theme.js'
 import { THEME_PRESETS } from './theme-presets.js'
 import {
@@ -156,8 +157,22 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   // A visitor who will see a page gets the renderer started now, so it is
   // evaluated while the page's receipt is on its way rather than after it. A
   // visitor the gate holds does not (renderer.ts).
-  if (!isGated(project, null, Boolean(appSession))) void loadRenderer(rendererUrl).catch(() => undefined)
+  // THE APP'S OWN SIGN-IN SCREEN (`app.signIn`), when it ships one: drawn
+  // like a page wherever the visitor has to, or asks to, sign in, and the
+  // runner's dialog is never drawn. Without it the runner's dialog stands in.
+  const ownSignIn =
+    project.signInSurfaceId && receiptFilesOf(project)[project.signInSurfaceId] ? project.signInSurfaceId : undefined
+  // The gate holds a visitor out of the pages, but an app with its own
+  // sign-in screen draws that screen with the renderer.
+  if (ownSignIn || !isGated(project, null, Boolean(appSession))) void loadRenderer(rendererUrl).catch(() => undefined)
   const initialError = boot.authError ? authErrorMessage(say, boot.authError) : undefined
+  /**
+   * WHY THE LAST SIGN-IN DID NOT SUCCEED, as the page reads it
+   * (`__auth.error`): the code a provider round trip came back with, or the
+   * password door's (`refused`, `exists`, …). Cleared by a sign-in or a
+   * sign-out. The runner's own dialog shows its sentence beside it.
+   */
+  let authError: string | null = authErrorCode(boot.authError)
 
   /**
    * This app's own API base, read back out of the door it was published with
@@ -257,6 +272,8 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   // wall comes down onto an empty page and the visitor reloads to fix it.
   const onSignedIn = (session: AppSession): void => {
     appSession = session
+    authError = null
+    signInMode = null
     writeAppSession(sessionStorage, appId, session)
     pill?.refresh()
     void route()
@@ -280,11 +297,12 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // A refused arrival is shown, not swallowed.
       ...(initialError ? { initialError } : {}),
     })
-  let unmountGate = mountGate()
+  // The runner's wall only for an app that draws no sign-in screen of its own.
+  let unmountGate = ownSignIn ? (): void => {} : mountGate()
   // The same dialog, opened by the app's own account control. Mounted on the
   // body so a route re-render (which replaces the container) cannot drop it.
   let closeOnDemandGate: (() => void) | null = null
-  const showDialog = (message?: string): void => {
+  const showDialog = (message?: string, mode: SignInMode = 'login'): void => {
     closeOnDemandGate?.()
     closeOnDemandGate = mountSignInGate(document.body, project, bridge, {
       auth,
@@ -293,18 +311,36 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       onProviderSignIn: startProvider,
       themeVars,
       onDemand: true,
+      initialMode: mode,
       ...(message ? { initialError: message } : {}),
       onDismiss: () => {
         closeOnDemandGate = null
       },
     })
   }
-  const openGate = (): void => showDialog()
+  /**
+   * The sign-in screen the page asked for, while it is up — `null` when the
+   * route's own page is drawn. Only for an app with its own screen; a route
+   * change takes it down (the visitor went elsewhere), a sign-in too.
+   */
+  let signInMode: SignInMode | null = null
+  const openSignIn = (mode: SignInMode): void => {
+    if (!ownSignIn) {
+      showDialog(undefined, mode)
+      return
+    }
+    signInMode = mode
+    void route()
+  }
   // An app that does not require sign-in has no wall to carry a refused
-  // arrival (Cancel on the platform screen, a provider error). Open the
-  // dialog with the message instead, so the visitor learns why they are
-  // still signed out and can try again or close it.
-  if (initialError && !appSession && !isGated(project, bridge, false)) showDialog(initialError)
+  // arrival (Cancel on the platform screen, a provider error). Show where to
+  // sign in instead — the app's screen, reading `__auth.error`, or the dialog
+  // with the sentence — so the visitor learns why they are still signed out
+  // and can try again or leave.
+  if (initialError && !appSession && !isGated(project, bridge, false)) {
+    if (ownSignIn) signInMode = 'login'
+    else showDialog(initialError)
+  }
   let pill: ReturnType<typeof mountSessionPill> | null = null
 
   // A connection's connector instance survives route changes per login session
@@ -380,6 +416,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     getAppSession: () => appSession,
     clearAppSession: () => {
       appSession = null
+      authError = null
       clearAppSession(sessionStorage, appId)
     },
     clearCaches: () => {
@@ -393,13 +430,47 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // A required app must not keep the previous visitor's page in the DOM
       // behind the wall.
       if (isGated(project, bridge, false)) container.replaceChildren()
-      unmountGate = mountGate()
+      unmountGate = ownSignIn ? (): void => {} : mountGate()
       pill?.refresh()
     },
     rerender: () => void route(),
-    openGate,
+    openSignIn,
     startProvider,
+    onSignedIn,
+    onFailed: (code) => {
+      authError = code
+      void refreshAuth()
+    },
+    messages: say,
   })
+
+  /** The ways in, for `__auth.methods` — decided once, like `door`. */
+  const methods = authMethodsOf({ project, auth, bridge })
+  /** What the page reads as `__auth` right now, and where its `auth:*` actions go. */
+  const authHost = (): {
+    state: ReturnType<typeof authStateOf>
+    onAction: (action: Parameters<typeof account.perform>[0], input: { values?: Readonly<Record<string, unknown>> }) => void
+  } => ({
+    state: authStateOf({ appSession, bridgeSession: bridge?.session, methods, registration: auth?.registration, error: authError }),
+    onAction: (action, input) => account.perform(action, input.values),
+  })
+
+  /** The page on screen, kept so an identity change that is not a sign-in can reach it in place. */
+  let current: { seq: number; surface: unknown; options: Record<string, unknown>; handle: unknown } | null = null
+  /**
+   * THE PAGE READS A NEW `__auth` WITHOUT BEING DRAWN AGAIN. A refused
+   * password leaves the visitor on the same form with what they typed; a
+   * fresh render would empty it. A sign-in or sign-out still re-routes —
+   * other records, other receipts.
+   */
+  async function refreshAuth(): Promise<void> {
+    const page = current
+    if (!page || page.seq !== routeSeq) return
+    const handle = (await page.handle) as { update?: (o: Record<string, unknown>) => void } | null | undefined
+    if (page !== current || typeof handle?.update !== 'function') return
+    page.options = { ...page.options, identity: authHost() }
+    handle.update({ ...page.options, surface: page.surface })
+  }
 
   // THE PREVIEW BRIDGE — off unless the host asked for it (see
   // preview-bridge.ts). A published app's shell never passes the option, so
@@ -451,10 +522,18 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   }
 
   async function route(change?: RouteChange): Promise<void> {
+    const gated = isGated(project, bridge, Boolean(appSession))
+    // THE APP'S SIGN-IN SCREEN, at the address the visitor is on: in front of
+    // every page while an app that requires sign-in has no visitor, and while
+    // the page's own ask (`auth:signIn` with nothing to send) is up.
+    if (ownSignIn && (gated || (signInMode !== null && !appSession && !bridge?.session))) {
+      await showSignIn(++routeSeq)
+      return
+    }
     // Nothing to fetch behind the wall. The session server would refuse
     // the receipt anyway; asking for it would print a 401 under a gate the
     // visitor can already see, and teach nobody anything.
-    if (isGated(project, bridge, Boolean(appSession))) return
+    if (gated) return
     const seq = ++routeSeq
     const key = router.current()
 
@@ -513,6 +592,28 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       }
     }
     showRunnerNotFound()
+  }
+
+  /**
+   * The app's sign-in screen, drawn like the not-found page: inside the
+   * shell, at the address that asked. If it cannot be drawn, the runner's
+   * own dialog stands in — a visitor must always have a way in.
+   */
+  async function showSignIn(seq: number): Promise<void> {
+    shown = null
+    const key = ownSignIn as string
+    try {
+      const receipt = await fetchReceipt(receiptFiles[key] as string)
+      if (seq !== routeSeq) return
+      await renderPage(seq, key, receipt, new URLSearchParams(router.query()), true)
+    } catch (err) {
+      console.warn(`[pwapp] the sign-in screen "${key}" could not be drawn; showing the runner's own`, err)
+      if (seq !== routeSeq) return
+      if (isGated(project, bridge, Boolean(appSession))) {
+        unmountGate()
+        unmountGate = mountGate()
+      } else showDialog(initialError)
+    }
   }
 
   function showRunnerNotFound(): void {
@@ -683,13 +784,10 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // here (runtime render/address.ts).
       address,
       ...(entityFacade ? { entityFacade } : {}),
-      // The account control's two actions. The renderer forwards every block
-      // event here; the runtime's own dispatcher ignores these types.
-      onEvent: (event: unknown) => {
-        const action = accountActionOf(event)
-        if (action === 'signOut') void account.signOut()
-        else if (action === 'signIn') account.signIn()
-      },
+      // WHO IS SIGNED IN (`{{__auth.*}}`, `{{me.*}}`) and where every
+      // `auth:*` action a block fires goes — the shell's account control, a
+      // chip, a button, a form (see account-controller.ts).
+      identity: authHost(),
       /**
        * WHO THE DATA REQUEST IS FROM.
        *
@@ -740,6 +838,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       ...(connectionsValue ? { connections: connectionsValue } : {}),
     }
     const rendered = fabric.render('#pw-root', { surface }, renderOptions)
+    current = { seq, surface, options: renderOptions, handle: rendered }
     if (preview && !notFoundPage) {
       // Kept, not discarded: the bridge re-renders through this handle.
       const surfaceId = receiptSurfaceId(receipt)
@@ -798,6 +897,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   }
 
   router.start((change) => {
+    // The visitor went elsewhere: the sign-in screen they asked for is not
+    // where they are going.
+    if (!change?.queryOnly) signInMode = null
     void route(change)
   })
 
@@ -821,7 +923,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     getAppSession: () => appSession,
     onSignedOut: () => void account.signOut(),
     onSignOut: () => account.signOut(),
-    accountSlot: Boolean(navigation?.account),
+    // The pill is the fallback for an app that draws no way in of its own: no
+    // account control in its shell and no sign-in screen.
+    accountSlot: Boolean(navigation?.account) || Boolean(ownSignIn),
     themeVars,
     messages: say,
   })

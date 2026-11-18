@@ -44,6 +44,17 @@ describe('prepareRecordWrite', () => {
     })
   })
 
+  it('ownerName is the writer’s name at the time of the write, set on create only', () => {
+    const fields = [{ name: 'by', type: 'text', server: 'ownerName' as const }, { name: 'text', type: 'text' }]
+    const made = prepareRecordWrite({ fields, body: { text: 'hi' }, op: 'create', callerId: 'u1', callerName: 'Ada', now: NOW })
+    expect(made).toMatchObject({ ok: true, fields: { by: 'Ada', text: 'hi' } })
+    const forged = prepareRecordWrite({ fields, body: { by: 'Eve' }, op: 'update', callerId: 'u1', callerName: 'Ada', now: NOW })
+    expect(forged.ok).toBe(false)
+    const changed = prepareRecordWrite({ fields, body: { text: 'x' }, op: 'update', callerId: 'u1', callerName: 'Ada', now: NOW })
+    expect(changed).toMatchObject({ ok: true, fields: { text: 'x' } })
+    expect((changed as { fields: Record<string, unknown> }).fields.by).toBeUndefined()
+  })
+
   it('refuses a client value for a server-owned field', () => {
     const r = create({ items: 'A40', qty: 1, owner: 'someone-else', status: 'shipped', placed: '2020-01-01' })
     expect(r).toMatchObject({ ok: false, code: 'VALIDATION_FAILED', fieldNames: ['owner', 'status', 'placed'] })

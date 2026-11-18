@@ -30,6 +30,7 @@ import type {
   LinkHref,
   SurfaceAddress,
   AppMessages,
+  SurfaceAuthHost,
 } from '@pwfabric/runtime'
 import type { DynamicBlockDescriptor } from '@pwfabric/contracts'
 
@@ -93,6 +94,11 @@ export interface RenderFatOptions {
    * reports a record that is not there. Absent: the document's own query.
    */
   readonly address?: SurfaceAddress
+  /**
+   * The visitor's identity (`{{__auth.*}}`, `{{me.*}}`) and where the page's
+   * `auth:*` actions go. A runner supplies it; absent, nobody is signed in.
+   */
+  readonly identity?: SurfaceAuthHost
 
   /** Inline appearance ref; overrides `surface.appearance` when given. */
   readonly appearance?: RenderableSurface['appearance']
@@ -207,6 +213,7 @@ export function fatCoreOptions(opts: RenderFatOptions): RenderCoreOptions {
     ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
     ...(opts.messages !== undefined ? { messages: opts.messages } : {}),
     ...(opts.address !== undefined ? { address: opts.address } : {}),
+    ...(opts.identity !== undefined ? { identity: opts.identity } : {}),
     ...(opts.theme !== undefined ? { theme: opts.theme } : {}),
     ...(opts.viewport !== undefined ? { viewport: opts.viewport } : {}),
     ...(opts.interactionMode !== undefined ? { interactionMode: opts.interactionMode } : {}),

@@ -103,17 +103,29 @@ describe('signIn', () => {
       'fetch',
       vi.fn(async () => ({
         ok: false,
+        status: 401,
         json: async () => ({ error: { code: 'INVALID_CREDENTIALS', message: 'Email or password is wrong' } }),
       }))
     )
     const result = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' })
-    expect(result).toEqual({ ok: false, message: 'Could not sign in. Check your details and try again.' })
+    expect(result).toEqual({ ok: false, code: 'refused', message: 'Could not sign in. Check your details and try again.' })
     const own = await signIn(
       'https://api.example/login',
       { email: 'a@b.c', password: 'x' },
       runnerMessages({ 'session.refused': 'Giriş reddedildi ({code}).' })
     )
-    expect(own).toEqual({ ok: false, message: 'Giriş reddedildi (INVALID_CREDENTIALS).' })
+    expect(own).toEqual({ ok: false, code: 'refused', message: 'Giriş reddedildi (INVALID_CREDENTIALS).' })
+  })
+
+  it('names why the door did not open: refused, exists, invalid, server', async () => {
+    const answer = (status: number) => vi.fn(async () => ({ ok: false, status, json: async () => ({ error: {} }) }))
+    const codes: string[] = []
+    for (const status of [403, 409, 422, 503]) {
+      vi.stubGlobal('fetch', answer(status))
+      const r = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' })
+      codes.push(r.ok ? 'ok' : r.code)
+    }
+    expect(codes).toEqual(['refused', 'exists', 'invalid', 'server'])
   })
 
   it('reports an unreachable server as such, not as bad credentials', async () => {

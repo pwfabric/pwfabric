@@ -81,10 +81,14 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
   ensureShellStyles()
   const say = options.messages ?? NEUTRAL_MESSAGES
 
-  let pill = document.getElementById(PILL_ID) as HTMLDivElement | null
+  // A LANDMARK OF ITS OWN. Outside every landmark it was content no
+  // landmark held (axe `region`, on every page): it is complementary to the
+  // app, so an `<aside>` named for what it is.
+  let pill = document.getElementById(PILL_ID) as HTMLElement | null
   if (!pill) {
-    pill = document.createElement('div')
+    pill = document.createElement('aside')
     pill.id = PILL_ID
+    pill.setAttribute('aria-label', say('pill.region'))
     document.body.appendChild(pill)
   }
 
@@ -97,8 +101,8 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
     note.id = ERROR_ID
     note.setAttribute('role', 'alert')
     note.style.display = 'none'
-    // Right above the bar it explains.
-    document.body.insertBefore(note, pill)
+    // Inside the bar's landmark, above what it explains (see render).
+    pill.append(note)
   }
 
   if (options.themeVars) {
@@ -164,6 +168,8 @@ export function mountSessionPill(options: SessionPillOptions): SessionPill {
       pill.style.display = 'none'
     }
 
+    // The note lives in the landmark too; `replaceChildren` above took it out.
+    pill.prepend(note)
     const message = signedIn ? undefined : bridge?.lastError
     note.textContent = message ?? ''
     note.style.display = message ? 'block' : 'none'

@@ -246,6 +246,43 @@ describe('pwf run serves the app records read-only', () => {
     expect(await appFolderOf(await builtApp())).toBeNull()
   })
 
+  it("serves the local identity provider, though the build writes no auth.json", async () => {
+    // `pwf build` leaves `pwpack/auth.json` to the publisher, so a static serve
+    // of the build had no door: a sign-in app could not be run signed in.
+    const app = await builtShop()
+    // What `pwf build` writes for an app whose door it cannot ship.
+    await writeFile(
+      join(app, '.pwf', 'out', 'pwpack', 'project.json'),
+      JSON.stringify({ entrySurfaceId: 'home', surfaceOrder: ['home'], identity: { required: false, topology: 'app', methods: ['password', 'google'], door: false } })
+    )
+    const c = capture(dirname(app))
+    const code = await runRun({ positionals: [app], flags: { port: '0' } }, c.io, {
+      until: async (server) => {
+        const res = await fetch(new URL('pwpack/auth.json', server.url))
+        expect(res.status).toBe(200)
+        const door = (await res.json()) as { loginUrl?: string; sessionUrl?: string }
+        expect(door.loginUrl).toBe('/_host/login')
+        // The same development user as under pwf dev.
+        const login = await fetch(new URL(door.loginUrl!.slice(1), server.url), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: 'dev@localhost', password: 'x' }),
+        })
+        expect(login.status).toBe(200)
+        const session = (await login.json()) as { data: { token: string; principal: { email: string } } }
+        expect(session.data.principal.email).toBe('dev@localhost')
+        const who = await fetch(new URL('_host/session', server.url), { headers: { 'x-app-session': session.data.token } })
+        expect(((await who.json()) as { data: { principal: { email: string } } }).data.principal.email).toBe('dev@localhost')
+        // The build's "no door" is taken back, or the runner would never ask.
+        const project = (await (await fetch(new URL('pwpack/project.json', server.url))).json()) as { identity: Record<string, unknown> }
+        expect(project.identity).toEqual({ required: false, topology: 'app', methods: ['password', 'google'] })
+        // A file neither built nor the host's is still a 404.
+        expect((await fetch(new URL('pwpack/nothing.json', server.url))).status).toBe(404)
+      },
+    })
+    expect(code).toBe(0)
+  })
+
   for (const served of ['app', 'build output']) {
     it(`reads through the dev query path and refuses writes — serving the ${served}`, async () => {
       const app = await builtShop()

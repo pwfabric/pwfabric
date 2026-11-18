@@ -198,6 +198,45 @@ export const ProjectIdentityClaimsSchema = z
   .strict()
 
 // ============================================================
+// REGISTRATION — who may make an account
+// ============================================================
+
+/**
+ * WHO MAY MAKE AN ACCOUNT, said once by the app.
+ *
+ *  - `open`: anyone may register (a shop's customers, a conference's
+ *    attendees).
+ *  - `invite`: an account is made only with an invitation the owner sent —
+ *    the register door takes the invitation's token and refuses without one.
+ *  - `closed`: nobody registers through the app; the accounts are the ones
+ *    the owner made or assigned.
+ *
+ * `member` in an access rule means "any signed-in account", so an app whose
+ * members are a team is only private if not just anyone can become one. That
+ * is why registration is a declaration and not a runner habit.
+ */
+export const IDENTITY_REGISTRATIONS = ['open', 'invite', 'closed'] as const
+export type IdentityRegistration = (typeof IDENTITY_REGISTRATIONS)[number]
+export const IdentityRegistrationSchema = z.enum(IDENTITY_REGISTRATIONS)
+
+/**
+ * The registration an app has: the one it declares, else `closed` when sign-in
+ * is required and `open` when it is not.
+ *
+ * WHY THAT DEFAULT. An app that requires sign-in is a members' space — a
+ * team's dashboard, an intranet — and an open door would make every `member`
+ * rule public to whoever registers. An app with optional sign-in is a public
+ * app whose visitors make their own accounts. Roles do not decide it: a shop
+ * declares `staff` and still takes customers. Roles are never granted by
+ * registering; they are assigned by the owner (or carried by an invitation).
+ */
+export function registrationOf(declaration: { readonly required?: unknown; readonly registration?: unknown }): IdentityRegistration {
+  const r = declaration.registration
+  if (typeof r === 'string' && (IDENTITY_REGISTRATIONS as readonly string[]).includes(r)) return r as IdentityRegistration
+  return declaration.required === true ? 'closed' : 'open'
+}
+
+// ============================================================
 // THE DECLARATION
 // ============================================================
 
@@ -207,6 +246,8 @@ export interface ProjectIdentity {
   readonly topology: IdentityTopology
   /** `app` only — the buttons the visitor sees. */
   readonly methods: readonly IdentityMethod[]
+  /** `app` only — who may make an account; absent: see `registrationOf`. */
+  readonly registration?: IdentityRegistration | undefined
   /** `app` only — which registration each declared social method uses. */
   readonly connections: IdentityConnections
   /** `external` only. */
@@ -227,6 +268,7 @@ export const ProjectIdentitySchema = z
     required: z.boolean().default(false),
     topology: IdentityTopologySchema.default('app'),
     methods: z.array(IdentityMethodSchema).default([]),
+    registration: IdentityRegistrationSchema.optional(),
     // Keyed by SOCIAL method: a `phiwebs` or `password` key fails here.
     // Partial: a project connects only the methods it uses (zod 4's
     // z.record with an enum key would require every one).

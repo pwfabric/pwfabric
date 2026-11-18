@@ -93,6 +93,11 @@ export type {
   SurfaceActionType,
   SurfaceAction,
   BlockActionProp,
+  AuthAction,
+  AuthActionType,
+  SurfaceAuthState,
+  SurfaceAuthUser,
+  SurfaceAuthHost,
   DataBoundSurface,
   DataBoundSurfaceRendererProps,
 } from './render/index.js'

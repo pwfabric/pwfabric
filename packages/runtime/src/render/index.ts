@@ -105,6 +105,11 @@ export type {
   SurfaceActionType,
   SurfaceAction,
   BlockActionProp,
+  AuthAction,
+  AuthActionType,
+  SurfaceAuthState,
+  SurfaceAuthUser,
+  SurfaceAuthHost,
   DataBoundSurface,
   DataBoundSurfaceRendererProps,
 } from './data-binding-types.js'

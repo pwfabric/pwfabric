@@ -56,6 +56,8 @@ export interface AppSessionPrincipal {
   readonly displayName?: string | null
   /** Not issued by the API today; read when a door supplies one. */
   readonly avatarUrl?: string | null
+  /** The app roles the visitor holds (`access.roles`), when the door says. */
+  readonly roles?: readonly string[] | null
 }
 
 export interface AppSession {
@@ -110,9 +112,25 @@ interface DoorResponse {
   readonly data?: {
     readonly token?: string
     readonly expiresAt?: string
-    readonly principal?: { id: string; email?: string | null }
+    readonly principal?: AppSessionPrincipal
   }
   readonly error?: { readonly code?: string; readonly message?: string }
+}
+
+/**
+ * Why the door did not open — the code a page reads as `__auth.error`:
+ * `refused` (401/403: the credentials were not accepted), `exists` (409: the
+ * account to register exists), `invalid` (any other 4xx: the request was not
+ * acceptable), `server` (5xx, or an answer that is not the door's), `network`
+ * (no answer at all).
+ */
+export type DoorFailure = 'refused' | 'exists' | 'invalid' | 'server' | 'network'
+
+function failureOf(status: number): DoorFailure {
+  if (status === 401 || status === 403) return 'refused'
+  if (status === 409) return 'exists'
+  if (status >= 400 && status < 500) return 'invalid'
+  return 'server'
 }
 
 /**
@@ -126,9 +144,9 @@ interface DoorResponse {
  */
 export async function signIn(
   url: string,
-  credentials: { email: string; password: string; displayName?: string | undefined },
+  credentials: { email: string; password: string; displayName?: string | undefined; invitation?: string | undefined },
   say: RunnerMessages = NEUTRAL_MESSAGES
-): Promise<{ ok: true; session: AppSession } | { ok: false; message: string }> {
+): Promise<{ ok: true; session: AppSession } | { ok: false; code: DoorFailure; message: string }> {
   let response: Response
   try {
     response = await fetch(url, {
@@ -137,19 +155,23 @@ export async function signIn(
       body: JSON.stringify(credentials),
     })
   } catch {
-    return { ok: false, message: say('session.unreachable') }
+    return { ok: false, code: 'network', message: say('session.unreachable') }
   }
 
   let body: DoorResponse
   try {
     body = (await response.json()) as DoorResponse
   } catch {
-    return { ok: false, message: say('session.unexpected') }
+    return { ok: false, code: response.ok ? 'server' : failureOf(response.status), message: say('session.unexpected') }
   }
 
   if (!response.ok || !body.data?.token) {
     const code = body.error?.code
-    return { ok: false, message: body.error ? say('session.refused', { code }) : say('session.failed') }
+    return {
+      ok: false,
+      code: response.ok ? 'server' : failureOf(response.status),
+      message: body.error ? say('session.refused', { code }) : say('session.failed'),
+    }
   }
   return {
     ok: true,

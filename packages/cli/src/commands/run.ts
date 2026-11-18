@@ -82,12 +82,24 @@ export async function readOnlyHostFor(app: string): Promise<StaticHost | undefin
   return {
     handle: (req, res) => host.handle(req, res),
     envelopeFile(rel, built) {
+      // THE DOOR. `pwf build` writes no `auth.json` (the publisher's addresses
+      // go there), so this host's is served in its place — the same
+      // development user as under pwf dev: a sign-in app's build is run, and
+      // measured, signed in.
       if (rel === 'pwpack/auth.json' && entries['auth.json'] !== undefined) {
         return enc.encode(JSON.stringify(entries['auth.json']))
       }
+      // …and the build said it ships none (`identity.door: false`), which
+      // makes the runner ask for none. With this host it has one.
+      if (built && rel === 'pwpack/project.json' && entries['auth.json'] !== undefined) {
+        const project = JSON.parse(new TextDecoder().decode(built)) as { identity?: Record<string, unknown> }
+        if (!project.identity || project.identity['door'] !== false) return undefined
+        const { door: _door, ...identity } = project.identity
+        return enc.encode(JSON.stringify({ ...project, identity }))
+      }
       // The BUILT receipt — what `pwf run` serves — with its entity sources
       // reading from the host, exactly as `pwf dev` rewrites them.
-      if (rel.startsWith('pwpack/') && rel.endsWith('.receipt.json')) {
+      if (built && rel.startsWith('pwpack/') && rel.endsWith('.receipt.json')) {
         const receipt = JSON.parse(new TextDecoder().decode(built)) as Record<string, unknown>
         return enc.encode(JSON.stringify(rewriteEntitySources(receipt, HOST_PREFIX, declared)))
       }

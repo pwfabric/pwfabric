@@ -233,7 +233,7 @@ describe('mountSignInGate — register mode', () => {
   const DOOR_WITH_REGISTER = {
     provider: 'password',
     loginUrl: 'https://api.example/login',
-    registerUrl: 'https://api.example/register',
+    registerUrl: 'https://api.example/register', registration: 'open',
   } as PwappAuth
 
   afterEach(() => {
@@ -426,6 +426,36 @@ describe('the gate on demand — an account control asked for sign-in', () => {
     expect(container.querySelector('[data-gate-error]')?.textContent).toBe('Sign-in was cancelled.')
   })
 
+  it('never tells the visitor of an optional-sign-in app that they need to sign in', () => {
+    // It said "You need to sign in to view this app." on an app anyone can
+    // view — the wall's sentence, on a dialog the visitor opened themselves.
+    const door = { provider: 'password', loginUrl: 'https://api.example/login', registerUrl: 'https://api.example/register', registration: 'open' } as PwappAuth
+    mountSignInGate(container, OPEN, null, { auth: door, onDemand: true })
+    const gate = container.querySelector('#pwapp-sign-in-gate') as HTMLElement
+    expect(gate.textContent).not.toMatch(/need to sign in/)
+    expect(gate.querySelector('.pwapp-gate-body')).toBeNull()
+    expect(gate.hasAttribute('aria-describedby')).toBe(false)
+  })
+
+  it('offers no sign-up unless the door takes anyone', () => {
+    // An app whose members are a team must not hand out accounts: `member`
+    // would mean "whoever registered".
+    for (const registration of ['invite', 'closed', undefined]) {
+      container.replaceChildren()
+      const door = { provider: 'password', loginUrl: 'https://api.example/login', registerUrl: 'https://api.example/register', ...(registration ? { registration } : {}) } as PwappAuth
+      mountSignInGate(container, GATED, null, { auth: door })
+      expect(container.querySelector('[data-gate-toggle]')).toBeNull()
+      expect(container.textContent).not.toMatch(/Sign up/)
+    }
+  })
+
+  it('opens on the registration form when asked to register', () => {
+    const door = { provider: 'password', loginUrl: 'https://api.example/login', registerUrl: 'https://api.example/register', registration: 'open' } as PwappAuth
+    mountSignInGate(container, OPEN, null, { auth: door, onDemand: true, initialMode: 'register' })
+    expect(container.querySelector('input[name=displayName]')).toBeTruthy()
+    expect(container.querySelector('[data-gate-submit]')?.textContent).toBe('Sign up')
+  })
+
   it('does not open for a visitor who is already signed in', () => {
     mountSignInGate(container, OPEN, fakeBridge({ session: { state: 'authenticated' } as never }), {
       onDemand: true,
@@ -438,7 +468,7 @@ describe('the gate speaks the app’s language', () => {
   const DOOR = {
     provider: 'password',
     loginUrl: 'https://api.example/login',
-    registerUrl: 'https://api.example/register',
+    registerUrl: 'https://api.example/register', registration: 'open',
   } as PwappAuth
   const UNTITLED: PwappProject = { ...OPEN, identity: { required: true } }
 

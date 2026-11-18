@@ -102,6 +102,8 @@ export type SurfaceActionType =
   | 'showBlock'
   | 'hideBlock'
   | 'navigate'
+  | 'write'
+  | AuthActionType
 
 /**
  * Action dispatched by a block (e.g. button click, tab change).
@@ -114,6 +116,83 @@ export type SurfaceAction =
   | { readonly type: 'hideBlock'; readonly blockId: string }
   | { readonly type: 'navigate'; readonly url: string }
   | WriteAction
+  | AuthAction
+
+// ============================================================
+// IDENTITY: STATE AND ACTIONS
+// ============================================================
+
+/**
+ * The visitor's identity, as the page may read it: `{{__auth.*}}`, and
+ * `{{me.*}}` for `__auth.user`.
+ *
+ * STATE, NOT WORDS. The host (a runner) knows who is signed in and how one
+ * signs in; the page decides what to say about it and where. Read-only and
+ * without secrets: no token, no session id, nothing a page could replay.
+ */
+export interface SurfaceAuthState {
+  /** A visitor is signed in, through any door. */
+  readonly signedIn: boolean
+  /** Who; null while nobody is signed in. */
+  readonly user: SurfaceAuthUser | null
+  /**
+   * The ways in this app offers, in the host's order: `password`, a provider
+   * method (`google`, `microsoft`, …), `issuer` for an external issuer.
+   * Empty: the app has no door, and `auth:*` actions do nothing.
+   */
+  readonly methods: readonly string[]
+  /**
+   * Who may make an account: `open` (anyone — offer to sign up), `invite`
+   * (only with an invitation), `closed` (nobody registers here).
+   */
+  readonly registration: 'open' | 'invite' | 'closed'
+  /**
+   * Why the last sign-in did not succeed — a code, never a sentence:
+   * `refused` (the credentials were not accepted), `invalid` (the request was
+   * not acceptable, e.g. a field missing), `exists` (register: the account
+   * exists), `unavailable` (the method is not offered), `network`, `server`,
+   * or the code a provider round trip came back with (`access_denied`,
+   * `expired`, … lower-case). Null when there is nothing to report.
+   */
+  readonly error: string | null
+}
+
+/** The signed-in visitor. Fields a door did not supply are absent; `roles` is always a list. */
+export interface SurfaceAuthUser {
+  readonly id: string
+  readonly name?: string
+  readonly email?: string
+  readonly roles: readonly string[]
+}
+
+export type AuthActionType = 'auth:signIn' | 'auth:register' | 'auth:signOut'
+
+/**
+ * What a block can ask of the host's identity: start signing in (by one
+ * method, or the host's choice), register, sign out.
+ *
+ * Fired from a form's submit, the form's field values travel with it (the
+ * password door reads `email`, `password` and, to register, `name`) — see
+ * {@link SurfaceAuthHost.onAction}. The runtime itself performs none of them:
+ * signing in is the host's business, and without a host they do nothing.
+ */
+export type AuthAction =
+  | { readonly type: 'auth:signIn'; readonly method?: string }
+  | { readonly type: 'auth:register'; readonly method?: string }
+  | { readonly type: 'auth:signOut' }
+
+/** The host's identity, handed to the renderer: what the page reads, and where its `auth:*` actions go. */
+export interface SurfaceAuthHost {
+  readonly state: SurfaceAuthState
+  /**
+   * An `auth:*` action a block or a behavior fired. `values` are the fields of
+   * the form whose submit fired it (by input name); absent for a click.
+   */
+  readonly onAction?: (
+    action: AuthAction,
+    input: { readonly values?: Readonly<Record<string, unknown>> }
+  ) => void
+}
 
 /**
  * Write one record of a source (data-protocol §1.3): create, update or delete.
@@ -275,4 +354,9 @@ export interface DataBoundSurfaceRendererProps extends Omit<SurfaceRendererProps
    * nobody else's can.
    */
   readonly dataServiceConfig?: DataServiceConfig
+  /**
+   * The visitor's identity (`{{__auth.*}}`, `{{me.*}}`) and the host that acts
+   * on `auth:*` actions. Absent: nobody is signed in and the actions do nothing.
+   */
+  readonly identity?: SurfaceAuthHost
 }

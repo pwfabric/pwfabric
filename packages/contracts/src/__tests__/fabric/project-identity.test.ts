@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   ProjectIdentitySchema,
+  registrationOf,
   ANONYMOUS_IDENTITY,
   IDENTITY_METHODS,
   IDENTITY_TOPOLOGIES,
@@ -205,5 +206,21 @@ describe('discoveryUrlOf', () => {
     expect(discoveryUrlOf('https://id.grocer.example/')).toBe(
       'https://id.grocer.example/.well-known/openid-configuration'
     )
+  })
+})
+
+describe('registration — who may make an account', () => {
+  it('is what the app declares; else closed when sign-in is required, open when it is not', () => {
+    expect(registrationOf({ required: true })).toBe('closed')
+    expect(registrationOf({ required: false })).toBe('open')
+    expect(registrationOf({})).toBe('open')
+    expect(registrationOf({ required: true, registration: 'open' })).toBe('open')
+    expect(registrationOf({ required: false, registration: 'invite' })).toBe('invite')
+    expect(registrationOf({ required: true, registration: 'nonsense' })).toBe('closed')
+  })
+
+  it('the identity schema takes it, and only the three values', () => {
+    expect(ProjectIdentitySchema.safeParse({ methods: ['password'], registration: 'invite' }).success).toBe(true)
+    expect(ProjectIdentitySchema.safeParse({ methods: ['password'], registration: 'anyone' }).success).toBe(false)
   })
 })

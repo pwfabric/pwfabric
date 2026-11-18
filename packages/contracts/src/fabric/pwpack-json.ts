@@ -56,6 +56,16 @@ export interface PwpackIdentityApp {
    * it is not listed in `surfaceOrder`. Absent: the runner's own not-found page.
    */
   readonly notFound?: string
+  /**
+   * Key of the app's own sign-in surface (`app/surfaces/<key>.receipt.json`),
+   * drawn inside the app's shell like `notFound` wherever the visitor has to,
+   * or asks to, sign in: in front of every page of an app that requires
+   * sign-in, and when an `auth:signIn` / `auth:register` action has no
+   * credentials to send. The page reads `{{__auth.*}}` and fires `auth:*`
+   * actions. It is not a route: not listed in `surfaceOrder`. Absent: the
+   * runner's own sign-in dialog.
+   */
+  readonly signIn?: string
   /** Display name of the app. */
   readonly title?: string
   /** One-line description of the app. */
@@ -143,6 +153,7 @@ export const PwpackIdentityAppSchema = z.object({
   entry: z.string().min(1),
   surfaceOrder: z.array(z.string().min(1)),
   notFound: z.string().min(1).optional(),
+  signIn: z.string().min(1).optional(),
   title: z.string().optional(),
   description: z.string().optional(),
   icon: z.string().optional(),

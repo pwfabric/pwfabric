@@ -144,6 +144,33 @@ export function checkEntities(root: string): PackIssue[] {
   return issues
 }
 
+/** Names the page scope already gives: the visitor's identity (`me`, `__auth`) and every `__…` key. */
+const RESERVED_ROOT = /^(?:me|__.*)$/
+
+/**
+ * SOURCE_ID_RESERVED (an error): a data source may not take a name the page
+ * scope already gives. `{{me.name}}` is the visitor (session-protocol
+ * "Identity on the page"); a source called `me` would never be read.
+ */
+export function checkReservedSources(root: string): PackIssue[] {
+  const issues: PackIssue[] = []
+  for (const key of surfaceKeys(root)) {
+    let receipt: unknown
+    try { receipt = readReceipt(root, key) } catch { continue }
+    const caps = (receipt as { capabilities?: unknown } | undefined)?.capabilities
+    for (const cap of Array.isArray(caps) ? caps : []) {
+      const sources = (cap as { config?: { dataSources?: unknown } } | null)?.config?.dataSources
+      for (const source of Array.isArray(sources) ? sources : []) {
+        const id = (source as { id?: unknown } | null)?.id
+        if (typeof id === 'string' && RESERVED_ROOT.test(id)) {
+          issues.push({ severity: 'error', code: 'SOURCE_ID_RESERVED', path: `app/surfaces/${key}.receipt.json`, message: `data source "${id}" takes a name the page scope already gives (me, __auth, __…); rename it` })
+        }
+      }
+    }
+  }
+  return issues
+}
+
 const normName = (s: string): string => s.toLowerCase().replace(/[\s_-]/g, '')
 
 /**
@@ -235,9 +262,15 @@ export function reachableMessageIds(root: string): RunnerMessageId[] {
     const providers = auth.methods.filter((m) => m !== 'password')
     if (!named(app['signIn'])) {
       if (!(isObj(plan) && named(plan['title']))) ids.add('gate.title')
-      for (const id of ['gate.body', 'gate.close', 'gate.signIn'] as const) ids.add(id)
+      // The wall's sentence only on the wall; the on-demand dialog has none.
+      ids.add(auth.required ? 'gate.body' : 'gate.close')
+      ids.add('gate.signIn')
       if (password) {
-        for (const id of ['gate.email', 'gate.password', 'gate.name', 'gate.register', 'gate.toRegister', 'gate.toSignIn'] as const) ids.add(id)
+        for (const id of ['gate.email', 'gate.password'] as const) ids.add(id)
+        // Sign-up is offered only by a door that takes anyone.
+        if (auth.registration === 'open') {
+          for (const id of ['gate.name', 'gate.register', 'gate.toRegister', 'gate.toSignIn'] as const) ids.add(id)
+        }
         all('session.')
       }
       if (password && providers.length > 0) ids.add('gate.or')
@@ -247,7 +280,7 @@ export function reachableMessageIds(root: string): RunnerMessageId[] {
     if (account) {
       for (const id of ['account.signIn', 'account.signOut', 'account.greeting'] as const) ids.add(id)
       if (named(account['profileHref'])) ids.add('account.profile')
-    } else all('pill.')
+    } else if (!named(app['signIn'])) all('pill.')
     if (auth.topology === 'external') all('bridge.')
   }
   return RUNNER_MESSAGE_IDS.filter((id) => ids.has(id))
@@ -326,7 +359,7 @@ export async function validateProject(root: string, pack: PackFolder): Promise<P
   const pinIssues = await checkPins(root, result.identity)
   const sources = await atomSources(root, result.identity)
   const fieldIssues = checkRowFields(pack, connectionFieldSets(pack, sources))
-  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...propIssues(sources), ...fieldIssues]
+  const issues = [...result.issues, ...pinIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkReservedSources(root), ...propIssues(sources), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 

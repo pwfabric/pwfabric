@@ -86,7 +86,7 @@ function surface(method: 'PATCH' | 'POST' = 'PATCH') {
         config: {
           // What the assembler ships for an authored `kind: 'entity'` source.
           dataSources: [
-            { id: 'me', kind: 'rest', entityType: 'Attendee', endpoint: ENDPOINT, method: 'GET', returns: 'data' },
+            { id: 'profile', kind: 'rest', entityType: 'Attendee', endpoint: ENDPOINT, method: 'GET', returns: 'data' },
           ],
           initialState: { saveReason: '', saveFields: [] },
         },
@@ -98,7 +98,7 @@ function surface(method: 'PATCH' | 'POST' = 'PATCH') {
           formBindings: [
             {
               formId: 'prof-form',
-              sourceId: 'me',
+              sourceId: 'profile',
               method,
               statusKeys: { loading: 'submitting', success: 'submitted', error: 'failed', reason: 'saveReason', fields: 'saveFields' },
             },
@@ -181,12 +181,12 @@ describe('the in-process facade path follows the same rule', () => {
         {
           capability: 'platform/persistence',
           required: true,
-          config: { dataSources: [{ id: 'me', kind: 'entity', entityType: 'Attendee' }] },
+          config: { dataSources: [{ id: 'profile', kind: 'entity', entityType: 'Attendee' }] },
         },
         {
           capability: 'platform/entities',
           required: true,
-          config: { formBindings: [{ formId: 'prof-form', sourceId: 'me', method: 'PATCH' }] },
+          config: { formBindings: [{ formId: 'prof-form', sourceId: 'profile', method: 'PATCH' }] },
         },
       ],
     } as never

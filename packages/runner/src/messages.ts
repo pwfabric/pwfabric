@@ -71,6 +71,7 @@ export const RUNNER_MESSAGES = {
   'gate.provider.microsoft': 'Continue with Microsoft',
   'gate.provider.google': 'Continue with Google',
   'gate.provider.github': 'Continue with GitHub',
+  'pill.region': 'Account',
   'pill.signedIn': 'Signed in',
   'pill.signIn': 'Sign in',
   'pill.signOut': 'Sign out',

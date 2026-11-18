@@ -123,6 +123,17 @@ describe('validatePack — app', () => {
     expect(codes(declared('home', ['home'], ['home']))).toEqual(['APP_NOT_FOUND_IS_A_ROUTE'])
   })
 
+  it('an app.signIn surface is served without being a route', () => {
+    const declared = (signIn: string, order: string[], surfaces: string[]): PackValidation =>
+      withIdentity(
+        { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: order, signIn } },
+        Object.fromEntries(surfaces.map((s) => [`app/surfaces/${s}.receipt.json`, '{}']))
+      )
+    expect(codes(declared('sign-in', ['home'], ['home', 'sign-in']))).toEqual([])
+    expect(codes(declared('sign-in', ['home'], ['home']), 'error')).toEqual(['APP_SURFACE_MISSING'])
+    expect(codes(declared('home', ['home'], ['home']))).toEqual(['APP_SIGN_IN_IS_A_ROUTE'])
+  })
+
   it('accepts app/content for a shared entity with UUID ids', () => {
     const v = withIdentity({ id: 'x', version: '1' }, {
       'app/definitions/entities.json': JSON.stringify({ entities: [{ typeId: 'Product', fields: [] }] }),

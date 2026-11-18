@@ -41,7 +41,13 @@
  */
 
 /** The server-owned roles a field may declare. */
-export const RECORD_SERVER_ROLES = ['owner', 'createdAt', 'updatedAt'] as const
+/**
+ * `owner` is the writer's id — what `own` rules match and what a page
+ * compares with `{{me.id}}`. `ownerName` is the writer's display name (or
+ * e-mail) at the time of the write, so a page can say WHO wrote a record
+ * without resolving an id it cannot read.
+ */
+export const RECORD_SERVER_ROLES = ['owner', 'ownerName', 'createdAt', 'updatedAt'] as const
 export type RecordServerRole = (typeof RECORD_SERVER_ROLES)[number]
 
 /** `server` on an entity field: a role, or a default set on create. */
@@ -64,6 +70,8 @@ export interface RecordWriteInput {
   readonly op: 'create' | 'update'
   /** Who writes: the caller's id, or undefined for a visitor who has not signed in. */
   readonly callerId?: string
+  /** The caller's display name (or e-mail), for an `ownerName` field. */
+  readonly callerName?: string
   /** The time of the write, ISO 8601. */
   readonly now: string
 }
@@ -173,6 +181,7 @@ function serverSets(server: RecordServerField, op: 'create' | 'update'): boolean
 function serverValue(server: RecordServerField, input: RecordWriteInput): unknown {
   if (typeof server === 'object') return input.op === 'create' ? server.default : undefined
   if (server === 'owner') return input.op === 'create' ? input.callerId : undefined
+  if (server === 'ownerName') return input.op === 'create' ? input.callerName : undefined
   if (server === 'createdAt') return input.op === 'create' ? input.now : undefined
   return input.now // updatedAt
 }
