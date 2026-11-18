@@ -44,7 +44,7 @@ export function validateProps<TProps extends Record<string, unknown>>(
       continue
     }
     for (const issue of checkPropValue(value, d.jsonSchema, d.name)) {
-      errors.push({ code: 'VALIDATION_ERROR', message: issue.message, path: issue.path })
+      errors.push({ code: 'VALIDATION_ERROR', message: issue.message.slice(issue.path.length + 2), path: issue.path })
     }
   }
   if (errors.length > 0) return { valid: false, errors }

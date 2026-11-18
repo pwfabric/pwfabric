@@ -1,38 +1,66 @@
 ---
 title: defineBlock()
-description: Author a custom block — a stable type, a Zod props schema, default values and a React component — and validate it with validateBlockDefinition().
+description: Author a custom block — a stable type, its props declared once in the manifest, a TypeScript props interface and a React component — and validate it with validateBlockDefinition().
 ---
 
 # `defineBlock()`
 
 `defineBlock()` turns an options object into a frozen block definition. A
-block has a stable `type`, a display `name`, a Zod `schema` for its props,
-`defaultProps` that satisfy the schema, and a React `component` that renders
-it.
+block has a stable `type`, a display `name`, the `props` it takes (the same
+list its `manifest.json` declares in `definition.props`), optional
+`defaultProps` for a newly placed instance, and a React `component` that
+renders it. The props' TypeScript type is an interface you write.
+
+A block's props are declared once, as data: each prop's name, default and
+shape. There is no schema in the block module and no validation library: the
+runtime reads the declarations itself, and a block that imports `zod` is
+refused (see [Moving from a zod schema](#moving-from-a-zod-schema)).
+
+```json
+{
+  "id": "data.pricing-card",
+  "kind": "block",
+  "version": "1.0.0",
+  "name": "Pricing Card",
+  "state": "stable",
+  "definition": {
+    "props": [
+      { "name": "title", "type": "string", "default": "Basic", "jsonSchema": { "type": "string" }, "copy": true },
+      { "name": "price", "type": "number", "default": 9.99, "jsonSchema": { "type": "number", "minimum": 0 } },
+      { "name": "currency", "type": "string", "default": "USD", "jsonSchema": { "type": "string", "minLength": 3, "maxLength": 3 } },
+      { "name": "features", "type": "string[]", "default": [], "jsonSchema": { "type": "array", "items": { "type": "string" } }, "copy": true },
+      { "name": "highlighted", "type": "boolean", "default": false, "jsonSchema": { "type": "boolean" } }
+    ],
+    "defaultProps": { "title": "Basic", "price": 9.99, "features": ["Feature 1", "Feature 2"] },
+    "canHaveChildren": false
+  }
+}
+```
 
 ```tsx
 import { defineBlock } from '@pwfabric/authoring'
-import { z } from 'zod'
 
-export const PricingCard = defineBlock({
+interface PricingCardProps extends Record<string, unknown> {
+  readonly title: string
+  readonly price: number
+  readonly currency: string
+  readonly features: readonly string[]
+  readonly highlighted: boolean
+}
+
+export const PricingCard = defineBlock<PricingCardProps>({
   type: 'pricing-card',
   name: 'Pricing Card',
   category: 'data',
   icon: '💳',
-  schema: z.object({
-    title: z.string(),
-    price: z.number(),
-    currency: z.string().default('USD'),
-    features: z.array(z.string()),
-    highlighted: z.boolean().default(false),
-  }),
-  defaultProps: {
-    title: 'Basic',
-    price: 9.99,
-    currency: 'USD',
-    features: ['Feature 1', 'Feature 2'],
-    highlighted: false,
-  },
+  props: [
+    { name: 'title', default: 'Basic', jsonSchema: { type: 'string' }, copy: true },
+    { name: 'price', default: 9.99, jsonSchema: { type: 'number', minimum: 0 } },
+    { name: 'currency', default: 'USD', jsonSchema: { type: 'string', minLength: 3, maxLength: 3 } },
+    { name: 'features', default: [], jsonSchema: { type: 'array', items: { type: 'string' } }, copy: true },
+    { name: 'highlighted', default: false, jsonSchema: { type: 'boolean' } },
+  ],
+  defaultProps: { title: 'Basic', price: 9.99, features: ['Feature 1', 'Feature 2'] },
   component: ({ props }) => (
     <div className={props.highlighted ? 'border-2 border-primary' : 'border'}>
       <h3>{props.title}</h3>
@@ -43,38 +71,51 @@ export const PricingCard = defineBlock({
 })
 ```
 
+In a pwpack the manifest is what the host reads: `pwf build` copies its
+`definition.props` into the app's `blocks/manifest.json`, and the renderer
+applies them before the bundle renders. The `props` you pass to
+`defineBlock()` are the same list, for a registry that renders the block in
+your own React tree (see [Rendering a block locally](/authoring#rendering-a-block-locally)).
+The component reads `props.currency` and gets `'USD'` when the placed block
+left it out; it needs no `?? 'USD'` of its own.
+
 ## Signature
 
 ```ts
-function defineBlock<TSchema extends ZodTypeAny>(
-  options: CustomBlockOptions<TSchema>
-): CustomBlockDefinition<SchemaProps<TSchema>>
+function defineBlock<TProps extends Record<string, unknown> = Record<string, unknown>>(
+  options: CustomBlockOptions<TProps>
+): CustomBlockDefinition<TProps>
 ```
 
-The result is `Object.freeze`d. The props are the schema's output
-(`SchemaProps<TSchema>`, exported): they are inferred from `schema` alone,
-and `defaultProps` and `component` are checked against them — a field the
-schema marks `.optional()` stays optional even when `defaultProps` gives it a
-value.
+The result is `Object.freeze`d. `TProps` is the TypeScript view of the props,
+written by you: the component's `props` is `TProps`, and `defaultProps` is
+`Partial<TProps>`. Nothing infers it from the declarations and nothing checks
+it at run time; the declarations are what the runtime applies. An `interface`
+must extend `Record<string, unknown>` to satisfy the constraint (a `type`
+alias satisfies it as is). A prop with a declared default can be typed as
+required, since the component always receives it.
 
 Source: `packages/authoring/src/define-block.ts` (`defineBlock`),
-`packages/authoring/src/types.ts` (`CustomBlockOptions`, `CustomBlockDefinition`, `SchemaProps`).
+`packages/authoring/src/types.ts` (`CustomBlockOptions`, `CustomBlockDefinition`).
 
 ## Options
 
-The TypeScript type requires five fields: `type`, `name`, `schema`,
-`defaultProps`, `component`. At run time only `type` is enforced by throwing;
-the other four degrade with a `console.warn` so that one malformed block
-cannot blank a page. The rejection of a bad `name` is the gate's job, see
-[Validating a definition](#validating-a-definition).
+The TypeScript type requires three fields: `type`, `name`, `component`. At
+run time only `type` is enforced by throwing; the others degrade so that one
+malformed block cannot blank a page. The rejection of a bad `name` is the
+gate's job, see [Validating a definition](#validating-a-definition).
 
 | Field | Type | Run-time behaviour |
 |---|---|---|
 | `type` | `string` | **Throws** unless a string of 2–50 characters matching `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`, and not one of the reserved first-party types below |
 | `name` | `string` | Coerced to `type` with a warning unless a string of 1–100 characters |
-| `schema` | `ZodSchema` | Missing → `z.object({}).passthrough()` with a warning (props unvalidated) |
-| `defaultProps` | `TProps` | Missing → `{}` with a warning; a mismatch against `schema` is warned, never thrown |
 | `component` | `(props) => ReactNode` | Missing → a visible dashed placeholder reading `Block "<type>" has no component` |
+| `props` | `readonly BlockPropDescriptor[]` | The declared props (see [Props](#props)). Missing → `[]`: props pass to the component as written |
+| `defaultProps` | `Partial<TProps>` | The props a **new** instance starts with when an editor places the block. Missing → `{}`. A value that does not fit its declaration is warned, never thrown |
+
+`defaultProps` is not a second set of defaults: a prop missing from a placed
+block takes its declared `default`, whatever `defaultProps` says. Use it for
+starting content (a sample title, two sample features), not for fallbacks.
 
 Reserved types (the first-party names `defineBlock` refuses): `container`,
 `grid`, `text`, `heading`, `button`, `image`, `form`, `input`, `link`,
@@ -95,9 +136,69 @@ Reserved types (the first-party names `defineBlock` refuses): `container`,
 | `maxInstances` | `number` | unlimited | Per-surface instance cap; carried on the definition |
 
 Source: `packages/authoring/src/define-block.ts`
-(`validateBlockType`, `coerceBlockName`, `warnOnSchemaMismatch`, `placeholderComponent`),
+(`validateBlockType`, `coerceBlockName`, `warnOnPropsMismatch`, `placeholderComponent`),
 `packages/authoring/src/types.ts` (`CustomBlockOptions`),
 `packages/core/src/blocks/types.ts` (`BlockCategory`).
+
+## Props
+
+Each entry of `props` (and of the manifest's `definition.props`) is a
+`BlockPropDescriptor`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `name` | `string` | The prop's name |
+| `type` | `string?` | For people: the type as TypeScript would write it (`"sm" \| "md"`). No check reads it |
+| `default` | `unknown?` | The value the block gets when the placed block does not set the prop. Wins over `jsonSchema.default` |
+| `required` | `boolean?` | `true`: a placed block must set it (there is no default to fall back on) |
+| `jsonSchema` | `PropShape?` | The prop's shape, in the JSON-Schema subset below. Absent: any value, unchecked |
+| `bindable` | `boolean?` | `false`: the prop takes a literal only, and a `{{…}}` in it renders as written. Absent means bindable |
+| `copy` | `boolean?` | `true`: the prop is words a visitor reads, the app's to write in its own language |
+| `description` | `string?` | For people and tools |
+
+A shape (`PropShape`) reads these JSON-Schema keywords and no others:
+
+| Applies to | Keywords |
+|---|---|
+| any value | `type` (one JSON type or a list: `string`, `number`, `integer`, `boolean`, `object`, `array`, `null`), `enum`, `const`, `default`, `anyOf`, `oneOf` |
+| numbers | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` |
+| strings | `minLength`, `maxLength`, `pattern` (a `u`-flag RegExp), `format` (`email`, `uri`, `url`, `uuid`, `date`, `date-time`, `color`; another format is not checked) |
+| arrays | `items` (the shape of every item), `minItems`, `maxItems` |
+| objects | `properties`, `required`, `additionalProperties` (`false`, or the shape of every other member) |
+| people and tools | `description`, `title`, `examples` (not checked) |
+
+`pwf validate` warns (`BLOCK_PROP_DECLARATION`) on a keyword outside this
+list, a `type` that is not a JSON type, a `pattern` that is not a valid
+RegExp, or a default that does not fit its own shape.
+
+### What the runtime does with them
+
+Before a block renders, the renderer applies its declarations
+(`applyBlockProps`):
+
+- a missing prop gets its default (`default`, else `jsonSchema.default`); a
+  missing member of an object prop, or of an array item, gets the default its
+  own shape declares;
+- a value of the wrong JSON type is coerced where that loses nothing: `"24"`
+  → `24`, `"true"` → `true`, `24` → `"24"`;
+- a value that still does not fit its shape is replaced by its default (and
+  kept as written when there is none);
+- a `null` where the shape takes no `null` counts as missing;
+- a prop the declarations do not name passes through untouched.
+
+It never throws. A prop that does not fit is a developer warning, printed
+once per block type, prop and problem when the page runs under `pwf dev`;
+a visitor sees nothing. Receipts are judged earlier: `pwf validate` and
+`pwf build` check every placed block against its manifest and warn on an
+undeclared prop (`BLOCK_PROP_UNKNOWN`), the wrong JSON type
+(`BLOCK_PROP_TYPE`), a value outside its `enum` (`BLOCK_PROP_ENUM`), a value
+that breaks the rest of its shape (`BLOCK_PROP_SHAPE`), and a `{{…}}` in a
+prop declared `bindable: false` (`BLOCK_PROP_NOT_BINDABLE`).
+
+Source: `packages/contracts/src/fabric/block-prop.ts`
+(`BlockPropDescriptor`, `PropShape`, `applyBlockProps`, `checkPropValue`, `propShapeProblems`),
+`packages/runtime/src/render/block-props.ts` (`blockPropsForRender`),
+`packages/cli/src/commands/validate.ts`.
 
 ## The component
 
@@ -105,7 +206,7 @@ Your component receives one object:
 
 | Prop | Type | Meaning |
 |---|---|---|
-| `props` | `TProps` | Parsed against `schema`; on a failed parse the wrapper substitutes `defaultProps` |
+| `props` | `TProps` | The placed block's props with the declarations applied: defaults filled in, values coerced, a value that does not fit replaced by its default |
 | `blockId` | `string` | The instance id |
 | `children` | `ReactNode?` | Rendered nested blocks, for container blocks |
 | `context` | `CustomBlockContext?` | `theme` (`'light'` or `'dark'`), `viewport` (a breakpoint name), and an optional `onEvent` |
@@ -115,14 +216,17 @@ the image adapter and the base path are platform internals and are not passed
 through.
 
 ```tsx
-defineBlock({
+interface FeatureGridProps extends Record<string, unknown> {
+  readonly columns: number
+}
+
+defineBlock<FeatureGridProps>({
   type: 'feature-grid',
   name: 'Feature Grid',
   category: 'layout',
   canHaveChildren: true,
   allowedChildren: ['feature-card', 'text', 'heading'],
-  schema: z.object({ columns: z.number().int().min(1).max(6).default(3) }),
-  defaultProps: { columns: 3 },
+  props: [{ name: 'columns', default: 3, jsonSchema: { type: 'integer', minimum: 1, maximum: 6 } }],
   component: ({ props, children, context }) => (
     <div data-theme={context?.theme} style={{ display: 'grid', gridTemplateColumns: `repeat(${props.columns}, 1fr)` }}>
       {children}
@@ -130,6 +234,9 @@ defineBlock({
   ),
 })
 ```
+
+A placed block with `columns: "4"` renders with `4`; one with `columns: 9`
+renders with `3`, and `pwf dev` prints why.
 
 Source: `packages/authoring/src/types.ts`
 (`CustomBlockComponentProps`, `CustomBlockContext`),
@@ -168,7 +275,8 @@ Source: `packages/authoring/src/define-block.ts`
 
 ## Validating instances
 
-Once you have a definition, the validation helpers check blocks against it.
+Once you have a definition, the validation helpers check blocks against its
+declared props.
 
 ```ts
 import { validateBlock, validateBlockTree, formatValidationErrors } from '@pwfabric/authoring'
@@ -179,25 +287,62 @@ const result = validateBlock(
   PricingCard,
 )
 // result.valid === false
-// result.errors → [{ code: 'VALIDATION_ERROR', path: 'price', message: 'Invalid input: expected number, received string' }]
+// result.errors → [{ code: 'VALIDATION_ERROR', path: 'price', message: 'price: expected number, got string "free"' }]
 console.log(formatValidationErrors(result.errors))
 ```
 
-`validateBlock` returns `{ valid, block?, errors }`. On success `block` carries
-the parsed props (Zod defaults applied). Error codes: `TYPE_MISMATCH`,
-`VALIDATION_ERROR` (one per Zod issue, with `path`), `CHILDREN_NOT_ALLOWED`,
+`validateBlock` returns `{ valid, block?, errors }`. It checks values as
+written, without the runtime's coercion, so `price: "24"` is reported here
+even though it would render as `24`. On success `block` carries the props
+with the declared defaults applied. Error codes: `TYPE_MISMATCH`,
+`VALIDATION_ERROR` (one per problem, with `path`; a `required` prop with no
+default that is missing reads `is required`), `CHILDREN_NOT_ALLOWED`,
 `INVALID_CHILD_TYPE` (path `children.<childId>`). `validateBlockTree(blocks,
 registry)` walks nested children and returns a flat error list with paths
 like `blocks[0].children[2].price`; a block type the registry does not know is
 skipped, since it may be first-party.
 
+`validateProps(props, descriptors)` checks a props object against a list of
+declarations directly, and `validatePropsWithDefaults(props, descriptors)`
+returns the props the block would render with (it never fails).
+
 `createBlockInstance(definition, id, props?, children?)` is the constructive
-counterpart: it merges `props` over `defaultProps`, parses, and **throws** on
-invalid props or on children given to a block whose `canHaveChildren` is
-false.
+counterpart: it merges `props` over `defaultProps`, checks the result against
+the declarations, applies them, and **throws** on a value that does not fit or
+on children given to a block whose `canHaveChildren` is false.
 
 Source: `packages/authoring/src/validation.ts`,
 `packages/authoring/src/define-block.ts` (`createBlockInstance`).
+
+## Moving from a zod schema
+
+Before 3.0 a block declared its props twice: a zod `schema` in the block
+module and the descriptors of its manifest. 3.0 keeps the manifest only.
+A block source that imports `zod` is an error in `pwf validate`
+(`BLOCK_IMPORTS_ZOD`) and in `pwf build` (the compiler's `ZOD_IMPORT`).
+
+```bash
+pwf migrate blocks ./my-pack --check   # report only; exit 1 when a manifest would change
+pwf migrate blocks ./my-pack           # write the merged definition.props
+```
+
+For each block folder (a `manifest.json` of kind `block` beside its entry),
+the command reads the zod schema (the definition's `schema`, or an exported
+`*PropsSchema`) and the manifest's `definition.props`, reports every
+disagreement (`only-in-schema`, `only-in-manifest`, `type`, `default`,
+`enum`, `required`, `unrepresentable`) and writes the merged list: shape,
+default and required from the schema, which is what rendered until now;
+`bindable`, `copy`, `description` and the `type` string from the manifest.
+`--json` prints the raw result per block. Only the block module's top-level
+code runs; React and the engine are inert stand-ins.
+
+Then, in each block: delete the `zod` import and the schema, replace
+`schema` with `props` (the same list as the manifest) and a `TProps`
+interface, drop any `?? fallback` the declared defaults now cover, and run
+`pwf validate`.
+
+Source: `packages/cli/src/commands/migrate.ts`,
+`packages/cli/src/commands/lib/migrate-blocks.ts`.
 
 ## Shipping the block
 
