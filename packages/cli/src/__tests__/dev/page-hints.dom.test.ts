@@ -12,16 +12,18 @@ import { PAGE_HINTS_SCRIPT } from '../../dev/shell.js'
 
 const hints = {
   entry: 'menu',
+  maxWidth: 639,
   routes: ['menu', 'dish'],
   notFound: 'notfound',
   pages: {
     menu: { receipt: 'pwpack/surfaces/menu.receipt.json', modules: ['blocks/a.1.mjs'], image: './pwpack/media/cover.svg', imagePriority: true },
-    dish: { receipt: 'pwpack/surfaces/dish.receipt.json', modules: ['blocks/b.2.mjs'], frame: 'pwpack/surfaces/dish.html' },
+    dish: { receipt: 'pwpack/surfaces/dish.receipt.json', modules: ['blocks/b.2.mjs'], frame: 'pwpack/surfaces/dish.html', frameKeys: ['tab'] },
     notfound: { receipt: 'pwpack/surfaces/notfound.receipt.json', modules: [] },
   },
 }
 
-function run(hash: string, data: unknown = hints): string[] {
+function run(hash: string, data: unknown = hints, width = 390): string[] {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
   history.replaceState(null, '', `/${hash}`)
   document.head.innerHTML = `<script type="application/json" id="pw-page-hints">${JSON.stringify(data)}</script>`
   new Function(PAGE_HINTS_SCRIPT)()
@@ -52,6 +54,16 @@ describe('the page-hints script', () => {
       // Its first frame, which the first-paint script fetches: not a round trip behind the runner.
       'preload fetch ./pwpack/surfaces/dish.html cors',
     ])
+  })
+
+  it('E-5: the frame is asked for only where the first-paint script will put it in', () => {
+    const page = ['preload fetch ./pwpack/surfaces/dish.receipt.json cors', 'preload fetch ./blocks/b.2.mjs cors']
+    // Wider than the painted breakpoint: the runner draws the page, the frame
+    // would be "preloaded but not used within a few seconds".
+    expect(run('#/dish?id=3', hints, 1280)).toEqual(page)
+    // A query key that changes the frame keeps the build's frame out too.
+    expect(run('#/dish?tab=reviews', hints, 390)).toEqual(page)
+    expect(run('#/dish?id=3', hints, 639)).toEqual([...page, 'preload fetch ./pwpack/surfaces/dish.html cors'])
   })
 
   it('an address naming no route asks for the not-found page’s', () => {

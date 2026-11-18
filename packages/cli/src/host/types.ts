@@ -20,7 +20,9 @@ export interface LocalHostOptions {
   /**
    * Serve the records READ-ONLY (`pwf run`): lists, reads, counts and
    * aggregates answer as under `pwf dev`, through the same store and query
-   * path; a create, update or delete is refused with `403 READ_ONLY`.
+   * path; a create, update or delete is refused with `403 READ_ONLY` —
+   * after the refusals it meets under `pwf dev` (`401` signed out, `403
+   * FORBIDDEN`, `404`), so a visitor who must sign in is told so first.
    */
   readonly readOnly?: boolean
 }

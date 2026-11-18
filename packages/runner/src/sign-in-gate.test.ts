@@ -199,15 +199,11 @@ describe('mountSignInGate — the password door', () => {
         json: async () => ({ error: { message: 'Email or password is wrong' } }),
       }))
     )
-    mountSignInGate(container, GATED, null, { auth: DOOR })
+    mountSignInGate(container, GATED, null, { auth: DOOR, messages: runnerMessages({ 'session.refused': 'Giriş olmadı.' }) })
     fill('ali@example.com', 'wrongpass')
     form().dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
 
-    await vi.waitFor(() =>
-      expect(container.querySelector('[data-gate-error]')?.textContent).toBe(
-        'Could not sign in. Check your details and try again.'
-      )
-    )
+    await vi.waitFor(() => expect(container.querySelector('[data-gate-error]')?.textContent).toBe('Giriş olmadı.'))
     expect(container.querySelector('#pwapp-sign-in-gate')).toBeTruthy()
     // Re-rendering must not throw away what the visitor typed.
     expect((form().querySelector('input[name=email]') as HTMLInputElement).value).toBe(
@@ -308,16 +304,12 @@ describe('mountSignInGate — register mode', () => {
       json: async () => ({ error: { message: 'Email already registered' } }),
     }))
     vi.stubGlobal('fetch', fetchMock)
-    mountSignInGate(container, GATED, null, { auth: DOOR_WITH_REGISTER })
+    mountSignInGate(container, GATED, null, { auth: DOOR_WITH_REGISTER, messages: runnerMessages({ 'session.refused': 'Giriş olmadı.' }) })
     toggle().click()
     ;(form().querySelector('input[name=email]') as HTMLInputElement).value = 'ayse@example.com'
     ;(form().querySelector('input[name=password]') as HTMLInputElement).value = 'hunter2000'
     form().dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))
-    await vi.waitFor(() =>
-      expect(container.querySelector('[data-gate-error]')?.textContent).toBe(
-        'Could not sign in. Check your details and try again.'
-      )
-    )
+    await vi.waitFor(() => expect(container.querySelector('[data-gate-error]')?.textContent).toBe('Giriş olmadı.'))
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(JSON.parse(String(init.body))).toEqual({ email: 'ayse@example.com', password: 'hunter2000' })
     // Still in register mode, wall still up.
@@ -453,7 +445,7 @@ describe('the gate on demand — an account control asked for sign-in', () => {
     const door = { provider: 'password', loginUrl: 'https://api.example/login', registerUrl: 'https://api.example/register', registration: 'open' } as PwappAuth
     mountSignInGate(container, OPEN, null, { auth: door, onDemand: true, initialMode: 'register' })
     expect(container.querySelector('input[name=displayName]')).toBeTruthy()
-    expect(container.querySelector('[data-gate-submit]')?.textContent).toBe('Sign up')
+    expect(container.querySelector('[data-gate-submit]')?.getAttribute('aria-label')).toBe('gate.register')
   })
 
   it('does not open for a visitor who is already signed in', () => {
@@ -472,19 +464,21 @@ describe('the gate speaks the app’s language', () => {
   } as PwappAuth
   const UNTITLED: PwappProject = { ...OPEN, identity: { required: true } }
 
-  it('is English by default', () => {
+  it('writes no word of its own (E-4): every control the app left unworded is named by its id', () => {
     mountSignInGate(container, UNTITLED, null, { auth: DOOR })
     const gate = container.querySelector('#pwapp-sign-in-gate') as HTMLElement
-    expect(gate.querySelector('.pwapp-gate-title')?.textContent).toBe('Sign in')
-    expect(gate.querySelector('.pwapp-gate-body')?.textContent).toBe(
-      'You need to sign in to view this app.'
-    )
-    expect(gate.querySelector('[data-gate-submit]')?.textContent).toBe('Sign in')
-    expect(gate.querySelector('input[name=email]')?.getAttribute('aria-label')).toBe('Email')
-    expect(gate.querySelector('input[name=password]')?.getAttribute('aria-label')).toBe('Password')
-    expect(gate.querySelector('[data-gate-toggle]')?.textContent).toBe(
-      "Don't have an account? Sign up"
-    )
+    const named = (sel: string): [string | null | undefined, string | null | undefined] => {
+      const el = gate.querySelector(sel)
+      return [el?.textContent, el?.getAttribute('aria-label')]
+    }
+    expect(named('.pwapp-gate-title')).toEqual(['', 'gate.title'])
+    expect(gate.querySelector('.pwapp-gate-body')?.textContent).toBe('')
+    expect(named('[data-gate-submit]')).toEqual(['', 'gate.signIn'])
+    expect(named('[data-gate-toggle]')).toEqual(['', 'gate.toRegister'])
+    expect(gate.querySelector('input[name=email]')?.getAttribute('aria-label')).toBe('gate.email')
+    expect(gate.querySelector('input[name=password]')?.getAttribute('aria-label')).toBe('gate.password')
+    expect(gate.querySelector('input[name=email]')?.getAttribute('placeholder')).toBe('')
+    expect(gate.textContent?.replace(/\s/g, '')).toBe('')
   })
 
   it('writes the app’s own words (messages) when it sets them', () => {
@@ -495,11 +489,12 @@ describe('the gate speaks the app’s language', () => {
     expect(gate.querySelector('[data-gate-submit]')?.textContent).toBe('Oturum aç')
   })
 
-  it('reads the neutral fallback when no provider was shipped and the app sets no words', () => {
+  it('says the app’s gate.noProvider when no provider was shipped, and nothing of its own', () => {
     mountSignInGate(container, GATED, null)
-    expect(container.querySelector('[data-gate-error]')?.textContent).toMatch(
-      /no identity provider is configured/
-    )
+    expect(container.querySelector('[data-gate-error]')?.textContent).toBe('')
+    container.replaceChildren()
+    mountSignInGate(container, GATED, null, { messages: runnerMessages({ 'gate.noProvider': 'Giriş yolu yok.' }) })
+    expect(container.querySelector('[data-gate-error]')?.textContent).toBe('Giriş yolu yok.')
   })
 
   it('shows the initial error it was handed', () => {
@@ -534,13 +529,13 @@ describe('the gate’s social buttons', () => {
     ])
   })
 
-  it('labels them with the fallbacks, or the app’s words, PhiWebs account included', () => {
+  it('labels them with the app’s words, PhiWebs account included — or names them by id', () => {
     mountSignInGate(container, GATED, null, { auth: SOCIAL, onProviderSignIn: vi.fn() })
-    expect(buttons().map((b) => b.textContent)).toEqual([
-      'Continue with your account',
-      'Continue with Microsoft',
-      'Continue with Google',
-      'Continue with GitHub',
+    expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-label')])).toEqual([
+      ['', 'gate.provider.phiwebs'],
+      ['', 'gate.provider.microsoft'],
+      ['', 'gate.provider.google'],
+      ['', 'gate.provider.github'],
     ])
     container.innerHTML = ''
     mountSignInGate(container, GATED, null, {
@@ -563,8 +558,9 @@ describe('the gate’s social buttons', () => {
     mountSignInGate(container, GATED, null, {
       auth: { ...SOCIAL, providers: [{ method: 'okta' as never }, { method: 'google' }] },
       onProviderSignIn: vi.fn(),
+      messages: runnerMessages({ 'gate.provider.google': 'Google ile' }),
     })
-    expect(buttons().map((b) => b.textContent)).toEqual(['Continue with Google', 'okta'])
+    expect(buttons().map((b) => b.textContent)).toEqual(['Google ile', 'okta'])
   })
 
   it('a social-only door offers its buttons, not a dead button and a complaint', () => {

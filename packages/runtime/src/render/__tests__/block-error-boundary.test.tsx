@@ -82,7 +82,7 @@ describe('BlockErrorBoundary', () => {
     expect(html).not.toContain('Block render error:')
   })
 
-  it('shows "Unknown error" when error is null', () => {
+  it('writes no word of its own when the error has no message (E-4)', () => {
     class ErrorStateBoundary extends BlockErrorBoundary {
       constructor(props: ConstructorParameters<typeof BlockErrorBoundary>[0]) {
         super(props)
@@ -100,7 +100,7 @@ describe('BlockErrorBoundary', () => {
     )
 
     expect(html).toContain('data-block-error="blk-noMsg"')
-    expect(html).toContain('title="Unknown error"')
+    expect(html).not.toContain('title=')
   })
 
   it('componentDidCatch logs error to console', () => {

@@ -164,8 +164,10 @@ describe('address seed applied after hydration', () => {
         loadingStrategy="immediate"
       />
     )
-    // Source is idle (state.id = ""), no request made.
-    await waitFor(() => expect(screen.getByTestId('t').textContent).toContain('idle=true'))
+    // Source is idle (state.id = ""), no request made — and the page keeps its
+    // loading frame: an idle record is never drawn (E-3, withRecordFrameHeld).
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.getByTestId('t').textContent).toBe('|idle=false|loading=true')
     expect(facade.resolveBinding).not.toHaveBeenCalled()
 
     // Phase 2: post-hydration update — initialState.id = "soup" (from ?id=soup).
@@ -234,8 +236,10 @@ describe('address seed applied after hydration', () => {
         // No `address` prop — simulates the runner stripping it for the hydrating render.
       />
     )
-    // Source is idle. No notFound should fire (address is undefined → guard blocks it).
-    await waitFor(() => expect(screen.getByTestId('t').textContent).toContain('idle=true'))
+    // Source is idle, held in the loading frame. No notFound should fire
+    // (address is undefined → guard blocks it).
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.getByTestId('t').textContent).toBe('|idle=false|loading=true')
 
     // Phase 2: update with real address and real id (record does not exist).
     const addr = memoryAddress('id=no-such-id')

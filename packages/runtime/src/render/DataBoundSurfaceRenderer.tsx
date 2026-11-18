@@ -61,8 +61,9 @@ import { writeOnlySourceIds } from './write-only-sources.js'
 import { failureCodeOf, sourceFailureReason, type SourceFailureCode, type SourceFailureReason } from './source-failure.js'
 import { applyEntityQuery } from '../entity/apply-query.js'
 import { documentAddress, type SurfaceAddress } from './address.js'
-import { useNotFoundReport, useUrlStateSync } from './address-sync.js'
-import { useAppMessage } from './app-messages.js'
+import { useNotFoundReport, useUrlStateSync, withRecordFrameHeld } from './address-sync.js'
+import { useAppMessages } from './app-messages.js'
+import { messageOf } from './messages.js'
 
 // ============================================================
 // extract dataSources + initialState from persistence config
@@ -1541,9 +1542,20 @@ function DataBoundInner({
       authState.user,
       auth ? authState.signedIn : undefined
     )
-  const expressionData = React.useMemo<Record<string, unknown>>(
+  const pageScope = React.useMemo<Record<string, unknown>>(
     () => ({ ...pageData, __auth: authState, me: authState.user }),
     [pageData, authState]
+  )
+  // A RECORD PAGE KEEPS ITS LOADING FRAME until its record has come, and a
+  // record that is not there is never drawn empty when the host will replace
+  // the page with its not-found page (address-sync.ts, withRecordFrameHeld):
+  // the swap moves nothing (E-3).
+  const hostAddress = (rendererProps as { address?: SurfaceAddress }).address
+  const live = interactionMode !== 'inert'
+  const replaceable = hostAddress !== undefined && live
+  const expressionData = React.useMemo<Record<string, unknown>>(
+    () => withRecordFrameHeld(dataSources, pageScope, { live, replaceable }) as Record<string, unknown>,
+    [dataSources, pageScope, live, replaceable]
   )
   // The page scope as bound NOW, for actions resolved at dispatch time.
   const expressionDataRef = React.useRef(expressionData)
@@ -1620,7 +1632,6 @@ function DataBoundInner({
 
   // The page's address (render/address.ts): its declared `urlState` keys are
   // written back there, and a record source that finds nothing says so.
-  const hostAddress = (rendererProps as { address?: SurfaceAddress }).address
   const ownAddress = React.useMemo(() => hostAddress ?? documentAddress(), [hostAddress])
   const urlState = React.useMemo(() => extractPersistenceSeeds({ capabilities }).urlState, [capabilities])
   useUrlStateSync(urlState, surfaceState, ownAddress, interactionMode)
@@ -1634,7 +1645,7 @@ function DataBoundInner({
   // report a genuinely missing record. Using `ownAddress` here (the
   // documentAddress() fallback) would call a no-op `notFound()` AND set
   // `reported = true`, permanently silencing the real report.
-  useNotFoundReport(dataSources, expressionData, hostAddress, interactionMode)
+  useNotFoundReport(dataSources, pageScope, hostAddress, interactionMode)
 
   // The props each block's manifest declares `bindable: false` stay as
   // written; the descriptors the host handed the renderer carry them.
@@ -1774,14 +1785,17 @@ function DataBoundInner({
   )
 
   // The gate's one word is the app's (`ui.loading`), like every word a
-  // visitor reads (envelope §2).
-  const loadingLabel = useAppMessage('ui.loading', 'Loading…')
+  // visitor reads (envelope §2); the engine writes none, so without it the
+  // gate is the spinner alone. Read only when the gate is drawn: a page that
+  // never shows it is not told it lacks the word.
+  const appMessages = useAppMessages()
 
   // Loading state — 'gate' strategy only (the historical default): the whole
   // block tree is withheld until the first fetch pass settles. 'immediate'
   // skips this and renders the tree at once; unresolved bindings evaluate to
   // undefined and fill in per source (see loadingStrategy prop docs).
   if (!initialLoaded && loadingStrategy !== 'immediate') {
+    const loadingLabel = messageOf(appMessages, 'ui.loading')
     return (
       <div
         data-surface-loading

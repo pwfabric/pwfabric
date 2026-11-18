@@ -3,14 +3,19 @@
  *
  *  - `__errors.<id>` binds a reason CODE, not a sentence in the engine's
  *    language (source-failure);
- *  - an app's message reads before a neutral fallback, placeholders filled
- *    (messages).
+ *  - an app's message reads first, placeholders filled; the engine has no
+ *    fallback of its own (messages).
  *
  * @module @pwfabric/runtime/render/__tests__/app-words
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { failureCodeOf, sourceFailureReason } from '../source-failure.js'
 import { appMessagesOf, formatMessage, messageOf } from '../messages.js'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  delete (globalThis as { __pwfabric_dev?: unknown }).__pwfabric_dev
+})
 
 describe('sourceFailureReason — what __errors.<id> binds', () => {
   it('is a code for each failure, never a sentence', () => {
@@ -46,6 +51,22 @@ describe('messages — the app’s word, else the fallback', () => {
     expect(messageOf({ 'ui.close': '' }, 'ui.close', 'Close')).toBe('Close')
     expect(messageOf(null, 'ui.close', 'Close')).toBe('Close')
     expect(messageOf({ 'ui.page': 'Sayfa {n}' }, 'ui.page', 'Page {n}', { n: 4 })).toBe('Sayfa 4')
+  })
+
+  it('E-4: the engine writes no word — an id the app does not set is nothing, and pwf dev names it once', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(messageOf(null, 'ui.loading')).toBe('')
+    expect(messageOf({ 'ui.loading': '' }, 'ui.loading')).toBe('')
+    // A published app's console stays quiet.
+    expect(warn).not.toHaveBeenCalled()
+    ;(globalThis as { __pwfabric_dev?: unknown }).__pwfabric_dev = true
+    expect(messageOf({}, 'notFound.title')).toBe('')
+    expect(messageOf({}, 'notFound.title')).toBe('')
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0]?.[0])).toContain('"notFound.title"')
+    // A block's own fallback is the block's word, not a missing one.
+    expect(messageOf({}, 'ui.close', 'Close')).toBe('Close')
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 
   it('keeps only string values of a messages map', () => {

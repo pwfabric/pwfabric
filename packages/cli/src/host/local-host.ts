@@ -177,7 +177,7 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
   /** Accounts made with an invitation (`registration: "invite"`), by principal id. */
   const invited = new Set<string>()
   const transactions = new TokenStore<{ readonly returnTo: string; readonly method: string; readonly expiresAt: number }>()
-  const records = new RecordStore(root, user)
+  const records = new RecordStore(root, user, { readOnly: options.readOnly === true })
   const issuer = new DevIssuer(bearer, user)
 
   const originOf = (req: IncomingMessage): string => `http://${req.headers.host ?? 'localhost'}`
@@ -359,23 +359,11 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
     return entity
   }
 
-  /** A write under a read-only host (`pwf run`) — said in words, not a bare 405. */
-  function refuseWrite(): never {
-    throw new HostError(
-      403,
-      'READ_ONLY',
-      'This app is served read-only (pwf run): records can be read but not changed. Run pwf dev to change them.'
-    )
-  }
-
   async function data(req: IncomingMessage, res: ServerResponse, url: URL, parts: string[]): Promise<void> {
     const [typeId, second] = parts
     if (!typeId || parts.length > 2) notFound()
-    if (options.readOnly && (req.method === 'POST' || req.method === 'PATCH' || req.method === 'DELETE')) {
-      // The model must exist for the refusal to be the honest answer.
-      entityOf(typeId)
-      refuseWrite()
-    }
+    // A read-only host (`pwf run`) refuses a write in the store, after every
+    // refusal pwf dev would give it (records.ts, READ-ONLY): sign-in first.
     const target: Target = { entity: entityOf(typeId), auth: readAuth(root), caller: { principal: principalOf(req) } }
     const params = url.searchParams
     if (second === undefined) {

@@ -173,6 +173,17 @@ describe('MESSAGES_MISSING', () => {
     expect(ids).toContain('auth.error.access_denied')
   })
 
+  it('E-4: the app’s own sign-in screen still reaches the password door’s session.* words', async () => {
+    const root = await project({
+      'app/plan.json': plan(),
+      'pwpack.json': { app: { signIn: 'sign-in' } },
+      'app/definitions/auth.json': { required: true, methods: ['password'] },
+    })
+    const ids = reachableMessageIds(root)
+    expect(ids.filter((id) => id.startsWith('session.'))).toEqual(['session.unreachable', 'session.unexpected', 'session.failed', 'session.refused'])
+    expect(ids.some((id) => id.startsWith('gate.'))).toBe(false)
+  })
+
   it('sign-up words only for a door that takes anyone; the wall sentence only for a required app', async () => {
     const at = async (auth: Record<string, unknown>) =>
       reachableMessageIds(await project({ 'app/plan.json': plan(), 'app/definitions/auth.json': { topology: 'app', methods: ['password'], ...auth } }))
@@ -197,6 +208,12 @@ describe('MESSAGES_MISSING', () => {
     ])
   })
 
+  it('E-4: an app with a page reaches the renderer’s ui.retry (a block that failed to load), never ui.loading', async () => {
+    const root = await project({ 'app/plan.json': plan(), 'pwpack.json': { app: { entry: 'home', surfaceOrder: ['home'], notFound: 'nf' } } })
+    expect(reachableMessageIds(root)).toEqual(['ui.retry'])
+    expect(checkMessages(root)[0]?.message).toContain('ui.retry')
+  })
+
   it('an auth.json with access rules only is no way in: no sign-in words are reachable', async () => {
     const root = await project({
       'app/plan.json': plan(),
@@ -205,13 +222,15 @@ describe('MESSAGES_MISSING', () => {
     expect(reachableMessageIds(root)).toEqual(['notFound.title', 'notFound.body', 'notFound.home'])
   })
 
-  it('is an error in a non-English app, a warning in an English one, and quiet when every id is set', async () => {
+  it('E-4: is an error in every language — the engine writes no word — and quiet when every id is set', async () => {
     const files = { 'app/plan.json': plan() }
     const tr = checkMessages(await project(files))
     expect(tr.map((i) => [i.code, i.severity])).toEqual([['MESSAGES_MISSING', 'error']])
     expect(tr[0]?.message).toContain('notFound.title, notFound.body, notFound.home')
     const en = checkMessages(await project({ 'app/plan.json': plan({ locale: 'en-GB' }) }))
-    expect(en.map((i) => i.severity)).toEqual(['warning'])
+    expect(en.map((i) => i.severity)).toEqual(['error'])
+    // An app with no plan has written no word at all.
+    expect(checkMessages(await project({ 'pwpack.json': { app: {} } })).map((i) => i.severity)).toEqual(['error'])
     const done = checkMessages(
       await project({
         'app/plan.json': plan({ messages: { 'notFound.title': 'Sayfa yok', 'notFound.body': 'Böyle bir sayfa yok.', 'notFound.home': 'Ana sayfa' } }),

@@ -35,8 +35,8 @@ export interface PwappProject {
    * THE APP'S WORDS, from `app/plan.json` `messages`: message id → string, in
    * `locale` (envelope §2). Every word the runner draws (`gate.*`, `pill.*`,
    * `account.*`, `notFound.*`, `session.*`, `bridge.*`, `auth.error.*`) and
-   * every word a block draws itself (`ui.*`) is read here first; an id the
-   * app does not set reads the engine's neutral fallback.
+   * every word a block draws itself (`ui.*`) is read here; an id the app
+   * does not set is drawn as nothing (the engine writes no visitor word).
    */
   readonly messages?: Readonly<Record<string, string>>
   /**

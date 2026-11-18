@@ -13,6 +13,7 @@ import type { Block } from '@pwfabric/core'
 import type { BlockComponent, BlockContext } from './types.js'
 import { BlockModuleLoader } from './dynamic-block-loader.js'
 import { blockPropsForRender } from './block-props.js'
+import { useAppMessage } from './app-messages.js'
 
 // ============================================================
 // TYPES
@@ -59,7 +60,8 @@ function DynamicBlockSkeleton({ blockType }: { readonly blockType: string }): Re
  * Module-load failure. Same quiet-shape rule: no visible copy — the error
  * tint + dashed border carry the meaning, the technical message lives in the
  * title tooltip (and the loader already logs it), and the single retry
- * control is an icon button with an English aria-label.
+ * control is an icon button named in the app's words (`ui.retry`) — the
+ * engine writes none, so without it the button is named by the id.
  */
 function DynamicBlockError({
   blockType,
@@ -70,6 +72,7 @@ function DynamicBlockError({
   readonly error: string
   readonly onRetry: () => void
 }): ReactNode {
+  const retry = useAppMessage('ui.retry')
   return (
     <div
       data-dynamic-block={blockType}
@@ -89,7 +92,7 @@ function DynamicBlockError({
       <button
         type="button"
         onClick={onRetry}
-        aria-label={`Retry loading ${blockType}`}
+        aria-label={retry || 'ui.retry'}
         style={{
           display: 'flex',
           alignItems: 'center',

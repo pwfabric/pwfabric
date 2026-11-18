@@ -104,11 +104,12 @@ describe('createAuthBridge — failure visibility', () => {
     expect(console.error).toHaveBeenCalled()
   })
 
-  it('reports a rejected callback with the neutral fallback when the app sets no words', async () => {
+  it('reports a rejected callback in no words of its own when the app sets none', async () => {
     ;(g.location as Record<string, unknown>).search = '?code=abc&state=does-not-match'
     const bridge = createAuthBridge(AUTH)
     await bridge.init()
-    expect(bridge.lastError).toBe('This sign-in link is invalid or has expired. Try again.')
+    expect(bridge.session).toBeUndefined()
+    expect(bridge.lastError ?? '').toBe('')
   })
 
   it('reports a failed token exchange', async () => {

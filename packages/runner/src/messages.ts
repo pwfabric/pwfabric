@@ -1,17 +1,21 @@
 /**
- * Every word the runner itself draws — the app's, else a neutral fallback.
+ * Every word the runner itself draws — the app's, and only the app's.
  *
  * THE APP WRITES EVERY WORD (envelope §2, "Messages"). The gate, the pill,
  * the account labels, the not-found page and the session errors are drawn by
  * the runner, around the app's content; their words are the app's all the
  * same. An app sets them in `app/plan.json` `messages` (a flat map, in its
  * `plan.locale`), `pwf build` carries the map into `project.json`, and the
- * runner looks each word up there first.
+ * runner looks each word up there.
  *
- * What is left here is one NEUTRAL fallback per id, in English: for a screen
- * the app did not write. The runner ships no other language — an app in
- * another language sets its messages (`pwf validate` reports the ones it can
- * reach and does not set: MESSAGES_MISSING).
+ * THE ENGINE WRITES NO VISITOR WORD (founder decision, 3.0.1). There is no
+ * fallback table: a message the app does not set is drawn as nothing, and
+ * under `pwf dev` the console names the id once. `pwf validate` reports every
+ * id the app can reach and does not set as an error (MESSAGES_MISSING). Where
+ * an empty word would leave a control without an accessible name — a button,
+ * a field, a link, a dialog's title — the control is named by the message id
+ * itself (`labelWith`): never an invented sentence, and the id says what the
+ * app has to write.
  *
  * Placeholders are `{name}`, `{code}` and `{n}`.
  *
@@ -19,6 +23,9 @@
  */
 
 import { messageOf, type AppMessages, type MessageVars } from '@pwfabric/runtime/render/messages'
+
+/** The renderer's own ids (`ui.retry`, `ui.loading`), beside the runner's: what `pwf validate` checks too. */
+export { RENDERER_MESSAGE_IDS } from '@pwfabric/runtime/render/messages'
 
 /**
  * The `?auth_error=` codes the gateway and the API send a visitor back with.
@@ -45,76 +52,90 @@ export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number]
 export const PROVIDER_LABEL_METHODS = ['password', 'phiwebs', 'microsoft', 'google', 'github'] as const
 
 /**
- * The runner's message ids and their neutral fallbacks.
+ * The runner's message ids — every word it can draw, all of them the app's.
  *
  * `gate.*` — the runner's sign-in screen; `pill.*` — the fallback session
  * pill; `account.*` — the labels handed to the app's account control;
  * `notFound.*` — the runner's not-found page; `session.*` — the password
  * door; `bridge.*` — an external issuer's PKCE bridge; `auth.error.*` — a
- * refused sign-in round trip (`?auth_error=`).
+ * refused sign-in round trip (`?auth_error=`). `pwf validate` checks an app
+ * against this list (MESSAGES_MISSING).
  */
-export const RUNNER_MESSAGES = {
-  'gate.title': 'Sign in',
-  'gate.body': 'You need to sign in to view this app.',
-  'gate.email': 'Email',
-  'gate.password': 'Password',
-  'gate.name': 'Name',
-  'gate.signIn': 'Sign in',
-  'gate.register': 'Sign up',
-  'gate.toRegister': "Don't have an account? Sign up",
-  'gate.toSignIn': 'Already have an account? Sign in',
-  'gate.or': 'or',
-  'gate.close': 'Close',
-  'gate.noProvider': 'This app requires sign-in, but no identity provider is configured.',
-  'gate.provider.password': 'Email and password',
-  'gate.provider.phiwebs': 'Continue with your account',
-  'gate.provider.microsoft': 'Continue with Microsoft',
-  'gate.provider.google': 'Continue with Google',
-  'gate.provider.github': 'Continue with GitHub',
-  'pill.region': 'Account',
-  'pill.signedIn': 'Signed in',
-  'pill.signIn': 'Sign in',
-  'pill.signOut': 'Sign out',
-  'account.signIn': 'Sign in',
-  'account.signOut': 'Sign out',
-  'account.profile': 'Profile',
-  'account.greeting': 'Welcome, {name}',
-  'notFound.title': 'Page not found',
-  'notFound.body': 'This address does not name a page in this app.',
-  'notFound.home': 'Go to the home page',
-  'session.unreachable': 'Could not reach the server. Check your connection.',
-  'session.unexpected': 'The server sent an unexpected response.',
-  'session.failed': 'Could not sign in.',
-  'session.refused': 'Could not sign in. Check your details and try again.',
-  'bridge.exchangeFailed': 'Could not sign in: the token exchange failed. Details are in the console.',
-  'bridge.invalidCallback': 'This sign-in link is invalid or has expired. Try again.',
-  'bridge.issuerUnreachable': 'Could not reach the sign-in provider. Try again.',
-  'auth.error.access_denied': 'Sign-in was cancelled or refused by the provider.',
-  'auth.error.invalid_request': 'The sign-in request was not valid. Try again.',
-  'auth.error.invalid_state': 'This sign-in attempt was not recognised. Try again.',
-  'auth.error.expired': 'This sign-in attempt has expired. Try again.',
-  'auth.error.provider_error': 'The sign-in provider returned an error. Try again later.',
-  'auth.error.method_unavailable': 'This sign-in method is not available for this app.',
-  'auth.error.server_error': 'Sign-in could not be completed. Try again later.',
-  'auth.error.generic': 'Sign-in failed. Try again.',
-  'auth.error.unknown': 'Sign-in failed ({code}). Try again.',
-} as const satisfies Readonly<Record<string, string>>
+export const RUNNER_MESSAGE_IDS = [
+  'gate.title',
+  'gate.body',
+  'gate.email',
+  'gate.password',
+  'gate.name',
+  'gate.signIn',
+  'gate.register',
+  'gate.toRegister',
+  'gate.toSignIn',
+  'gate.or',
+  'gate.close',
+  'gate.noProvider',
+  'gate.provider.password',
+  'gate.provider.phiwebs',
+  'gate.provider.microsoft',
+  'gate.provider.google',
+  'gate.provider.github',
+  'pill.region',
+  'pill.signedIn',
+  'pill.signIn',
+  'pill.signOut',
+  'account.signIn',
+  'account.signOut',
+  'account.profile',
+  'account.greeting',
+  'notFound.title',
+  'notFound.body',
+  'notFound.home',
+  'session.unreachable',
+  'session.unexpected',
+  'session.failed',
+  'session.refused',
+  'bridge.exchangeFailed',
+  'bridge.invalidCallback',
+  'bridge.issuerUnreachable',
+  'auth.error.access_denied',
+  'auth.error.invalid_request',
+  'auth.error.invalid_state',
+  'auth.error.expired',
+  'auth.error.provider_error',
+  'auth.error.method_unavailable',
+  'auth.error.server_error',
+  'auth.error.generic',
+  'auth.error.unknown',
+] as const
 
-export type RunnerMessageId = keyof typeof RUNNER_MESSAGES
+export type RunnerMessageId = (typeof RUNNER_MESSAGE_IDS)[number]
 
-/** The ids, in table order — what `pwf validate` checks an app against. */
-export const RUNNER_MESSAGE_IDS = Object.keys(RUNNER_MESSAGES) as RunnerMessageId[]
-
-/** A word of the runner's: the app's message for `id`, else the fallback, placeholders filled. */
+/** A word of the runner's: the app's message for `id`, placeholders filled — or `''` when the app sets none. */
 export type RunnerMessages = (id: RunnerMessageId, vars?: MessageVars) => string
 
 /** The runner's words for an app's `messages` (`project.json`). */
 export function runnerMessages(app?: AppMessages | null): RunnerMessages {
-  return (id, vars) => messageOf(app, id, RUNNER_MESSAGES[id], vars)
+  return (id, vars) => messageOf(app, id, undefined, vars)
 }
 
-/** The fallbacks alone, for a caller that was handed no app messages. */
-export const NEUTRAL_MESSAGES: RunnerMessages = runnerMessages(null)
+/** No app messages at all: every word is `''` (for a caller that was handed none). */
+export const NO_MESSAGES: RunnerMessages = runnerMessages(null)
+
+/**
+ * Writes `text` into a control, and names the control by `id` when the app
+ * set no word for it: an empty button, link, field or dialog title has no
+ * accessible name. `attribute` is `'text'` for the visible label, else the
+ * attribute that carries the name (`aria-label`).
+ */
+export function labelWith(el: Element, text: string, id: string, attribute: 'text' | 'aria-label' = 'text'): void {
+  if (attribute === 'text') {
+    el.textContent = text
+    if (text) el.removeAttribute('aria-label')
+    else el.setAttribute('aria-label', id)
+    return
+  }
+  el.setAttribute('aria-label', text || id)
+}
 
 /** A code short and plain enough to quote to a visitor. */
 const QUOTABLE = /^[a-z0-9_]{1,64}$/i

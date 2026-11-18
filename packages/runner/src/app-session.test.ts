@@ -108,7 +108,8 @@ describe('signIn', () => {
       }))
     )
     const result = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' })
-    expect(result).toEqual({ ok: false, code: 'refused', message: 'Could not sign in. Check your details and try again.' })
+    // Without the app's word there is none: never the server's sentence.
+    expect(result).toEqual({ ok: false, code: 'refused', message: '' })
     const own = await signIn(
       'https://api.example/login',
       { email: 'a@b.c', password: 'x' },
@@ -135,10 +136,10 @@ describe('signIn', () => {
     expect(result.ok === false && result.message).toMatch(/ulaşılamadı/)
   })
 
-  it('reads the neutral fallback when the app sets no words', async () => {
+  it('says nothing when the app sets no words (the engine writes none), and still names the failure', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
     const result = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' })
-    expect(result.ok === false && result.message).toMatch(/Could not reach the server/)
+    expect(result).toEqual({ ok: false, code: 'network', message: '' })
   })
 
   it('says the answer was unreadable when the body is not JSON', async () => {
@@ -146,8 +147,8 @@ describe('signIn', () => {
       'fetch',
       vi.fn(async () => ({ ok: true, json: async () => { throw new Error('html') } }))
     )
-    const result = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' })
-    expect(result.ok === false && result.message).toMatch(/unexpected response/)
+    const result = await signIn('https://api.example/login', { email: 'a@b.c', password: 'x' }, runnerMessages({ 'session.unexpected': 'Beklenmeyen yanıt.' }))
+    expect(result.ok === false && result.message).toBe('Beklenmeyen yanıt.')
   })
 
   it('refuses a 200 that carries no token', async () => {

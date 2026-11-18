@@ -21,6 +21,19 @@
  * The development user carries every role `access.roles` declares, so the
  * author can try the app as staff; any other e-mail signs in as a plain member.
  *
+ * WHERE THE DECLARATIONS COME FROM (`RecordStoreOptions`). The local host
+ * reads them from the app folder on every call (`root`), so an edit applies
+ * at once. A host with no disk — a Worker — hands them over instead: the
+ * entity list, the seed rows, and how a relation's target is checked. Either
+ * way the decisions below are the same.
+ *
+ * READ-ONLY (`readOnly`, `pwf run`): every refusal a write meets under
+ * `pwf dev` comes first — `401` to a caller who must sign in, `403 FORBIDDEN`
+ * to one the rules do not grant, `404` for a record outside their reach —
+ * and only a write the caller could make is refused with `403 READ_ONLY`.
+ * Refusing it before the session check told a signed-out visitor "failed"
+ * where the app has a sign-in prompt.
+ *
  * WRITES follow the record write contract (`prepareRecordWrite` in
  * `@pwfabric/contracts`, definitions "Server-owned fields"): a field the
  * entity does not declare is refused, declared types are checked, and the
@@ -159,13 +172,56 @@ export interface Target {
   readonly caller: Caller
 }
 
+/** Where a {@link RecordStore} reads the app's declarations, when not from an app folder. */
+export interface RecordStoreOptions {
+  /** The entity declarations (`entityDeclarationsOf`); default: `<root>/app/definitions/entities.json`, read on every call. */
+  readonly entities?: readonly EntityDeclaration[] | (() => readonly EntityDeclaration[])
+  /** A collection's seed rows; default: `readSeed(root, typeId)`, or none without a root. */
+  readonly seed?: (typeId: string) => readonly Record<string, unknown>[]
+  /**
+   * Whether `caller` may point a relation at record `id` of `targetTypeId`;
+   * default: the target exists here and the caller's `view` reach covers it.
+   */
+  readonly relationReadable?: (targetTypeId: string, id: string, caller: Caller) => boolean
+  /** Refuse every write the caller could make with `403 READ_ONLY` (after every other refusal). */
+  readonly readOnly?: boolean
+}
+
 export class RecordStore {
   private readonly collections = new Map<string, Map<string, Stored>>()
 
+  /**
+   * `root`: the app folder the declarations and seeds are read from, or
+   * `undefined` when `options.entities` hands them over (a host with no disk).
+   */
   constructor(
-    private readonly root: string,
-    private readonly devUser: Principal
-  ) {}
+    private readonly root: string | undefined,
+    private readonly devUser: Principal,
+    private readonly options: RecordStoreOptions = {}
+  ) {
+    if (root === undefined && options.entities === undefined) {
+      throw new Error('RecordStore: give the app folder (root) or the entity declarations (options.entities)')
+    }
+  }
+
+  /** The app's entity declarations, from the options or the app folder. */
+  private entities(): readonly EntityDeclaration[] {
+    const given = this.options.entities
+    if (given !== undefined) return typeof given === 'function' ? given() : given
+    return readEntities(this.root as string)
+  }
+
+  private seedOf(typeId: string): readonly Record<string, unknown>[] {
+    if (this.options.seed) return this.options.seed(typeId)
+    return this.root === undefined ? [] : readSeed(this.root, typeId)
+  }
+
+  /** Under `readOnly`, the refusal of a write the caller was otherwise allowed to make. */
+  private refuseIfReadOnly(): void {
+    if (this.options.readOnly) {
+      throw new HostError(403, 'READ_ONLY', 'These records are served read-only: they can be read but not changed.')
+    }
+  }
 
   reset(): void {
     this.collections.clear()
@@ -177,7 +233,7 @@ export class RecordStore {
     rows = new Map()
     const now = new Date().toISOString()
     const ownerField = ownerFieldOf(entity)
-    for (const seed of readSeed(this.root, entity.typeId)) {
+    for (const seed of this.seedOf(entity.typeId)) {
       const id = typeof seed.id === 'string' || typeof seed.id === 'number' ? String(seed.id) : randomUUID()
       const declaredOwner = ownerField ? seed[ownerField] : undefined
       rows.set(id, {
@@ -292,8 +348,10 @@ export class RecordStore {
    * account's order (201).
    */
   private relationReadable(target: Target): (targetTypeId: string, id: string) => boolean {
+    const own = this.options.relationReadable
+    if (own) return (targetTypeId, id) => own(targetTypeId, id, target.caller)
     return (targetTypeId, id) => {
-      const entity = readEntities(this.root).find((e) => e.typeId === targetTypeId)
+      const entity = this.entities().find((e) => e.typeId === targetTypeId)
       if (!entity) return false
       try {
         this.find({ ...target, entity }, 'view', id)
@@ -334,6 +392,7 @@ export class RecordStore {
   create(target: Target, body: Record<string, unknown>): Row {
     const { entity, caller } = target
     this.allow(target, 'create')
+    this.refuseIfReadOnly()
     const now = new Date().toISOString()
     const fields = prepared(entity, body, 'create', caller, now, this.relationReadable(target))
     const id = randomUUID()
@@ -345,6 +404,7 @@ export class RecordStore {
 
   update(target: Target, id: string, body: Record<string, unknown>): Row {
     const stored = this.find(target, 'update', id)
+    this.refuseIfReadOnly()
     const now = new Date().toISOString()
     const fields = prepared(target.entity, body, 'update', target.caller, now, this.relationReadable(target))
     this.checkUnique(target.entity, { ...stored.record, ...fields }, stored.owner, id)
@@ -360,6 +420,7 @@ export class RecordStore {
 
   remove(target: Target, id: string): void {
     this.find(target, 'delete', id)
+    this.refuseIfReadOnly()
     this.collection(target.entity).delete(id)
   }
 }

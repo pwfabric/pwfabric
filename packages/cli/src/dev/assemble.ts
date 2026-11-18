@@ -37,6 +37,7 @@ import { withSessionSources } from '../host/session-sources.js'
 import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
 import { deriveCsp, headersFile, robotsTxt } from './csp.js'
 import { firstPaintData, paintPages, staticPageFile, staticRootHtml, type PaintedPage } from './static-paint.js'
+import { STATIC_VIEWPORT_MAX_WIDTH } from '@pwfabric/runner'
 import {
   BOOT_FILES,
   FIRST_PAINT_SCRIPT,
@@ -485,6 +486,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   if (!gated) for (const page of [...routes, ...(notFoundPage ? [notFoundPage] : [])]) hinted[page.key] = hintsOf(page)
   const pageHints = {
     entry,
+    maxWidth: STATIC_VIEWPORT_MAX_WIDTH,
     routes: routes.map((p) => p.key),
     ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
     pages: hinted,
@@ -607,7 +609,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     // A deep link's frame is asked for with the document (shell.ts PageHints.frame).
     for (const page of painted.pages) {
       const hint = hinted[page.key]
-      if (page !== entryPainted && hint) hinted[page.key] = { ...hint, frame: staticPageFile(page.key) }
+      if (page !== entryPainted && hint) {
+        hinted[page.key] = { ...hint, frame: staticPageFile(page.key), ...(page.addressKeys.length > 0 ? { frameKeys: page.addressKeys } : {}) }
+      }
     }
     if (painted.pages.length > 0) {
       firstPaint = {
@@ -636,7 +640,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   })
   // Written last: the shell preloads only boot files the folder has.
   files.set('index.html', shell(csp.meta))
-  files.set('_headers', enc.encode(headersFile(csp.header)))
+  files.set('_headers', enc.encode(headersFile(csp.header, csp.mediaHeader)))
   files.set('robots.txt', enc.encode(robotsTxt()))
 
   const publishedAtoms = atoms

@@ -18,7 +18,7 @@ import {
   type PackIssue,
   type PackValidation,
 } from '@pwfabric/pack'
-import { PROVIDER_LABEL_METHODS, RUNNER_MESSAGE_IDS, type RunnerMessageId } from '@pwfabric/runner'
+import { PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
 import type { CommandIO } from '../types.js'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { engineVersion, pinsOf } from './identity.js'
@@ -274,13 +274,17 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
  *    sign-in round trip can send the visitor back with `?auth_error=` (a
  *    provider method or an issuer; a password-only door never does), and the runner's own
  *    sign-in screen (`gate.*`) unless `app.signIn` names the app's — its
- *    password fields and `session.*` with a password method, one
+ *    password fields with a password method, one
  *    `gate.provider.<method>` per provider, `gate.title` only when the plan
  *    has no title; the account control's `account.*` when `navigation.json`
  *    declares `account`, else the fallback pill (`pill.*`); `bridge.*` for an
- *    external issuer.
+ *    external issuer; `session.*` with a password method, whichever screen
+ *    signs in (the app's own screen signs in through the runner's door too);
+ *  - the renderer's `ui.retry` (a block whose module failed to load is a
+ *    retry button) on every app with a page. Its `ui.loading` is never drawn
+ *    by the runner, which paints at once.
  */
-export function reachableMessageIds(root: string): RunnerMessageId[] {
+export function reachableMessageIds(root: string): string[] {
   const pwpack = readJsonFile(join(root, 'pwpack.json'))
   const app = isObj(pwpack) && isObj(pwpack['app']) ? pwpack['app'] : {}
   const plan = readJsonFile(join(root, 'app', 'plan.json'))
@@ -305,6 +309,9 @@ export function reachableMessageIds(root: string): RunnerMessageId[] {
     const providers = auth.methods.filter((m) => m !== 'password')
     // `?auth_error=` comes back from a provider or an issuer only.
     if (providers.length > 0 || auth.topology === 'external') all('auth.error.')
+    // The password door's answers are the runner's to word whichever screen
+    // asked: its own gate, or the app's sign-in screen through `auth:signIn`.
+    if (password) all('session.')
     if (!named(app['signIn'])) {
       if (!(isObj(plan) && named(plan['title']))) ids.add('gate.title')
       // The wall's sentence only on the wall; the on-demand dialog has none.
@@ -316,7 +323,6 @@ export function reachableMessageIds(root: string): RunnerMessageId[] {
         if (auth.registration === 'open') {
           for (const id of ['gate.name', 'gate.register', 'gate.toRegister', 'gate.toSignIn'] as const) ids.add(id)
         }
-        all('session.')
       }
       if (password && providers.length > 0) ids.add('gate.or')
       for (const m of providers) if ((PROVIDER_LABEL_METHODS as readonly string[]).includes(m)) ids.add(`gate.provider.${m}`)
@@ -328,31 +334,32 @@ export function reachableMessageIds(root: string): RunnerMessageId[] {
     } else if (!named(app['signIn'])) all('pill.')
     if (auth.topology === 'external') all('bridge.')
   }
-  return RUNNER_MESSAGE_IDS.filter((id) => ids.has(id))
+  const pages = isObj(app) && Array.isArray(app['surfaceOrder']) && app['surfaceOrder'].length > 0
+  const renderer: string[] = pages ? RENDERER_MESSAGE_IDS.filter((id) => id === 'ui.retry') : []
+  return [...RUNNER_MESSAGE_IDS.filter((id) => ids.has(id)), ...renderer]
 }
 
 /**
  * MESSAGES_MISSING: the runner message ids this app can reach
- * ({@link reachableMessageIds}) that `plan.json` `messages` does not set. The
- * visitor reads the engine's neutral English fallback for each — an error
- * when the app's `locale` is not English, a warning otherwise.
+ * ({@link reachableMessageIds}) that `plan.json` `messages` does not set — an
+ * ERROR, whatever the app's language. The engine writes no visitor word
+ * (3.0.1): the visitor reads nothing where each one goes, and a control is
+ * named by the bare id.
  */
 export function checkMessages(root: string): PackIssue[] {
+  // An app with no plan sets no words: every id it can reach is missing.
   const plan = readJsonFile(join(root, 'app', 'plan.json'))
-  if (!isObj(plan)) return []
-  const messages = isObj(plan['messages']) ? plan['messages'] : {}
+  const messages = isObj(plan) && isObj(plan['messages']) ? plan['messages'] : {}
   const missing = reachableMessageIds(root).filter((id) => !(typeof messages[id] === 'string' && messages[id] !== ''))
   if (missing.length === 0) return []
-  const locale = typeof plan['locale'] === 'string' ? plan['locale'].trim() : ''
-  const english = locale === '' || /^en(?:[-_]|$)/i.test(locale)
   return [
     {
-      severity: english ? 'warning' : 'error',
+      severity: 'error',
       code: 'MESSAGES_MISSING',
       path: 'app/plan.json',
       message:
         `the app can show ${missing.length} runner message${missing.length === 1 ? '' : 's'} it does not set in messages, ` +
-        `so the visitor reads the engine's English fallback${english ? '' : ` in a ${locale} app`}: ${missing.join(', ')}`,
+        `and the engine writes no words of its own, so the visitor reads nothing there: ${missing.join(', ')}`,
     },
   ]
 }

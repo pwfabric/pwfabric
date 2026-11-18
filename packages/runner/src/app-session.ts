@@ -24,7 +24,7 @@
 
 import type { KeyValueStorage } from './pkce.js'
 import type { PwappAuth } from './types.js'
-import { NEUTRAL_MESSAGES, type RunnerMessages } from './messages.js'
+import { NO_MESSAGES, type RunnerMessages } from './messages.js'
 
 /** The gateway's sign-in addresses when the export names none. */
 export const DEFAULT_START_URL = '/_auth/start'
@@ -145,7 +145,7 @@ function failureOf(status: number): DoorFailure {
 export async function signIn(
   url: string,
   credentials: { email: string; password: string; displayName?: string | undefined; invitation?: string | undefined },
-  say: RunnerMessages = NEUTRAL_MESSAGES
+  say: RunnerMessages = NO_MESSAGES
 ): Promise<{ ok: true; session: AppSession } | { ok: false; code: DoorFailure; message: string }> {
   let response: Response
   try {

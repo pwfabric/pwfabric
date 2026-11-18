@@ -6,6 +6,7 @@ import { packFromRecord, writePwpack } from '@pwfabric/pack'
 import { main } from '../../index.js'
 import { appFolderOf, parsePort, runRun, untilSignal, DEFAULT_RUN_PORT } from '../../commands/run.js'
 import { contentTypeOf, isPagePath, parseHeadersFile, requestPath, startStaticServer, type StaticServer } from '../../commands/lib/static-server.js'
+import { headersFile } from '../../dev/csp.js'
 import { capture, tempDir } from './helpers.js'
 
 async function builtApp(): Promise<string> {
@@ -137,6 +138,23 @@ describe('static server', () => {
       const js = await fetch(new URL('assets/runner.js', server.url))
       expect(js.headers.get('cache-control-hint')).toBe('long')
       expect((await fetch(new URL('_headers', server.url))).status).toBe(404)
+    } finally {
+      await server.close()
+    }
+  })
+
+  it("E-1: serves the app's own media with the media policy of _headers, the pages with the page's", async () => {
+    const dir = await builtApp()
+    await mkdir(join(dir, 'pwpack', 'media'), { recursive: true })
+    await writeFile(join(dir, 'pwpack', 'media', 'print.pdf'), '%PDF-1.4')
+    await writeFile(join(dir, '_headers'), headersFile("default-src 'none'; frame-ancestors 'none'", "default-src 'none'; frame-ancestors 'self'"))
+    const server = await startStaticServer({ source: { dir }, port: 0 })
+    try {
+      const pdf = await fetch(new URL('pwpack/media/print.pdf', server.url))
+      expect(pdf.headers.get('content-security-policy')).toBe("default-src 'none'; frame-ancestors 'self'")
+      expect(pdf.headers.get('cache-control')).toBe('public, max-age=3600')
+      const page = await fetch(server.url)
+      expect(page.headers.get('content-security-policy')).toBe("default-src 'none'; frame-ancestors 'none'")
     } finally {
       await server.close()
     }
@@ -356,6 +374,35 @@ describe('pwf run serves the app records read-only', () => {
           expect((await fetch(new URL('_host/records/Product/p1', server.url), { method: 'DELETE' })).status).toBe(403)
           const after = (await (await fetch(new URL('_host/records/Product', server.url))).json()) as { data: unknown[] }
           expect(after.data).toHaveLength(3)
+
+          // E-2: SIGN-IN BEFORE READ-ONLY. Who may write is answered first,
+          // exactly as under pwf dev: a signed-out write a member may make is
+          // 401 (the app shows its sign-in prompt), not READ_ONLY.
+          const order = (headers: Record<string, string> = {}): Promise<Response> =>
+            fetch(new URL('_host/records/Order', server.url), {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', ...headers },
+              body: JSON.stringify({ item: 'Tea' }),
+            })
+          const signedOut = await order()
+          expect(signedOut.status).toBe(401)
+          expect(((await signedOut.json()) as { error: { code: string } }).error.code).toBe('SIGN_IN_REQUIRED')
+          const login = await fetch(new URL('_host/login', server.url), {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ email: 'member@example.com', password: 'x' }),
+          })
+          const token = ((await login.json()) as { data: { token: string } }).data.token
+          const signedIn = await order({ 'x-app-session': token })
+          expect(signedIn.status).toBe(403)
+          expect(((await signedIn.json()) as { error: { code: string } }).error.code).toBe('READ_ONLY')
+          // A write the member may not make at all is refused as under pwf dev.
+          const review = await fetch(new URL('_host/records/Review', server.url), {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-app-session': token },
+            body: JSON.stringify({}),
+          })
+          expect(((await review.json()) as { error: { code: string } }).error.code).toBe('FORBIDDEN')
         },
       })
       expect(code).toBe(0)
