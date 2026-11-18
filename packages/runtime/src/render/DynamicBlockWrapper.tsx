@@ -181,8 +181,8 @@ export function DynamicBlockWrapper({
   // `props` is never undefined — a node may carry no `props` key at all
   // (`{id, type, children}` is a valid section), and a block reads `props.x`.
   const props = useMemo(
-    () => blockPropsForRender(descriptor.blockType, block.props, descriptor.definition.props),
-    [descriptor.blockType, block.props, descriptor.definition.props]
+    () => blockPropsForRender(descriptor.blockType, block.props, descriptor.definition?.props),
+    [descriptor.blockType, block.props, descriptor.definition?.props]
   )
 
   // Component-first: if we have a loaded component, always render it regardless of
