@@ -143,13 +143,6 @@ const GATE = 'Boolean(document.getElementById("pwapp-sign-in-gate"))'
 const textOf = (selector) => `document.querySelector(${JSON.stringify(selector)})?.textContent ?? null`
 
 /**
- * On boot with nothing stored, the runner asks the gateway whether a provider
- * round trip left a cookie; for a visitor who has none, 401 is the ordinary
- * answer (session-protocol; runner `readGatewaySession`).
- */
-const GATEWAY_401 = /^401 \S+\/_auth\/session$/
-
-/**
  * A page left clean: no exception, no console error, no failed request
  * (except the ones `allowed` matches) and no Content Security Policy
  * violation — the built app carries its policy, so everything it does must
@@ -163,7 +156,8 @@ async function checkClean(s, page, label, allowed = () => false) {
   s.check(`${label}: zero CSP violations`, violations === 0 && csp.blockedRequests === 0, csp)
   const p = page.takeProblems()
   // An app without an identity carries no pwpack/auth.json; the runner must not ask for it.
-  const failed = p.failedResponses.filter((r) => !allowed(r) && !GATEWAY_401.test(r))
+  // The gateway's signed-out answer is a 200 (session-protocol §4.2), so no exemption for it.
+  const failed = p.failedResponses.filter((r) => !allowed(r))
   s.check(`${label}: no uncaught exception`, p.exceptions.length === 0, p.exceptions)
   s.check(`${label}: no console error`, p.consoleErrors.length === 0, p.consoleErrors)
   s.check(`${label}: no failed request`, failed.length === 0, failed)
@@ -346,7 +340,7 @@ async function l3Dev(browser, s) {
       const auth = await (await fetch(`${server.url}pwpack/auth.json`)).json()
       s.check('envelope auth.json points at the host (relative, on the page origin)', auth.loginUrl === '/_host/login', auth)
       const project = await (await fetch(`${server.url}pwpack/project.json`)).json()
-      s.check('project.json carries the declared identity', JSON.stringify(project.identity) === '{"required":false,"topology":"app","methods":["password"]}', project.identity)
+      s.check('project.json carries the declared identity', JSON.stringify(project.identity) === '{"required":false,"topology":"app","methods":["password"],"registration":"open"}', project.identity)
       const seeded = await (await fetch(`${server.url}_host/records/Product`)).json()
       s.check('the host seeds Product from app/data', seeded.data?.length === 3, seeded)
       const page = await browser.newPage()
