@@ -1,6 +1,6 @@
 # @pwfabric/compiler
 
-## Unreleased
+## 3.1.0
 
 - Added: `compileAtom({ kind: 'provider', engineNames })` compiles several facets of one vendor into one module, entry `providers/<vendor>/__engines__.ts`, each facet's factory a named export under its name; `providerBundleSource` and `providerFacetEntry` are exported.
 

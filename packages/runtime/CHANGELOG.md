@@ -1,6 +1,6 @@
 # @pwfabric/runtime
 
-## Unreleased
+## 3.1.0
 
 - Added: `ConnectorEngineDescriptor.export`: the loader takes the engine factory from that named export, and fetches, verifies and evaluates a module once for every engine that names it.
 

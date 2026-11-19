@@ -1,6 +1,6 @@
 # @pwfabric/pack
 
-## Unreleased
+## 3.1.0
 
 - Added: `checkReceiptBlockProps` names a member of an array item or a nested object that the prop's `jsonSchema` does not declare (`BLOCK_PROP_UNKNOWN`, with its path — `blocks[0].props.columns[1].label` — and the nearest declared name when it looks misspelled), unless the schema leaves the object open. Template values stay unchecked; the names beside them are read. `nearestName` is exported.
 
