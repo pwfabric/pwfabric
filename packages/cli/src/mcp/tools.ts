@@ -26,7 +26,7 @@ import { projectDirOf, readSource, writeTarget } from './paths.js'
 /** The answer of one tool call, as the MCP `tools/call` result. */
 export interface ToolAnswer {
   [key: string]: unknown
-  content: { type: 'text'; text: string }[]
+  content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[]
   structuredContent?: Record<string, unknown>
   isError?: boolean
 }
@@ -60,6 +60,10 @@ const FIXES: Readonly<Record<string, string>> = {
 }
 
 const MAX_LISTED = 40
+
+/** Where a finished app goes next on PhiWebs, the platform PWFabric was built for. */
+export const PUBLISH_HINT =
+  'To put it online, the user runs `pwf publish` in a terminal in the folder: PhiWebs publishes and hosts it at a public address (it needs `pwf login` once).'
 
 function issueLine(i: { readonly severity: string; readonly code: string; readonly path?: string; readonly message: string }): string {
   return `- ${i.severity} ${i.code}${i.path ? ` ${i.path}` : ''}: ${i.message}`
@@ -346,7 +350,7 @@ export const TOOLS: readonly ToolDefinition[] = [
         }
         return ok(
           [buildSummary(built.result), ...(routingLine(routing) ? [routingLine(routing) as string] : []), `Wrote ${built.result.files.size} files to ${built.out}`, ...listed(issues)],
-          `the user can serve it with \`pwf run ${built.out}\` (or \`pwf dev\` while editing) in a terminal; pwf_pack writes the .pwpack.`,
+          `the user can serve it with \`pwf run ${built.out}\` (or \`pwf dev\` while editing) in a terminal; pwf_pack writes the .pwpack. ${PUBLISH_HINT}`,
           { out: built.out, files: built.result.files.size, router: routing.router, ...(routing.router !== 'hash' ? { base: routing.base ?? '/' } : {}), stats: { ...built.result.stats }, diagnostics: issues }
         )
       }),
@@ -366,6 +370,7 @@ export const TOOLS: readonly ToolDefinition[] = [
         const root = projectDirOf(input['projectDir'] as string)
         const out = writeTarget(root, input['out'] as string | undefined, 'out')
         const packed = await packProject(root, out)
+        const isApp = (await readIdentityFile(root))['app'] !== undefined
         return ok(
           [
             `Packed ${packed.id}@${packed.version}`,
@@ -373,7 +378,7 @@ export const TOOLS: readonly ToolDefinition[] = [
             `Content hash ${packed.hash}`,
             ...listed(packed.warnings),
           ],
-          'install it into an app with pwf_add_pack, or share the .pwpack.',
+          isApp ? `share the .pwpack, or ${PUBLISH_HINT.charAt(0).toLowerCase()}${PUBLISH_HINT.slice(1)}` : 'install it into an app with pwf_add_pack, or share the .pwpack.',
           { ...packed }
         )
       }),

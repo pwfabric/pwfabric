@@ -2,9 +2,10 @@
 
 The PWFabric command line. It creates, checks, packs and serves PWFabric apps
 using only the engine's own packages, with no account and no network. `pwf mcp`
-serves the same work to AI coding tools over MCP; `pwf login` signs in to
-[PhiWebs](https://phiwebs.com), the platform PWFabric was built for — the only
-command family that talks to a hosted service.
+serves the same work to AI coding tools over MCP. `pwf publish` puts an app
+online (or a pack in the marketplace) on [PhiWebs](https://phiwebs.com), the
+platform PWFabric was built for, once `pwf login` has signed in; every other
+command needs no account.
 
 ```sh
 pwf create my-shop --foundation ./foundation   # a new app folder
@@ -17,6 +18,7 @@ pwf add block content/price-tag                # a new block in a pack or app
 pwf run ./dist-app                             # serve a built pwapp
 pwf mcp                                        # MCP server for AI coding tools (stdio)
 pwf login                                      # sign in to PhiWebs (whoami, logout)
+pwf publish                                    # publish the app on PhiWebs, print its address
 ```
 
 Every command prints `--help`. Exit codes: `0` success, `1` failure (invalid
@@ -149,14 +151,28 @@ Code, Gemini CLI, …): `npx -y @pwfabric/cli mcp` as the server command. Tools:
 the same functions as the commands. Every tool takes `projectDir`, an absolute
 path, and writes only inside it; answers end with the next step, failures carry
 a code and the fix. No account, no network, no dev server (run `pwf dev`).
-Client configuration: see the CLI page on [pwfabric.com](https://pwfabric.com/cli#pwf-mcp).
+Signed in (`pwf login`), it also lists the PhiWebs studio's tools and forwards
+their calls; signed out, `phiwebs_sign_in` explains how to sign in.
+`pwf_publish_pack` publishes a pack folder to the marketplace (signed in).
+`--local-only` serves the local tools only. Client configuration: see the CLI page on [pwfabric.com](https://pwfabric.com/cli#pwf-mcp).
 
-### `pwf login [--server <url>] [--no-browser]`, `pwf logout`, `pwf whoami`
+### `pwf publish [dir] [--project <id>] [--new]`
+
+An app: packs it, imports the `.pwpack` into a PhiWebs studio project (new,
+or the one remembered in `.pwf/phiwebs.json`), publishes it and prints the
+address. A pack: sends it to the PhiWebs marketplace for review as the
+workspace's publisher, under its own id. Findings and refusals carry their
+codes and fixes. Needs `pwf login`.
+
+### `pwf login [--server <url>] [--studio <url>] [--no-browser]`, `pwf logout`, `pwf whoami`
 
 Sign in to PhiWebs with OAuth 2.1 (authorization code + PKCE, a loopback
-redirect on `127.0.0.1`, dynamic client registration). The server is
+redirect on `127.0.0.1`, dynamic client registration), for two resources: the
+API and the studio, each with its own token. The server is
 `https://api.phiwebs.com` unless `--server` or `PWF_PHIWEBS_URL` names
-another. Tokens live in `%APPDATA%\pwfabric` (Windows) or
+another; the studio is `--studio`, `PWF_PHIWEBS_STUDIO_URL`, the one the API
+names, or `https://mcp.phiwebs.com`. A session from an earlier `pwf` gains
+its studio token by signing in again. Tokens live in `%APPDATA%\pwfabric` (Windows) or
 `$XDG_CONFIG_HOME/pwfabric` / `~/.config/pwfabric`, readable by the user only,
 and are refreshed when they expire. `logout` revokes (when the server can) and
 deletes them; `whoami` prints the account and workspace, or exits 1 when not

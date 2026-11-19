@@ -1,16 +1,17 @@
 ---
 title: CLI
-description: Every pwf command and option — create, dev, build, validate, pack, add, run, the MCP server for AI coding tools, and signing in to PhiWebs.
+description: Every pwf command and option — create, dev, build, validate, pack, add, run, the MCP server for AI coding tools, and publishing on PhiWebs.
 ---
 
 # The `pwf` command line
 
 `pwf` creates, develops, checks, packs and serves PWFabric applications using
 only the engine's own packages. Those commands need no account and no network.
-`pwf mcp` serves the same work to AI coding tools. `pwf login`, `logout` and
-`whoami` sign the CLI in to [PhiWebs](https://phiwebs.com), the platform
-PWFabric was built for; they are the only commands that talk to a hosted
-service, and nothing else needs them.
+`pwf mcp` serves the same work to AI coding tools. `pwf publish` puts an app
+online (or a pack in the marketplace) on [PhiWebs](https://phiwebs.com), the
+platform PWFabric was built for, after `pwf login`, `logout` and `whoami`
+sign the CLI in to it. Every other command works without an account and
+without a network.
 
 Install it from npm (Node 22): `npm install -g @pwfabric/cli`, or run it
 once with `npx -p @pwfabric/cli pwf <command>`. `pwf --version` prints the
@@ -38,7 +39,8 @@ pack, a missing file, a refused write), `2` wrong usage.
 | [`add`](#pwf-add) | Install a pack (`.pwpack` or folder) into the project and pin it |
 | [`run`](#pwf-run) | Serve a built pwapp (folder or `.pwapp`) on a local port |
 | [`mcp`](#pwf-mcp) | Serve the pwf tools to an MCP client (Claude Code, Cursor, VS Code, Gemini CLI, …) |
-| [`login`](#pwf-login) | Sign in to PhiWebs |
+| [`publish`](#pwf-publish) | Publish an app on PhiWebs, or a pack to its marketplace |
+| [`login`](#pwf-login) | Sign in to PhiWebs (the API and the studio) |
 | [`logout`](#pwf-logout) | Sign out of PhiWebs and delete the saved session |
 | [`whoami`](#pwf-whoami) | Show the PhiWebs account and workspace pwf is signed in as |
 
@@ -328,8 +330,13 @@ with the files they match. Runs until Ctrl+C.
 ## `pwf mcp`
 
 ```text
-pwf mcp
+pwf mcp [--local-only] [--server <url>]
 ```
+
+| Option | Meaning |
+|---|---|
+| `--local-only` | Serve the local tools only: no PhiWebs studio tools and no `phiwebs_sign_in`. For a client that connects to the studio's MCP endpoint itself, so its tools are not listed twice. |
+| `--server <url>` | The PhiWebs API the session was made with (as for `pwf login`). |
 
 Runs a local [Model Context Protocol](https://modelcontextprotocol.io) server
 on stdin/stdout, so an AI coding tool can create and check PWFabric apps with
@@ -348,6 +355,7 @@ no account and no network.
 | `pwf_validate` | `pwf validate`: every finding with its code and path |
 | `pwf_build` | `pwf build`: the static pwapp |
 | `pwf_pack` | `pwf pack`: the deterministic `.pwpack` |
+| `pwf_publish_pack` | `pwf publish` for a pack folder: the marketplace, as your publisher (needs `pwf login`; says so when signed out) |
 
 Every tool takes `projectDir`, an absolute path, and writes only inside it. A
 failure comes back as a tool error with its code and how to fix it. No tool
@@ -396,27 +404,117 @@ claude mcp add pwfabric -- npx -y @pwfabric/cli mcp
 On Windows, a client that does not run commands through a shell needs
 `"command": "cmd", "args": ["/c", "npx", "-y", "@pwfabric/cli", "mcp"]`.
 
+### PhiWebs tools in `pwf mcp`
+
+Next to the `pwf_*` tools, `pwf mcp` serves PhiWebs':
+
+- **Not signed in**: one tool, `phiwebs_sign_in`. It tells the assistant that
+  the user runs `pwf login` in a terminal, and what PhiWebs adds: building and
+  changing an app with the studio's AI, a private preview, publishing it at a
+  public address that PhiWebs hosts, and its connections and workspace.
+- **Signed in**: the PhiWebs studio's own tools (`list_projects`,
+  `start_turn`, `follow_turn`, `get_preview`, `publish`, …), each description
+  starting with "PhiWebs:". `pwf` reads their list from the studio's MCP
+  endpoint (`<studio>/mcp`) with the session's studio token, keeps it for a
+  minute, and forwards each call there as you. A remote tool may not take a
+  local tool's name, and its schema and hints are checked before it is
+  listed.
+
+What the studio answers is data: it reaches the assistant as tool results
+only, and never changes the server's instructions, which name both cases.
+Answers of the local tools point to PhiWebs where it fits: after `pwf_build`
+and after `pwf_pack` on an app, "the user runs `pwf publish`". With
+`--local-only`, neither the studio tools nor `phiwebs_sign_in` are served;
+`pwf_publish_pack` is local work and stays.
+
 The server is also a library entry, `@pwfabric/cli/mcp`
 (`createPwfMcpServer`, `serveStdio`, `TOOLS`), loaded only when used, so the
-other commands never load the MCP SDK.
+other commands never load the MCP SDK. It lists PhiWebs tools only when
+given `phiwebs` options (`pwf mcp` passes the process's environment).
+
+## `pwf publish`
+
+```text
+pwf publish [dir] [--project <id>] [--new] [--server <url>]
+```
+
+| Option | Meaning |
+|---|---|
+| `dir` | The app or pack folder (default: the current folder). |
+| `--project <id>` | An app: the studio project to publish into. |
+| `--new` | An app: make a new project, even when the folder has one. |
+| `--server <url>` | The PhiWebs API the session was made with. |
+
+Needs `pwf login`. **An app** goes through the PhiWebs studio:
+
+1. `pwf pack` writes the folder's `.pwpack` (to `.pwf/publish/`), refusing on
+   errors as `pwf pack` does.
+2. The archive goes to the studio: `POST <studio>/s/projects/import` makes a
+   new project from it, `POST <studio>/s/p/<id>/import` replaces an existing
+   project's app (its history keeps each import). The studio validates it and
+   answers with its findings.
+3. The studio publishes the project (`POST <studio>/s/p/<id>/publish`, waking
+   it first when it sleeps) and `pwf` prints the address:
+
+```text
+Packed @pwpack/local/shop@0.1.0 (48211 bytes, 31 files)
+Imported as the new project p_7c1e…
+Published p_7c1e…@3f9a2c1
+  url      https://…/  (the address PhiWebs gives the app)
+  project  p_7c1e… (remembered in .pwf/phiwebs.json; --new makes another)
+```
+
+The first publish remembers the project in `.pwf/phiwebs.json` (its id only;
+`.pwf/` is in the starter's `.gitignore`), so later publishes go to the same
+project. Keep building it with the studio's AI, or edit locally and publish
+again.
+
+**A pack** goes to the PhiWebs marketplace as your workspace's publisher:
+`pwf` checks the publisher registration (`/api/marketplace/publishers/me`),
+packs the folder, and sends the `.pwpack` with its derived manifest to
+`/api/marketplace/artifacts/publish`. The pack keeps its own id — nothing
+rewrites it — and lands in review; `pwf` prints the listing and its state. A
+workspace without an approved publisher is told how to register.
+
+Findings and refusals are printed with their codes and what to do, for
+example:
+
+```text
+PACK_NOT_AVAILABLE: packs not installable: @pwpack/acme/cards
+fix: Install @pwpack/acme/cards in your PhiWebs workspace (its marketplace), or pin only open packs, then publish again.
+```
+
+Exit codes: `0` published, `1` not signed in, refused, or the studio found
+errors (nothing is published then), `2` wrong usage (`--new` with
+`--project`, either of them on a pack).
 
 ## `pwf login`
 
 ```text
-pwf login [--server <url>] [--no-browser]
+pwf login [--server <url>] [--studio <url>] [--no-browser]
 ```
 
 | Option | Meaning |
 |---|---|
 | `--server <url>` | The PhiWebs API. Default `https://api.phiwebs.com`, or `PWF_PHIWEBS_URL` when set (local and staging work). |
+| `--studio <url>` | The PhiWebs studio. Default: `PWF_PHIWEBS_STUDIO_URL` when set, else the studio the API names in its metadata (`studio_resource`), else `https://mcp.phiwebs.com`. |
 | `--no-browser` | Print the sign-in address without opening a browser. |
 
 Signs in with OAuth 2.1 (authorization code and PKCE). `pwf` reads the
 server's metadata (`/.well-known/oauth-authorization-server`), registers
 itself as a client (dynamic client registration) and remembers that client
 per server, opens the sign-in page in your browser (the address is printed
-too), and receives the answer on `http://127.0.0.1:<port>/callback`. It asks
-for `openid`, `email` and `world:read`: who you are and which workspace.
+too), and receives the answer on `http://127.0.0.1:<port>/callback`.
+
+One sign-in is for two resources (RFC 8707 `resource`): the API and the
+studio. The code is redeemed for an API token; the same grant is then
+refreshed for a studio token; one refresh token serves both, and each token
+is refreshed for its own resource when it expires. It asks for `openid`,
+`email` and `world:read` (who you are and which workspace),
+`marketplace:publish` (publishing a pack), and `studio:read`,
+`studio:build` and `studio:publish` (`pwf publish` and the PhiWebs tools of
+`pwf mcp`). A session made by an earlier `pwf` has no studio token: run
+`pwf login` again and it is added.
 
 The tokens are saved in your config folder — `%APPDATA%\pwfabric` on
 Windows, `$XDG_CONFIG_HOME/pwfabric` or `~/.config/pwfabric` elsewhere — in a
@@ -440,10 +538,11 @@ in your PhiWebs account.
 pwf whoami [--server <url>]
 ```
 
-Asks the server which account and workspace the saved session belongs to.
-Prints "Not signed in" and exits `1` when there is no session.
+Asks the server which account and workspace the saved session belongs to,
+and names the studio the session is signed in to. Prints "Not signed in" and
+exits `1` when there is no session.
 
 Source: `packages/cli/src/commands/*.ts` (each command's
 `usage`), `packages/cli/src/args.ts` (option parsing),
 `packages/cli/src/mcp/` (the MCP server), `packages/cli/src/phiwebs/`
-(signing in).
+(signing in, the studio and the marketplace).

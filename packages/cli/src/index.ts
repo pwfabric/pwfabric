@@ -4,8 +4,9 @@
  * Creates, develops, validates, packs and runs PWFabric applications with
  * nothing but the engine's own packages, with no account and no network.
  * `pwf mcp` serves the same work over MCP. `pwf login`, `logout` and `whoami`
- * sign in to PhiWebs, the platform PWFabric was built for; they are the only
- * commands that talk to a hosted service, and only to the server they are given.
+ * sign in to PhiWebs, the platform PWFabric was built for, and `pwf publish`
+ * publishes there; they (and the PhiWebs tools of `pwf mcp`, when signed in)
+ * are the only parts that talk to a hosted service.
  */
 
 import { parseArgs } from './args.js'
