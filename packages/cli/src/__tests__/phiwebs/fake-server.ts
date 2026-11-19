@@ -3,7 +3,10 @@
  * RFC 7591 registration that requires an exact loopback redirect, an
  * authorization endpoint that approves at once and redirects with the code,
  * a token endpoint that checks PKCE (S256) and rotates refresh tokens, and the
- * two reads `pwf whoami` makes. Listens on 127.0.0.1 only.
+ * two reads `pwf whoami` makes. Resources (RFC 8707) as the PhiWebs API binds
+ * them: the grant remembers the resources named at authorize, each token is
+ * for one (`aud`), and the API's own routes take API tokens only. Also the
+ * marketplace routes pack publishing calls. Listens on 127.0.0.1 only.
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { createServer, type IncomingMessage } from 'node:http'
@@ -18,7 +21,12 @@ export interface FakeServerOptions {
   readonly deny?: string
   /** Seconds an access token lives. */
   readonly expiresIn?: number
+  /** Name the studio in the metadata (`studio_resource`). */
+  readonly advertiseStudio?: string
 }
+
+/** The studio resource the fake knows when none is set: PhiWebs' default. */
+export const FAKE_DEFAULT_STUDIO = 'https://mcp.phiwebs.com'
 
 export interface FakeServer {
   readonly url: string
@@ -29,6 +37,16 @@ export interface FakeServer {
   readonly pkceChecks: boolean[]
   /** Make every refresh fail. */
   refuseRefresh: boolean
+  /** The studio resource this API issues tokens for (default {@link FAKE_DEFAULT_STUDIO}). */
+  studio: string | undefined
+  /** The resource a live access token is for, or undefined. */
+  audOf(token: string): string | undefined
+  /** The resources named at each authorize. */
+  readonly authorizedResources: string[][]
+  /** Answers for /api/marketplace/* (path → status and body); absent paths 404. */
+  marketplace: Record<string, { status: number; body: unknown }>
+  /** What the marketplace publish route received. */
+  readonly marketplaceUploads: { fields: Record<string, string>; file?: { name: string; bytes: number; type: string } }[]
   close(): Promise<void>
 }
 
@@ -38,13 +56,19 @@ async function bodyOf(req: IncomingMessage): Promise<string> {
   return text
 }
 
+async function rawBody(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  for await (const chunk of req) chunks.push(chunk as Buffer)
+  return Buffer.concat(chunks)
+}
+
 const token = (): string => randomBytes(12).toString('hex')
 
 export async function startFakeServer(options: FakeServerOptions = {}): Promise<FakeServer> {
   const clients = new Map<string, string[]>()
-  const codes = new Map<string, { clientId: string; redirectUri: string; challenge: string; scope: string }>()
-  const access = new Set<string>()
-  const refresh = new Map<string, string>()
+  const codes = new Map<string, { clientId: string; redirectUri: string; challenge: string; scope: string; resources: string[] }>()
+  const access = new Map<string, string>()
+  const refresh = new Map<string, { clientId: string; resources: string[]; scope: string }>()
   const state: FakeServer = {
     url: '',
     registrations: [],
@@ -52,19 +76,26 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     revoked: [],
     pkceChecks: [],
     refuseRefresh: false,
+    studio: undefined,
+    audOf: (t) => access.get(t),
+    authorizedResources: [],
+    marketplace: {},
+    marketplaceUploads: [],
     close: async () => {
       server.closeAllConnections()
       await new Promise<void>((r) => server.close(() => r()))
     },
   }
 
-  const issue = (clientId: string, scope: string): Record<string, unknown> => {
+  const known = (): string[] => [state.url, state.studio ?? FAKE_DEFAULT_STUDIO]
+  const issue = (clientId: string, scope: string, resources: string[], aud: string): Record<string, unknown> => {
     const a = token()
     const r = token()
-    access.add(a)
-    refresh.set(r, clientId)
+    access.set(a, aud)
+    refresh.set(r, { clientId, resources, scope })
     return { access_token: a, token_type: 'Bearer', expires_in: options.expiresIn ?? 3600, refresh_token: r, scope }
   }
+  const apiToken = (t: string): boolean => access.get(t) === state.url
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', state.url)
@@ -80,6 +111,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         token_endpoint: `${state.url}/api/oauth/token`,
         ...(options.noRegistration ? {} : { registration_endpoint: `${state.url}/api/oauth/register` }),
         ...(options.revocation ? { revocation_endpoint: `${state.url}/api/oauth/revoke` } : {}),
+        ...(options.advertiseStudio ? { studio_resource: options.advertiseStudio } : {}),
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
@@ -106,7 +138,12 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         return json(400, { error: { code: 'INVALID_REQUEST', message: 'PKCE S256 required' } })
       }
       const back = new URL(redirect)
-      if (options.deny) {
+      const resources = q.getAll('resource')
+      state.authorizedResources.push(resources)
+      if (resources.some((r) => !known().includes(r))) {
+        back.searchParams.set('error', 'invalid_target')
+        back.searchParams.set('error_description', 'unknown resource')
+      } else if (options.deny) {
         back.searchParams.set('error', options.deny)
         back.searchParams.set('error_description', 'User denied authorization')
       } else {
@@ -116,6 +153,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
           redirectUri: redirect,
           challenge: q.get('code_challenge') as string,
           scope: q.get('scope') ?? '',
+          resources: resources.length ? resources : [state.url],
         })
         back.searchParams.set('code', code)
       }
@@ -135,15 +173,19 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         const held = createHash('sha256').update(form['code_verifier'] ?? '').digest('base64url') === grant.challenge
         state.pkceChecks.push(held)
         if (!held) return json(400, { error: { code: 'INVALID_GRANT', message: 'PKCE verification failed' } })
-        return json(200, issue(grant.clientId, grant.scope))
+        const aud = form['resource'] ?? (grant.resources[0] as string)
+        if (!grant.resources.includes(aud)) return json(400, { error: 'invalid_target', error_description: 'resource not granted' })
+        return json(200, issue(grant.clientId, grant.scope, grant.resources, aud))
       }
       if (form['grant_type'] === 'refresh_token') {
-        const owner = refresh.get(form['refresh_token'] ?? '')
-        if (state.refuseRefresh || !owner || owner !== form['client_id']) {
+        const family = refresh.get(form['refresh_token'] ?? '')
+        if (state.refuseRefresh || !family || family.clientId !== form['client_id']) {
           return json(400, { error: { code: 'INVALID_GRANT', message: 'Refresh token already used' } })
         }
+        const aud = form['resource'] ?? (family.resources[0] as string)
+        if (!family.resources.includes(aud)) return json(400, { error: 'invalid_target', error_description: 'resource not granted' })
         refresh.delete(form['refresh_token'] as string)
-        return json(200, issue(owner, 'openid email world:read'))
+        return json(200, issue(family.clientId, family.scope, family.resources, aud))
       }
       return json(400, { error: 'unsupported_grant_type' })
     }
@@ -154,12 +196,31 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       res.writeHead(200).end()
       return
     }
+    if (url.pathname.startsWith('/api/marketplace/')) {
+      if (!apiToken(bearer)) return json(401, { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } })
+      if (url.pathname === '/api/marketplace/artifacts/publish' && req.method === 'POST') {
+        const form = await new Request('http://fake.invalid/', {
+          method: 'POST',
+          headers: { 'content-type': req.headers['content-type'] ?? '' },
+          body: await rawBody(req),
+        }).formData()
+        const fields: Record<string, string> = {}
+        let file: { name: string; bytes: number; type: string } | undefined
+        for (const [k, v] of form.entries()) {
+          if (typeof v === 'string') fields[k] = v
+          else file = { name: v.name, bytes: v.size, type: v.type }
+        }
+        state.marketplaceUploads.push({ fields, ...(file ? { file } : {}) })
+      }
+      const answer = state.marketplace[url.pathname]
+      return answer ? json(answer.status, answer.body) : json(404, { error: { code: 'NOT_FOUND', message: url.pathname } })
+    }
     if (url.pathname === '/api/oauth/userinfo') {
-      if (!access.has(bearer)) return json(401, { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } })
+      if (!apiToken(bearer)) return json(401, { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } })
       return json(200, { sub: 'user-1', email: 'ada@example.com', email_verified: true })
     }
     if (url.pathname === '/api/worlds/me') {
-      if (!access.has(bearer)) return json(401, { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } })
+      if (!apiToken(bearer)) return json(401, { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } })
       return json(200, { data: { id: 'w-1', name: 'Ada Studio', role: 'owner' } })
     }
     json(404, { error: { code: 'NOT_FOUND', message: url.pathname } })

@@ -69,8 +69,9 @@ describe('pwf login', () => {
     expect(auth.searchParams.get('scope')).toBe(LOGIN_SCOPES.join(' '))
     expect(auth.searchParams.get('code_challenge_method')).toBe('S256')
     expect(c.out).toContain(`  ${opened}`)
-    expect(c.out.at(-2)).toBe(`Signed in to ${server.url} as ada@example.com.`)
-    expect(c.out.at(-1)).toBe('  workspace  Ada Studio (owner)')
+    expect(c.out.at(-3)).toBe(`Signed in to ${server.url} as ada@example.com.`)
+    expect(c.out.at(-2)).toBe('  workspace  Ada Studio (owner)')
+    expect(c.out.at(-1)).toBe('  studio     https://mcp.phiwebs.com')
 
     const saved = JSON.parse(await readFile(join(dir, CREDENTIALS_FILE), 'utf8'))
     expect(saved.servers[server.url]).toMatchObject({ clientId: 'client_1', tokenEndpoint: `${server.url}/api/oauth/token` })
@@ -79,7 +80,7 @@ describe('pwf login', () => {
 
     const w = capture(dir, env)
     expect(await runWhoami(args(), w.io)).toBe(0)
-    expect(w.out).toEqual([`Signed in to ${server.url}`, '  account    ada@example.com', '  workspace  Ada Studio (owner)'])
+    expect(w.out).toEqual([`Signed in to ${server.url}`, '  account    ada@example.com', '  workspace  Ada Studio (owner)', '  studio     https://mcp.phiwebs.com'])
 
     // A second login reuses the registered client: its port is free again.
     const again = capture(dir, env)
@@ -110,7 +111,10 @@ describe('pwf login', () => {
     const later = () => Date.now() + 10 * 60_000
     const w = capture(dir, env)
     expect(await runWhoami(args(), w.io, { now: later })).toBe(0)
-    expect(server.tokenRequests.at(-1)).toMatchObject({ grant_type: 'refresh_token', client_id: 'client_1', refresh_token: before.refreshToken })
+    // whoami refreshes the API's token (no resource: the grant's first), then the studio's.
+    expect(server.tokenRequests.at(-2)).toMatchObject({ grant_type: 'refresh_token', client_id: 'client_1', refresh_token: before.refreshToken })
+    expect(server.tokenRequests.at(-2)?.['resource']).toBeUndefined()
+    expect(server.tokenRequests.at(-1)).toMatchObject({ grant_type: 'refresh_token', resource: 'https://mcp.phiwebs.com' })
     const after = JSON.parse(await readFile(join(dir, CREDENTIALS_FILE), 'utf8')).servers[server.url]
     expect(after.refreshToken).not.toBe(before.refreshToken)
     expect(after.accessToken).not.toBe(before.accessToken)

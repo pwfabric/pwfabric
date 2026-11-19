@@ -1,21 +1,25 @@
 /**
  * `pwf login`, `pwf logout`, `pwf whoami` — signing the CLI in to PhiWebs,
- * the platform PWFabric was built for. Nothing else in `pwf` needs an
- * account: these commands are the only ones that talk to a hosted service,
- * and only to the server they are given.
+ * the platform PWFabric was built for. One sign-in covers two resources: the
+ * PhiWebs API (who you are, which workspace) and the PhiWebs studio (`pwf
+ * publish`, the PhiWebs tools of `pwf mcp`). Nothing else in `pwf` needs an
+ * account: the account-free commands never read the session.
  */
 import { spawn } from 'node:child_process'
 import type { Command, CommandIO, ParsedArgs } from './types.js'
 import { boolFlag, guard, stringFlag, UsageError } from './lib/flags.js'
 import { CommandFailure } from './lib/failure.js'
 import {
+  DEFAULT_STUDIO_URL,
   deleteTokens,
+  namedStudioUrl,
   PHIWEBS_URL_ENV,
   readClient,
   readTokens,
   saveClient,
   saveTokens,
   serverUrl,
+  STUDIO_URL_ENV,
   type StoreOptions,
 } from '../phiwebs/config.js'
 import {
@@ -25,13 +29,14 @@ import {
   LOGIN_SCOPES,
   newState,
   pkcePair,
+  refreshTokens,
   registerClient,
   revokeToken,
   serverError,
   startLoopback,
   type Fetch,
 } from '../phiwebs/oauth.js'
-import { readSession, tokensFrom } from '../phiwebs/session.js'
+import { readSession, readStudioSession, STUDIO_UPGRADE_HINT, studioTokenFrom, tokensFrom } from '../phiwebs/session.js'
 
 /** What the account commands reach outside the process; tests replace each. */
 export interface AccountDeps {
@@ -86,7 +91,13 @@ export async function runLogin(args: ParsedArgs, io: CommandIO, deps: AccountDep
   const now = deps.now ?? Date.now
   const store = storeOf(io, deps)
   const server = serverUrl(stringFlag(args, 'server'), io.env)
+  const named = namedStudioUrl(stringFlag(args, 'studio'), io.env)
   const meta = await discover(server, fetchImpl)
+  // The API's own tokens are for its issuer; the studio is the one named, else
+  // the one the API names, else PhiWebs' own.
+  const apiResource = (meta.issuer ?? server).replace(/\/+$/, '')
+  const studio = named ?? meta.studio_resource ?? DEFAULT_STUDIO_URL
+  let studioRefused: string | undefined
 
   // The server compares the redirect address exactly, port included, so a
   // saved client is reused only when its port is free again; otherwise a new
@@ -105,8 +116,15 @@ export async function runLogin(args: ParsedArgs, io: CommandIO, deps: AccountDep
 
     const { verifier, challenge } = pkcePair()
     const state = newState()
-    const url = authorizationUrl(meta, { clientId, redirectUri: loopback.redirectUri, state, challenge, scopes: LOGIN_SCOPES })
-    io.out(`Signing in to ${server}.`)
+    const url = authorizationUrl(meta, {
+      clientId,
+      redirectUri: loopback.redirectUri,
+      state,
+      challenge,
+      scopes: LOGIN_SCOPES,
+      resources: [apiResource, studio],
+    })
+    io.out(`Signing in to ${server} and its studio ${studio}.`)
     io.out('Open this address in your browser if it does not open by itself:')
     io.out(`  ${url}`)
     const waiting = loopback.waitForCode(state, deps.timeoutMs ?? LOGIN_TIMEOUT_MS)
@@ -115,16 +133,29 @@ export async function runLogin(args: ParsedArgs, io: CommandIO, deps: AccountDep
     if (!boolFlag(args, 'no-browser')) await (deps.openBrowser ?? ((u: string) => openInBrowser(u)))(url)
     const code = await waiting
 
-    const tokens = await exchangeCode(meta.token_endpoint, { code, verifier, clientId, redirectUri: loopback.redirectUri }, fetchImpl)
-    await saveTokens(
-      server,
-      tokensFrom(
-        tokens,
-        { clientId, tokenEndpoint: meta.token_endpoint, ...(meta.revocation_endpoint ? { revocationEndpoint: meta.revocation_endpoint } : {}) },
-        now()
-      ),
-      store
+    const tokens = await exchangeCode(
+      meta.token_endpoint,
+      { code, verifier, clientId, redirectUri: loopback.redirectUri, resource: apiResource },
+      fetchImpl
     )
+    let session = tokensFrom(
+      tokens,
+      { clientId, tokenEndpoint: meta.token_endpoint, ...(meta.revocation_endpoint ? { revocationEndpoint: meta.revocation_endpoint } : {}) },
+      now()
+    )
+    // The same grant, refreshed for the studio: its own access token, the refresh token shared.
+    if (session.refreshToken) {
+      try {
+        const forStudio = await refreshTokens(meta.token_endpoint, { refreshToken: session.refreshToken, clientId, resource: studio }, fetchImpl)
+        session = { ...session, refreshToken: forStudio.refresh_token ?? session.refreshToken, studio: studioTokenFrom(forStudio, studio, now()) }
+      } catch (e) {
+        if (!(e instanceof CommandFailure)) throw e
+        studioRefused = e.message
+      }
+    } else {
+      studioRefused = 'the server gave no refresh token'
+    }
+    await saveTokens(server, session, store)
   } finally {
     await loopback.close()
   }
@@ -132,6 +163,13 @@ export async function runLogin(args: ParsedArgs, io: CommandIO, deps: AccountDep
   const who = await whoIs(server, io, deps).catch(() => null)
   io.out(who ? `Signed in to ${server} as ${who.account}.` : `Signed in to ${server}.`)
   if (who?.workspace) io.out(`  workspace  ${who.workspace}`)
+  if (studioRefused === undefined) {
+    io.out(`  studio     ${studio}`)
+  } else {
+    io.err(
+      `The studio ${studio} gave no token (${studioRefused}): \`pwf publish\` and the PhiWebs tools of \`pwf mcp\` will not work. Check --studio, then run \`pwf login\` again.`
+    )
+  }
   return 0
 }
 
@@ -181,6 +219,12 @@ export async function runWhoami(args: ParsedArgs, io: CommandIO, deps: AccountDe
   io.out(`Signed in to ${server}`)
   io.out(`  account    ${who.account}`)
   io.out(`  workspace  ${who.workspace ?? 'none'}`)
+  const studio = await readStudioSession({ ...storeOf(io, deps), server, fetch: deps.fetch ?? fetch, ...(deps.now ? { now: deps.now } : {}) }).then(
+    (s) => s?.studio ?? 'none',
+    (e: unknown) =>
+      e instanceof CommandFailure && e.code === 'STUDIO_NOT_SIGNED_IN' ? `not signed in; ${STUDIO_UPGRADE_HINT}` : `unavailable (${(e as Error).message})`
+  )
+  io.out(`  studio     ${studio}`)
   return 0
 }
 
@@ -212,22 +256,27 @@ export async function runLogout(args: ParsedArgs, io: CommandIO, deps: AccountDe
   return 0
 }
 
-const SERVER_HELP = `  --server <url>   the PhiWebs API (default https://api.phiwebs.com, or $${PHIWEBS_URL_ENV})`
+export const SERVER_HELP = `  --server <url>   the PhiWebs API (default https://api.phiwebs.com, or $${PHIWEBS_URL_ENV})`
+const STUDIO_HELP = `  --studio <url>   the PhiWebs studio (default: the one the API names, else ${DEFAULT_STUDIO_URL}; or $${STUDIO_URL_ENV})`
 
 export const loginCommand: Command = {
   name: 'login',
   summary: 'Sign in to PhiWebs (opens the browser); only PhiWebs commands need it',
-  usage: `pwf login [--server <url>] [--no-browser]
+  usage: `pwf login [--server <url>] [--studio <url>] [--no-browser]
 
 ${SERVER_HELP}
+${STUDIO_HELP}
   --no-browser     print the sign-in address without opening a browser
 
 Signs in with OAuth (authorization code and PKCE): pwf registers itself with
 the server, opens the server's sign-in page, and receives the answer on
-http://127.0.0.1:<port>/callback. The tokens are saved in your config folder
-(%APPDATA%\\pwfabric on Windows, $XDG_CONFIG_HOME/pwfabric or
-~/.config/pwfabric elsewhere), readable by you only, and refreshed when they
-expire. Asks for: ${LOGIN_SCOPES.join(', ')}.`,
+http://127.0.0.1:<port>/callback. One sign-in is for two resources, each with
+its own token refreshed when it expires: the API (who you are, which
+workspace) and the studio (pwf publish, the PhiWebs tools of pwf mcp). A
+session made by an earlier pwf has no studio token: run pwf login again to
+add it. The tokens are saved in your config folder (%APPDATA%\\pwfabric on
+Windows, $XDG_CONFIG_HOME/pwfabric or ~/.config/pwfabric elsewhere),
+readable by you only. Asks for: ${LOGIN_SCOPES.join(', ')}.`,
   run: (args, io) => guard('login', io, () => runLogin(args, io)),
 }
 
@@ -249,6 +298,7 @@ export const whoamiCommand: Command = {
 
 ${SERVER_HELP}
 
-Asks the server who the saved session belongs to. Exit 1 when not signed in.`,
+Asks the server who the saved session belongs to, and names the studio it is
+signed in to. Exit 1 when not signed in.`,
   run: (args, io) => guard('whoami', io, () => runWhoami(args, io)),
 }

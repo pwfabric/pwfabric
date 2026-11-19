@@ -14,10 +14,13 @@ export type Fetch = typeof fetch
 
 /**
  * The scopes `pwf login` asks for: who you are (`openid`, `email`) and which
- * workspace (`world:read`) — what `pwf whoami` shows. Every later PhiWebs
- * command adds its scope here, in this one place.
+ * workspace (`world:read`) — what `pwf whoami` shows; publishing a pack folder
+ * to the marketplace (`marketplace:publish`); and the studio's:
+ * see projects (`studio:read`), import and build them (`studio:build`), and
+ * publish them (`studio:publish`), for `pwf publish` and the PhiWebs tools of
+ * `pwf mcp`. Every PhiWebs command adds its scope here, in this one place.
  */
-export const LOGIN_SCOPES: readonly string[] = ['openid', 'email', 'world:read']
+export const LOGIN_SCOPES: readonly string[] = ['openid', 'email', 'world:read', 'marketplace:publish', 'studio:read', 'studio:build', 'studio:publish']
 
 /** The name the server shows on its consent screen. */
 export const CLIENT_NAME = 'PWFabric CLI'
@@ -26,6 +29,10 @@ const HTTP_TIMEOUT_MS = 30_000
 
 /** The members of RFC 8414 metadata `pwf login` uses. */
 export interface ServerMetadata {
+  /** The API's issuer; also the resource its own tokens are for. */
+  readonly issuer?: string
+  /** The studio this API issues tokens for, when the API names it. */
+  readonly studio_resource?: string
   readonly authorization_endpoint: string
   readonly token_endpoint: string
   readonly registration_endpoint: string
@@ -94,6 +101,10 @@ export async function discover(server: string, fetchImpl: Fetch): Promise<Server
     throw new CommandFailure('SERVER_UNSUPPORTED', `${server} does not support PKCE with S256`)
   }
   return {
+    ...(typeof body['issuer'] === 'string' ? { issuer: body['issuer'] } : {}),
+    ...(typeof body['studio_resource'] === 'string'
+      ? { studio_resource: safeEndpoint(body['studio_resource'], 'studio_resource', server).replace(/\/+$/, '') }
+      : {}),
     authorization_endpoint: safeEndpoint(body['authorization_endpoint'], 'authorization_endpoint', server),
     token_endpoint: safeEndpoint(body['token_endpoint'], 'token_endpoint', server),
     registration_endpoint: safeEndpoint(body['registration_endpoint'], 'registration_endpoint (dynamic client registration)', server),
@@ -142,7 +153,15 @@ export function newState(): string {
 /** The address the browser opens. */
 export function authorizationUrl(
   meta: ServerMetadata,
-  params: { clientId: string; redirectUri: string; state: string; challenge: string; scopes: readonly string[] }
+  params: {
+    clientId: string
+    redirectUri: string
+    state: string
+    challenge: string
+    scopes: readonly string[]
+    /** The resources (RFC 8707) the grant is for, the first being the one a plain token request gets. */
+    resources?: readonly string[]
+  }
 ): string {
   const url = new URL(meta.authorization_endpoint)
   url.searchParams.set('response_type', 'code')
@@ -152,6 +171,7 @@ export function authorizationUrl(
   url.searchParams.set('state', params.state)
   url.searchParams.set('code_challenge', params.challenge)
   url.searchParams.set('code_challenge_method', 'S256')
+  for (const resource of params.resources ?? []) url.searchParams.append('resource', resource)
   return url.toString()
 }
 
@@ -176,7 +196,7 @@ async function tokenRequest(endpoint: string, form: Record<string, string>, fetc
 /** Redeems an authorization code. */
 export function exchangeCode(
   endpoint: string,
-  params: { code: string; verifier: string; clientId: string; redirectUri: string },
+  params: { code: string; verifier: string; clientId: string; redirectUri: string; resource?: string },
   fetchImpl: Fetch
 ): Promise<TokenResponse> {
   return tokenRequest(
@@ -187,17 +207,31 @@ export function exchangeCode(
       code_verifier: params.verifier,
       client_id: params.clientId,
       redirect_uri: params.redirectUri,
+      ...(params.resource ? { resource: params.resource } : {}),
     },
     fetchImpl,
     'TOKEN_REFUSED'
   )
 }
 
-/** Trades a refresh token for new tokens (the server may rotate the refresh token). */
-export function refreshTokens(endpoint: string, params: { refreshToken: string; clientId: string }, fetchImpl: Fetch): Promise<TokenResponse> {
+/**
+ * Trades a refresh token for new tokens (the server may rotate the refresh
+ * token). `resource` names the resource the new access token is for (one the
+ * grant was made for); without it the server picks the grant's first.
+ */
+export function refreshTokens(
+  endpoint: string,
+  params: { refreshToken: string; clientId: string; resource?: string },
+  fetchImpl: Fetch
+): Promise<TokenResponse> {
   return tokenRequest(
     endpoint,
-    { grant_type: 'refresh_token', refresh_token: params.refreshToken, client_id: params.clientId },
+    {
+      grant_type: 'refresh_token',
+      refresh_token: params.refreshToken,
+      client_id: params.clientId,
+      ...(params.resource ? { resource: params.resource } : {}),
+    },
     fetchImpl,
     'REFRESH_REFUSED'
   )

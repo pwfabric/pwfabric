@@ -16,6 +16,14 @@ export const DEFAULT_PHIWEBS_URL = 'https://api.phiwebs.com'
 /** Environment variable naming another server (local or staging work); `--server` wins over it. */
 export const PHIWEBS_URL_ENV = 'PWF_PHIWEBS_URL'
 
+/**
+ * The PhiWebs studio (the resource `pwf publish` and the PhiWebs tools of
+ * `pwf mcp` call) unless told otherwise or the API names its own.
+ */
+export const DEFAULT_STUDIO_URL = 'https://mcp.phiwebs.com'
+/** Environment variable naming another studio; `--studio` wins over it. */
+export const STUDIO_URL_ENV = 'PWF_PHIWEBS_STUDIO_URL'
+
 /** Tokens saved per server. */
 export const CREDENTIALS_FILE = 'credentials.json'
 /** OAuth clients registered per server (no secrets: public clients with PKCE). */
@@ -43,7 +51,21 @@ export function isLoopback(url: URL): boolean {
  * accepted, except http on this machine.
  */
 export function serverUrl(flag: string | undefined, env: Env): string {
-  const raw = flag ?? env[PHIWEBS_URL_ENV] ?? DEFAULT_PHIWEBS_URL
+  return normalisedUrl(flag ?? env[PHIWEBS_URL_ENV] ?? DEFAULT_PHIWEBS_URL)
+}
+
+/**
+ * The studio the user named: `flag`, else `PWF_PHIWEBS_STUDIO_URL`, else
+ * undefined (login then takes the one the API names, else the default).
+ * Normalised and checked like {@link serverUrl}.
+ */
+export function namedStudioUrl(flag: string | undefined, env: Env): string | undefined {
+  const raw = flag ?? env[STUDIO_URL_ENV]
+  return raw === undefined || raw === '' ? undefined : normalisedUrl(raw)
+}
+
+/** `raw` as origin plus path without a trailing slash; https only, except http on this machine. */
+export function normalisedUrl(raw: string): string {
   let url: URL
   try {
     url = new URL(raw)
@@ -76,7 +98,20 @@ export interface SavedClient {
   readonly registrationEndpoint: string
 }
 
-/** A signed-in session with one server. */
+/** The access token for the studio, obtained with the same grant (one refresh token for both). */
+export interface SavedStudioToken {
+  /** The studio's address, which is also the resource its tokens are for. */
+  readonly resource: string
+  readonly accessToken: string
+  /** Epoch milliseconds; absent when the server said nothing about expiry. */
+  readonly expiresAt?: number
+}
+
+/**
+ * A signed-in session with one server. The top-level access token is the
+ * API's; `studio` holds the studio's. A session saved before pwf signed in to
+ * the studio has no `studio`: `pwf login` again adds it.
+ */
 export interface SavedTokens {
   readonly accessToken: string
   readonly refreshToken?: string
@@ -86,6 +121,7 @@ export interface SavedTokens {
   readonly clientId: string
   readonly tokenEndpoint: string
   readonly revocationEndpoint?: string
+  readonly studio?: SavedStudioToken
 }
 
 type Store<T> = { [server: string]: T }
