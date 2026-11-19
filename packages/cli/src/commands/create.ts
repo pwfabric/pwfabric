@@ -9,7 +9,7 @@ import type { Command, CommandIO, ParsedArgs } from './types.js'
 import { boolFlag, guard, stringFlag, UsageError } from './lib/flags.js'
 import { cacheDir, cacheRelDir, readPackSource, resolveFrom, writePackFolder, ATOMS_README } from './lib/project.js'
 import { caretRange, engineRange, engineVersion, formatIdentity, formatJson } from './lib/identity.js'
-import { printIssues } from './lib/report.js'
+import { CommandFailure } from './lib/failure.js'
 import { createPack } from './lib/scaffold.js'
 import {
   ATOMS_README_TEXT,
@@ -85,39 +85,63 @@ export async function runCreatePack(args: ParsedArgs, io: CommandIO, options: Cr
   return 0
 }
 
-export async function runCreate(args: ParsedArgs, io: CommandIO, options: CreateOptions = {}): Promise<number> {
-  if (args.flags['pack'] !== undefined) return runCreatePack(args, io, options)
-  const name = args.positionals[0]
-  if (name === undefined) throw new UsageError('missing <name>')
+export interface CreateAppOptions {
+  /** Lower-case letters, digits and hyphens; the app id is `@pwpack/local/<name>`. */
+  readonly name: string
+  /** The folder to write (absolute). */
+  readonly dir: string
+  /** The foundation pack, a folder or `.pwpack` (absolute); undefined fails with FOUNDATION_MISSING. */
+  readonly foundation: string | undefined
+  /** Write into a folder that is not empty. */
+  readonly force?: boolean
+  /** Engine version to declare a range for; defaults to the installed contracts version. */
+  readonly engineVersion?: string
+}
+
+export interface CreatedApp {
+  readonly id: string
+  readonly version: string
+  readonly dir: string
+  readonly foundation: { readonly id: string; readonly version: string; readonly hash: string; readonly cachedIn: string }
+  /** The block types the starter home page places, in order. */
+  readonly homeBlocks: readonly string[]
+  readonly theme?: string
+  /** The files written, folder-relative (the foundation's cache not included). */
+  readonly files: readonly string[]
+}
+
+/**
+ * Writes a new app folder standing on a foundation pack. Throws a
+ * {@link UsageError} for a bad name and a {@link CommandFailure} for a
+ * missing or invalid foundation or a folder that is not empty.
+ */
+export async function createApp(options: CreateAppOptions): Promise<CreatedApp> {
+  const { name, dir: target } = options
   if (!NAME.test(name)) throw new UsageError(`"${name}" is not a valid name: use lower-case letters, digits and hyphens`)
-  const target = resolveFrom(io.cwd, stringFlag(args, 'dir') ?? name)
-  const force = boolFlag(args, 'force')
-
-  const foundationPath = stringFlag(args, 'foundation') ?? io.env[FOUNDATION_ENV]
-  if (!foundationPath) {
-    for (const line of NO_FOUNDATION) io.err(line)
-    return 1
+  if (!options.foundation) {
+    throw new CommandFailure('FOUNDATION_MISSING', 'no foundation pack given', { lines: NO_FOUNDATION })
   }
-  if (!force && (await isNonEmptyDir(target))) {
-    io.err(`pwf create: ${target} is not empty; choose another --dir or pass --force to write into it`)
-    return 1
+  if (!options.force && (await isNonEmptyDir(target))) {
+    throw new CommandFailure('FOLDER_NOT_EMPTY', `${target} is not empty; choose another --dir or pass --force to write into it`)
   }
 
-  const foundationAbs = resolveFrom(io.cwd, foundationPath)
+  const foundationAbs = options.foundation
   const foundation = await readPackSource(foundationAbs)
   const checked = validatePack(foundation)
   if (!checked.ok || !checked.identity) {
-    io.err(`pwf create: the foundation pack at ${foundationAbs} is not valid`)
-    printIssues(io, checked.issues.filter((i) => i.severity === 'error'))
-    return 1
+    throw new CommandFailure('FOUNDATION_INVALID', `the foundation pack at ${foundationAbs} is not valid`, {
+      issues: checked.issues.filter((i) => i.severity === 'error'),
+    })
   }
   const { id: foundationId, version: foundationVersion } = checked.identity
   const catalog = catalogOf(foundation, checked)
   const title = titleOf(name)
   const blocks = starterBlocks(catalog, title)
   if (blocks.length === 0) {
-    io.err(`pwf create: ${foundationId}@${foundationVersion} has no heading, text or button block to start a page with`)
-    return 1
+    throw new CommandFailure(
+      'FOUNDATION_NO_STARTER_BLOCKS',
+      `${foundationId}@${foundationVersion} has no heading, text or button block to start a page with`
+    )
   }
   const theme = starterTheme(catalog)
   // What is cached and pinned is the pack content: a foundation read from its
@@ -153,11 +177,37 @@ export async function runCreate(args: ParsedArgs, io: CommandIO, options: Create
   }
   await writePackFolder(cacheDir(target, foundationId, foundationVersion), foundationContent)
 
+  return {
+    id: identity.id,
+    version: identity.version,
+    dir: target,
+    foundation: { id: foundationId, version: foundationVersion, hash: foundationHash, cachedIn: cacheRelDir(foundationId, foundationVersion) },
+    homeBlocks: blocks.map((b) => b.type),
+    ...(theme ? { theme } : {}),
+    files: Object.keys(files),
+  }
+}
+
+export async function runCreate(args: ParsedArgs, io: CommandIO, options: CreateOptions = {}): Promise<number> {
+  if (args.flags['pack'] !== undefined) return runCreatePack(args, io, options)
+  const name = args.positionals[0]
+  if (name === undefined) throw new UsageError('missing <name>')
+  if (!NAME.test(name)) throw new UsageError(`"${name}" is not a valid name: use lower-case letters, digits and hyphens`)
+  const target = resolveFrom(io.cwd, stringFlag(args, 'dir') ?? name)
+  const foundationPath = stringFlag(args, 'foundation') ?? io.env[FOUNDATION_ENV]
+  const created = await createApp({
+    name,
+    dir: target,
+    foundation: foundationPath ? resolveFrom(io.cwd, foundationPath) : undefined,
+    force: boolFlag(args, 'force'),
+    ...(options.engineVersion !== undefined ? { engineVersion: options.engineVersion } : {}),
+  })
+
   const shown = shownPath(io.cwd, target)
-  io.out(`Created ${identity.id} in ${target}`)
-  io.out(`  foundation ${foundationId}@${foundationVersion} (${foundationHash})`)
-  io.out(`  cached in  ${cacheRelDir(foundationId, foundationVersion)}`)
-  io.out(`  home page  ${blocks.map((b) => b.type).join(', ')}${theme ? `; theme ${theme}` : ''}`)
+  io.out(`Created ${created.id} in ${target}`)
+  io.out(`  foundation ${created.foundation.id}@${created.foundation.version} (${created.foundation.hash})`)
+  io.out(`  cached in  ${created.foundation.cachedIn}`)
+  io.out(`  home page  ${created.homeBlocks.join(', ')}${created.theme ? `; theme ${created.theme}` : ''}`)
   io.out('')
   io.out('Next:')
   io.out(`  cd ${shown}`)

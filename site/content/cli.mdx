@@ -1,13 +1,16 @@
 ---
 title: CLI
-description: Every pwf command and option — create, dev, build, validate, pack, add and run.
+description: Every pwf command and option — create, dev, build, validate, pack, add, run, the MCP server for AI coding tools, and signing in to PhiWebs.
 ---
 
 # The `pwf` command line
 
 `pwf` creates, develops, checks, packs and serves PWFabric applications using
-only the engine's own packages. It never calls a hosted service: there is no
-login, publish or deploy command.
+only the engine's own packages. Those commands need no account and no network.
+`pwf mcp` serves the same work to AI coding tools. `pwf login`, `logout` and
+`whoami` sign the CLI in to [PhiWebs](https://phiwebs.com), the platform
+PWFabric was built for; they are the only commands that talk to a hosted
+service, and nothing else needs them.
 
 Install it from npm (Node 22): `npm install -g @pwfabric/cli`, or run it
 once with `npx -p @pwfabric/cli pwf <command>`. `pwf --version` prints the
@@ -34,6 +37,10 @@ pack, a missing file, a refused write), `2` wrong usage.
 | [`pack`](#pwf-pack) | Write the deterministic `.pwpack` archive of a folder |
 | [`add`](#pwf-add) | Install a pack (`.pwpack` or folder) into the project and pin it |
 | [`run`](#pwf-run) | Serve a built pwapp (folder or `.pwapp`) on a local port |
+| [`mcp`](#pwf-mcp) | Serve the pwf tools to an MCP client (Claude Code, Cursor, VS Code, Gemini CLI, …) |
+| [`login`](#pwf-login) | Sign in to PhiWebs |
+| [`logout`](#pwf-logout) | Sign out of PhiWebs and delete the saved session |
+| [`whoami`](#pwf-whoami) | Show the PhiWebs account and workspace pwf is signed in as |
 
 ## `pwf create`
 
@@ -242,5 +249,125 @@ path-routed apps work; a missing asset is a 404. Headers declared in the
 folder's `_headers` file (such as the app's Content Security Policy) are sent
 with the files they match. Runs until Ctrl+C.
 
+## `pwf mcp`
+
+```text
+pwf mcp
+```
+
+Runs a local [Model Context Protocol](https://modelcontextprotocol.io) server
+on stdin/stdout, so an AI coding tool can create and check PWFabric apps with
+the same functions the commands use. It works in any MCP client: everything
+the client needs comes from the server itself — its instructions, each tool's
+description, and each answer, which ends with the natural next step. It needs
+no account and no network.
+
+| Tool | What it does |
+|---|---|
+| `pwf_create_app` | `pwf create`: a new app folder on a foundation `.pwpack` |
+| `pwf_create_pack` | `pwf create --pack`: a new, empty pack folder |
+| `pwf_add_pack` | `pwf add`: install a `.pwpack` (or pack folder) and pin it |
+| `pwf_add_block` | `pwf add block`: a new block of the folder's own |
+| `pwf_describe_project` | Read-only: the folder's pages, pinned packs, and the blocks (with props) and themes they offer |
+| `pwf_validate` | `pwf validate`: every finding with its code and path |
+| `pwf_build` | `pwf build`: the static pwapp |
+| `pwf_pack` | `pwf pack`: the deterministic `.pwpack` |
+
+Every tool takes `projectDir`, an absolute path, and writes only inside it. A
+failure comes back as a tool error with its code and how to fix it. No tool
+starts a server: preview with `pwf dev` in a terminal. Foundation and other
+open packs are on the [packs releases](https://github.com/pwfabric/packs/releases).
+
+Add it to your client. With `pwf` installed globally the command is `pwf`
+with the argument `mcp`; without it, use `npx` as below.
+
+**Claude Code**
+
+```sh
+claude mcp add pwfabric -- npx -y @pwfabric/cli mcp
+```
+
+**Cursor** — `.cursor/mcp.json` in the project (or `~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "pwfabric": { "command": "npx", "args": ["-y", "@pwfabric/cli", "mcp"] }
+  }
+}
+```
+
+**VS Code** — `.vscode/mcp.json` in the project:
+
+```json
+{
+  "servers": {
+    "pwfabric": { "type": "stdio", "command": "npx", "args": ["-y", "@pwfabric/cli", "mcp"] }
+  }
+}
+```
+
+**Gemini CLI** — `~/.gemini/settings.json` (or `.gemini/settings.json` in the project):
+
+```json
+{
+  "mcpServers": {
+    "pwfabric": { "command": "npx", "args": ["-y", "@pwfabric/cli", "mcp"] }
+  }
+}
+```
+
+On Windows, a client that does not run commands through a shell needs
+`"command": "cmd", "args": ["/c", "npx", "-y", "@pwfabric/cli", "mcp"]`.
+
+The server is also a library entry, `@pwfabric/cli/mcp`
+(`createPwfMcpServer`, `serveStdio`, `TOOLS`), loaded only when used, so the
+other commands never load the MCP SDK.
+
+## `pwf login`
+
+```text
+pwf login [--server <url>] [--no-browser]
+```
+
+| Option | Meaning |
+|---|---|
+| `--server <url>` | The PhiWebs API. Default `https://api.phiwebs.com`, or `PWF_PHIWEBS_URL` when set (local and staging work). |
+| `--no-browser` | Print the sign-in address without opening a browser. |
+
+Signs in with OAuth 2.1 (authorization code and PKCE). `pwf` reads the
+server's metadata (`/.well-known/oauth-authorization-server`), registers
+itself as a client (dynamic client registration) and remembers that client
+per server, opens the sign-in page in your browser (the address is printed
+too), and receives the answer on `http://127.0.0.1:<port>/callback`. It asks
+for `openid`, `email` and `world:read`: who you are and which workspace.
+
+The tokens are saved in your config folder — `%APPDATA%\pwfabric` on
+Windows, `$XDG_CONFIG_HOME/pwfabric` or `~/.config/pwfabric` elsewhere — in a
+file only you can read, and refreshed when they expire. The server must be
+https; plain http is accepted only on `localhost`.
+
+## `pwf logout`
+
+```text
+pwf logout [--server <url>]
+```
+
+Revokes the session when the server offers revocation, then deletes the saved
+tokens. When the server has no revocation endpoint, the grant stays valid
+until it expires; end it at once by removing the "PWFabric CLI" connected app
+in your PhiWebs account.
+
+## `pwf whoami`
+
+```text
+pwf whoami [--server <url>]
+```
+
+Asks the server which account and workspace the saved session belongs to.
+Prints "Not signed in" and exits `1` when there is no session.
+
 Source: `packages/cli/src/commands/*.ts` (each command's
-`usage`), `packages/cli/src/args.ts` (option parsing).
+`usage`), `packages/cli/src/args.ts` (option parsing),
+`packages/cli/src/mcp/` (the MCP server), `packages/cli/src/phiwebs/`
+(signing in).

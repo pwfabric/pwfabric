@@ -1,4 +1,6 @@
 import type { CommandIO, ParsedArgs } from '../types.js'
+import { CommandFailure } from './failure.js'
+import { printIssues } from './issues.js'
 
 /** Thrown for a malformed invocation; commands turn it into exit code 2. */
 export class UsageError extends Error {}
@@ -17,7 +19,11 @@ export function boolFlag(args: ParsedArgs, name: string): boolean {
   return v !== undefined && v !== false && v !== 'false'
 }
 
-/** Runs a command body, turning usage errors into exit 2 and other failures into exit 1. */
+/**
+ * Runs a command body, turning usage errors into exit 2 and other failures into
+ * exit 1. A {@link CommandFailure} prints its own lines (or the message) and
+ * its findings.
+ */
 export async function guard(name: string, io: CommandIO, body: () => Promise<number>): Promise<number> {
   try {
     return await body()
@@ -26,6 +32,13 @@ export async function guard(name: string, io: CommandIO, body: () => Promise<num
       io.err(`pwf ${name}: ${e.message}`)
       io.err(`Run \`pwf ${name} --help\` for usage.`)
       return 2
+    }
+    if (e instanceof CommandFailure) {
+      if (e.issuesFirst) printIssues(io, e.issues)
+      if (e.lines) for (const line of e.lines) io.err(line)
+      else io.err(`pwf ${name}: ${e.message}`)
+      if (!e.issuesFirst) printIssues(io, e.issues)
+      return 1
     }
     io.err(`pwf ${name}: ${(e as Error).message}`)
     return 1

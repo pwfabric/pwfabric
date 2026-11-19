@@ -1,5 +1,11 @@
 # @pwfabric/cli
 
+## Unreleased
+
+- Added: `pwf mcp`, a local MCP server over stdio for any MCP client (Claude Code, Cursor, VS Code, Gemini CLI, …). Tools: `pwf_create_app`, `pwf_create_pack`, `pwf_add_pack`, `pwf_add_block`, `pwf_describe_project` (read-only), `pwf_validate`, `pwf_build`, `pwf_pack` — the commands' own functions. Every tool takes `projectDir` (absolute) and writes only inside it; answers end with the next step and carry `structuredContent`; failures are tool errors with a code and the fix. Tools only (no sampling, elicitation, subscriptions or progress), no account, no network, no dev server. The server is also the entry `@pwfabric/cli/mcp`, the only one that loads `@modelcontextprotocol/sdk` (1.32.2), imported on demand.
+- Added: `pwf login [--server <url>] [--no-browser]`, `pwf logout` and `pwf whoami` sign in to PhiWebs (`https://api.phiwebs.com`, or `--server` / `PWF_PHIWEBS_URL`): OAuth 2.1 authorization code with PKCE, a loopback redirect on `127.0.0.1`, endpoints from `/.well-known/oauth-authorization-server`, dynamic client registration remembered per server. Tokens are saved in the user's config folder (`%APPDATA%\pwfabric`, `$XDG_CONFIG_HOME/pwfabric` or `~/.config/pwfabric`), readable by the user only, and refreshed when they expire. No other command needs an account.
+- Changed (internal): the commands' work is factored into functions that return results instead of printing, which the MCP tools call (`createApp`, `addPack`, `buildProject`, `packProject`); a reported failure carries a stable code (`CommandFailure`). Output and exit codes are unchanged.
+
 ## 3.1.0
 
 - Fixed: the page-hints script preloads an image only when a block marks it `priority: true` or it is an `image` block with `loading: "eager"`; a lazy image (the image block's default) is never preloaded.

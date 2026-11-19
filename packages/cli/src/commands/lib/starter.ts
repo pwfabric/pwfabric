@@ -12,6 +12,8 @@ export interface FoundationBlock {
   readonly id: string
   /** Prop names the manifest declares. */
   readonly props: readonly string[]
+  /** The manifest's `knowledge.purpose`, when it has one. */
+  readonly purpose?: string
 }
 
 export interface FoundationCatalog {
@@ -54,7 +56,8 @@ export function catalogOf(pack: PackFolder, validation: PackValidation): Foundat
           p !== null && typeof p === 'object' && typeof (p as { name?: unknown }).name === 'string' ? [(p as { name: string }).name] : []
         )
       : []
-    blocks.push({ type: name, id: atom.id, props })
+    const purpose = (manifest?.knowledge as { purpose?: unknown } | undefined)?.purpose
+    blocks.push({ type: name, id: atom.id, props, ...(typeof purpose === 'string' ? { purpose } : {}) })
   }
   return { blocks, themes }
 }

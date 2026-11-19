@@ -19,7 +19,6 @@ import {
   type PackValidation,
 } from '@pwfabric/pack'
 import { PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
-import type { CommandIO } from '../types.js'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { engineVersion, pinsOf } from './identity.js'
 import { engineRangeDiagnostics, loadSources, type LoadedSources } from '../../dev/sources.js'
@@ -428,23 +427,5 @@ export async function validateProject(root: string, pack: PackFolder): Promise<P
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 
-const SEVERITIES = ['error', 'warning', 'info'] as const
-const HEADINGS = { error: 'Errors', warning: 'Warnings', info: 'Notes' } as const
-
-/** Prints issues grouped by severity, errors first. Prints nothing for an empty list. */
-export function printIssues(io: CommandIO, issues: readonly PackIssue[]): void {
-  for (const severity of SEVERITIES) {
-    const group = issues.filter((i) => i.severity === severity)
-    if (group.length === 0) continue
-    const write = severity === 'error' ? io.err.bind(io) : io.out.bind(io)
-    write(`${HEADINGS[severity]} (${group.length}):`)
-    for (const issue of group) write(`  ${issue.code}${issue.path ? ` ${issue.path}` : ''}: ${issue.message}`)
-  }
-}
-
-/** `n errors, n warnings` for a summary line. */
-export function countLine(issues: readonly PackIssue[]): string {
-  const n = (s: PackIssue['severity']): number => issues.filter((i) => i.severity === s).length
-  const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`
-  return `${plural(n('error'), 'error')}, ${plural(n('warning'), 'warning')}`
-}
+// Printing lives in ./issues.ts (light: `guard` uses it); re-exported for the commands.
+export { countLine, printIssues } from './issues.js'

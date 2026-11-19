@@ -2,16 +2,19 @@
  * `pwf` — the PWFabric command line.
  *
  * Creates, develops, validates, packs and runs PWFabric applications with
- * nothing but the engine's own packages. It never calls a hosted service:
- * there is no login, publish or deploy here.
+ * nothing but the engine's own packages, with no account and no network.
+ * `pwf mcp` serves the same work over MCP. `pwf login`, `logout` and `whoami`
+ * sign in to PhiWebs, the platform PWFabric was built for; they are the only
+ * commands that talk to a hosted service, and only to the server they are given.
  */
 
-import { readFileSync } from 'node:fs'
 import { parseArgs } from './args.js'
 import { COMMANDS, findCommand } from './commands/registry.js'
 import type { CommandIO } from './commands/types.js'
+import { cliVersion } from './version.js'
 
 export { parseArgs } from './args.js'
+export { cliVersion } from './version.js'
 export { COMMANDS, findCommand } from './commands/registry.js'
 export type { Command, CommandIO, ParsedArgs } from './commands/types.js'
 // The authoring skeletons behind `pwf create --pack` and `pwf add block`;
@@ -28,12 +31,6 @@ function help(io: CommandIO): void {
   for (const c of COMMANDS) io.out(`  ${c.name.padEnd(10)} ${c.summary}`)
   io.out('')
   io.out('Run `pwf <command> --help` for the options of one command; `pwf --version` prints the version.')
-}
-
-/** This package's own version, from its package.json one level above dist/. */
-export function cliVersion(): string {
-  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: unknown }
-  return typeof pkg.version === 'string' ? pkg.version : 'unknown'
 }
 
 /** Runs one invocation and resolves to its exit code. */
