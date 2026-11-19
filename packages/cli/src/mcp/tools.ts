@@ -11,7 +11,7 @@ import { basename, join } from 'node:path'
 import { validatePack, type PackIssue } from '@pwfabric/pack'
 import { z } from 'zod'
 import { addPack } from '../commands/add.js'
-import { buildProject, buildSummary } from '../commands/build.js'
+import { buildProject, buildRouting, buildSummary, routingLine } from '../commands/build.js'
 import { createApp } from '../commands/create.js'
 import { packProject } from '../commands/pack.js'
 import { CommandFailure } from '../commands/lib/failure.js'
@@ -316,13 +316,24 @@ export const TOOLS: readonly ToolDefinition[] = [
     inputSchema: {
       projectDir,
       outDir: z.string().optional().describe('Where to write, inside projectDir (default .pwf/out). Replaces a previous build there.'),
+      router: z
+        .enum(['hash', 'path', 'auto'])
+        .optional()
+        .describe(
+          "How the built app routes, as `pwf build --router`. hash (default): #/<page> addresses, works on every static host. path: clean /<page> addresses; the host must answer every page path with index.html. auto: path where the browser can, else hash."
+        ),
+      base: z
+        .string()
+        .optional()
+        .describe('With router path or auto: the path the app is served under, as `pwf build --base` (default /; e.g. /shop/).'),
     },
     readOnly: false,
     run: (input) =>
       answer(async () => {
         const root = projectDirOf(input['projectDir'] as string)
         const out = writeTarget(root, input['outDir'] as string | undefined, 'outDir')
-        const built = await buildProject(root, out)
+        const routing = buildRouting(input['router'], input['base'], { router: 'router', base: 'base' })
+        const built = await buildProject(root, out, routing)
         const issues = built.result.diagnostics.map((d) => ({
           severity: d.severity,
           code: d.code,
@@ -334,9 +345,9 @@ export const TOOLS: readonly ToolDefinition[] = [
           throw new CommandFailure('BUILD_FAILED', `${errors} error${errors === 1 ? '' : 's'}; nothing written`, { issues })
         }
         return ok(
-          [buildSummary(built.result), `Wrote ${built.result.files.size} files to ${built.out}`, ...listed(issues)],
+          [buildSummary(built.result), ...(routingLine(routing) ? [routingLine(routing) as string] : []), `Wrote ${built.result.files.size} files to ${built.out}`, ...listed(issues)],
           `the user can serve it with \`pwf run ${built.out}\` (or \`pwf dev\` while editing) in a terminal; pwf_pack writes the .pwpack.`,
-          { out: built.out, files: built.result.files.size, stats: { ...built.result.stats }, diagnostics: issues }
+          { out: built.out, files: built.result.files.size, router: routing.router, ...(routing.router !== 'hash' ? { base: routing.base ?? '/' } : {}), stats: { ...built.result.stats }, diagnostics: issues }
         )
       }),
   },

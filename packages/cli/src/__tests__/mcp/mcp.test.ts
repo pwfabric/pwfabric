@@ -112,6 +112,21 @@ describe('pwf mcp', () => {
     expect(built.structuredContent?.['out']).toBe(join(root, '.pwf', 'out'))
     expect(existsSync(join(root, '.pwf', 'out', 'publish.json'))).toBe(true)
     expect(text(built)).toContain('pwf run')
+    expect(built.structuredContent).toMatchObject({ router: 'hash' })
+    expect(await readFile(join(root, '.pwf', 'out', 'index.html'), 'utf8')).not.toContain('<base')
+
+    // The same routing inputs as `pwf build --router/--base`.
+    const routed = await call(client, 'pwf_build', { projectDir: root, outDir: 'site', router: 'auto', base: '/shop' })
+    expect(routed.isError, text(routed)).toBeFalsy()
+    expect(routed.structuredContent).toMatchObject({ out: join(root, 'site'), router: 'auto', base: '/shop/' })
+    expect(text(routed)).toContain('router: auto, base /shop/')
+    const shell = await readFile(join(root, 'site', 'index.html'), 'utf8')
+    expect(shell).toContain('<base href="/shop/" />')
+    expect(shell).toContain('<meta name="pw-router" content="path" />')
+    const badRouter = await call(client, 'pwf_build', { projectDir: root, router: 'history' })
+    expect(badRouter.isError).toBe(true)
+    const hashBase = await call(client, 'pwf_build', { projectDir: root, base: '/shop/' })
+    expect(hashBase.structuredContent).toMatchObject({ error: { code: 'USAGE', message: 'base is for path routing; set router to path (or auto) with it' } })
 
     const packed = await call(client, 'pwf_pack', { projectDir: root, out: 'dist/shop.pwpack' })
     expect(packed.isError).toBeFalsy()

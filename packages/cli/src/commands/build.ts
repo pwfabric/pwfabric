@@ -27,18 +27,19 @@ export interface BuildRouting {
  * The routing a caller asked for (`--router`, `--base`; the MCP tool's
  * `router`, `base`), checked: a router that is not hash, path or auto, a base
  * that is not a path from `/`, or a base under hash routing is a
- * {@link UsageError}. Absent: hash routing.
+ * {@link UsageError}, worded with the caller's `names` for the two inputs.
+ * Absent: hash routing.
  */
-export function buildRouting(router: unknown, base: unknown): BuildRouting {
+export function buildRouting(router: unknown, base: unknown, names: { readonly router: string; readonly base: string } = { router: '--router', base: '--base' }): BuildRouting {
   if (router !== undefined && !(typeof router === 'string' && (ROUTER_MODES as readonly string[]).includes(router))) {
-    throw new UsageError(`--router takes ${ROUTER_MODES.join(', ')}${typeof router === 'string' && router ? ` (not "${router}")` : ''}`)
+    throw new UsageError(`${names.router} takes ${ROUTER_MODES.join(', ')}${typeof router === 'string' && router ? ` (not "${router}")` : ''}`)
   }
   const mode = (router ?? 'hash') as RouterMode
   if (base === undefined) return { router: mode }
   if (typeof base !== 'string' || !base.startsWith('/') || base.startsWith('//') || /[\s"<>]/.test(base)) {
-    throw new UsageError('--base takes the path the app is served under, starting with / (e.g. --base /shop/)')
+    throw new UsageError(`${names.base} takes the path the app is served under, starting with / (e.g. /shop/)`)
   }
-  if (mode === 'hash') throw new UsageError('--base is for path routing; pass --router path (or auto) with it')
+  if (mode === 'hash') throw new UsageError(`${names.base} is for path routing; set ${names.router} to path (or auto) with it`)
   return { router: mode, base: base.endsWith('/') ? base : `${base}/` }
 }
 
