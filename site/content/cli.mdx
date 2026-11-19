@@ -63,6 +63,14 @@ theme is one of the foundation's themes. The foundation is copied into
 `.pwf/packs/<id>@<version>/` and pinned in `pwpack.json` by content hash, so
 `dev` and `run` work offline.
 
+```console
+$ pwf create my-app --foundation ./foundation-1.0.0.pwpack
+Created @pwpack/local/my-app in …/my-app
+  foundation @pwpack/foundation@1.0.0 (sha256:88344a31…)
+  cached in  .pwf/packs/@pwpack/foundation@1.0.0
+  home page  heading, text, button; theme theme-zinc
+```
+
 The foundation pack is released as `foundation-<version>.pwpack` on the
 [GitHub releases of pwfabric/packs](https://github.com/pwfabric/packs/releases)
 (beside `widgets-<version>.pwpack`); `--foundation` (or `PWF_FOUNDATION`)
@@ -92,7 +100,7 @@ with [`pwf add block`](#pwf-add-block). The folder validates clean with
 ## `pwf dev`
 
 ```text
-pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host]
+pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--debug]
 ```
 
 | Argument / option | Meaning |
@@ -102,6 +110,7 @@ pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host]
 | `--host <name>` | Interface name or address to bind. Default `127.0.0.1`. |
 | `--local-host` | Mount the local host for sign-in and data even when the app declares neither. |
 | `--no-host` | Do not mount the local host, even when the app declares sign-in or records. |
+| `--debug` | Print an engine error with its stack trace. Without it, an engine error is one line. |
 
 **The local host.** When the app declares sign-in or records, `pwf dev`
 mounts a development host under `/_host` beside the pages: records live in
@@ -115,27 +124,62 @@ The same pieces are a public entry for hosts of your own:
 (see [Data and receipts](/self-host/data#what-your-host-must-provide)).
 
 Builds the app, serves it, watches the folder and rebuilds and reloads the
-page on every change. Runs until Ctrl+C. When a build fails, the page shows
-the errors instead of the app until the next good build. If the port is taken,
-it says so; pass another `--port`
-or `--port 0`.
+page on every change. Runs until Ctrl+C. When a build fails, the terminal
+lists the errors, each with its code and file (a JSON syntax error is
+`JSON_INVALID <file>`, never a stack trace), and the open page reloads into a
+"Build failed" page listing the same errors, which it also prints in the
+browser console. The next good build reloads it into the app. If the port is
+taken, it says so; pass another `--port` or `--port 0`.
+
+```console
+$ pwf dev
+built in 1772 ms — 1 page, 3 block types, 56/57 atoms compiled (56 from cache; 1 skipped: RestConnector (connector declared as data, no code to compile))
+watching …/my-app (file events)
+pwf dev: serving …/my-app at http://127.0.0.1:4600/
+press Ctrl+C to stop
+built in 619 ms — 1 page, 3 block types, 56/57 atoms compiled (56 from cache; 1 skipped: RestConnector (connector declared as data, no code to compile))
+```
+
+The last line is the rebuild after a saved change. "Skipped" names the atoms
+that have nothing to compile and why: here a connector that is a declaration
+only.
 
 ## `pwf build`
 
 ```text
-pwf build [dir] [--out <dir>]
+pwf build [dir] [--out <dir>] [--router <hash|path|auto>] [--base <path>]
 ```
 
 | Argument / option | Meaning |
 |---|---|
 | `dir` | The app folder. Default: the current folder. |
 | `--out <dir>` | Where to write the built app. Default `<dir>/.pwf/out/`. |
+| `--router <mode>` | How the built app routes: the `router` it passes to `runApp()`. `hash` (default): `#/<page>` addresses, which work on every static host. `path`: clean `/<page>` addresses; the shell carries `<base href>`, and the host must answer every page path with `index.html`. `auto`: path routing where the browser can, else hash; the shell also carries `<meta name="pw-router" content="path">`. |
+| `--base <path>` | With `path` or `auto`: the path the app is served under, written as the shell's `<base href>`. Default `/`; `--base /shop/` for an app served at `/shop/`. |
 
 Assembles the app into a static **pwapp**: `index.html`, the runner and its
 assets, one compiled bundle per block type, connector engines, and the app's
 JSON under `pwpack/`. Prints every diagnostic; on any error, nothing is
-written and the exit code is `1`. Compiled atoms are cached in
+written and the exit code is `1`. It judges the pages as
+[`pwf validate`](#pwf-validate) does, with the same codes and words
+(`UNKNOWN_BLOCK_TYPE`, `BLOCK_ID_DUPLICATE`, …). Compiled atoms are cached in
 `.pwf/build-cache/`.
+
+```console
+$ pwf build
+built 1 page, 3 block types, 0 engines — 56/57 atoms compiled (0 from cache; 1 skipped: RestConnector (connector declared as data, no code to compile)) in 1914 ms
+wrote 25 files to .pwf/out
+
+$ pwf build --router path
+built 1 page, 3 block types, 0 engines — 56/57 atoms compiled (56 from cache; 1 skipped: RestConnector (connector declared as data, no code to compile)) in 1713 ms
+router: path, base / — the host must answer every page path with index.html
+wrote 25 files to .pwf/out
+```
+
+A path-routed build runs under [`pwf run`](#pwf-run), which answers every page
+path with `index.html`, so a deep link such as `/menu` or `/dish?id=…` opens
+its page. On another host, configure that fallback (see
+[Routing on a static host](/self-host#routing-on-a-static-host)).
 
 The build also writes the app's **Content Security Policy**, derived from what
 the app declares: its data addresses, its connections' engine hosts, its
@@ -164,6 +208,15 @@ with the path each is about. Every `packs[]` pin is looked up in
 whose content hash differs from the pin is an error. Exit `1` when there is
 any error, `0` otherwise.
 
+```console
+$ pwf validate
+Errors (1):
+  UNKNOWN_BLOCK_TYPE app/surfaces/home.receipt.json: page "home" places a block of type "buton", which neither the app nor its pinned packs define
+Notes (1):
+  DOC_FILE atoms/README.md: atoms/README.md is documentation, not an atom
+@pwpack/local/my-app@0.1.0: invalid (1 error, 0 warnings; layout canonical; 0 atoms)
+```
+
 Beyond the pack validator's own findings, `validate` (and `pack`) check the
 app folder the way the local host reads it:
 
@@ -172,6 +225,8 @@ app folder the way the local host reads it:
 | `PIN_NOT_CACHED` | warning | A pinned build is not in `.pwf/packs/`; `pwf add` it. |
 | `PIN_HASH_MISMATCH` | error | The cached build's content hash differs from the pin. |
 | `PIN_INVALID` | error | A `packs[]` pin cannot name a cache folder. |
+| `UNKNOWN_BLOCK_TYPE` | error | A page places a block type that neither the app nor a pinned pack defines; `pwf build` refuses it with the same words. Not judged while a pinned pack is not cached. |
+| `BLOCK_ID_DUPLICATE` | error | Two blocks of one page, nested ones included, have the same `id` (an id is unique within its page); the message names both paths. `pwf build` refuses it too. |
 | `SEED_INVALID` | error | An `app/data/<typeId>.json(l)` file the local host would reject. |
 | `ENTITY_INVALID` | error | `app/definitions/entities.json` is not JSON, or an entry has no `typeId` or a field no `name`. |
 | `ENTITY_UNDECLARED` | error | A page binds an entity type `entities.json` does not declare. |
@@ -191,6 +246,14 @@ pwf pack [dir] [--out <file>]
 Validates first and refuses on errors. The archive never contains `.pwf/`,
 `.gitignore` or `atoms/README.md`. The same folder always gives the same
 bytes; the printed hash is the content hash that pins use.
+
+```console
+$ pwf pack
+Packed @pwpack/local/my-app@0.1.0
+  file  …/my-app/my-app-0.1.0.pwpack
+  size  1405 bytes, 6 files
+  hash  sha256:53553856…
+```
 
 ## `pwf add`
 
@@ -242,6 +305,19 @@ pwf run <dir|file.pwapp> [--port <n>] [--host <name>]
 | `<file.pwapp>` | A packaged pwapp (a gzipped tar, read like a `.pwpack`), served from memory. |
 | `--port <n>` | Port to listen on. Default `4700`; `0` picks a free one. |
 | `--host <name>` | Interface to bind. Default `127.0.0.1`. |
+
+```console
+$ pwf run .pwf/out
+Serving .pwf/out at http://127.0.0.1:4700/
+Press Ctrl-C to stop.
+```
+
+For an app folder, or its `.pwf/out`, the app's records are served read-only
+under `/_host` ([the records protocol](/self-host/data#the-endpoint-table)),
+and `pwf run` prints a line saying so. A build copied elsewhere, or a
+`.pwapp`, has no app folder beside it and so no records: an address under
+`/_host` is then a `404` with a JSON error, code `NO_RECORD_HOST`, never
+`index.html`. Serve the app folder, or use `pwf dev`.
 
 Page paths without a file extension are answered with `index.html` and a
 `<base href="/">`, so

@@ -98,10 +98,16 @@ URLs (`router: 'path'`) need the host to serve `index.html` for every path
 and to declare the app's base with `<base href="/">` (the app's sub-path, if
 it has one), or the shell's relative script addresses miss on nested paths;
 `router: 'auto'` chooses them only when the shell also carries
-`<meta name="pw-router" content="path" />`.
+`<meta name="pw-router" content="path" />`. `pwf build --router path` (or
+`--router auto`, with `--base /sub/path/` for a sub-path) writes both into the
+shell for you; see [`pwf build`](/cli#pwf-build).
 
 That is the whole self-host for a static app. If the app reads or writes data
-it will call an API; if it gates pages behind sign-in it will talk to an
+it will call an API: its own records are read and written at
+`<api base>/records/<Entity>` (under `pwf dev`, and `pwf run` of an app
+folder, that base is `/_host`), and the
+[records protocol](/self-host/data#the-endpoint-table) lists every call and
+answer a host must give; if it gates pages behind sign-in it will talk to an
 issuer. What goes on the wire in each case, and what your host must provide,
 is in [Self-hosting](/self-host):
 [the envelope](/self-host/envelope), [data and receipts](/self-host/data),
@@ -299,6 +305,29 @@ pwf dev
 reloads. Add a page by writing another `*.receipt.json` and listing its key in
 `pwpack.json` under `app.surfaceOrder`. Stop it with Ctrl+C.
 
+**The menu.** `app/definitions/navigation.json` is the app's menu, but it
+draws nothing on its own: the runner fills it into every `navbar` block a page
+places whose `links` is empty or unset. The starter page places no navbar, so
+add one where the menu goes, for example as the page's first block:
+
+```json
+{ "id": "nav", "type": "navbar", "props": { "logoText": "My app" } }
+```
+
+```json
+{ "navbar": { "links": [ { "label": "Home", "href": "/" }, { "label": "About", "href": "/about" } ] } }
+```
+
+Each `href` is written root-relative to the app (`/` is the entry page,
+`/<key>` another page) and rewritten for the router in use (`#/about` under
+hash routing). A navbar that sets its own `links` keeps them, and one without
+a `logoHref` gets the entry page, so its logo leads home. Without a
+`navigation.json` the build derives one link per page, labelled with the
+page's `title` (else its key). The same file can also declare `footer.columns`
+(the runner draws them as a footer band on pages that have no footer of their
+own) and `account` (which shell block carries the visitor's sign-in control).
+The file's full shape is in the [envelope reference](/self-host/envelope#the-other-envelope-files).
+
 **4. Check it.**
 
 ```bash
@@ -346,7 +375,12 @@ pwf run .pwf/out
 ```
 
 Open the address. That folder is plain static files: copy it to any static
-host and it runs there the same way.
+host and it runs there the same way. It routes by hash (`#/<page>`); for clean
+`/<page>` addresses build with `pwf build --router path` and have the host
+answer every page path with `index.html` (`pwf run` does). An app with
+records reads them from a host: `pwf run` of the app folder serves them
+read-only under `/_host`, and a copied folder has none (see
+[the records protocol](/self-host/data#the-endpoint-table)).
 
 You just built a PWFabric application from scratch.
 

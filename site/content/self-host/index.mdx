@@ -128,7 +128,9 @@ every path (an "SPA fallback") and to declare the app's base with
 lives under a sub-path). The shell addresses its scripts relatively
 (`./assets/boot.js`), so without a base a nested path such as `/team/ada`
 loads `/team/assets/boot.js` and misses. `pwf run` and `pwf dev` add the base
-themselves. `router: 'path'` uses it as asked.
+themselves. `pwf build --router path` writes `<base href="/">` into the shell
+and `router: 'path'` into `boot.js` (`--base /sub/path/` for a sub-path), so
+the folder needs only the host's fallback. `router: 'path'` uses it as asked.
 `router: 'auto'` picks `path` only when `history.pushState` works **and** the
 page declares the fallback:
 
@@ -136,7 +138,8 @@ page declares the fallback:
 <meta name="pw-router" content="path" />
 ```
 
-otherwise `auto` falls back to `hash`. If you enable `path` without
+otherwise `auto` falls back to `hash`. `pwf build --router auto` writes the
+base and this meta for you. If you enable `path` without
 the fallback, deep links return the host's 404.
 
 Source: `packages/runner/src/types.ts` (`router`),
@@ -148,8 +151,12 @@ A static app makes no request beyond its own files. Two things do, and each has
 its own page:
 
 - **Data.** When a surface binds to an entity, the runtime sends the query to
-  the configured API base. What it sends, and what it expects back, is the
-  [data protocol](/self-host/data).
+  the configured API base: the app's own records are read and written at
+  `<api base>/records/<Entity>` (`GET` lists, `GET …/<id>` reads one, `POST`,
+  `PATCH` and `DELETE` write). `/_host/records/...` is that API as `pwf dev`
+  serves it (and `pwf run`, read-only, for an app folder). Every call and
+  answer, which your host must serve the same way, is in
+  [the records protocol](/self-host/data#the-endpoint-table).
 - **Sign-in.** When a page is auth-gated, the runner opens one of two doors,
   chosen by the app's identity topology: a PKCE flow against an external OIDC
   issuer, or a session server's app-session endpoints. The endpoints, the
