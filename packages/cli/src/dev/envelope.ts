@@ -217,6 +217,8 @@ export interface EngineManifestEntry {
   readonly kind: 'connector' | 'provider'
   readonly moduleUrl?: string
   readonly integrity?: string
+  /** A provider facet: its factory's export in the vendor's one module (`moduleUrl`). */
+  readonly export?: string
   readonly engine?: unknown
 }
 

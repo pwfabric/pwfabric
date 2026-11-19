@@ -1,5 +1,12 @@
 # @pwfabric/cli
 
+## Unreleased
+
+- Fixed: the page-hints script preloads an image only when a block marks it `priority: true` or it is an `image` block with `loading: "eager"`; a lazy image (the image block's default) is never preloaded.
+- Added: a page's own theme. A receipt's `appearance` (`{ "use": "theme-<x>" }`, or a configuration) is resolved at build like the app's — the theme's light and dark tokens, the app's other members kept — and served in the receipt as `{ config }`; a page that wears exactly the app's appearance carries none. Its palette is in the theme stylesheet under `:root[data-pw-page="<key>"]`, the page-hints script names the page on `<html>` before the first paint, its webfonts are in the one webfont stylesheet with their stand-ins, and its first frame is painted in it. An unknown name is `THEME_NOT_FOUND` on the receipt.
+- Changed: the facets of one provider ship in ONE module per vendor (`engines/<vendor>.<hash>.mjs`): each connection's entry in `engines/manifest.json` names it with the facet's `export`, so the vendor's shared code is no longer repeated per connection.
+- Changed: served receipts (`pwpack/surfaces/*.receipt.json`) carry no `knowledge`; the source keeps it.
+
 ## 3.0.1
 
 - Changed: `pwf validate` reports `MESSAGES_MISSING` as an error, in every language and also for apps with no `plan.json`; `session.*` is asked for whenever the app has a password method, its own sign-in screen included. The `pwf create` starter writes `ui.retry` (#61).

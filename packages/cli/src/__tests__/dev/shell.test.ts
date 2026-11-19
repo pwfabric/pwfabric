@@ -18,6 +18,7 @@ import {
   shimGlobal,
   shimsFor,
 } from '../../dev/shell.js'
+import { themeWebfonts, webfontStylesheetHref } from '../../dev/theme.js'
 
 /** `export const { a, b } = m` → ['a', 'b'] */
 function exportsOf(source: string): string[] {
@@ -107,7 +108,7 @@ describe('shims', () => {
 
 describe('shell', () => {
   it('declares the import map, starts what the first page needs at once, and boots; nothing holds the first paint', () => {
-    const html = buildShellHtml({ title: 'A <b>', description: 'A "café".', bodyExtra: '<!--dev-->', appearance: { theme: { typography: { fontFamily: 'Inter' } } } })
+    const html = buildShellHtml({ title: 'A <b>', description: 'A "café".', bodyExtra: '<!--dev-->', webfontHref: webfontStylesheetHref(themeWebfonts({ theme: { typography: { fontFamily: 'Inter' } } })) })
     const map = html.indexOf('type="importmap"')
     const runner = html.indexOf('<link rel="modulepreload" href="./assets/runner.js" />')
     const renderer = html.indexOf('<script async src="./assets/embed.js"></script>')
@@ -168,14 +169,32 @@ describe('shell', () => {
 })
 
 describe('what a page needs first', () => {
-  it('the first image: a priority block wins, else the first image block, only a literal address', async () => {
+  it('the first image: a priority block wins, else the first eager image block, only a literal address', async () => {
     const { firstImageOf } = await import('../../dev/shell.js')
     const img = (src: unknown, extra: Record<string, unknown> = {}) => ({ type: 'image', props: { src, ...extra } })
-    expect(firstImageOf({ blocks: [{ type: 'section', children: [img('pwpack/media/a.jpg')] }, img('pwpack/media/b.jpg')] })).toEqual({ src: 'pwpack/media/a.jpg', priority: false })
+    const eager = { loading: 'eager' }
     expect(
-      firstImageOf({ blocks: [img('pwpack/media/a.jpg'), { type: 'hero', props: { image: 'pwpack/media/hero.webp', priority: true } }] })
+      firstImageOf({ blocks: [{ type: 'section', children: [img('pwpack/media/a.jpg', eager)] }, img('pwpack/media/b.jpg', eager)] })
+    ).toEqual({ src: 'pwpack/media/a.jpg', priority: false })
+    expect(
+      firstImageOf({ blocks: [img('pwpack/media/a.jpg', eager), { type: 'hero', props: { image: 'pwpack/media/hero.webp', priority: true } }] })
     ).toEqual({ src: 'pwpack/media/hero.webp', priority: true })
-    expect(firstImageOf({ blocks: [img('{{dish.photo}}'), img('data:image/png;base64,AA')] })).toBeUndefined()
+    // A priority image is fetched eagerly whatever its `loading` says.
+    expect(firstImageOf({ blocks: [img('pwpack/media/p.jpg', { priority: true, loading: 'lazy' })] })).toEqual({ src: 'pwpack/media/p.jpg', priority: true })
+    expect(firstImageOf({ blocks: [img('{{dish.photo}}', eager), img('data:image/png;base64,AA', eager)] })).toBeUndefined()
+  })
+
+  it('never names a lazy image: lazy, or no `loading` (the image block defaults to lazy)', async () => {
+    const { firstImageOf } = await import('../../dev/shell.js')
+    const img = (src: unknown, extra: Record<string, unknown> = {}) => ({ type: 'image', props: { src, ...extra } })
+    // A below-the-fold plate in an essay: not preloaded, not even on a record page that finds no record.
+    expect(firstImageOf({ blocks: [{ type: 'section', children: [img('pwpack/media/plate-stairwell.svg', { loading: 'lazy' })] }] })).toBeUndefined()
+    expect(firstImageOf({ blocks: [img('pwpack/media/a.jpg')] })).toBeUndefined()
+    // A lazy image before an eager one does not hide the eager one.
+    expect(firstImageOf({ blocks: [img('pwpack/media/a.jpg', { loading: 'lazy' }), img('pwpack/media/b.jpg', { loading: 'eager' })] })).toEqual({
+      src: 'pwpack/media/b.jpg',
+      priority: false,
+    })
   })
 
   it('the shell names every page’s needs once, and asks for none of them itself (E2)', async () => {

@@ -9,7 +9,7 @@
    rights on the `@pwfabric` scope. Only the release job can read it; no pull
    request, from a fork or not, ever does.
 3. **The other repositories:** `pwfabric/spec`,
-   `pwfabric/foundation` and `pwfabric/examples` check this
+   `pwfabric/packs` and `pwfabric/examples` check this
    repository out in their CI, and this one checks the spec out. All four are
    public, so the default CI token reads them.
 
@@ -43,7 +43,7 @@ its release, and no ordinary range (`^1.0.0`) picks one up.
    2.1.0, `@pwfabric/core-2.1.0.tgz` answered 404 for about ten minutes after
    the workflow succeeded, and installs failed. `npm view` shows the version
    before its tarball is served, so before a downstream repository (the
-   foundation, the examples, a consumer) installs the release, check the
+   packs, the examples, a consumer) installs the release, check the
    tarballs themselves:
 
    ```sh
@@ -59,12 +59,12 @@ over.
 
 ## After the engine release
 
-- **Foundation:** its CI's `engine from npm` leg starts running by itself once
-  the engine version it names is on npm. Release it with a GitHub Release
-  tagged `v<its version>`; its workflow attaches `foundation-<version>.pwpack`
-  and the source `.tgz` to the release.
-- **Examples:** each example pins the foundation build by content hash. If
-  the foundation changed after the last pin, run `pwf add <foundation.pwpack>`
-  in each example (or `node check.mjs --keep` and copy the pins) and commit.
+- **Packs** (`pwfabric/packs`: foundation and widgets): a pack whose content
+  changed gets a new `version` by hand; the tag `<pack>@<version>` releases it,
+  and CI attaches `<pack>-<version>.pwpack` (`foundation-<version>.pwpack`,
+  `widgets-<version>.pwpack`) and its sha256 to the GitHub Release.
+- **Examples:** each example pins its packs by content hash. If a pack changed
+  after the last pin, run `pwf add <pack>-<version>.pwpack` in each example
+  that uses it (or `node check.mjs --keep` and copy the pins) and commit.
 - **Documentation site** (`site/`): deploy it so pwfabric.com shows this
   version.

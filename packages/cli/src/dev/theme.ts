@@ -1,7 +1,7 @@
 /**
- * The app's appearance: resolving a theme named by `use` against the themes
- * the app and its packs carry, and the stylesheet the shell links so the page
- * has its identity before any script runs.
+ * The app's appearance, and each page's own: resolving a theme named by `use`
+ * against the themes the app and its packs carry, and the stylesheet the shell
+ * links so the page has its identity before any script runs.
  */
 import {
   DEFAULT_APPEARANCE_THEME,
@@ -67,14 +67,13 @@ export function mergeGroups(base: Record<string, unknown>, over: unknown): Recor
   return out
 }
 
-function resolveConfig(
-  doc: Record<string, unknown>,
+/** The theme `use` names, or undefined with THEME_NOT_FOUND reported at `path`. */
+function namedTheme(
+  use: string,
   themes: readonly ThemeAtom[],
   diagnostics: AssembleDiagnostic[],
   path: string
-): Record<string, unknown> {
-  const use = doc['use']
-  if (typeof use !== 'string' || !use.trim()) return doc
+): ThemeAtom | undefined {
   const theme = findTheme(use, themes)
   if (!theme) {
     diagnostics.push({
@@ -85,8 +84,20 @@ function resolveConfig(
       }); the runner falls back to its built-in presets`,
       path,
     })
-    return doc
   }
+  return theme
+}
+
+function resolveConfig(
+  doc: Record<string, unknown>,
+  themes: readonly ThemeAtom[],
+  diagnostics: AssembleDiagnostic[],
+  path: string
+): Record<string, unknown> {
+  const use = doc['use']
+  if (typeof use !== 'string' || !use.trim()) return doc
+  const theme = namedTheme(use, themes, diagnostics, path)
+  if (!theme) return doc
   const { use: _use, ...rest } = doc
   const out: Record<string, unknown> = { ...rest, theme: mergeGroups(theme.theme, rest['theme']) }
   if (theme.darkTheme) out['darkTheme'] = mergeGroups(theme.darkTheme, rest['darkTheme'])
@@ -117,38 +128,134 @@ export function appearanceConfigOf(doc: Record<string, unknown> | undefined): Re
   return isRecord(doc['config']) ? doc['config'] : doc
 }
 
+/** The theme atom an appearance document names by `use` (in any of its shapes), or undefined. Reports nothing. */
+export function namedThemeOf(doc: unknown, themes: readonly ThemeAtom[]): ThemeAtom | undefined {
+  const config = isRecord(doc) ? appearanceConfigOf(doc) : undefined
+  const use = config?.['use']
+  return typeof use === 'string' && use.trim() ? findTheme(use, themes) : undefined
+}
+
+/** What a page wears: the app's appearance, its own (resolved), or its receipt's `appearance` as written. */
+export type PageAppearance =
+  | { readonly wears: 'app' }
+  | { readonly wears: 'own'; readonly config: Record<string, unknown> }
+  | { readonly wears: 'as-written' }
+
+/** `value` as JSON with every object's keys sorted: two configurations compare equal whatever order they were written in. */
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    isRecord(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v
+  )
+}
+
+/**
+ * A PAGE'S OWN APPEARANCE (its receipt's `appearance`), resolved at build to
+ * the whole configuration the page wears (appearance §1):
+ *
+ *  - a page that names a theme (`use`) wears it: that theme's tokens, light
+ *    and dark (the atom's own `darkTheme`; without one the renderer derives
+ *    the dark variant), with the app's other members (`mode`,
+ *    `styleVariables`, `brand`, …) kept. A page that names the theme the app
+ *    wears gets the app's tokens, overrides included;
+ *  - a page that names none starts from the app's configuration;
+ *  - the page's own members then apply over that: `theme` and `darkTheme`
+ *    per group, an object member per key, anything else replaced.
+ *
+ * The result carries the webfont stand-ins in its stacks, as the app's does.
+ * A page that comes out wearing exactly the app's configuration — no
+ * `appearance`, or one that changes nothing — wears the app's (`'app'`). A
+ * theme name neither the app nor its packs carry is THEME_NOT_FOUND, as for
+ * the app, and the receipt keeps it as written (`'as-written'`).
+ *
+ * @param app the app's resolved configuration (`appearanceConfigOf`, stand-ins
+ *   named) and the theme atom its `use` names.
+ */
+export function resolvePageAppearance(
+  raw: unknown,
+  app: { readonly config: Record<string, unknown> | undefined; readonly theme: ThemeAtom | undefined },
+  themes: readonly ThemeAtom[],
+  diagnostics: AssembleDiagnostic[],
+  path: string
+): PageAppearance {
+  if (raw === undefined) return { wears: 'app' }
+  if (!isRecord(raw)) return { wears: 'as-written' }
+  const doc = appearanceConfigOf(raw) as Record<string, unknown>
+  const { use, ...own } = doc
+  const appConfig = app.config ?? {}
+  let base: Record<string, unknown> = appConfig
+  if (typeof use === 'string' && use.trim()) {
+    const theme = namedTheme(use, themes, diagnostics, path)
+    if (!theme) return { wears: 'as-written' }
+    if (theme !== app.theme) {
+      const { theme: _theme, darkTheme: _darkTheme, ...members } = appConfig
+      base = { ...members, theme: theme.theme, ...(theme.darkTheme ? { darkTheme: theme.darkTheme } : {}) }
+    }
+  }
+  const config: Record<string, unknown> = { ...base }
+  for (const [key, value] of Object.entries(own)) {
+    const prev = base[key]
+    config[key] =
+      key === 'theme' || key === 'darkTheme'
+        ? mergeGroups(isRecord(prev) ? prev : {}, value)
+        : isRecord(value) && isRecord(prev)
+          ? { ...prev, ...value }
+          : value
+  }
+  const resolved = withWebfontFallbacks(config) as Record<string, unknown>
+  return canonicalJson(resolved) === canonicalJson(appConfig) ? { wears: 'app' } : { wears: 'own', config: resolved }
+}
+
 function declList(vars: Record<string, string>): string {
   return Object.entries(vars)
     .map(([name, value]) => `  ${name}: ${value};`)
     .join('\n')
 }
 
-function modeBlocks(policy: 'light' | 'dark' | 'system', light: string, dark: string, darkOverLight: string): string {
-  if (policy === 'light') return `:root, [data-pw-surface] {\n${light}\n}`
-  if (policy === 'dark') return `:root, [data-pw-surface] {\n${darkOverLight}\n}`
-  return `:root, [data-pw-surface] {
+/** The selectors one palette is written under: its light rule, and that rule refined by a mode (`[data-pw-theme="dark"]`, `:not(…)`). */
+interface PaletteScope {
+  readonly light: readonly string[]
+  readonly refined: (refinement: string) => readonly string[]
+}
+
+/** The app's palette: the document and every surface. */
+const APP_SCOPE: PaletteScope = {
+  light: [':root', '[data-pw-surface]'],
+  refined: (r) => [`:root${r}`, `[data-pw-surface]${r}`],
+}
+
+/** A page's own palette: the document while it shows that page (`<html data-pw-page="<key>">`). */
+function pageScope(key: string): PaletteScope {
+  const root = `:root[data-pw-page="${key.replace(/["\\]/g, (c) => `\\${c}`)}"]`
+  return { light: [root], refined: (r) => [`${root}${r}`] }
+}
+
+function modeBlocks(
+  scope: PaletteScope,
+  policy: 'light' | 'dark' | 'system',
+  light: string,
+  dark: string,
+  darkOverLight: string
+): string {
+  const lightSel = scope.light.join(', ')
+  if (policy === 'light') return `${lightSel} {\n${light}\n}`
+  if (policy === 'dark') return `${lightSel} {\n${darkOverLight}\n}`
+  return `${lightSel} {
 ${light}
 }
 
-:root[data-pw-theme="dark"],
-[data-pw-surface][data-pw-theme="dark"] {
+${scope.refined('[data-pw-theme="dark"]').join(',\n')} {
 ${dark}
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-pw-theme="light"]),
-  [data-pw-surface]:not([data-pw-theme="light"]) {
+  ${scope.refined(':not([data-pw-theme="light"])').join(',\n  ')} {
 ${dark}
   }
 }`
 }
 
-/**
- * `assets/theme.css`: the full token set as custom properties (light, the
- * dark variant per the mode policy) and the document binding — page margin,
- * body font and colours — so the app wears its identity before hydration.
- */
-export function buildThemeCss(config: Record<string, unknown> | undefined): string {
+/** One configuration's palette (light, and dark per its mode policy) under `scope`. */
+function paletteCss(config: Record<string, unknown> | undefined, scope: PaletteScope): string {
   const cfg = config as { theme?: SurfaceTheme; darkTheme?: SurfaceTheme; styleVariables?: Record<string, unknown> } | undefined
   const { policy, contrast } = resolveAppearanceMode(cfg)
   const options = { contrast }
@@ -161,8 +268,28 @@ export function buildThemeCss(config: Record<string, unknown> | undefined): stri
   }
   const light = mergeSurfaceThemes(DEFAULT_APPEARANCE_THEME, cfg?.theme)
   const darkVars = surfaceThemeToCSS(resolveDarkTheme(light, cfg?.darkTheme), undefined, undefined, options)
-  const faces = fallbackFontFaces(themeWebfonts(config))
-  return `${faces ? `${faces}\n` : ''}${modeBlocks(policy, declList(lightVars), declList(darkVars), declList({ ...lightVars, ...darkVars }))}
+  return modeBlocks(scope, policy, declList(lightVars), declList(darkVars), declList({ ...lightVars, ...darkVars }))
+}
+
+/** A page that wears its own appearance: its key and its resolved configuration ({@link resolvePageAppearance}). */
+export interface PageTheme {
+  readonly key: string
+  readonly config: Record<string, unknown>
+}
+
+/**
+ * `assets/theme.css`: the full token set as custom properties (light, the
+ * dark variant per the mode policy) and the document binding — page margin,
+ * body font and colours — so the app wears its identity before hydration.
+ * Each page that wears its own appearance (`pages`) has its palette under
+ * `:root[data-pw-page="<key>"]`, after the app's, so the document's ground is
+ * the page's from the first paint. The stand-ins of every webfont the app and
+ * those pages load are declared once.
+ */
+export function buildThemeCss(config: Record<string, unknown> | undefined, pages: readonly PageTheme[] = []): string {
+  const faces = fallbackFontFaces(webfontsOf([config, ...pages.map((p) => p.config)]))
+  const palettes = [paletteCss(config, APP_SCOPE), ...pages.map((p) => paletteCss(p.config, pageScope(p.key)))].join('\n\n')
+  return `${faces ? `${faces}\n` : ''}${palettes}
 
 html, body {
   margin: 0;
@@ -225,6 +352,28 @@ export function themeWebfonts(config: Record<string, unknown> | undefined): Allo
     for (const w of weights(font)) entry.weights.add(w)
   }
   return out.map(({ font, weights }) => ({ ...font, italic: false, weights: [...weights].sort((a, b) => a - b) }))
+}
+
+/**
+ * The webfonts of several configurations (the app's and its pages' own), one
+ * entry per family with the weights any of them draws, in the order first
+ * named. One stylesheet asks for all of them: a browser downloads a face only
+ * when a page draws text in it.
+ */
+export function webfontsOf(configs: readonly (Record<string, unknown> | undefined)[]): AllowedWebfont[] {
+  const out: AllowedWebfont[] = []
+  for (const config of configs) {
+    for (const font of themeWebfonts(config)) {
+      const at = out.findIndex((f) => f.family === font.family)
+      if (at < 0) {
+        out.push(font)
+        continue
+      }
+      const prev = out[at] as AllowedWebfont
+      out[at] = { ...prev, weights: [...new Set([...prev.weights, ...font.weights])].sort((a, b) => a - b) }
+    }
+  }
+  return out
 }
 
 /** The name of a webfont's metric-matched stand-in (see {@link fallbackFontFaces}). */

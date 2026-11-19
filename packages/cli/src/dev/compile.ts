@@ -250,6 +250,64 @@ async function compileOne(job: AtomJob, cache: CompileCache): Promise<CompiledAt
   return { ...base, status: 'compiled', code: result.code, hash: result.hash, diagnostics, fromCache }
 }
 
+/** A provider facet's vendor and domain, from its knowledge file's path (`…providers/<vendor>/entities/<domain>.knowledge.json`). */
+export function providerFacetOf(relPath: string): { readonly vendor: string; readonly domain: string } | undefined {
+  const m = /(?:^|\/)providers\/([^/]+)\/entities\/([^/]+)\.knowledge\.json$/.exec(relPath)
+  return m ? { vendor: m[1] as string, domain: m[2] as string } : undefined
+}
+
+/** A vendor's one module: every facet the app ships, compiled together (or the compile's diagnostics). */
+export interface ProviderBundle {
+  readonly ok: boolean
+  readonly code?: string
+  /** `sha256:<hex>` of `code`. */
+  readonly hash?: string
+  readonly diagnostics: readonly AssembleDiagnostic[]
+  readonly fromCache: boolean
+}
+
+/**
+ * ONE MODULE PER PROVIDER. The facets of a vendor (`providers/<vendor>/entities/*`)
+ * share its motor (`providers/<vendor>/index.ts`) and everything it imports;
+ * compiled one by one, every facet's module carried all of it again (six
+ * connections of one vendor, six copies). This compiles the `domains` the app
+ * ships into one module that exports each facet's factory under its name
+ * (@pwfabric/compiler `engineNames`). Cached like an atom, on the compiler,
+ * the vendor, the facets and every file of the source's tree.
+ */
+export async function compileProviderBundle(
+  source: SourcePack,
+  vendor: string,
+  domains: readonly string[],
+  cache: CompileCache
+): Promise<ProviderBundle> {
+  const tree = compileTreeOf(source)
+  const root = atomRootOf(source)
+  const names = [...new Set(domains)].sort()
+  const entry = `providers/${vendor}/__engines__.ts`
+  const key = keyOf([COMPILER_VERSION, ESBUILD_VERSION, 'provider-bundle', entry, names, fileHashes(tree, Object.keys(tree))])
+  let result = await cache.get(key)
+  const fromCache = result !== undefined
+  if (!result) {
+    const compiled = await compileAtom({ files: tree, entry, kind: 'provider', engineNames: names })
+    result = { ok: compiled.ok, code: compiled.code, hash: compiled.hash, diagnostics: compiled.diagnostics }
+    await cache.set(key, result)
+  }
+  const label = (file: string | undefined): string => {
+    const p = `${root}${file ?? `providers/${vendor}/index.ts`}`
+    return source.label ? `${source.label}/${p}` : p
+  }
+  const diagnostics: AssembleDiagnostic[] = result.diagnostics.map((d) => ({
+    severity: d.severity,
+    code: d.code,
+    message: d.message,
+    path: label(d.file),
+    ...(d.line !== undefined ? { line: d.line } : {}),
+    ...(d.column !== undefined ? { column: d.column } : {}),
+  }))
+  return result.ok ? { ok: true, code: result.code, hash: result.hash, diagnostics, fromCache } : { ok: false, diagnostics, fromCache }
+}
+
 /** Compiles every compiled-kind atom of every source. */
 export async function compileSources(
   sources: readonly SourcePack[],

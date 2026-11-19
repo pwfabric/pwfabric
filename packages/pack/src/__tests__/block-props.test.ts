@@ -8,6 +8,7 @@ import {
   checkBlockProps,
   checkReceiptBlockProps,
   isBinding,
+  nearestName,
   isTemplate,
   packFromRecord,
   type BlockPropsCatalog,
@@ -118,6 +119,60 @@ describe('checkReceiptBlockProps', () => {
     expect(codes({ items: [{}, '{{row}}'] })).toEqual([])
     // Positive control: a fitting nested value draws nothing.
     expect(codes({ items: [{}, {}] })).toEqual([])
+  })
+
+  it('N-E4: names a member of an array item or a nested object the schema does not declare, with its path', () => {
+    const table = {
+      atomId: 'data.table',
+      props: [
+        {
+          name: 'columns',
+          jsonSchema: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { key: { type: 'string' }, header: { type: 'string' }, badgeColorMap: { type: 'object', additionalProperties: { type: 'string' } } },
+              required: ['key'],
+            },
+          },
+        },
+        { name: 'empty', jsonSchema: { type: 'object', properties: { title: { type: 'string' }, action: { type: 'object', properties: { label: { type: 'string' } } } } } },
+        { name: 'open', jsonSchema: { type: 'object', properties: { a: { type: 'string' } }, additionalProperties: true } },
+        { name: 'free', jsonSchema: { type: 'array', items: { type: 'object' } } },
+        { name: 'either', jsonSchema: { oneOf: [{ type: 'object', properties: { to: { type: 'string' } } }, { type: 'string' }] } },
+      ],
+    }
+    const tables: BlockPropsCatalog = new Map([['table', table]])
+    const run = (props: Record<string, unknown>) =>
+      checkReceiptBlockProps(receipt([{ id: 'hours', type: 'table', props }]), tables, 'app/surfaces/home.receipt.json')
+    // The reported defect: `label` for `header` renders an empty header row.
+    const [issue, ...rest] = run({ columns: [{ key: 'day', header: 'Day' }, { key: 'open', label: 'Open' }] })
+    expect(rest).toEqual([])
+    expect(issue).toMatchObject({ severity: 'warning', code: 'BLOCK_PROP_UNKNOWN', path: 'app/surfaces/home.receipt.json' })
+    expect(issue?.message).toContain('blocks[0].props.columns[1].label (table "hours") sets "label", which data.table does not declare for columns[1]')
+    expect(issue?.message).toContain('its members: key, header, badgeColorMap')
+    // A misspelling is named.
+    expect(run({ columns: [{ key: 'day', haeder: 'Day' }] })[0]?.message).toContain('did you mean "header"?')
+    expect(nearestName('Header', ['key', 'header'])).toBe('header')
+    expect(nearestName('label', ['key', 'header'])).toBeUndefined()
+    // Nested objects, and objects inside objects.
+    expect(run({ empty: { title: 'None', action: { text: 'Add' } } }).map((i) => i.message)).toEqual([
+      expect.stringContaining('props.empty.action.text (table "hours") sets "text"'),
+    ])
+    // Open objects take any member: additionalProperties true or a schema, or no properties at all.
+    expect(run({ open: { a: 'x', b: 1 }, free: [{ anything: 1 }], columns: [{ key: 'k', badgeColorMap: { paid: 'green' } }] })).toEqual([])
+    // A branch is read by the value's type.
+    expect(run({ either: { to: 'x', too: 'y' } }).map((i) => i.code)).toEqual(['BLOCK_PROP_UNKNOWN'])
+    expect(run({ either: 'x' })).toEqual([])
+    // Template values stay unchecked; the names around them are still read.
+    expect(run({ columns: '{{state.columns}}' })).toEqual([])
+    expect(run({ columns: [{ key: '{{k}}', header: '{{h}}' }, '{{extra}}'] })).toEqual([])
+    expect(run({ columns: [{ key: '{{k}}', label: 'x' }] }).map((i) => i.code)).toEqual(['BLOCK_PROP_UNKNOWN'])
+    // A closed object's unknown member is said once, by name (not again as a shape issue).
+    const closed: BlockPropsCatalog = new Map([
+      ['x', { atomId: 'a.x', props: [{ name: 'o', jsonSchema: { type: 'object', properties: { a: { type: 'string' } }, additionalProperties: false } }] }],
+    ])
+    expect(checkReceiptBlockProps(receipt([{ type: 'x', props: { o: { b: 1 } } }]), closed, 'p').map((i) => i.code)).toEqual(['BLOCK_PROP_UNKNOWN'])
   })
 
   it('warns about a prop the manifest does not declare', () => {

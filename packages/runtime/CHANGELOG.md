@@ -1,5 +1,9 @@
 # @pwfabric/runtime
 
+## Unreleased
+
+- Added: `ConnectorEngineDescriptor.export`: the loader takes the engine factory from that named export, and fetches, verifies and evaluates a module once for every engine that names it.
+
 ## 3.0.1
 
 - Changed: no engine words. `ui.loading` has no fallback, `createSkipLink` takes a required `label`, the retry control is named by the app's `ui.retry`, and `BlockErrorBoundary` draws no "Unknown error" title. `useAppMessage` and `messageOf` take an optional fallback (#61).

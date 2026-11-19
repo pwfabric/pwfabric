@@ -499,6 +499,43 @@ export default navigationCapability`,
     expect(engine.query()).toBe('order,line')
   })
 
+  it('provider: several facets of one vendor in ONE module, the motor and shared lib bundled once (N-E5)', async () => {
+    const files = {
+      'providers/acme/index.ts': `import { MOTOR_MARK } from '../../lib/motor-lib'
+export class AcmeVendor {
+  constructor(private t: unknown, private map: Record<string, unknown>) {}
+  query() { return MOTOR_MARK + ':' + Object.keys(this.map).join(',') }
+}`,
+      'lib/motor-lib.ts': `export const MOTOR_MARK = '${'m'.repeat(4000)}'`,
+      'providers/acme/entities/orders.ts': `export const orders = { order: { table: 'orders' } }`,
+      'providers/acme/entities/users.ts': `export const users = { user: { table: 'users' }, group: { table: 'groups' } }`,
+    }
+    const one = await compileAtom({ files, entry: 'providers/acme/entities/orders.__engine__.ts', kind: 'provider', engineName: 'orders' })
+    const both = await compileAtom({ files, entry: 'providers/acme/__engines__.ts', kind: 'provider', engineNames: ['users', 'orders', 'users'] })
+    expect(both.ok, JSON.stringify(both.diagnostics)).toBe(true)
+    // The motor's bytes appear once: two facets cost little more than one.
+    expect(both.code.split('m'.repeat(4000)).length).toBe(2)
+    expect(both.size).toBeLessThan(one.size * 1.5)
+    const mod = await load(both.code)
+    expect(Object.keys(mod).sort()).toEqual(['orders', 'users'])
+    const query = (name: string) => (mod[name] as (t: unknown, c: unknown) => { query(): string })(async () => null, {}).query()
+    expect(query('orders').endsWith(':order')).toBe(true)
+    expect(query('users').endsWith(':user,group')).toBe(true)
+    // Deterministic, whatever order the names come in.
+    const again = await compileAtom({ files, entry: 'providers/acme/__engines__.ts', kind: 'provider', engineNames: ['orders', 'users'] })
+    expect(again.hash).toBe(both.hash)
+  })
+
+  it('provider bundle: refuses what it cannot build', async () => {
+    const files = { 'providers/acme/index.ts': 'export class A { query() {} }', 'providers/acme/entities/orders.ts': 'export const orders = { o: {} }' }
+    const codes = async (input: Partial<Parameters<typeof compileAtom>[0]>) =>
+      (await compileAtom({ files, entry: 'providers/acme/__engines__.ts', kind: 'provider', ...input })).diagnostics.map((d) => d.code)
+    expect(await codes({ engineNames: [] })).toEqual(['INVALID_INPUT'])
+    expect(await codes({ engineNames: ['bad name'] })).toEqual(['INVALID_INPUT'])
+    expect(await codes({ engineNames: ['orders'], kind: 'connector' })).toEqual(['INVALID_INPUT'])
+    expect(await codes({ engineNames: ['orders'], files: { ...files, 'providers/acme/__engines__.ts': 'x' } })).toEqual(['INVALID_INPUT'])
+  })
+
   it('provider: falls back to a vendor create* factory', async () => {
     const r = await compileAtom({
       files: {

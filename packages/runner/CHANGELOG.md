@@ -1,5 +1,11 @@
 # @pwfabric/runner
 
+## Unreleased
+
+- Fixed: an app with no way in (no `auth.json` method, no issuer) draws no session bar, so `pwf dev` no longer names `pill.region` as a missing message there. `mountSessionPill` takes `door`.
+- Added: a page that names its own appearance wears it: the renderer is handed the receipt's `appearance` when it carries one, else the app's. `projectAppearanceRef` reads both (`appearance-ref.ts`). The runner names the page it draws on `<html data-pw-page>` (`PAGE_ATTR`) and removes it on its own not-found page.
+- Added: an engine manifest entry's `export` reaches the engine loader, so a provider facet is built from its own export of its vendor's shared module.
+
 ## 3.0.1
 
 - Changed: the runner draws no default words. `RUNNER_MESSAGES` and `NEUTRAL_MESSAGES` are removed; `RUNNER_MESSAGE_IDS`, `NO_MESSAGES`, `labelWith` and `RENDERER_MESSAGE_IDS` are exported. A message the app does not set is drawn empty, a control left without a name is named by its id, and `pwf dev` names each missing id in the console once (#61).

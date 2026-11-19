@@ -257,10 +257,11 @@ hosted service: everything below runs on your machine.
 
 **1. Get a foundation pack.** Every app stands on a foundation pack, the pack
 that supplies the blocks and themes its pages are made of. Download
-`foundation-<version>.pwpack` from the releases of
-[pwfabric/foundation](https://github.com/pwfabric/foundation),
-or build it in a clone: `pnpm install`, then
-`node scripts/export-tgz.mjs --canonical` writes it to `dist/`.
+`foundation-<version>.pwpack` from the
+[releases of pwfabric/packs](https://github.com/pwfabric/packs/releases)
+(the occasional blocks are in `widgets-<version>.pwpack` there; add it with
+`pwf add` when a page places one), or build it in a clone: `pnpm install`,
+then `pnpm build foundation` writes it to `dist/`.
 
 **2. Create the app.**
 
@@ -349,8 +350,8 @@ host and it runs there the same way.
 
 You just built a PWFabric application from scratch.
 
-Three finished apps to read and copy, from a static two-page site to one with
-data and sign-in, are in
+Two finished apps to read and copy, `cafe-menu` and
+`lighting-hub-waitlist`, are in
 [pwfabric/examples](https://github.com/pwfabric/examples),
 each with a README.
 

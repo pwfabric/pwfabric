@@ -32,6 +32,13 @@ const ERROR_ID = 'pwapp-login-error'
 
 export interface SessionPillOptions {
   readonly bridge: AuthBridge | null
+  /**
+   * The app has a way in (`hasDoor`: a password door, a provider, or an
+   * issuer). Without one there is nothing to enter or leave, so the pill is
+   * not drawn at all — no element, and none of its words (`pill.*`) asked
+   * for. `pwf validate` reaches `pill.*` on the same condition.
+   */
+  readonly door: boolean
   /** The export's auth declaration, for `logoutUrl`. */
   readonly auth?: PwappAuth | null | undefined
   /** The live platform session, read on every refresh. */
@@ -77,7 +84,7 @@ export function sessionLabel(
 
 export function mountSessionPill(options: SessionPillOptions): SessionPill {
   const { bridge } = options
-  if (options.accountSlot) return { refresh: () => {}, unmount: () => {} }
+  if (options.accountSlot || !options.door) return { refresh: () => {}, unmount: () => {} }
   ensureShellStyles()
   const say = options.messages ?? NO_MESSAGES
 

@@ -7,7 +7,9 @@
  * `descriptor.integrity` BEFORE evaluation (same security boundary as block
  * bundles — a CDN-side compromise must not execute under our origin), then
  * imports it via a Blob URL and resolves the engine FACTORY under the
- * stable export convention (`createConnector`, `default` fallback).
+ * stable export convention (`createConnector`, `default` fallback) — or the
+ * export the descriptor names: a provider's facets share one module per
+ * vendor, which is fetched, verified and evaluated once for all of them.
  *
  * Error isolation: a failed load never throws out of `tryLoad` — the
  * failure reason is recorded per atom id (`getFailure`) so the registry can
@@ -77,6 +79,8 @@ async function blobImportEvaluator(
 export class ConnectorModuleLoaderImpl {
   private readonly cache = new Map<string, CachedEngineModule>()
   private readonly pending = new Map<string, Promise<ConnectorEngineFactory>>()
+  /** Evaluated modules by address and hash: the facets of one vendor module share it. */
+  private readonly modules = new Map<string, Promise<ConnectorEngineModule>>()
   private readonly failures = new Map<string, string>()
   private readonly evaluate: ConnectorModuleEvaluator
 
@@ -143,6 +147,7 @@ export class ConnectorModuleLoaderImpl {
       this.cache.clear()
       this.failures.clear()
     }
+    this.modules.clear()
   }
 
   private async doLoad(descriptor: ConnectorEngineDescriptor): Promise<ConnectorEngineFactory> {
@@ -164,8 +169,26 @@ export class ConnectorModuleLoaderImpl {
       )
     )
 
-    const mod = await Promise.race([fetchAndEvaluate(), timeoutPromise])
+    // One evaluation per module: the facets of a vendor module ask for the
+    // same address and hash. A failed load is not kept, so a retry fetches again.
+    const moduleKey = `${descriptor.integrity} ${descriptor.bundleUrl}`
+    let loading = this.modules.get(moduleKey)
+    if (!loading) {
+      loading = fetchAndEvaluate()
+      this.modules.set(moduleKey, loading)
+      loading.catch(() => {
+        if (this.modules.get(moduleKey) === loading) this.modules.delete(moduleKey)
+      })
+    }
+    const mod = await Promise.race([loading, timeoutPromise])
 
+    if (descriptor.export !== undefined) {
+      const named = Object.prototype.hasOwnProperty.call(mod, descriptor.export) ? mod[descriptor.export] : undefined
+      if (typeof named !== 'function') {
+        throw new Error(`Module at ${descriptor.bundleUrl} does not export the engine "${descriptor.export}"`)
+      }
+      return named
+    }
     const factory = mod.createConnector ?? mod.default
     if (typeof factory !== 'function') {
       throw new Error(

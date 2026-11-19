@@ -239,6 +239,9 @@ export const AtomFileManifestSchema = z
     definition: AtomBlockDefinitionMetadataSchema.optional(),
     config: AtomManifestConfigSchema.optional(),
     theme: surfaceThemeSchema.optional(),
+    // a ui-appearance atom's own dark variant (appearance.md): the tokens it
+    // sets override the derived dark palette.
+    darkTheme: surfaceThemeSchema.optional(),
     // connector/provider payload. `connection` + `configSchema`
     // describe data already in production; `scopes` is the new declaration.
     connection: z.string().min(1).optional(),

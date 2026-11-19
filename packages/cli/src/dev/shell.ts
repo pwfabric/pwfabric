@@ -24,7 +24,6 @@ import {
   blockShimFiles,
   shimSource,
 } from '@pwfabric/core/host-imports'
-import { webfontStylesheetHref, themeWebfonts } from './theme.js'
 
 const require = createRequire(import.meta.url)
 
@@ -224,8 +223,8 @@ export interface ShellOptions {
   readonly description?: string
   /** `<html lang>`: the app's locale. Absent or not a tag: no `lang`. */
   readonly lang?: string
-  /** The app's appearance configuration (its webfonts are linked). */
-  readonly appearance?: Record<string, unknown>
+  /** The webfont stylesheet of the app's theme and its pages' own (theme.ts `webfontStylesheetHref`): preconnected and preloaded. */
+  readonly webfontHref?: string | null
   /** Markup appended to `<body>` (the dev server's reload client). */
   readonly bodyExtra?: string
   /** The policy for the shell's `<meta http-equiv="Content-Security-Policy">`; none when absent. */
@@ -284,6 +283,9 @@ const ADDRESS_KEY = String.raw`var own = function (o, k) { return Object.prototy
  * — its receipt, its block modules, its first image, its first frame — and nothing of any
  * other page's (pwapp-format §2.1). It reads `<script type="application/json"
  * id="pw-page-hints">` (`{ entry, routes, notFound?, pages: { <key>: PageHints } }`).
+ * It also names the page on `<html data-pw-page="<key>">` before the first
+ * paint, so a page that wears its own theme has its ground from the start
+ * (theme.ts `buildThemeCss`).
  * A hint is only a head start: nothing here can stop the app from starting.
  * Constant text, so the Content Security Policy allows it by one hash.
  */
@@ -293,6 +295,7 @@ export const PAGE_HINTS_SCRIPT = String.raw`(function () {
     ${ADDRESS_KEY}
     var page = own(d.pages, key) ? d.pages[key] : null
     if (!page) return
+    document.documentElement.setAttribute('data-pw-page', key)
     var add = function (href, as, high) {
       var link = document.createElement('link')
       link.rel = 'preload'
@@ -400,8 +403,13 @@ const IMAGE_PROPS = ['src', 'image', 'imageSrc', 'backgroundImage'] as const
 /**
  * The image a page shows first, as the build can know it: the first block
  * that says it is the page's priority image (`priority: true`), else the
- * first `image` block, depth first — with a literal address (an expression
- * or a `data:` URI cannot be preloaded).
+ * first `image` block that is loaded eagerly (`loading: "eager"`), depth
+ * first — with a literal address (an expression or a `data:` URI cannot be
+ * preloaded). A lazy image (`loading` is `"lazy"` or unset, the image
+ * block's default) is fetched by the browser only when it nears the
+ * viewport, so it is never preloaded: on a page that does not show it — a
+ * below-the-fold picture, a record page that finds no record — the preload
+ * is a download the visitor never uses.
  */
 export function firstImageOf(receipt: unknown): { readonly src: string; readonly priority: boolean } | undefined {
   // A literal address of the app's own (relative) or an http(s) one; never an
@@ -431,7 +439,7 @@ export function firstImageOf(receipt: unknown): { readonly src: string; readonly
       const src = srcOf(props)
       if (src) priority = src
     }
-    if (first === undefined && block['type'] === 'image') first = literal(props['src'])
+    if (first === undefined && block['type'] === 'image' && props['loading'] === 'eager') first = literal(props['src'])
     walk(block['children'])
   }
   if (receipt && typeof receipt === 'object') walk((receipt as Record<string, unknown>)['blocks'])
@@ -500,7 +508,7 @@ export function htmlLangOf(locale: string | undefined): string {
  */
 export function buildShellHtml(options: ShellOptions): string {
   const assets = options.assets ?? PLAIN_ASSETS
-  const href = webfontStylesheetHref(themeWebfonts(options.appearance))
+  const href = options.webfontHref ?? null
   const fonts = href
     ? `
     <link rel="preconnect" href="https://fonts.googleapis.com" />

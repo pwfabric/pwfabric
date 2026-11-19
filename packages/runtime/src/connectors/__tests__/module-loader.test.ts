@@ -66,6 +66,29 @@ describe('ConnectorModuleLoader', () => {
   })
 
   describe('load', () => {
+    it('N-E5: facets of one vendor module — each its named export, the module fetched and evaluated once', async () => {
+      const fetchMock = okFetch()
+      vi.stubGlobal('fetch', fetchMock)
+      const orders: ConnectorEngineFactory = () => ({ query: async () => ({ success: true }) })
+      const users: ConnectorEngineFactory = () => ({ query: async () => ({ success: true }) })
+      const evaluate = vi.fn(async (): Promise<ConnectorEngineModule> => ({ orders, users }))
+      const loader = createConnectorModuleLoader({ evaluate })
+      const url = 'https://app.example/engines/acme.0123abcd.mjs'
+      const [a, b] = await Promise.all([
+        loader.load(descriptor({ id: 'acme.orders', kind: 'provider', bundleUrl: url, integrity, export: 'orders' })),
+        loader.load(descriptor({ id: 'acme.users', kind: 'provider', bundleUrl: url, integrity, export: 'users' })),
+      ])
+      expect(a).toBe(orders)
+      expect(b).toBe(users)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(evaluate).toHaveBeenCalledTimes(1)
+      // A name the module does not export is a failure, recorded like any other.
+      expect(await loader.tryLoad(descriptor({ id: 'acme.groups', kind: 'provider', bundleUrl: url, integrity, export: 'groups' }))).toBeNull()
+      expect(loader.getFailure('acme.groups')).toContain('does not export the engine "groups"')
+      // Not an inherited name either.
+      expect(await loader.tryLoad(descriptor({ id: 'acme.x', kind: 'provider', bundleUrl: url, integrity, export: 'toString' }))).toBeNull()
+    })
+
     it('fetches, verifies integrity, evaluates, and returns the createConnector factory', async () => {
       const fetchMock = okFetch()
       vi.stubGlobal('fetch', fetchMock)

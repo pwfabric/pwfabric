@@ -51,6 +51,13 @@ export interface ConnectorEngineDescriptor {
   readonly bundleUrl: string
   /** SHA-256 of the bundle bytes (bare hex or SRI `sha256-<base64>`). */
   readonly integrity: string
+  /**
+   * The named export that is this engine's factory, when the module holds
+   * several: a provider's facets share ONE module per vendor, each facet's
+   * factory exported under its name (envelope §6). Absent: the module's
+   * `createConnector` (or `default`).
+   */
+  readonly export?: string
   readonly version?: string
 }
 
@@ -82,6 +89,8 @@ export type ConnectorEngineFactory = (
 export interface ConnectorEngineModule {
   readonly createConnector?: ConnectorEngineFactory
   readonly default?: ConnectorEngineFactory
+  /** A vendor module's facets, each under its own name (`descriptor.export`). */
+  readonly [facet: string]: ConnectorEngineFactory | undefined
 }
 
 /**

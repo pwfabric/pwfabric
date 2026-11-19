@@ -63,14 +63,30 @@ describe('sessionLabel', () => {
 describe('mountSessionPill', () => {
   it('offers sign-in when there is a bridge and no session', () => {
     const bridge = fakeBridge()
-    mountSessionPill({ bridge, getAppSession: () => null, onSignedOut: vi.fn() })
+    mountSessionPill({ door: true, bridge, getAppSession: () => null, onSignedOut: vi.fn() })
     expect(pill()?.getAttribute('data-session')).toBe('out')
     ;(pill()?.querySelector('[data-session-signin]') as HTMLButtonElement).click()
     expect(bridge.loginWithPkce).toHaveBeenCalled()
   })
 
+  it('is not drawn, and asks for none of its words, on an app with no way in', () => {
+    // Under `pwf dev` a word the app does not set is named in the console.
+    ;(globalThis as { __pwfabric_dev?: unknown }).__pwfabric_dev = true
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const handle = mountSessionPill({ door: false, bridge: null, getAppSession: () => null, onSignedOut: vi.fn() })
+    expect(pill()).toBeNull()
+    expect(document.getElementById('pwapp-login-error')).toBeNull()
+    expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('pill.'))).toEqual([])
+    expect(() => {
+      handle.refresh()
+      handle.unmount()
+    }).not.toThrow()
+    warn.mockRestore()
+    delete (globalThis as { __pwfabric_dev?: unknown }).__pwfabric_dev
+  })
+
   it('hides itself when there is neither a bridge nor a session', () => {
-    mountSessionPill({ bridge: null, getAppSession: () => null, onSignedOut: vi.fn() })
+    mountSessionPill({ door: true, bridge: null, getAppSession: () => null, onSignedOut: vi.fn() })
     expect(pill()?.getAttribute('data-session')).toBe('none')
     expect(pill()?.style.display).toBe('none')
   })
@@ -78,7 +94,7 @@ describe('mountSessionPill', () => {
   it('shows who is signed in and signs the issuer session out through the bridge', () => {
     const bridge = fakeBridge({ session: issuerSession('ali@example.com') })
     const onSignedOut = vi.fn()
-    mountSessionPill({ bridge, getAppSession: () => null, onSignedOut })
+    mountSessionPill({ door: true, bridge, getAppSession: () => null, onSignedOut })
     expect(pill()?.getAttribute('data-session')).toBe('in')
     expect(pill()?.querySelector('[data-session-label]')?.textContent).toBe('ali@example.com')
     ;(pill()?.querySelector('[data-session-signout]') as HTMLButtonElement).click()
@@ -93,6 +109,7 @@ describe('mountSessionPill', () => {
       session = null
     })
     const handle = mountSessionPill({
+      door: true,
       bridge: null,
       auth: DOOR,
       getAppSession: () => session,
@@ -117,7 +134,7 @@ describe('mountSessionPill', () => {
 
   it('redraws on bridge events and shows the last error only while signed out', () => {
     const bridge = fakeBridge({ lastError: 'state mismatch' })
-    mountSessionPill({ bridge, getAppSession: () => null, onSignedOut: vi.fn() })
+    mountSessionPill({ door: true, bridge, getAppSession: () => null, onSignedOut: vi.fn() })
     const note = document.getElementById('pwapp-login-error') as HTMLDivElement
     expect(note.style.display).toBe('block')
     ;(bridge as { session: AuthSession | undefined }).session = issuerSession()
@@ -129,7 +146,7 @@ describe('mountSessionPill', () => {
 
   it('unmount removes the elements and stops listening', () => {
     const bridge = fakeBridge()
-    const handle = mountSessionPill({ bridge, getAppSession: () => null, onSignedOut: vi.fn() })
+    const handle = mountSessionPill({ door: true, bridge, getAppSession: () => null, onSignedOut: vi.fn() })
     handle.unmount()
     expect(pill()).toBeNull()
     expect(document.getElementById('pwapp-login-error')).toBeNull()
@@ -137,6 +154,7 @@ describe('mountSessionPill', () => {
 
   it('is not drawn at all when the app declares an account slot — the shell owns the account', () => {
     const handle = mountSessionPill({
+      door: true,
       bridge: fakeBridge({ session: issuerSession('ali@example.com') }),
       getAppSession: () => null,
       onSignedOut: vi.fn(),
@@ -156,7 +174,7 @@ describe('mountSessionPill', () => {
     const app = document.createElement('div')
     app.id = 'root'
     document.body.appendChild(app)
-    mountSessionPill({ bridge: fakeBridge(), getAppSession: () => null, onSignedOut: vi.fn() })
+    mountSessionPill({ door: true, bridge: fakeBridge(), getAppSession: () => null, onSignedOut: vi.fn() })
     const css = document.getElementById('pwapp-shell-css')?.textContent ?? ''
     const rule = /#pwapp-session-pill\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
     expect(rule).toMatch(/position:\s*static/)
@@ -173,7 +191,7 @@ describe('mountSessionPill', () => {
   it('is a landmark of its own, named, with 44 px targets', () => {
     // Outside every landmark it was flagged on every page (axe `region`); its
     // "Sign out" was 53×14 px on a phone.
-    mountSessionPill({ bridge: fakeBridge(), getAppSession: () => null, onSignedOut: vi.fn() })
+    mountSessionPill({ door: true, bridge: fakeBridge(), getAppSession: () => null, onSignedOut: vi.fn() })
     expect(pill()?.tagName).toBe('ASIDE')
     // Named by the app (pill.region); without its word, by the id — never unnamed.
     expect(pill()?.getAttribute('aria-label')).toBe('pill.region')
@@ -185,6 +203,7 @@ describe('mountSessionPill', () => {
 
   it("paints with the app's appearance tokens", () => {
     mountSessionPill({
+      door: true,
       bridge: fakeBridge(),
       getAppSession: () => null,
       onSignedOut: vi.fn(),
@@ -201,7 +220,7 @@ describe('mountSessionPill', () => {
     const bridge = fakeBridge({ session: issuerSession('ali@example.com') })
     const onSignOut = vi.fn(async () => {})
     const onSignedOut = vi.fn()
-    mountSessionPill({ bridge, getAppSession: () => null, onSignedOut, onSignOut })
+    mountSessionPill({ door: true, bridge, getAppSession: () => null, onSignedOut, onSignOut })
     ;(pill()?.querySelector('[data-session-signout]') as HTMLButtonElement).click()
     await vi.waitFor(() => expect(onSignOut).toHaveBeenCalled())
     // The runner's sign-out owns the whole sequence; the pill does not repeat it.
@@ -212,12 +231,13 @@ describe('mountSessionPill', () => {
 
 describe('the pill speaks the app’s language', () => {
   it('writes no word of its own: a control the app left unworded is named by its id (E-4)', () => {
-    mountSessionPill({ bridge: fakeBridge(), getAppSession: () => null, onSignedOut: vi.fn() })
+    mountSessionPill({ door: true, bridge: fakeBridge(), getAppSession: () => null, onSignedOut: vi.fn() })
     const signIn = pill()?.querySelector('[data-session-signin]')
     expect(signIn?.textContent).toBe('')
     expect(signIn?.getAttribute('aria-label')).toBe('pill.signIn')
     document.body.innerHTML = ''
     mountSessionPill({
+      door: true,
       bridge: null,
       getAppSession: () => ({ token: 't', expiresAt: '' }),
       onSignedOut: vi.fn(),
@@ -230,6 +250,7 @@ describe('the pill speaks the app’s language', () => {
 
   it('writes the app’s own words (messages) when it sets them', () => {
     mountSessionPill({
+      door: true,
       bridge: fakeBridge(),
       getAppSession: () => null,
       onSignedOut: vi.fn(),
@@ -238,6 +259,7 @@ describe('the pill speaks the app’s language', () => {
     expect(pill()?.querySelector('[data-session-signin]')?.textContent).toBe('Oturum aç')
     document.body.innerHTML = ''
     mountSessionPill({
+      door: true,
       bridge: null,
       getAppSession: () => ({ token: 't', expiresAt: '' }),
       onSignedOut: vi.fn(),

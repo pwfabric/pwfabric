@@ -20,6 +20,7 @@ export {
   STATIC_VIEWPORT,
   STATIC_VIEWPORT_MAX_WIDTH,
   STATIC_PAGE_ATTR,
+  PAGE_ATTR,
   FIRST_FRAME_USER,
   pageBlocksOf,
   pageSurfaceOf,
