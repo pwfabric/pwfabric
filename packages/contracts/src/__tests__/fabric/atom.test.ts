@@ -225,6 +225,32 @@ describe('AtomFileManifestSchema', () => {
     if (result.success) expect(result.data.theme?.colors?.primary).toBe(DEFAULT_APPEARANCE_THEME.colors?.primary)
   })
 
+  it('accepts a ui-appearance manifest carrying its own darkTheme', () => {
+    // The same gap a second time: a theme atom may ship its own dark variant
+    // (appearance.md), the build and the gates read it, and this `.strict()`
+    // schema refused every theme atom that carried one.
+    const { category: _category, definition: _definition, ...rest } = blockManifest
+    void _category
+    void _definition
+    const themeManifest = {
+      ...rest,
+      id: 'theme-paper',
+      kind: 'ui-appearance' as const,
+      name: 'Paper',
+      theme: DEFAULT_APPEARANCE_THEME,
+      darkTheme: { colors: { background: '#161411', text: '#efe8dc' }, focus: { ringColor: '#a9c1e8' } },
+    }
+    const result = AtomFileManifestSchema.safeParse(themeManifest)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.darkTheme?.colors?.background).toBe('#161411')
+  })
+
+  it('rejects a darkTheme that is not a surface theme', () => {
+    expect(
+      AtomFileManifestSchema.safeParse({ ...blockManifest, darkTheme: { colors: 'navy' } }).success
+    ).toBe(false)
+  })
+
   it('rejects a theme payload that is not a surface theme', () => {
     expect(
       AtomFileManifestSchema.safeParse({ ...blockManifest, theme: { colors: 'indigo' } }).success
