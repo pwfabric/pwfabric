@@ -1,0 +1,93 @@
+---
+title: Packs
+description: The two open packs every PWFabric app is built from — foundation, the block vocabulary with six themes, and widgets, the occasional blocks — what each carries, where to get it and how an app uses it.
+---
+
+# Packs
+
+An app does not bring its blocks with it: it stands on **packs**. A pack is a
+pwpack of atoms — blocks, patterns, themes, capabilities, connectors — that an
+app pins by content hash and draws its pages from. Two packs are open and
+every app starts from them:
+
+| Pack | Id | Stands on | Licence |
+|---|---|---|---|
+| foundation | `@pwpack/foundation` | — | Apache-2.0 |
+| widgets | `@pwpack/widgets` | foundation | Apache-2.0 |
+
+Both are developed in [pwfabric/packs](https://github.com/pwfabric/packs) and
+released there as `foundation-<version>.pwpack` and
+`widgets-<version>.pwpack`, each with its sha256, on the repository's
+[releases](https://github.com/pwfabric/packs/releases). Complete apps built
+from them are in [pwfabric/examples](https://github.com/pwfabric/examples).
+
+## foundation
+
+The floor every app stands on.
+
+- **52 blocks**: layout (container, section, grid, split-view, navbar,
+  bottom-bar, app-rail, announcement-bar), text (heading, text, prose, alert,
+  code), controls (button, link, icon, badge, chip, avatar, breadcrumb,
+  dropdown, pagination, copy-button, divider), forms (form, input, textarea,
+  select, checkbox, radio, toggle, segmented-control, date-input,
+  number-stepper, otp-input), data (list, repeater, table, money, progress,
+  skeleton), containers (card, accordion, tabs), feedback (spinner, toast,
+  radial-progress), overlays (modal, drawer, popover, tooltip) and image.
+- **26 patterns**: the page shells (top bar, bottom bar or no chrome, each
+  with a flow, grid, dense or split body), the page parts (page header, card
+  grid, callout, FAQ, footer, legal footnote, brand mark) and the form
+  family (contact form, sign-up, form card, auth card).
+- **6 themes**, each a whole identity with its own dark mode:
+
+| Theme | For |
+|---|---|
+| `theme-zinc` | A shop, a service, a product: system sans, near-black on white |
+| `theme-midnight` | Dashboards and internal tools: IBM Plex on deep navy, dark in both modes |
+| `theme-paper` | Magazines, journals, long guides: serif voice, 18px body, no shadows |
+| `theme-linen` | Cafés, bookings, local places: terracotta on cream, rounded, read on a phone |
+| `theme-slate` | Intranets, admin screens, reference docs: Inter at 15px, a tight rhythm |
+| `theme-ember` | A product launch or an event: amber on warm near-black, dark in both modes |
+
+- The icon dictionary (100 icons), four capabilities (`platform/entities`,
+  `platform/persistence`, `platform/navigation`, `platform/interaction`) and
+  the REST connector.
+
+## widgets
+
+The occasional blocks, kept off the floor so an app that never places them
+never lists them: rich-text editor, file dropzone, tag input, combobox,
+slider, chart, month calendar, rating, interactive map, carousel, video,
+embed, gallery, world clock, tree view, command palette and like button.
+
+## Using them
+
+```bash
+pwf create my-app --foundation foundation-1.0.0.pwpack
+cd my-app
+pwf add ../widgets-1.0.0.pwpack   # only when a page places a widgets block
+pwf dev
+```
+
+[`pwf create`](/cli#pwf-create) and [`pwf add`](/cli#pwf-add) copy each pack
+into the app's `.pwf/packs/` and pin it in `pwpack.json` by content hash, so
+the app builds against exactly the pack it was written for, offline. A page
+names a theme in `app/definitions/appearance.json` (`{ "use": "theme-linen" }`)
+or on its own receipt.
+
+## Writing your own
+
+A pack of your own stands on foundation like any app does:
+
+```bash
+pwf create --pack my-blocks --requires foundation-1.0.0.pwpack
+cd my-blocks
+pwf add block data/pricing-card
+pwf validate
+pwf pack
+```
+
+[`pwf create --pack`](/cli#pwf-create---pack) writes the empty pack,
+[`pwf add block`](/cli#pwf-add-block) a block's manifest and component, and
+[`defineBlock()`](/authoring/define-block) is the reference for the
+component. The pack format is in the
+[specification](/specification).

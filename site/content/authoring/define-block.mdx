@@ -16,6 +16,24 @@ shape. There is no schema in the block module and no validation library: the
 runtime reads the declarations itself, and a block that imports `zod` is
 refused (see [Moving from a zod schema](#moving-from-a-zod-schema)).
 
+## Start from the CLI
+
+A block lives in a pack (or an app) folder. `pwf` writes both, so the
+manifest and the component below start from a valid skeleton:
+
+```bash
+pwf create --pack my-blocks --requires foundation-1.0.0.pwpack
+cd my-blocks
+pwf add block data/pricing-card
+```
+
+[`pwf create --pack`](/cli#pwf-create---pack) writes an empty pack standing on
+[foundation](/packs); [`pwf add block`](/cli#pwf-add-block) writes
+`atoms/blocks/data/pricing-card/manifest.json` (no props yet, a `knowledge`
+skeleton) and a `component.tsx` that renders from its props. Declare each prop
+in the manifest, read it in the component, then `pwf validate` and `pwf pack`.
+The rest of this page is what goes into those two files.
+
 ```json
 {
   "id": "data.pricing-card",
