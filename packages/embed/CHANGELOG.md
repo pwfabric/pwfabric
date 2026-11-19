@@ -1,5 +1,9 @@
 # @pwfabric/embed
 
+## 3.1.0
+
+- No changes; released with the other packages at 3.1.0.
+
 ## 3.0.1
 
 - No changes; released with the other packages at 3.0.1.

@@ -1,6 +1,6 @@
 # @pwfabric/runner
 
-## Unreleased
+## 3.1.0
 
 - Fixed: an app with no way in (no `auth.json` method, no issuer) draws no session bar, so `pwf dev` no longer names `pill.region` as a missing message there. `mountSessionPill` takes `door`.
 - Added: a page that names its own appearance wears it: the renderer is handed the receipt's `appearance` when it carries one, else the app's. `projectAppearanceRef` reads both (`appearance-ref.ts`). The runner names the page it draws on `<html data-pw-page>` (`PAGE_ATTR`) and removes it on its own not-found page.
