@@ -337,6 +337,50 @@ describe('dev server', () => {
     const r = await server.rebuild()
     expect(r.ok).toBe(false)
     expect(r.diagnostics[0]).toContain('INTERNAL')
+    // Its message, not its stack: the stack is for --debug.
+    expect(r.diagnostics[0]).toContain('boom')
+    expect(r.diagnostics[0]).toContain('pwf dev --debug')
+    expect(r.diagnostics[0]).not.toMatch(/\n\s+at /)
+    const debug = track(
+      await createDevServer({ root, port: 0, debug: true }, { watch: false, assemble: { runtime: { get runnerJs(): string { throw new Error('boom') }, embedJs: '' } } })
+    )
+    expect((await debug.rebuild()).diagnostics[0]).toMatch(/\n\s+at /)
+  })
+
+  it("reports a file the host cannot read as the app's error, not INTERNAL, and tells the open page", async () => {
+    const root = await app()
+    await writeFile(join(root, 'app/definitions/entities.json'), JSON.stringify({ entities: [{ typeId: 'Note', fields: [] }] }))
+    await writeFile(join(root, 'app/definitions/auth.json'), JSON.stringify({ access: { rules: [{ subject: 'public', model: 'Note', rule: 'read' }] } }))
+    const { createLocalHost } = await import('../../host/index.js')
+    const lines: string[] = []
+    const server = track(await createDevServer({ root, port: 0, log: (l) => lines.push(l) }, { watch: false, createHost: createLocalHost }))
+    expect((await server.rebuild()).ok).toBe(true)
+    const events = sse(new URL('/_pwf/events', server.url).href)
+    cleanups.push(async () => events.close())
+    const reload = events.next('reload')
+    // The host reads auth.json for the envelope; a syntax error there used to be an INTERNAL with a stack trace.
+    await writeFile(join(root, 'app/definitions/auth.json'), '{ "access": ')
+    const failed = await server.rebuild()
+    expect(failed.ok).toBe(false)
+    expect(failed.diagnostics.join('\n')).not.toContain('INTERNAL')
+    expect(failed.diagnostics.some((d) => d.includes('JSON_INVALID') && d.includes('app/definitions/auth.json'))).toBe(true)
+    expect(lines.join('\n')).not.toMatch(/\n\s+at /)
+    expect(JSON.parse(await reload)).toEqual({ ok: false })
+    // The page shows the errors in its place, and the reload client prints them in the console.
+    const html = await (await fetch(server.url)).text()
+    expect(html).toContain('Build failed')
+    expect(html).toContain('id="pwf-build-errors"')
+    const listed = JSON.parse(/<script type="application\/json" id="pwf-build-errors">([^<]*)<\/script>/.exec(html)?.[1] ?? '[]') as string[]
+    expect(listed.some((l) => l.startsWith('JSON_INVALID app/definitions/auth.json'))).toBe(true)
+    const client = await (await fetch(new URL('/_pwf/reload.js', server.url))).text()
+    expect(client).toContain("getElementById('pwf-build-errors')")
+    expect(client).toContain('console.error')
+    // The next good build clears it: the page reloads into the app.
+    const again = events.next('reload')
+    await writeFile(join(root, 'app/definitions/auth.json'), JSON.stringify({ access: { rules: [{ subject: 'public', model: 'Note', rule: 'read' }] } }))
+    expect((await server.rebuild()).ok).toBe(true)
+    expect(JSON.parse(await again)).toEqual({ ok: true })
+    expect(await (await fetch(server.url)).text()).not.toContain('Build failed')
   })
 })
 

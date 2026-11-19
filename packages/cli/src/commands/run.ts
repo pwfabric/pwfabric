@@ -9,7 +9,9 @@
  * read-only mode: the app's `app/content` records are listed, read, counted
  * and aggregated through the same store and query path as under `pwf dev`, and
  * a write is refused with `403 READ_ONLY`. A `.pwapp` archive or a build
- * written elsewhere has no app folder beside it and is served as built.
+ * written elsewhere has no app folder beside it and is served as built; an
+ * address under the host prefix then answers `404 NO_RECORD_HOST` (JSON),
+ * never the shell.
  */
 import { readFile, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
@@ -138,7 +140,7 @@ export async function runRun(args: ParsedArgs, io: CommandIO, options: RunOption
   const source = await openRunSource(path)
   const app = await appFolderOf(path)
   const host = app ? await readOnlyHostFor(app) : undefined
-  const server = await startStaticServer({ source, port, hostname, ...(host ? { host } : {}) })
+  const server = await startStaticServer({ source, port, hostname, hostPrefix: HOST_PREFIX, ...(host ? { host } : {}) })
   io.out(`Serving ${target} at ${server.url}`)
   if (host) io.out(`The app's records are served read-only at ${server.url}${HOST_PREFIX.slice(1)} (pwf dev changes them).`)
   io.out('Press Ctrl-C to stop.')
@@ -163,6 +165,9 @@ export const run: Command = {
   --host <name>  interface to bind (default 127.0.0.1)
 
 Page paths without a file extension are answered with index.html and a
-<base href="/">, so path-routed apps work at any depth; a missing asset is a 404.`,
+<base href="/">, so path-routed apps work at any depth; a missing asset is a 404.
+Paths under ${HOST_PREFIX} are never answered with index.html: without the app
+folder there is no record host, and they are a 404 with a JSON error
+(NO_RECORD_HOST) saying so.`,
   run: (args, io) => guard('run', io, () => runRun(args, io)),
 }

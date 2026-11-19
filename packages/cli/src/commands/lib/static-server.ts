@@ -38,6 +38,13 @@ export interface StaticServerOptions {
   readonly source: StaticSource
   /** A host mounted beside the files. */
   readonly host?: StaticHost
+  /**
+   * Where a record host is addressed (`/_host`). A path under it is never
+   * answered with the shell: what the host does not claim — every such path
+   * when there is no host — is a 404 with a JSON error body, so a page reading
+   * records gets an error it can show instead of `index.html` it cannot read.
+   */
+  readonly hostPrefix?: string
   /** 0 picks a free port. */
   readonly port: number
   /** Default 127.0.0.1. */
@@ -152,8 +159,46 @@ async function extraHeaders(source: StaticSource, rel: string): Promise<Record<s
   return out
 }
 
-async function handle(source: StaticSource, req: IncomingMessage, res: ServerResponse, host: StaticHost | undefined): Promise<void> {
+/** Whether a relative request path is under the host prefix (`/_host` → `_host`, `_host/…`). */
+export function isUnderPrefix(rel: string | null, prefix: string | undefined): boolean {
+  const own = (prefix ?? '').replace(/^\/+|\/+$/g, '')
+  return own !== '' && rel !== null && (rel === own || rel.startsWith(`${own}/`))
+}
+
+/**
+ * The answer to a host address nothing serves: a 404 whose JSON body
+ * (`{ error: { code, message } }`, the host's own error shape) says why.
+ */
+function noHostAnswer(res: ServerResponse, rel: string, host: StaticHost | undefined): void {
+  const error = host
+    ? { code: 'NOT_FOUND', message: `the record host serves nothing at /${rel}` }
+    : {
+        code: 'NO_RECORD_HOST',
+        message:
+          `no record host is mounted, so /${rel} has nothing behind it: this pwapp was served without its app folder ` +
+          '(a copied build or a .pwapp archive), and a static folder has no records. ' +
+          'Serve the app folder instead (pwf run <app>, read-only records), or use pwf dev.',
+      }
+  const body = JSON.stringify({ error })
+  res.writeHead(404, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-length': String(Buffer.byteLength(body)) })
+  res.end(body)
+}
+
+async function handle(
+  source: StaticSource,
+  req: IncomingMessage,
+  res: ServerResponse,
+  host: StaticHost | undefined,
+  hostPrefix: string | undefined
+): Promise<void> {
   if (host && (await host.handle(req, res))) return
+  // A record address is the host's or nobody's: never the shell (a page would
+  // read index.html as its records and silently show none).
+  const under = requestPath(req.url ?? '/')
+  if (under !== null && isUnderPrefix(under, hostPrefix)) {
+    noHostAnswer(res, under, host)
+    return
+  }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405, { ...TEXT, allow: 'GET, HEAD' }).end('method not allowed\n')
     return
@@ -238,7 +283,7 @@ function compressed(body: Uint8Array, encoding: 'br' | 'gzip'): Uint8Array {
 export function startStaticServer(options: StaticServerOptions): Promise<StaticServer> {
   const hostname = options.hostname ?? '127.0.0.1'
   const server = createServer((req, res) => {
-    handle(options.source, req, res, options.host).catch(() => {
+    handle(options.source, req, res, options.host, options.hostPrefix).catch(() => {
       if (!res.headersSent) res.writeHead(500, TEXT)
       res.end('internal error\n')
     })

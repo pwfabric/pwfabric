@@ -6,22 +6,27 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   blockPropsCatalog,
+  checkBlockIds,
   checkBlockProps,
+  checkBlockTypes,
   checkDefaultCopy,
   checkErrorsAsText,
   checkRowFields,
   connectionFieldSets,
+  definedBlockTypes,
   hashPack,
   validatePack,
   type BlockSource,
   type PackFolder,
   type PackIssue,
   type PackValidation,
+  type PageReceipt,
 } from '@pwfabric/pack'
 import { PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { engineVersion, pinsOf } from './identity.js'
-import { engineRangeDiagnostics, loadSources, type LoadedSources } from '../../dev/sources.js'
+import { engineRangeDiagnostics, isRecord, jsonOf, loadSources, type LoadedSources } from '../../dev/sources.js'
+import { servedPageKeys } from '../../dev/envelope.js'
 import { readAuth, readEntities, readReceipt, readSeed, surfaceKeys, type AuthDeclaration } from '../../host/definitions.js'
 
 /**
@@ -406,10 +411,36 @@ function blockSourcesOf(sources: LoadedSources): BlockSource[] {
   ]
 }
 
+/**
+ * The pages `pwf build` serves, judged as it judges them: a block type that
+ * neither the app nor a pinned pack defines (`UNKNOWN_BLOCK_TYPE`) and a block
+ * id used twice on one page (`BLOCK_ID_DUPLICATE`), both errors, with the
+ * build's own code and words (@pwfabric/pack `checkBlockTypes`,
+ * `checkBlockIds`). Block types are not judged while a pinned pack could not
+ * be read: its blocks are unknown here, and its pin is already reported.
+ */
+export function checkPages(loaded: LoadedSources): PackIssue[] {
+  const { app, identity } = loaded
+  if (!app || !identity?.app) return []
+  const pages: PageReceipt[] = []
+  for (const key of servedPageKeys(identity.app).keys) {
+    const path = `app/surfaces/${key}.receipt.json`
+    const receipt = jsonOf(app.folder, path)
+    // A missing or unreadable receipt is the pack validation's finding.
+    if (isRecord(receipt) && Array.isArray(receipt['blocks'])) pages.push({ key, path, receipt })
+  }
+  const issues = pages.flatMap((page) => checkBlockIds(page))
+  const allPacksRead = loaded.packs.length === (identity.packs ?? []).length
+  if (allPacksRead) {
+    const known = definedBlockTypes(blockSourcesOf(loaded))
+    issues.push(...checkBlockTypes(pages, (type) => known.has(type)))
+  }
+  return issues
+}
 
 /**
  * `validatePack` plus {@link checkPins}, {@link checkSeeds}, {@link checkEntities},
- * {@link checkAccess}, {@link checkProps} and the pack library's `checkRowFields`
+ * {@link checkAccess}, {@link checkPages}, {@link checkProps} and the pack library's `checkRowFields`
  * (`FIELD_UNKNOWN` warnings: a receipt reading a row field its data source's rows
  * do not have; a connector-served source is known from the engine that serves
  * its connection, the app's own or a pinned pack's), as one result.
@@ -423,7 +454,7 @@ export async function validateProject(root: string, pack: PackFolder): Promise<P
   const engineIssues: PackIssue[] = loaded
     ? engineRangeDiagnostics(loaded, engineVersion()).map((d) => ({ severity: 'error', code: d.code, message: d.message, ...(d.path ? { path: d.path } : {}) }))
     : []
-  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkReservedSources(root), ...checkStatusKeys(root), ...propIssues(sources), ...fieldIssues]
+  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 

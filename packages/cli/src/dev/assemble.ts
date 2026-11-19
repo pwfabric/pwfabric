@@ -12,7 +12,7 @@
  * be pinned). Nothing is fetched; every input is on disk.
  */
 import { join } from 'node:path'
-import { blockPropDescriptors, blockTypeNames, checkReceiptBlockProps, hashPack } from '@pwfabric/pack'
+import { blockPropDescriptors, blockTypeFirstUses, blockTypeNames, checkBlockIds, checkReceiptBlockProps, hashPack, unknownBlockTypeIssue } from '@pwfabric/pack'
 import type { BlockOrigins } from '@pwfabric/contracts'
 import { atomKindMeta } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins } from '@pwfabric/contracts/schemas'
@@ -27,6 +27,7 @@ import {
   mergeEnvelopeEntries,
   moduleFileName,
   publisherOf,
+  servedPageKeys,
   type BlockManifestEntry,
   type EngineManifestEntry,
   type Page,
@@ -52,6 +53,7 @@ import {
   shimsFor,
   type RuntimeAssets,
   type PageHints,
+  type RouterMode,
   type ShellAssets,
 } from './shell.js'
 import { engineRangeDiagnostics, isRecord, jsonOf, loadSources, PWF_DIR, type PackMemo, type SourcePack } from './sources.js'
@@ -88,6 +90,14 @@ export interface AssembleOptions {
   readonly packMemo?: PackMemo
   /** The engine version the folder is judged against (ENGINE_RANGE_EXCLUDED); default: this CLI's. */
   readonly engineVersion?: string
+  /**
+   * How the built app routes (`runApp`'s `router`); default `hash`. `path`
+   * and `auto` write the app's base into the shell (`<base href>`), `auto`
+   * the host's fallback too (`<meta name="pw-router" content="path">`).
+   */
+  readonly router?: RouterMode
+  /** The app's base path under path routing; default `/`. */
+  readonly base?: string
 }
 
 export interface AssembleStats {
@@ -103,6 +113,41 @@ export interface AssembleStats {
   /** Of the compiled, how many came from the cache. */
   readonly fromCache: number
   readonly failed: number
+  /**
+   * The atoms of a compiled kind that have no module and did not fail, each
+   * with why: an engine that is a declaration only has nothing to compile.
+   * Absent when there are none.
+   */
+  readonly skipped?: readonly SkippedAtom[]
+}
+
+/** An atom the build has no module for, and why (see {@link AssembleStats.skipped}). */
+export interface SkippedAtom {
+  readonly id: string
+  readonly reason: string
+}
+
+/** Why an atom of this status has no module. */
+function skipReason(atom: CompiledAtom): string {
+  return `${atom.kind} declared as data, no code to compile`
+}
+
+/**
+ * The atom count of a build line: `56/57 atoms compiled (3 from cache; 1
+ * skipped: RestConnector (connector declared as data, no code to compile))`.
+ * Every atom the count leaves out is named, with why (at most three by name).
+ */
+export function atomsLine(stats: AssembleStats): string {
+  const parts = [`${stats.fromCache} from cache`]
+  const skipped = stats.skipped ?? []
+  if (skipped.length > 0) {
+    const reasons = [...new Set(skipped.map((s) => s.reason))]
+    const shown = skipped.slice(0, 3).map((s) => (reasons.length > 1 ? `${s.id} (${s.reason})` : s.id))
+    const more = skipped.length > 3 ? ` and ${skipped.length - 3} more` : ''
+    parts.push(`${skipped.length} skipped: ${shown.join(', ')}${more}${reasons.length === 1 ? ` (${reasons[0] as string})` : ''}`)
+  }
+  if (stats.failed) parts.push(`${stats.failed} failed (see the errors above)`)
+  return `${stats.compiled}/${stats.atoms} atoms compiled (${parts.join('; ')})`
 }
 
 export interface AssembleResult {
@@ -267,12 +312,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // The app's own not-found page (`app.notFound`) and sign-in screen
   // (`app.signIn`) are read like pages and served like them, but they are no
   // routes: not in `surfaceOrder`, not in the derived navigation.
-  const routeKeys = identity.app.surfaceOrder
-  const offRoute = (key: string | undefined): string | undefined =>
-    key !== undefined && !routeKeys.includes(key) ? key : undefined
-  const notFoundKey = offRoute(identity.app.notFound)
-  const signInKey = offRoute(identity.app.signIn)
-  const keys = [...routeKeys, ...(notFoundKey ? [notFoundKey] : []), ...(signInKey && signInKey !== notFoundKey ? [signInKey] : [])]
+  const { keys, notFoundKey, signInKey } = servedPageKeys(identity.app)
   for (const key of keys) {
     const path = `app/surfaces/${key}.receipt.json`
     const bytes = app.folder.files.get(path)
@@ -384,24 +424,21 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     for (const issue of checkReceiptBlockProps(page.receipt, propCatalog, page.path)) {
       diagnostics.push({ severity: 'warning', code: issue.code, message: issue.message, path: page.path })
     }
+    // A block id is unique within its page (receipt §2), as `pwf validate` says too.
+    for (const issue of checkBlockIds(page)) diagnostics.push({ severity: 'error', code: issue.code, message: issue.message, path: page.path })
   }
 
   const used = new Set<CompiledAtom>()
   const placedBlocks: { atomId: string; origins?: BlockOrigins }[] = []
   const blockManifest: BlockManifestEntry[] = []
   const modules = new Map<string, Uint8Array>()
-  const firstUse = new Map<string, Page>()
-  for (const page of pages) for (const t of blockTypesOf(page.receipt)) if (!firstUse.has(t)) firstUse.set(t, page)
-  for (const [type, page] of [...firstUse].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
+  for (const [type, page] of blockTypeFirstUses(pages)) {
     const candidates = byName.get(type) ?? []
     const atom = candidates[0]
     if (!atom) {
-      diagnostics.push({
-        severity: 'error',
-        code: 'UNKNOWN_BLOCK_TYPE',
-        message: `page "${page.key}" places a block of type "${type}", which neither the app nor its pinned packs define`,
-        path: page.path,
-      })
+      // The same finding, worded the same, as `pwf validate` (@pwfabric/pack checkBlockTypes).
+      const issue = unknownBlockTypeIssue(type, page)
+      diagnostics.push({ severity: 'error', code: issue.code, message: issue.message, path: page.path })
       continue
     }
     if (!used.has(atom)) placedBlocks.push({ atomId: atom.id, ...declaredOrigins(atom, diagnostics) })
@@ -560,14 +597,18 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // OPENED page's only (pwapp-format §2.1): never the entry page's on another.
   const hinted: Record<string, PageHints> = {}
   if (!gated) for (const page of [...routes, ...(notFoundPage ? [notFoundPage] : [])]) hinted[page.key] = hintsOf(page)
+  const router = options.router ?? 'hash'
+  // The inline scripts read the address as the runner will: by path when it routes by path.
+  const routed = router === 'hash' ? {} : { router }
   const pageHints = {
+    ...routed,
     entry,
     maxWidth: STATIC_VIEWPORT_MAX_WIDTH,
     routes: routes.map((p) => p.key),
     ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
     pages: hinted,
   }
-  const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref })
+  const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref, router })
   const assets: ShellAssets = { ...assets0, boot: hashedName('assets/boot.js', bootJs) }
   let firstPaint: { rootHtml: string; data: Record<string, unknown> } | undefined
   const shell = (csp?: string): Uint8Array =>
@@ -585,6 +626,8 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         themeCss: new TextDecoder().decode(themeCss),
         pageHints,
         ...(firstPaint ? { firstPaint } : {}),
+        router,
+        ...(options.base !== undefined ? { base: options.base } : {}),
       })
     )
   files.set(assets.boot, enc.encode(bootJs))
@@ -698,6 +741,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       firstPaint = {
         rootHtml: entryPainted ? staticRootHtml(entryPainted) : '',
         data: firstPaintData({
+          ...routed,
           entry,
           routes: routes.map((p) => p.key),
           ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
@@ -752,6 +796,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   )
 
   const compiled = atoms.filter((a) => a.status === 'compiled' || a.status === 'precompiled')
+  const declared = atoms.filter((a) => a.status === 'declared')
   return done({
     pages: routes.length,
     blocks: blockManifest.length,
@@ -760,5 +805,6 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     compiled: compiled.length,
     fromCache: compiled.filter((a) => a.fromCache).length,
     failed: atoms.filter((a) => a.status === 'failed').length,
+    ...(declared.length > 0 ? { skipped: declared.map((a) => ({ id: a.id, reason: skipReason(a) })) } : {}),
   })
 }

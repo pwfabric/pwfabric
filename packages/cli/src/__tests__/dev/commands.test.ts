@@ -98,6 +98,45 @@ describe('pwf build', () => {
   it('rethrows unexpected write failures', async () => {
     await expect(writePwapp(new Map([['a\0b', new Uint8Array()]]), join(await app(), 'o'))).rejects.toThrow()
   })
+
+  it('writes the router it is asked for, and pwf run serves a path-routed build at any depth', async () => {
+    const root = await app()
+    const c = capture(root)
+    expect(await main(['build', '--router', 'path'], c.io)).toBe(0)
+    expect(c.out.some((l) => l.startsWith('router: path, base /'))).toBe(true)
+    const out = join(root, '.pwf', 'out')
+    const html = await readFile(join(out, 'index.html'), 'utf8')
+    expect(html).toContain('<base href="/" />')
+    const boot = /\.\/(assets\/boot\.[0-9a-f]{8}\.js)/.exec(html)?.[1] ?? ''
+    expect(await readFile(join(out, boot), 'utf8')).toContain('router: "path"')
+
+    // A deep link is the shell, with ONE base, and its relative assets resolve against it.
+    const { runRun } = await import('../../commands/run.js')
+    expect(
+      await runRun({ positionals: [root], flags: { port: '0' } }, capture(root).io, {
+        until: async (server) => {
+          const page = new URL('home/deeper', server.url)
+          const res = await fetch(page)
+          expect(res.status).toBe(200)
+          const served = await res.text()
+          expect(served.match(/<base /g)).toHaveLength(1)
+          const base = /<base href="([^"]+)"/.exec(served)?.[1] ?? ''
+          expect((await fetch(new URL(boot, new URL(base, page)))).status).toBe(200)
+        },
+      })
+    ).toBe(0)
+
+    expect(await main(['build', '--router', 'auto', '--base', '/shop'], capture(root).io)).toBe(0)
+    const auto = await readFile(join(out, 'index.html'), 'utf8')
+    expect(auto).toContain('<base href="/shop/" />')
+    expect(auto).toContain('<meta name="pw-router" content="path" />')
+
+    const bad = capture(root)
+    expect(await main(['build', '--router', 'history'], bad.io)).toBe(2)
+    expect(bad.err[0]).toBe('pwf build: --router takes hash, path, auto (not "history")')
+    expect(await main(['build', '--base', '/shop/'], capture(root).io)).toBe(2)
+    expect(await main(['build', '--router', 'path', '--base', 'shop'], capture(root).io)).toBe(2)
+  })
 })
 
 describe('pwf dev', () => {

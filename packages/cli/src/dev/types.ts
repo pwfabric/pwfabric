@@ -21,6 +21,8 @@ export interface DevServerOptions {
   readonly localHost?: boolean | LocalHost
   /** Called with human-readable progress lines. */
   readonly log?: (line: string) => void
+  /** Print an engine failure with its stack trace. Default false: its message only. */
+  readonly debug?: boolean
 }
 
 export interface DevServer {

@@ -17,6 +17,7 @@
  *   mediaDeclarations()  PackFolder      → media declarations + bytes + provenance
  *   checkBlockProps(...) PackFolder      → receipt props that do not fit the block manifests (warnings)
  *   checkRowFields(pack) PackFolder      → row fields receipts read that their sources lack
+ *   checkBlockTypes / checkBlockIds      → unknown block types; a block id used twice on a page (errors)
  *   checkDefaultCopy / checkErrorsAsText → words the app did not write; codes shown as text (warnings)
  *   connectionFieldSets  PackFolder      → the row fields each connection's engine declares
  *
@@ -89,6 +90,17 @@ export {
   type BlockPropsEntry,
   type BlockSource,
 } from './block-props.js'
+export {
+  BLOCK_ID_DUPLICATE,
+  blockTypeFirstUses,
+  checkBlockIds,
+  checkBlockTypes,
+  definedBlockTypes,
+  UNKNOWN_BLOCK_TYPE,
+  unknownBlockTypeIssue,
+  walkReceiptBlocks,
+  type PageReceipt,
+} from './receipt-blocks.js'
 export {
   BLOCK_DEFAULT_COPY,
   ERROR_BOUND_AS_TEXT,

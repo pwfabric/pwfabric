@@ -97,3 +97,52 @@ describe('the first-paint script', () => {
     expect(root.textContent).toBe('drawn by the runner')
   })
 })
+
+describe('the first-paint script under path routing (pwf build --router path|auto)', () => {
+  async function runAt(path: string, router: 'path' | 'auto', head: string, served: Record<string, string> = {}): Promise<HTMLElement> {
+    history.replaceState(null, '', path)
+    Object.defineProperty(window, 'innerWidth', { value: 390, configurable: true })
+    document.head.innerHTML = head
+    document.body.innerHTML =
+      `<div id="root"></div><template id="pw-entry-frame"><div id="pw-root" data-pw-static="menu"><p>menu</p></div></template>` +
+      `<script type="application/json" id="pw-first-paint">${JSON.stringify({ ...data, router })}</script>`
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const body = served[url]
+        return { ok: body !== undefined, text: async () => body ?? '' }
+      })
+    )
+    new Function(FIRST_PAINT_SCRIPT)()
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+    return document.getElementById('root') as HTMLElement
+  }
+  afterEach(() => {
+    document.head.innerHTML = ''
+  })
+  const visit = { './pwpack/surfaces/visit.html': '<p>visit</p>', './pwpack/surfaces/notfound.html': '<p>gone</p>' }
+
+  it('reads the page off the path below the base, not off the hash', async () => {
+    expect((await runAt('/', 'path', '<base href="/" />')).innerHTML).toContain('<p>menu</p>')
+    expect((await runAt('/visit', 'path', '<base href="/" />', visit)).innerHTML).toContain('<p>visit</p>')
+    expect((await runAt('/visit/', 'path', '<base href="/" />', visit)).innerHTML).toContain('<p>visit</p>')
+    // A deep link the app does not have is its not-found page, never the entry's frame.
+    expect((await runAt('/nope', 'path', '<base href="/" />', visit)).innerHTML).toContain('<p>gone</p>')
+    // A hash means nothing to the path router.
+    expect((await runAt('/#/visit', 'path', '<base href="/" />', visit)).innerHTML).toContain('<p>menu</p>')
+  })
+
+  it('honours a sub-path base and the query keys that change a frame', async () => {
+    expect((await runAt('/shop/visit', 'path', '<base href="/shop/" />', visit)).innerHTML).toContain('<p>visit</p>')
+    expect((await runAt('/shop', 'path', '<base href="/shop/" />')).innerHTML).toContain('<p>menu</p>')
+    expect((await runAt('/shop/?category=tea', 'path', '<base href="/shop/" />')).innerHTML).toBe('')
+  })
+
+  it('auto routes by path only where the shell declares the fallback, as the runner decides', async () => {
+    const meta = '<base href="/" /><meta name="pw-router" content="path" />'
+    expect((await runAt('/visit', 'auto', meta, visit)).innerHTML).toContain('<p>visit</p>')
+    // No meta: auto is hash routing, so /visit is the entry page by its (empty) hash.
+    expect((await runAt('/visit', 'auto', '<base href="/" />', visit)).innerHTML).toContain('<p>menu</p>')
+  })
+})

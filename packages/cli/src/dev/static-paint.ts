@@ -281,6 +281,8 @@ export function staticPageFile(key: string): string {
  * is at the painted breakpoint, which query keys would seed the page.
  */
 export function firstPaintData(input: {
+  /** How the app routes, when not by hash: the script then reads the page off the path. */
+  readonly router?: 'path' | 'auto'
   readonly entry: string
   readonly routes: readonly string[]
   readonly notFound?: string
@@ -291,6 +293,7 @@ export function firstPaintData(input: {
     pages[p.key] = { keys: p.addressKeys, ...(p.key === input.entry ? {} : { file: staticPageFile(p.key) }) }
   }
   return {
+    ...(input.router ? { router: input.router } : {}),
     entry: input.entry,
     routes: input.routes,
     ...(input.notFound ? { notFound: input.notFound } : {}),

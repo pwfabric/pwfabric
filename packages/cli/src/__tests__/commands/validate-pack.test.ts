@@ -34,6 +34,42 @@ describe('pwf validate', () => {
     expect(c.out.at(-1)).toContain('valid (0 errors, 1 warning;')
   })
 
+  it('refuses an unknown block type and a block id used twice on a page, with the code and words pwf build uses', async () => {
+    const { root } = await created()
+    const path = join(root, 'app', 'surfaces', 'home.receipt.json')
+    const home = JSON.parse(await readFile(path, 'utf8')) as { blocks: { id: string }[] }
+    const first = home.blocks[0]!.id
+    await writeFile(
+      path,
+      JSON.stringify({
+        ...home,
+        blocks: [
+          ...home.blocks,
+          { id: 'holo', type: 'hologram', props: {} },
+          // Nested: the id is unique within the PAGE, not within its parent.
+          { id: 'box', type: 'text', props: { content: 'x' }, children: [{ id: first, type: 'text', props: { content: 'again' } }] },
+        ],
+      })
+    )
+    const v = capture(root)
+    expect(await main(['validate'], v.io)).toBe(1)
+    const unknown = v.err.find((l) => l.includes('UNKNOWN_BLOCK_TYPE'))
+    const duplicate = v.err.find((l) => l.includes('BLOCK_ID_DUPLICATE'))
+    expect(unknown).toBe('  UNKNOWN_BLOCK_TYPE app/surfaces/home.receipt.json: page "home" places a block of type "hologram", which neither the app nor its pinned packs define')
+    expect(duplicate).toContain(`block id "${first}" is used twice on this page, at blocks[0] and blocks[${home.blocks.length + 1}].children[0]`)
+
+    // pwf build says the same, word for word.
+    const b = capture(root)
+    expect(await main(['build'], b.io)).toBe(1)
+    const built = b.err.join('\n')
+    expect(built).toContain('UNKNOWN_BLOCK_TYPE  page "home" places a block of type "hologram", which neither the app nor its pinned packs define')
+    expect(built).toContain(`BLOCK_ID_DUPLICATE  block id "${first}" is used twice on this page, at blocks[0] and blocks[${home.blocks.length + 1}].children[0]`)
+
+    // Fixed, both pass.
+    await writeFile(path, JSON.stringify(home))
+    expect(await main(['validate'], capture(root).io)).toBe(0)
+  })
+
   it('groups errors, warnings and notes and exits 1 on errors', async () => {
     const cwd = await tempDir()
     await mkdir(join(cwd, 'blocks', 'x', 'y'), { recursive: true })
@@ -187,6 +223,14 @@ describe('pwf validate', () => {
       join(root, 'app', 'definitions', 'auth.json'),
       JSON.stringify({ access: { rules: [{ subject: 'public', model: 'Product', rule: 'read' }] } })
     )
+    // The fixture foundation has no repeater: the app brings its own (a block type nobody defines is an error).
+    const repeater = join(root, 'atoms', 'blocks', 'layout', 'repeater')
+    await mkdir(repeater, { recursive: true })
+    await writeFile(
+      join(repeater, 'manifest.json'),
+      JSON.stringify({ id: 'layout.repeater', kind: 'block', version: '1.0.0', category: 'layout', name: 'repeater', state: 'stable', knowledge: { purpose: 'Test repeater' }, definition: { props: [], canHaveChildren: true } })
+    )
+    await writeFile(join(repeater, 'component.tsx'), "export default function Block(): string {\n  return ''\n}\n")
     const home = JSON.parse(await readFile(join(root, 'app', 'surfaces', 'home.receipt.json'), 'utf8'))
     const receipt = (field: string) => ({
       ...home,

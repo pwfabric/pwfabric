@@ -66,6 +66,7 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
   }
   const forceHost = switchOn('local-host')
   const noHost = switchOn('no-host')
+  const debug = switchOn('debug')
   if (extra.length > 0) {
     io.err(`pwf dev: unexpected argument ${extra.map((e) => `"${e}"`).join(', ')}; pwf dev serves one folder`)
     return 2
@@ -83,7 +84,7 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
   let server
   try {
     server = await createDevServer(
-      { root, port, hostname, log: io.out, ...(localHost !== undefined ? { localHost } : {}) },
+      { root, port, hostname, log: io.out, ...(debug ? { debug } : {}), ...(localHost !== undefined ? { localHost } : {}) },
       internals
     )
   } catch (e) {
@@ -106,13 +107,17 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
 export const devCommand: Command = {
   name: 'dev',
   summary: 'Serve the app locally and reload it on every change',
-  usage: `pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host]
+  usage: `pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--debug]
 
   dir            the app folder (default: the current folder)
   --port <n>     port to listen on (default ${DEFAULT_PORT}; 0 picks a free one)
   --host <name>  interface to bind (default ${DEFAULT_HOSTNAME})
   --local-host   mount the local host for sign-in and data even when the app declares neither
   --no-host      do not mount the local host, even when the app declares sign-in or records
+  --debug        print an engine error with its stack trace
+
+A build that fails is listed in the terminal, and the open page shows the
+errors in its place (with a console message) until the next good build.
 
 The local host (under ${HOST_PREFIX}) is for development only: records live in
 memory and are seeded from app/content/ then app/data/ (again whenever those or
