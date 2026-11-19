@@ -32,6 +32,7 @@
  */
 
 import { accountUserFrom, applyAccountControl, type AccountUser } from './apply-auth.js'
+import { projectAppearanceRef } from './appearance-ref.js'
 import { authStateOf } from './auth-state.js'
 import { assembleFooter, assembleNav, linkHrefFor, rewriteHrefs, seedStateFromQuery, type ToHref } from './helpers.js'
 import type { RunnerMessages } from './messages.js'
@@ -45,6 +46,14 @@ export const STATIC_VIEWPORT_MAX_WIDTH = 639
 
 /** The attribute on `#pw-root` naming the page whose first frame it holds. */
 export const STATIC_PAGE_ATTR = 'data-pw-static'
+
+/**
+ * The attribute on `<html>` naming the page the document shows (pwapp-format
+ * §2): the theme stylesheet grounds a page that wears its own theme under
+ * `:root[data-pw-page="<key>"]`. The shell's page-hints script sets it before
+ * the first paint, the runner on every page it draws.
+ */
+export const PAGE_ATTR = 'data-pw-page'
 
 /** What a page's blocks are assembled from, beside its receipt. */
 export interface PageContext {
@@ -191,7 +200,10 @@ export function firstFrameOptions(input: {
 }): Record<string, unknown> {
   const { project } = input
   return {
-    appearance: input.appearanceRef ?? input.receipt.appearance ?? {},
+    // A page that names its own appearance wears it (the build resolved it to
+    // its whole configuration: the page's theme, over the app's other
+    // members); any other page wears the app's.
+    appearance: projectAppearanceRef(input.receipt.appearance) ?? input.appearanceRef ?? {},
     // PAINT FIRST, FILL IN AFTER: the chrome, headings and static cards are
     // in the receipt already; only the lists wait.
     loadingStrategy: 'immediate',

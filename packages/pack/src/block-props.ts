@@ -14,7 +14,12 @@
  * `enum`/`const` (BLOCK_PROP_UNKNOWN, _TYPE, _ENUM); then the rest of the
  * shape, as the runtime reads it (`checkPropValue`, @pwfabric/contracts): bounds,
  * lengths, patterns, formats, and the members of nested objects and array items
- * (BLOCK_PROP_SHAPE). A value
+ * (BLOCK_PROP_SHAPE). The members of array items and nested objects are named
+ * as the prop's `jsonSchema` names them (`items.properties`, `properties`): a
+ * member it does not name is BLOCK_PROP_UNKNOWN too, with its path
+ * (`columns[0].label`) and the nearest name when it looks misspelled — unless
+ * the schema leaves the object open (`additionalProperties` true or a schema,
+ * `patternProperties`, or no `properties` at all). A value
  * that is a binding (a string carrying `{{…}}`, whole or interpolated) resolves
  * at runtime and is not checked — except on a prop the manifest declares
  * `bindable: false`. The runtime leaves such a prop exactly as written, nested
@@ -25,7 +30,7 @@
 import { checkPropValue, coercePropValue, type AtomRef, type PropShape } from '@pwfabric/contracts'
 import type { PackFolder, PackIssue } from './types.js'
 
-/** A prop is named that the block's manifest does not declare; the block ignores it. */
+/** A prop is named that the block's manifest does not declare — or a member its schema does not name; the block ignores it. */
 export const BLOCK_PROP_UNKNOWN = 'BLOCK_PROP_UNKNOWN'
 /** A value is outside the prop's `enum` (or `const`); the block still gets it as written. */
 export const BLOCK_PROP_ENUM = 'BLOCK_PROP_ENUM'
@@ -269,6 +274,67 @@ function short(v: unknown): string {
   return s.length > 60 ? `${s.slice(0, 57)}…` : s
 }
 
+/** The edit distance between two names (Levenshtein), for "did you mean". */
+function distance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i]
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min((prev[j] as number) + 1, (row[j - 1] as number) + 1, (prev[j - 1] as number) + (a[i - 1] === b[j - 1] ? 0 : 1))
+    }
+    prev = row
+  }
+  return prev[b.length] as number
+}
+
+/** The declared name `name` is most likely a misspelling of, or undefined. */
+export function nearestName(name: string, names: readonly string[]): string | undefined {
+  const lower = name.toLowerCase()
+  let best: { name: string; d: number } | undefined
+  for (const n of names) {
+    const d = n.toLowerCase() === lower ? 0 : distance(lower, n.toLowerCase())
+    if (d <= Math.max(1, Math.floor(Math.min(name.length, n.length) / 3)) && (!best || d < best.d)) best = { name: n, d }
+  }
+  return best?.name
+}
+
+/** The branch of an `anyOf`/`oneOf` a value is read against: the one branch whose type takes it, or none. */
+function branchFor(schema: Record<string, unknown>, value: unknown): unknown {
+  const branches = schema['anyOf'] ?? schema['oneOf']
+  if (!Array.isArray(branches)) return schema
+  const taking = branches.filter((b) => isRecord(b) && b['type'] !== undefined && typeAccepts(b['type'], value))
+  return taking.length === 1 ? taking[0] : undefined
+}
+
+/**
+ * The members of a nested value its schema does not name, where they are
+ * (`columns[0].label`). Walks array items (`items`) and object members
+ * (`properties`); a template value is not walked (it resolves at runtime). An
+ * object is closed when its schema names `properties` and leaves no other
+ * member open (`additionalProperties` absent or `false`, no
+ * `patternProperties`).
+ */
+function unknownMembers(value: unknown, schema: unknown, at: string, out: { at: string; name: string; known: string[] }[] = []): typeof out {
+  if (!isRecord(schema) || isTemplate(value)) return out
+  const branch = branchFor(schema, value)
+  if (branch !== schema) return unknownMembers(value, branch, at, out)
+  if (Array.isArray(value)) {
+    if (isRecord(schema['items'])) value.forEach((item, i) => unknownMembers(item, schema['items'], `${at}[${i}]`, out))
+    return out
+  }
+  if (!isRecord(value)) return out
+  const props = isRecord(schema['properties']) ? schema['properties'] : undefined
+  const extra = schema['additionalProperties']
+  for (const [name, member] of Object.entries(value)) {
+    if (member === undefined) continue
+    const declared = props?.[name]
+    if (declared !== undefined) unknownMembers(member, declared, `${at}.${name}`, out)
+    else if (isRecord(extra)) unknownMembers(member, extra, `${at}.${name}`, out)
+    else if (props && extra !== true && schema['patternProperties'] === undefined) out.push({ at: `${at}.${name}`, name, known: Object.keys(props) })
+  }
+  return out
+}
+
 /** The findings for one value of one prop, or none. */
 function valueIssue(
   where: string,
@@ -337,10 +403,25 @@ export function checkReceiptBlockProps(receipt: unknown, catalog: BlockPropsCata
         }
         const found = valueIssue(where, prop, value, spec.jsonSchema, entry.atomId, literal)
         if (found) issues.push({ severity: 'warning', path, ...found })
-        else if (isRecord(spec.jsonSchema) && (literal || !carriesBinding(value))) {
+        else {
+          // The members of its items and nested objects, by name — template values aside.
+          for (const member of literal || !isBinding(value) ? unknownMembers(value, spec.jsonSchema, prop) : []) {
+            const near = nearestName(member.name, member.known)
+            issues.push({
+              severity: 'warning',
+              code: BLOCK_PROP_UNKNOWN,
+              path,
+              message:
+                `${at}.props.${member.at} (${type as string}${id}) sets "${member.name}", which ${entry.atomId} does not declare for ${member.at.slice(0, -(member.name.length + 1))} ` +
+                `(its members: ${member.known.join(', ') || 'none'})${near ? `; did you mean "${near}"?` : ''}; the block ignores it`,
+            })
+          }
+        }
+        if (!found && isRecord(spec.jsonSchema) && (literal || !carriesBinding(value))) {
           // The rest of the shape, as the runtime reads it: bounds, formats, nested members.
           const shape = spec.jsonSchema as PropShape
-          for (const issue of checkPropValue(coercePropValue(value, shape), shape, prop)) {
+          // A member the schema does not name is reported above, by name.
+          for (const issue of checkPropValue(coercePropValue(value, shape), shape, prop).filter((i) => i.code !== 'unknownMember')) {
             issues.push({
               severity: 'warning',
               code: BLOCK_PROP_SHAPE,

@@ -18,7 +18,10 @@
  * - provider (sibling)     → per-facet entry over the SHARED vendor motor
  *                           (`../index`): binds the domain's entity map from
  *                           `./<domain>` into the vendor engine class, or falls
- *                           back to a vendor `create*` factory.
+ *                           back to a vendor `create*` factory. Several facets
+ *                           of one vendor compile into ONE module
+ *                           ({@link providerBundleSource}): each facet's
+ *                           factory is a named export, the motor is bundled once.
  *
  * @module @pwfabric/compiler/wrappers
  */
@@ -153,6 +156,27 @@ export function createConnector(
   )
 }
 export default createConnector
+`
+}
+
+/** Where a facet's own entry wrapper sits, relative to its vendor folder (`providers/<vendor>/`). */
+export function providerFacetEntry(domain: string): string {
+  return `entities/${domain}.__engine__.ts`
+}
+
+/**
+ * The entry of a vendor's ONE module (`providers/<vendor>/__engines__.ts`):
+ * every facet the app ships, each facet's factory exported under the facet's
+ * own name (`export { createConnector as "orders" }`). The facets share the
+ * vendor motor (`index.ts`) and whatever it imports, so a bundler writes that
+ * code once, not once per facet. Names are sorted and each appears once.
+ * Throws on a name that fails {@link isValidEngineName}.
+ */
+export function providerBundleSource(domains: readonly string[]): string {
+  const names = [...new Set(domains)].sort()
+  for (const name of names) if (!isValidEngineName(name)) throw new Error(`invalid engine name ${JSON.stringify(name)}`)
+  return `// AUTO-GENERATED (pwfabric-compiler) — every facet this app ships of one vendor, in one module.
+${names.map((n) => `export { createConnector as ${JSON.stringify(n)} } from ${JSON.stringify(`./${providerFacetEntry(n).replace(/\.ts$/, '')}`)}`).join('\n')}
 `
 }
 

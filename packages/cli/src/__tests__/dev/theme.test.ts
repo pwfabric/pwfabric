@@ -7,7 +7,9 @@ import {
   findTheme,
   mergeGroups,
   resolveAppearance,
+  resolvePageAppearance,
   themeAtomOf,
+  webfontsOf,
   themeWebfonts,
   webfontStylesheetHref,
   withWebfontFallbacks,
@@ -45,6 +47,84 @@ describe('theme atoms', () => {
       extra: { x: 1 },
     })
     expect(mergeGroups({ a: 1 }, 'not-an-object')).toEqual({ a: 1 })
+  })
+})
+
+describe('resolvePageAppearance (a page names its own theme)', () => {
+  const app = { config: { theme: { colors: { primary: '#18181b', text: '#09090b', accent: 'gold' } }, mode: { policy: 'light' } }, theme: zinc }
+  const path = 'app/surfaces/p.receipt.json'
+
+  it('a page that names another theme wears it, dark variant its own, the app’s other members kept', () => {
+    const d: AssembleDiagnostic[] = []
+    expect(resolvePageAppearance({ use: 'dusk' }, app, [zinc, dusk], d, path)).toEqual({
+      wears: 'own',
+      config: { theme: { colors: { primary: '#000' } }, darkTheme: { colors: { primary: '#fff' } }, mode: { policy: 'light' } },
+    })
+    // The reference shape reads the same; the page's own tokens go over the theme's per group.
+    expect(resolvePageAppearance({ config: { use: 'dusk', theme: { colors: { text: '#111' } }, mode: { policy: 'dark' } } }, app, [zinc, dusk], d, path)).toEqual({
+      wears: 'own',
+      config: { theme: { colors: { primary: '#000', text: '#111' } }, darkTheme: { colors: { primary: '#fff' } }, mode: { policy: 'dark' } },
+    })
+    expect(d).toEqual([])
+  })
+
+  it('the app’s dark variant does not follow the page onto a theme that has none', () => {
+    const withDark = { config: { theme: { colors: { primary: '#000' } }, darkTheme: { colors: { primary: '#fff' } } }, theme: dusk }
+    expect(resolvePageAppearance({ use: 'zinc' }, withDark, [zinc, dusk], [], path)).toEqual({ wears: 'own', config: { theme: zinc.theme } })
+  })
+
+  it('the app’s theme named again, no appearance, or one that changes nothing: the app’s', () => {
+    expect(resolvePageAppearance({ use: 'theme-zinc' }, app, [zinc, dusk], [], path)).toEqual({ wears: 'app' })
+    expect(resolvePageAppearance(undefined, app, [zinc], [], path)).toEqual({ wears: 'app' })
+    expect(resolvePageAppearance({ config: { mode: { policy: 'light' } } }, app, [zinc], [], path)).toEqual({ wears: 'app' })
+  })
+
+  it('a page with no theme of its own starts from the app’s', () => {
+    expect(resolvePageAppearance({ theme: { colors: { primary: 'red' } } }, app, [zinc], [], path)).toEqual({
+      wears: 'own',
+      config: { theme: { colors: { primary: 'red', text: '#09090b', accent: 'gold' } }, mode: { policy: 'light' } },
+    })
+  })
+
+  it('an unknown name is THEME_NOT_FOUND at the receipt, and the receipt keeps it as written', () => {
+    const d: AssembleDiagnostic[] = []
+    expect(resolvePageAppearance({ use: 'ocean' }, app, [zinc], d, path)).toEqual({ wears: 'as-written' })
+    expect(d.map((x) => [x.code, x.path])).toEqual([['THEME_NOT_FOUND', path]])
+    expect(resolvePageAppearance('zinc', app, [zinc], [], path)).toEqual({ wears: 'as-written' })
+  })
+
+  it('names the stand-in of the page theme’s webfont', () => {
+    const serif = themeAtomOf('serif', { theme: { typography: { fontFamily: 'Nunito, sans-serif' } } }, 'pack') as ThemeAtom
+    const r = resolvePageAppearance({ use: 'serif' }, app, [zinc, serif], [], path)
+    expect(r.wears === 'own' && (r.config['theme'] as { typography: { fontFamily: string } }).typography.fontFamily).toBe('Nunito, "Nunito Fallback", sans-serif')
+  })
+})
+
+describe('the theme stylesheet with pages of their own', () => {
+  it('grounds each such page under :root[data-pw-page], after the app’s palette, by its own mode', () => {
+    const css = buildThemeCss({ theme: { colors: { background: '#fff' } } }, [
+      { key: 'night', config: { theme: { colors: { background: '#0b1020' } }, darkTheme: { colors: { background: '#000' } } } },
+      { key: 'day', config: { theme: { colors: { background: '#fefefe' } }, mode: { policy: 'light' } } },
+    ])
+    expect(css.indexOf(':root, [data-pw-surface] {')).toBeLessThan(css.indexOf(':root[data-pw-page="night"] {'))
+    expect(css).toMatch(/:root\[data-pw-page="night"\] \{[^}]*--pw-color-background: #0b1020;/)
+    expect(css).toMatch(/:root\[data-pw-page="night"\]\[data-pw-theme="dark"\] \{[^}]*--pw-color-background: #000;/)
+    expect(css).toMatch(/:root\[data-pw-page="night"\]:not\(\[data-pw-theme="light"\]\) \{/)
+    // A light-only page has no dark rule.
+    expect(css).toMatch(/:root\[data-pw-page="day"\] \{[^}]*--pw-color-background: #fefefe;/)
+    expect(css).not.toContain(':root[data-pw-page="day"][data-pw-theme="dark"]')
+    // No page of its own: the stylesheet is the app's alone.
+    expect(buildThemeCss({ theme: { colors: { background: '#fff' } } })).not.toContain('data-pw-page')
+  })
+
+  it('declares each webfont’s stand-in once, and one stylesheet carries every family', () => {
+    const a = { theme: { typography: { fontFamily: 'Nunito, sans-serif' } } }
+    const b = { theme: { typography: { fontFamily: 'Nunito, sans-serif', headingFontFamily: 'Inter' } } }
+    const css = buildThemeCss(a, [{ key: 'b', config: b }])
+    expect(css.split('font-family: "Nunito Fallback";').length).toBe(2)
+    expect(css).toContain('font-family: "Inter Fallback";')
+    expect(webfontsOf([a, b]).map((f) => f.family)).toEqual(['Nunito', 'Inter'])
+    expect(webfontsOf([a, undefined])).toEqual(themeWebfonts(a))
   })
 })
 

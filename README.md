@@ -39,17 +39,20 @@ The shortest way to an app is the command line. It needs Node 22.
 
 ```bash
 npm install -g @pwfabric/cli
-pwf create my-app --foundation /path/to/foundation.pwpack
+pwf create my-app --foundation /path/to/foundation-1.0.0.pwpack
 cd my-app
 pwf dev          # serves the app and reloads on every change
 pwf build        # writes the static app to .pwf/out/
 ```
 
-An app's blocks and themes come from a pack, usually the
-[foundation](https://github.com/pwfabric/foundation). Its README says
-how to build the `.pwpack` archive that `--foundation` takes. The
-[examples](https://github.com/pwfabric/examples) are three complete
-apps to start from.
+An app's blocks and themes come from packs: the
+[foundation](https://github.com/pwfabric/packs) and, for the occasional
+blocks, the widgets pack. Both are released as `.pwpack` files
+(`foundation-<version>.pwpack`, `widgets-<version>.pwpack`) on the
+[releases of pwfabric/packs](https://github.com/pwfabric/packs/releases);
+`--foundation` takes the foundation's. The
+[examples](https://github.com/pwfabric/examples) are two complete apps to
+start from: `cafe-menu` and `lighting-hub-waitlist`.
 
 Writing your own block takes one function. Its props are declared once, as
 data (the same list its `manifest.json` carries in `definition.props`); the
@@ -97,8 +100,8 @@ pnpm typecheck
 |---|---|
 | [pwfabric/pwfabric](https://github.com/pwfabric/pwfabric) | This one: the engine packages |
 | [pwfabric/spec](https://github.com/pwfabric/spec) | The file formats and protocols, their JSON Schemas and conformance fixtures |
-| [pwfabric/foundation](https://github.com/pwfabric/foundation) | The standard library pack: core blocks, shells, two themes, capabilities |
-| [pwfabric/examples](https://github.com/pwfabric/examples) | Three small apps to build and run with `pwf` |
+| [pwfabric/packs](https://github.com/pwfabric/packs) | The open packs: `foundation` (core blocks, shells, six themes, capabilities) and `widgets` (the occasional blocks), released as `.pwpack` files |
+| [pwfabric/examples](https://github.com/pwfabric/examples) | Two small apps to build and run with `pwf`: `cafe-menu` and `lighting-hub-waitlist` |
 
 Clone the spec into `spec/` to run `pnpm spec:conformance`, the CLI smoke
 (`pnpm smoke:cli`) and the CLI's schema assertions; without it those are

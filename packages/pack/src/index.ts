@@ -81,6 +81,7 @@ export {
   blockTypeNames,
   checkBlockProps,
   checkReceiptBlockProps,
+  nearestName,
   isBinding,
   isTemplate,
   type BlockPropDescriptor,

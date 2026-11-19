@@ -34,10 +34,21 @@ function run(hash: string, data: unknown = hints, width = 390): string[] {
 
 afterEach(() => {
   document.head.innerHTML = ''
+  document.documentElement.removeAttribute('data-pw-page')
   history.replaceState(null, '', '/')
 })
 
 describe('the page-hints script', () => {
+  it('names the opened page on <html> before the first paint (a page’s own theme grounds the document)', () => {
+    run('#/dish?id=3')
+    expect(document.documentElement.getAttribute('data-pw-page')).toBe('dish')
+    run('')
+    expect(document.documentElement.getAttribute('data-pw-page')).toBe('menu')
+    // A key that is not a route: the not-found page the shell shows.
+    run('#/nope')
+    expect(document.documentElement.getAttribute('data-pw-page')).toBe('notfound')
+  })
+
   it('asks for the entry page’s needs on the entry page only', () => {
     expect(run('')).toEqual([
       'preload fetch ./pwpack/surfaces/menu.receipt.json cors',

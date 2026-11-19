@@ -16,7 +16,7 @@ import { blockPropDescriptors, blockTypeNames, checkReceiptBlockProps, hashPack 
 import type { BlockOrigins } from '@pwfabric/contracts'
 import { atomKindMeta } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins } from '@pwfabric/contracts/schemas'
-import { compileSources, createCompileCache, type CompileCache, type CompiledAtom } from './compile.js'
+import { compileProviderBundle, compileSources, createCompileCache, providerFacetOf, type CompileCache, type CompiledAtom } from './compile.js'
 import { hasErrors, sortDiagnostics, type AssembleDiagnostic } from './diagnostics.js'
 import {
   blockTypesOf,
@@ -59,11 +59,15 @@ import { engineVersion } from '../commands/lib/identity.js'
 import {
   appearanceConfigOf,
   buildThemeCss,
+  namedThemeOf,
   resolveAppearance,
+  resolvePageAppearance,
   themeAtomOf,
-  themeWebfonts,
+  webfontsOf,
   webfontStylesheetHref,
   withWebfontFallbacks,
+  type PageAppearance,
+  type PageTheme,
   type ThemeAtom,
 } from './theme.js'
 
@@ -200,6 +204,32 @@ function withFallbackStacks(doc: Record<string, unknown> | undefined): Record<st
   return isRecord(doc['config']) ? { ...doc, config: withWebfontFallbacks(doc['config']) } : withWebfontFallbacks(doc)
 }
 
+/**
+ * The receipt as served, with the appearance the page wears: its own,
+ * resolved to the whole configuration (`{ config }`); none, when it wears the
+ * app's (the runner then hands the renderer the app's); as written, when its
+ * theme could not be found. Unchanged: the same object.
+ */
+function withPageAppearance(receipt: Record<string, unknown>, wears: PageAppearance | undefined): Record<string, unknown> {
+  if (wears?.wears === 'own') return { ...receipt, appearance: { config: wears.config } }
+  if (wears?.wears === 'app' && receipt['appearance'] !== undefined) {
+    const { appearance: _appearance, ...rest } = receipt
+    return rest
+  }
+  return receipt
+}
+
+/**
+ * The receipt as served, without its authoring information: `knowledge` (what
+ * the page is for, the patterns it exercises) stays in the app's source; no
+ * runner reads it and no visitor needs it (receipt §1). Unchanged: the same object.
+ */
+function withoutAuthoring(receipt: Record<string, unknown>): Record<string, unknown> {
+  if (receipt['knowledge'] === undefined) return receipt
+  const { knowledge: _knowledge, ...served } = receipt
+  return served
+}
+
 function atomLabel(atom: CompiledAtom): string {
   return atom.source.origin === 'app' ? atom.id : `${atom.id} (${atom.source.id}@${atom.source.version})`
 }
@@ -317,6 +347,19 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     }
   }
   const appearance = withFallbackStacks(resolveAppearance(appearanceDoc, themes, diagnostics))
+  const config = appearanceConfigOf(appearance)
+  // Each page's own appearance (its receipt's `appearance`), resolved the same
+  // way: a page that names a theme wears it (theme.ts resolvePageAppearance).
+  const appTheme = { config, theme: namedThemeOf(appearanceDoc, themes) }
+  const pageAppearance = new Map<string, PageAppearance>()
+  for (const page of pages) {
+    pageAppearance.set(page.key, resolvePageAppearance(page.receipt['appearance'], appTheme, themes, diagnostics, page.path))
+  }
+  const pageThemes: PageTheme[] = []
+  for (const page of pages) {
+    const own = pageAppearance.get(page.key)
+    if (own?.wears === 'own') pageThemes.push({ key: page.key, config: own.config })
+  }
 
   // ── blocks ───────────────────────────────────────────────────────
   const byName = new Map<string, CompiledAtom[]>()
@@ -395,7 +438,10 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
 
   // ── engines ──────────────────────────────────────────────────────
   const connections = buildConnections(connectionsDoc, diagnostics)
-  const engineManifest: EngineManifestEntry[] = []
+  // In connection order; a provider facet's entry is filled once its vendor's module is built.
+  const engineSlots: (EngineManifestEntry | undefined)[] = []
+  // A compiled provider facet goes into its vendor's ONE module (compile.ts compileProviderBundle).
+  const vendors = new Map<string, { source: SourcePack; vendor: string; facets: { slot: number; connection: string; atom: CompiledAtom; domain: string }[] }>()
   for (const conn of connections?.connections ?? []) {
     const name = conn['name'] as string
     const wanted = typeof conn['connector'] === 'string' ? conn['connector'] : name
@@ -405,12 +451,19 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     if (!atom) continue
     used.add(atom)
     const kind = atom.kind as 'connector' | 'provider'
-    if (atom.code && atom.hash) {
+    const facet = kind === 'provider' ? providerFacetOf(atom.relPath) : undefined
+    if (facet && atom.code && atom.hash) {
+      const key = `${atom.source.id}\u0000${facet.vendor}`
+      const group = vendors.get(key) ?? { source: atom.source, vendor: facet.vendor, facets: [] }
+      group.facets.push({ slot: engineSlots.length, connection: name, atom, domain: facet.domain })
+      vendors.set(key, group)
+      engineSlots.push(undefined)
+    } else if (atom.code && atom.hash) {
       const file = `engines/${moduleFileName(atom.id, hexOf(atom.hash))}`
       modules.set(file, enc.encode(atom.code))
-      engineManifest.push({ connection: name, atomId: atom.id, kind, moduleUrl: file, integrity: hexOf(atom.hash) })
+      engineSlots.push({ connection: name, atomId: atom.id, kind, moduleUrl: file, integrity: hexOf(atom.hash) })
     } else if (atom.manifest?.['engine'] !== undefined) {
-      engineManifest.push({ connection: name, atomId: atom.id, kind, engine: atom.manifest['engine'] })
+      engineSlots.push({ connection: name, atomId: atom.id, kind, engine: atom.manifest['engine'] })
     } else if (atom.status === 'failed') {
       diagnostics.push({
         severity: 'warning',
@@ -420,6 +473,29 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       })
     }
   }
+  for (const key of [...vendors.keys()].sort()) {
+    const { source, vendor, facets } = vendors.get(key) as NonNullable<ReturnType<typeof vendors.get>>
+    const bundle = await compileProviderBundle(source, vendor, facets.map((f) => f.domain), cache)
+    if (!bundle.ok || !bundle.code || !bundle.hash) {
+      // Each facet compiled on its own, so this is the shared module's own failure: say it, drop its connections.
+      diagnostics.push(...bundle.diagnostics.map((d) => (d.severity === 'error' ? { ...d, severity: 'warning' as const } : d)))
+      for (const f of facets) {
+        diagnostics.push({
+          severity: 'warning',
+          code: 'ENGINE_NOT_COMPILED',
+          message: `connection "${f.connection}": the module of provider "${vendor}" (${atomLabel(f.atom)}) did not compile, so its panels fall back to sample data`,
+          path: 'app/definitions/connections.json',
+        })
+      }
+      continue
+    }
+    const file = `engines/${moduleFileName(vendor, hexOf(bundle.hash))}`
+    modules.set(file, enc.encode(bundle.code))
+    for (const f of facets) {
+      engineSlots[f.slot] = { connection: f.connection, atomId: f.atom.id, kind: 'provider', moduleUrl: file, integrity: hexOf(bundle.hash), export: f.domain }
+    }
+  }
+  const engineManifest: EngineManifestEntry[] = engineSlots.filter((e): e is EngineManifestEntry => e !== undefined)
 
   // ── atom diagnostics ─────────────────────────────────────────────
   // The app's own atoms and the atoms it uses speak at full volume; an unused
@@ -434,7 +510,6 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
 
   // ── the served folder ────────────────────────────────────────────
   const runtime = options.runtime ?? (await loadRuntimeAssets())
-  const config = appearanceConfigOf(appearance)
   const title = titleOf(plan)
   const locale = isRecord(plan) && typeof plan['locale'] === 'string' ? plan['locale'] : undefined
   // The app's words (`plan.json` `messages`), carried as they are: the runner
@@ -451,8 +526,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const gated = isRecord(authDoc) && authDoc['required'] === true
 
   // ── the runtime files, content-hashed (cached as immutable: _headers) ──
-  const webfontHref = webfontStylesheetHref(themeWebfonts(config))
-  const themeCss = enc.encode(buildThemeCss(config))
+  // One stylesheet for the webfonts of the app's theme and of every page's own.
+  const webfontHref = webfontStylesheetHref(webfontsOf([config, ...pageThemes.map((p) => p.config)]))
+  const themeCss = enc.encode(buildThemeCss(config, pageThemes))
   const assets0 = {
     embed: hashedName('assets/embed.js', runtime.embedJs),
     runner: hashedName('assets/runner.js', runtime.runnerJs),
@@ -500,7 +576,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         title,
         ...(shellDescription !== undefined ? { description: shellDescription } : {}),
         ...(locale !== undefined ? { lang: locale } : {}),
-        ...(config ? { appearance: config } : {}),
+        webfontHref,
         ...(options.shellExtra !== undefined ? { bodyExtra: options.shellExtra } : {}),
         ...(csp !== undefined ? { csp } : {}),
         assets,
@@ -538,7 +614,12 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     })
   )
   for (const page of pages) {
-    const declared = withSessionSources(withRecordFields(page.receipt, recordFields), entityDeclarations, authDeclaration)
+    const declared = withoutAuthoring(
+      withPageAppearance(
+        withSessionSources(withRecordFields(page.receipt, recordFields), entityDeclarations, authDeclaration),
+        pageAppearance.get(page.key)
+      )
+    )
     files.set(`pwpack/surfaces/${page.key}.receipt.json`, declared === page.receipt ? page.bytes : json(declared))
   }
   files.set('pwpack/navigation.json', json(isRecord(navigationDoc) ? navigationDoc : deriveNavigation(routes, entry)))
@@ -646,13 +727,14 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const publishedAtoms = atoms
     .filter((a) => used.has(a))
     .map((a) => {
-      const module = blockManifest.find((b) => b.integrity === (a.hash ? hexOf(a.hash) : ''))?.moduleUrl ??
-        engineManifest.find((e) => e.atomId === a.id && e.moduleUrl)?.moduleUrl
+      // A provider facet's module is its vendor's, with that module's hash.
+      const shipped = blockManifest.find((b) => b.integrity === (a.hash ? hexOf(a.hash) : '')) ??
+        engineManifest.find((e) => e.atomId === a.id && e.moduleUrl)
       return {
         kind: a.kind,
         id: a.id,
         hash: a.sourceHash,
-        ...(module && a.hash ? { module, integrity: hexOf(a.hash) } : {}),
+        ...(shipped?.moduleUrl && shipped.integrity && a.hash ? { module: shipped.moduleUrl, integrity: shipped.integrity } : {}),
       }
     })
   files.set(

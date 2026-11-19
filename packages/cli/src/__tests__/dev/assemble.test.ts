@@ -1,5 +1,7 @@
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.setConfig({ testTimeout: 60_000 })
@@ -126,6 +128,143 @@ describe('assemblePwapp', () => {
     const { createHash } = await import('node:crypto')
     const runner = asset(r, 'runner')
     expect(runner).toContain(createHash('sha256').update(r.files.get(runner) as Uint8Array).digest('hex').slice(0, 8))
+  })
+
+  it('a page that names its own theme wears it: served receipt, page palette, webfonts, first frame (N-E3)', async () => {
+    const root = await app()
+    // A second theme, the app's own: a dark ground, a webfont, its own dark variant.
+    const night = join(root, 'atoms', 'appearance', 'theme-night')
+    await mkdir(night, { recursive: true })
+    const sand = JSON.parse(await readFile(join(root, ...PACK_REL, 'atoms', 'appearance', 'theme-sand', 'manifest.json'), 'utf8')) as Record<string, unknown>
+    await writeFile(
+      join(night, 'manifest.json'),
+      JSON.stringify({
+        ...sand,
+        id: 'theme-night',
+        name: 'Night',
+        theme: { colors: { primary: '#93c5fd', background: '#0b1020', text: '#e2e8f0' }, typography: { fontFamily: 'Nunito, sans-serif' } },
+        darkTheme: { colors: { background: '#000000' } },
+      })
+    )
+    const pwpackPath = join(root, 'pwpack.json')
+    const pwpack = JSON.parse(await readFile(pwpackPath, 'utf8')) as { app: { surfaceOrder: string[] } }
+    pwpack.app.surfaceOrder = ['home', 'night', 'same', 'lost']
+    await writeFile(pwpackPath, JSON.stringify(pwpack))
+    const home = JSON.parse(await readFile(join(root, 'app', 'surfaces', 'home.receipt.json'), 'utf8')) as Record<string, unknown>
+    const page = async (key: string, appearance: unknown): Promise<void> =>
+      writeFile(join(root, 'app', 'surfaces', `${key}.receipt.json`), JSON.stringify({ ...home, title: key, appearance }))
+    await page('night', { use: 'theme-night' })
+    await page('same', { use: 'theme-sand' })
+    await page('lost', { use: 'theme-ocean' })
+
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const served = (key: string) => parse(r.files.get(`pwpack/surfaces/${key}.receipt.json`)) as Record<string, unknown>
+    // Its theme's tokens and dark variant, resolved; its webfont's stand-in named.
+    expect(served('night')['appearance']).toEqual({
+      config: {
+        theme: { colors: { primary: '#93c5fd', background: '#0b1020', text: '#e2e8f0' }, typography: { fontFamily: 'Nunito, "Nunito Fallback", sans-serif' } },
+        darkTheme: { colors: { background: '#000000' } },
+      },
+    })
+    // The app's own theme named again (or no theme): the page wears the app's, accent override included.
+    expect(served('same')['appearance']).toBeUndefined()
+    expect(served('home')['appearance']).toBeUndefined()
+    // An unknown name: the diagnostic the app-level `use` gets, on the receipt; kept as written.
+    const lost = r.diagnostics.find((d) => d.code === 'THEME_NOT_FOUND')
+    expect(lost?.path).toBe('app/surfaces/lost.receipt.json')
+    expect(served('lost')['appearance']).toEqual({ use: 'theme-ocean' })
+
+    // The document's ground under <html data-pw-page="night">, light and dark; the app's stays first.
+    const css = text(r.files.get(asset(r, 'theme')))
+    expect(css.indexOf(':root, [data-pw-surface] {')).toBeLessThan(css.indexOf(':root[data-pw-page="night"] {'))
+    expect(css).toMatch(/:root\[data-pw-page="night"\] \{[^}]*--pw-color-background: #0b1020;/)
+    expect(css).toMatch(/:root\[data-pw-page="night"\]\[data-pw-theme="dark"\] \{[^}]*--pw-color-background: #000000;/)
+    expect(css).not.toContain('data-pw-page="same"')
+    expect(css).toContain('font-family: "Nunito Fallback";')
+    expect(css).toContain('font-family: "Inter Fallback";')
+    // One webfont stylesheet for both themes.
+    const boot = text(r.files.get(asset(r, 'boot')))
+    expect(boot).toMatch(/fonts\.googleapis\.com\/css2\?family=Inter[^"]*&family=Nunito/)
+    // The page's first frame is painted in its theme, not the app's.
+    const frame = text(r.files.get('pwpack/surfaces/night.html'))
+    expect(frame).toContain('--pw-color-background:#0b1020')
+    expect(frame).not.toContain('--pw-color-background:#fffbeb')
+    expect(text(r.files.get('pwpack/surfaces/same.html'))).toContain('--pw-color-background:#fffbeb')
+  })
+
+  it('N-E5: the facets of one provider ship in ONE module, its shared code once, each connection naming its export', async () => {
+    const root = await app()
+    const pack = join(root, ...PACK_REL, 'atoms')
+    // A vendor motor and two entity facets, all three importing one shared lib.
+    const MARK = 'acme-shared-'.padEnd(3000, 'z')
+    await mkdir(join(pack, 'providers', 'acme', 'entities'), { recursive: true })
+    await writeFile(join(pack, 'lib', 'acme-shared.ts'), `export const MARK = '${MARK}'\nexport const table = (n: string) => ({ table: n, mark: MARK })\n`)
+    await writeFile(
+      join(pack, 'providers', 'acme', 'index.ts'),
+      `import { MARK } from '../../lib/acme-shared'\nexport class AcmeEngine {\n  constructor(private t: unknown, private map: Record<string, unknown>) {}\n  async query() { return [MARK, ...Object.keys(this.map)] }\n}\n`
+    )
+    for (const [domain, entity] of [['orders', 'order'], ['users', 'user']] as const) {
+      await writeFile(join(pack, 'providers', 'acme', 'entities', `${domain}.ts`), `import { table } from '../../../lib/acme-shared'\nexport const ${domain} = { ${entity}: table('${domain}') }\n`)
+      await writeFile(
+        join(pack, 'providers', 'acme', 'entities', `${domain}.knowledge.json`),
+        JSON.stringify({ name: domain, kind: 'provider', connection: `acme-${domain}`, knowledge: { purpose: 'A fixture facet', useCases: ['A fixture page'], composesWith: [], antiPatterns: ['Anything real'] } })
+      )
+    }
+    const connectionsPath = join(root, 'app', 'definitions', 'connections.json')
+    const doc = JSON.parse(await readFile(connectionsPath, 'utf8')) as { connections: unknown[] }
+    doc.connections.push({ name: 'orders', connector: 'acme-orders' }, { name: 'people', connector: 'acme-users' })
+    await writeFile(connectionsPath, JSON.stringify(doc))
+
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const engines = parse(r.files.get('engines/manifest.json')) as { connection: string; atomId: string; moduleUrl?: string; integrity?: string; export?: string }[]
+    const acme = engines.filter((e) => e.atomId.startsWith('acme.'))
+    expect(acme.map((e) => [e.connection, e.atomId, e.export])).toEqual([
+      ['orders', 'acme.orders', 'orders'],
+      ['people', 'acme.users', 'users'],
+    ])
+    // One module for both, named for the vendor; the connector beside it keeps its own.
+    expect(new Set(acme.map((e) => e.moduleUrl)).size).toBe(1)
+    const moduleUrl = acme[0]?.moduleUrl as string
+    expect(moduleUrl).toMatch(/^engines\/acme\.[0-9a-f]{8}\.mjs$/)
+    expect(engines.find((e) => e.connection === 'echo')?.moduleUrl).toMatch(/^engines\/Echo\./)
+    const files = [...r.files.keys()].filter((k) => k.startsWith('engines/') && k.endsWith('.mjs'))
+    expect(files.filter((f) => f.includes('acme'))).toEqual([moduleUrl])
+    // The shared code is in the served bytes once, not once per facet.
+    const all = files.map((f) => text(r.files.get(f))).join('\n')
+    expect(all.split(MARK).length - 1).toBe(1)
+    // The integrity is the module's, and publish.json says the same.
+    const { createHash } = await import('node:crypto')
+    expect(acme[0]?.integrity).toBe(createHash('sha256').update(r.files.get(moduleUrl) as Uint8Array).digest('hex'))
+    const published = (parse(r.files.get('publish.json')) as { atoms: { id: string; module?: string; integrity?: string }[] }).atoms
+    expect(published.filter((a) => a.id.startsWith('acme.')).map((a) => [a.id, a.module, a.integrity])).toEqual([
+      ['acme.orders', moduleUrl, acme[0]?.integrity],
+      ['acme.users', moduleUrl, acme[0]?.integrity],
+    ])
+    // Each facet's export is its factory, over the shared motor.
+    const dir = await mkdtemp(join(tmpdir(), 'pwf-engine-'))
+    cleanups.push(() => rm(dir, { recursive: true, force: true }))
+    const file = join(await realpath(dir), 'acme.mjs')
+    await writeFile(file, r.files.get(moduleUrl) as Uint8Array)
+    const mod = (await import(/* @vite-ignore */ pathToFileURL(file).href)) as Record<string, (t: unknown, c: unknown) => { query(): Promise<string[]> }>
+    expect(Object.keys(mod).sort()).toEqual(['orders', 'users'])
+    expect(await (mod['users'] as (t: unknown, c: unknown) => { query(): Promise<string[]> })(async () => null, {}).query()).toEqual([MARK, 'user'])
+  })
+
+  it('N-E6: a served receipt carries no authoring knowledge; the source keeps it', async () => {
+    const root = await app()
+    const path = join(root, 'app', 'surfaces', 'home.receipt.json')
+    const source = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+    const knowledge = { purpose: 'The home page', patternsExercised: ['hero-split'] }
+    await writeFile(path, JSON.stringify({ ...source, knowledge }))
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const served = parse(r.files.get('pwpack/surfaces/home.receipt.json')) as Record<string, unknown>
+    expect(served['knowledge']).toBeUndefined()
+    expect(served['blocks']).toEqual(source['blocks'])
+    expect(text(r.files.get('pwpack/surfaces/home.receipt.json'))).not.toContain('patternsExercised')
+    expect((JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>)['knowledge']).toEqual(knowledge)
   })
 
   it('reads the app as its pack content: dotfiles and tooling are neither read nor reported', async () => {

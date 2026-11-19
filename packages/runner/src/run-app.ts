@@ -30,6 +30,7 @@ import { applyDescription } from './description.js'
 import { composeTitle, doorHeaders, fetchJson, queryStateSeed, receiptFilesOf, rewriteHrefs, seedStateFromQuery, withVersion } from './helpers.js'
 import {
   FIRST_FRAME_USER,
+  PAGE_ATTR,
   STATIC_PAGE_ATTR,
   STATIC_VIEWPORT,
   STATIC_VIEWPORT_MAX_WIDTH,
@@ -46,7 +47,7 @@ import { accountUserFrom } from './apply-auth.js'
 import { createAccountController, hasDoor, type SignInMode } from './account-controller.js'
 import { authErrorCode, authMethodsOf, authStateOf } from './auth-state.js'
 import { applyShellDarkMode, shellDarkThemeVars, shellModePolicy, shellThemeVars } from './shell-theme.js'
-import { THEME_PRESETS } from './theme-presets.js'
+import { projectAppearanceRef } from './appearance-ref.js'
 import {
   buildEntityFacade,
   extractEntityTypes,
@@ -73,67 +74,7 @@ import { ownRecordsReceipt } from './own-records.js'
 import { receiptSurfaceId, startPreviewSession, type PreviewPage, type PreviewSession } from './preview-session.js'
 import type { PreviewSurface } from './preview-bridge.js'
 
-/**
- * `pwpack/appearance.json` holds the project's appearance CONFIG
- * (`{ theme, styleVariables, darkTheme, … }`) — that is what
- * `assembleWebApp` writes from `appearanceConfigSnapshot`. But embed's
- * `appearance` option is a surface appearance REF (`{ config }`), and it
- * OVERRIDES `surface.appearance` outright.
- *
- * Handing the config straight through would replace each surface's correct
- * ref with an object the resolver cannot read: it looks for
- * `appearance.config.theme`, finds nothing, and falls back to the default
- * baseline, so every exported app would paint indigo whatever theme it
- * shipped.
- *
- * Wrap it. Anything already ref-shaped passes through untouched, as does the
- * legacy `{ use: 'default' }` fallback.
- */
-export function projectAppearanceRef(raw: unknown): { config: Record<string, unknown> } | undefined {
-  if (!raw || typeof raw !== 'object') return undefined
-  const o = raw as Record<string, unknown>
-  if ('config' in o) return o as { config: Record<string, unknown> }
-  // A THEME NAME. An app may carry only `{ "use": "theme-zinc" }` —
-  // sometimes with brand colours pressed on top (`theme.colors`), nothing
-  // else. The preset
-  // is the base and anything the document states wins over it; an unknown name
-  // (or `default`) leaves the document as it was.
-  const preset = presetFor(o['use'])
-  if (preset) {
-    const { use: _use, ...rest } = o
-    const own = (rest['theme'] ?? undefined) as Record<string, unknown> | undefined
-    return { config: { ...rest, theme: mergeThemeGroups(preset, own) } }
-  }
-  // A bare config: it carries token groups, not a ref.
-  if ('theme' in o || 'styleVariables' in o || 'darkTheme' in o || 'keyframes' in o) {
-    return { config: o }
-  }
-  return undefined
-}
-
-/** The foundation preset a theme name points at: `theme-zinc`, or bare `zinc`. */
-function presetFor(use: unknown): Readonly<Record<string, unknown>> | undefined {
-  if (typeof use !== 'string' || !use.trim()) return undefined
-  const name = use.trim()
-  return THEME_PRESETS[name] ?? THEME_PRESETS[`theme-${name.replace(/^(appearance|theme)-/, '')}`]
-}
-
-/** Per-group merge, `over` winning — the same shape the appearance cascade merges. */
-function mergeThemeGroups(
-  base: Readonly<Record<string, unknown>>,
-  over: Record<string, unknown> | undefined
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(base)) out[k] = v && typeof v === 'object' ? { ...v } : v
-  for (const [k, v] of Object.entries(over ?? {})) {
-    const prev = out[k]
-    out[k] =
-      v && typeof v === 'object' && !Array.isArray(v) && prev && typeof prev === 'object'
-        ? { ...(prev as Record<string, unknown>), ...(v as Record<string, unknown>) }
-        : v
-  }
-  return out
-}
+export { projectAppearanceRef } from './appearance-ref.js'
 
 export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   const source = String(opts.source ?? './pwpack').replace(/\/+$/, '')
@@ -401,6 +342,8 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
           // loader fetches them under any host root / sub-path (base law).
           bundleUrl: new URL(e.moduleUrl!, document.baseURI).href,
           integrity: e.integrity ?? '',
+          // A provider facet's factory in its vendor's shared module.
+          ...(e.export !== undefined ? { export: e.export } : {}),
         },
         ...(cfg ? { config: cfg } : {}),
       }
@@ -647,6 +590,8 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   function showRunnerNotFound(): void {
     shown = null
     preview?.cleared()
+    // The runner's own page wears the app's theme.
+    document.documentElement.removeAttribute(PAGE_ATTR)
     renderNotFound({
       container,
       appTitle: project.title,
@@ -764,6 +709,10 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     const surface = pageSurfaceOf(receipt, key, params, pageContext())
     await fabric.loadBlocks(surface.blocks, blockManifest)
     if (seq !== routeSeq) return
+    // The page the document shows: a page with a theme of its own has its
+    // ground under `:root[data-pw-page]` in the theme stylesheet (the shell's
+    // page-hints script set it before the first paint).
+    document.documentElement.setAttribute(PAGE_ATTR, key)
 
     // The build's first frame of this page, when the shell holds it: hydrated,
     // not drawn again.
@@ -989,10 +938,12 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
 
   // The pill is the FALLBACK for apps whose shell declares no account slot.
   // It serves both doors, so it is mounted whether or not a bridge exists;
-  // without a bridge and without a session it hides itself. Sign-out goes
+  // without a bridge and without a session it hides itself. An app with no
+  // way in at all gets no pill (and asks for none of its words). Sign-out goes
   // through the one controller every account control shares.
   pill = mountSessionPill({
     bridge,
+    door,
     auth,
     getAppSession: () => appSession,
     onSignedOut: () => void account.signOut(),

@@ -95,4 +95,16 @@ describe('the first frame (pwapp-format §2.5)', () => {
     expect(opts['locale']).toBeUndefined()
     expect(opts['loadingStrategy']).toBe('immediate')
   })
+
+  it('a page that names its own appearance wears it; any other page wears the app’s', () => {
+    const app = { config: { theme: { colors: { primary: '#18181b' } } } }
+    const own = { config: { theme: { colors: { primary: '#b45309' } } } }
+    const options = (r: SurfaceReceipt) => firstFrameOptions({ project: project(), appearanceRef: app, receipt: r, entry: 'home', toHref: (k) => `#/${k}` })
+    expect(options({ ...receipt, appearance: own } as SurfaceReceipt)['appearance']).toEqual(own)
+    expect(options(receipt)['appearance']).toBe(app)
+    // A bare configuration is read as the app's is.
+    expect(options({ ...receipt, appearance: own.config } as unknown as SurfaceReceipt)['appearance']).toEqual(own)
+    // A name the build could not resolve and the runner does not know: the app's.
+    expect(options({ ...receipt, appearance: { use: 'theme-unknown' } } as unknown as SurfaceReceipt)['appearance']).toBe(app)
+  })
 })

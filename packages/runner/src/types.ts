@@ -299,6 +299,11 @@ export interface PwappEngineDescriptor {
   readonly moduleUrl?: string
   readonly integrity?: string
   /**
+   * A provider facet: the named export of `moduleUrl` that is its factory.
+   * A vendor's facets share one module (envelope §6).
+   */
+  readonly export?: string
+  /**
    * DECLARED — the engine travels as DATA and no file is written.
    *
    * The assembler writes this form, so the reader's type must express it:
