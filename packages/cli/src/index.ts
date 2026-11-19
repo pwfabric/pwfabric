@@ -14,6 +14,20 @@ import type { CommandIO } from './commands/types.js'
 export { parseArgs } from './args.js'
 export { COMMANDS, findCommand } from './commands/registry.js'
 export type { Command, CommandIO, ParsedArgs } from './commands/types.js'
+// The authoring skeletons behind `pwf create --pack` and `pwf add block`, for
+// a tool that scaffolds packs without running the pwf binary.
+export { UsageError } from './commands/lib/flags.js'
+export {
+  addBlock,
+  blockComponent,
+  blockManifest,
+  createPack,
+  scaffoldNameProblem,
+  type AddBlockOptions,
+  type AddedBlock,
+  type CreatedPack,
+  type CreatePackOptions,
+} from './commands/lib/scaffold.js'
 export type { DevServer, DevServerOptions, DevBuildResult, StartDevServer } from './dev/types.js'
 // The host building blocks have their own entry, `@pwfabric/cli/host`.
 export type { LocalHost, LocalHostOptions, CreateLocalHost } from './host/index.js'

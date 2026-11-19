@@ -61,6 +61,27 @@ The foundation pack is released as `foundation-<version>.pwpack` on the
 (beside `widgets-<version>.pwpack`); `--foundation` (or `PWF_FOUNDATION`)
 points at that file or at a foundation folder.
 
+### `pwf create --pack`
+
+```text
+pwf create --pack <name> [--dir <path>] [--id <pack id>] [--requires <folder|.pwpack>] [--force]
+```
+
+| Argument / option | Meaning |
+|---|---|
+| `<name>` | Kebab-case: lower-case letters, digits and single hyphens, starting with a letter, 2–50 characters. `pwf create <name> --pack` works too. |
+| `--dir <path>` | Where to write the pack. Default `./<name>`. |
+| `--id <pack id>` | The pack's id. Default `@pwpack/<name>`. Written `@<scope>/<name>` or `@<scope>/<publisher>/<name>`. |
+| `--requires <folder\|.pwpack>` | A pack this one stands on. It is validated, copied into `.pwf/packs/<id>@<version>/`, pinned in `packs[]` by content hash and added to `requires` as `^<major>.0.0`, as [`pwf add`](#pwf-add) does. |
+| `--force` | Write into a folder that is not empty. |
+
+Writes an empty pack: `pwpack.json` (version `0.1.0`, format `1.1`,
+`engines.pwfabric` the running engine's release up to its next major,
+`requires` empty unless `--requires` is given), `README.md` with the next
+commands, `atoms/README.md` and `.gitignore`. No block is written: add one
+with [`pwf add block`](#pwf-add-block). The folder validates clean with
+`pwf validate`.
+
 ## `pwf dev`
 
 ```text
@@ -179,6 +200,28 @@ Validates the pack, copies it to `.pwf/packs/<id>@<version>/`, pins it in
 `pwpack.json` `packs[]` by content hash and adds
 `{ id, range: ^<major>.0.0 }` to `requires`. Only local files and folders:
 resolving packs from npm or a pack registry is not supported.
+
+### `pwf add block`
+
+```text
+pwf add block <category>/<type> [--dir <project>]
+```
+
+| Argument / option | Meaning |
+|---|---|
+| `<category>/<type>` | The block's category and type. Each is kebab-case, 2–50 characters, starting with a letter. The atom id is `<category>.<type>`. |
+| `--dir <path>` | The pack or app folder (it has a `pwpack.json`). Default: the current folder. |
+
+Writes `atoms/blocks/<category>/<type>/manifest.json` and `component.tsx`.
+The manifest has `kind: "block"`, the id, `name` (the type a receipt
+places), the category, `state: "experimental"`, an empty `definition.props`
+and a `knowledge` skeleton to fill in before the pack is published. The
+component renders from its props and holds no words of its own: the app
+writes every word. Declare each prop in `definition.props` and read it in
+the component. A type the folder already has, in any category, is refused.
+
+`block` is the subcommand word, so a pack folder named `block` is added as
+`pwf add ./block`.
 
 ## `pwf run`
 
