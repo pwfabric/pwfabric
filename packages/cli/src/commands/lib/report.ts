@@ -347,6 +347,10 @@ export function reachableMessageIds(root: string): string[] {
  * named by the bare id.
  */
 export function checkMessages(root: string): PackIssue[] {
+  // A pack (no `app` member) is not opened as an app: no visitor reaches a
+  // runner message through it, so it has none to set.
+  const pwpack = readJsonFile(join(root, 'pwpack.json'))
+  if (!isObj(pwpack) || !isObj(pwpack['app'])) return []
   // An app with no plan sets no words: every id it can reach is missing.
   const plan = readJsonFile(join(root, 'app', 'plan.json'))
   const messages = isObj(plan) && isObj(plan['messages']) ? plan['messages'] : {}

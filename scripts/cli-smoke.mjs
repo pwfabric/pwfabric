@@ -3,9 +3,11 @@
  * CLI smoke: the `pwf` binary, end to end, on whatever OS runs it.
  *
  *   pwf create smoke --dir <tmp> --foundation spec/roundtrip/_foundation/input
+ *   pwf add block smoke/note --dir <tmp>     (a block of the app's own)
  *   pwf validate <tmp>
  *   pwf pack <tmp> --out <tmp>/a.pwpack     (twice: a and b)
  *   pwf build <tmp>
+ *   pwf create --pack smoke-pack, pwf add block, pwf validate   (a pack)
  *
  * Every step must exit 0, and the two packs must agree: the printed content
  * hash (the hash pins use) and the archive bytes. The content hash is what CI
@@ -56,6 +58,7 @@ const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest(
 let code = 0
 try {
   pwf('create', 'smoke', '--dir', app, '--foundation', FOUNDATION)
+  pwf('add', 'block', 'smoke/note', '--dir', app)
   pwf('validate', app)
   const a = join(work, 'a.pwpack')
   const b = join(work, 'b.pwpack')
@@ -64,6 +67,10 @@ try {
   const shaA = sha256(a)
   const shaB = sha256(b)
   pwf('build', app)
+  const pack = join(work, 'smoke-pack')
+  pwf('create', '--pack', 'smoke-pack', '--dir', pack)
+  pwf('add', 'block', 'content/card', '--dir', pack)
+  pwf('validate', pack)
 
   console.log(`\ncontent hash  ${hashA} / ${hashB}`)
   console.log(`archive sha   ${shaA} / ${shaB}`)

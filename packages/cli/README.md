@@ -10,6 +10,8 @@ cd my-shop
 pwf validate                                   # check it
 pwf pack                                       # write my-shop-0.1.0.pwpack
 pwf add ../cards-2.1.0.pwpack                  # install and pin another pack
+pwf create --pack cards                        # a new, empty pack folder
+pwf add block content/price-tag                # a new block in a pack or app
 pwf run ./dist-app                             # serve a built pwapp
 ```
 
@@ -51,6 +53,15 @@ published to a registry yet, so give its folder or `.pwpack` with
 the next major. A folder that is not empty is refused unless `--force` is
 given (existing files are kept, generated ones overwritten).
 
+### `pwf create --pack <name> [--dir <path>] [--id <pack id>] [--requires <folder|.pwpack>] [--force]`
+
+Creates an empty pack folder: `pwpack.json` (id `@pwpack/<name>` unless `--id`
+is given, version `0.1.0`, `engines.pwfabric` this engine's major, `requires`
+empty), `README.md`, `atoms/README.md` and `.gitignore`. No block is written;
+add one with `pwf add block`. `--requires` names a pack this one stands on: it
+is cached, pinned and required as `pwf add` does. The name is kebab-case, 2–50
+characters, starting with a letter.
+
 ### `pwf validate [dir] [--json]`
 
 Reads the folder, runs the pack validator and prints its findings grouped as
@@ -78,6 +89,16 @@ Validates the pack, copies its pack content to `.pwf/packs/<id>@<version>/`,
 pins it in `packs[]` by the content hash of exactly what was copied and adds `{ id, range: "^<major>.0.0" }` to
 `requires` (replacing an earlier entry for the same id). Only local archives
 and folders: resolving packs from npm or a pack registry is not supported.
+
+### `pwf add block <category>/<type> [--dir <project>]`
+
+Writes a new block into the pack or app folder: `atoms/blocks/<category>/<type>/manifest.json`
+(id `<category>.<type>`, state `experimental`, no props yet, a `knowledge`
+skeleton to fill in before publishing) and `component.tsx` (renders from its
+props and holds no words of its own: the app writes every word). Both names are
+kebab-case, 2–50 characters, starting with a letter; a type the folder already
+has is refused. The word `block` is the subcommand, so a pack folder named
+`block` is added as `pwf add ./block`.
 
 ### `pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host]`
 
@@ -119,6 +140,11 @@ Stop it with Ctrl-C.
 
 The commands are plain objects (`COMMANDS` from the package entry) that write
 through a `CommandIO` and resolve to an exit code, so they run in-process.
+`@pwfabric/cli/authoring` carries `createPack` and `addBlock` (the functions
+behind `pwf create --pack` and `pwf add block`) and `readProject` (a folder as
+`pwf validate` and `pwf pack` read it), without the dev server, the compiler or
+the runner, so a tool that scaffolds and packs packs can bundle it. A bundled
+caller passes `engineVersion` to `createPack`.
 
 ## License
 
