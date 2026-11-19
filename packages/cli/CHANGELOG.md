@@ -8,7 +8,7 @@
 - Changed: served receipts (`pwpack/surfaces/*.receipt.json`) carry no `knowledge`; the source keeps it.
 - Added: `pwf create --pack <name> [--id <pack id>] [--requires <folder|.pwpack>]` writes an empty pack folder: `pwpack.json` (`@pwpack/<name>`, `0.1.0`, `engines.pwfabric` the running engine's major), `README.md`, `atoms/README.md` and `.gitignore`. `--requires` caches, pins and requires the pack it stands on, as `pwf add` does.
 - Added: `pwf add block <category>/<type> [--dir <project>]` writes `atoms/blocks/<category>/<type>/manifest.json` (no props yet, a `knowledge` skeleton) and a `component.tsx` that renders from its props and holds no words of its own, in a pack or an app folder. Names are kebab-case, 2–50 characters; a type the folder already has is refused. `pwf add <pack>` is unchanged; a pack folder named `block` is given as `./block`.
-- Added: the package entry exports `createPack` and `addBlock` (the functions behind the two commands), `blockManifest`, `blockComponent`, `scaffoldNameProblem` and `UsageError`, so a tool can scaffold packs without running the binary.
+- Added: `@pwfabric/cli/authoring`, a light entry (no dev server, compiler or runner) with `createPack` and `addBlock` (the functions behind the two commands), `readProject` (a folder as `pwf validate` and `pwf pack` read it), `blockManifest`, `blockComponent`, `scaffoldNameProblem`, `PACK_ID` and `UsageError`, so a tool can scaffold and pack without running the binary. The package entry re-exports them.
 - Fixed: `pwf validate` no longer reports `MESSAGES_MISSING` for a pack (a folder whose `pwpack.json` has no `app` member): a pack is not opened as an app.
 
 ## 3.0.1

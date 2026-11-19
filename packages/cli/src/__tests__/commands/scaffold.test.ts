@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { build } from 'esbuild'
 import { hashPack, readFolder } from '@pwfabric/pack'
 import { AtomFileManifestSchema } from '@pwfabric/contracts/schemas'
 import { main } from '../../index.js'
@@ -259,5 +261,44 @@ describe('scaffolding is deterministic', () => {
   it('describes both forms in the usage', () => {
     expect(create.usage).toContain('pwf create --pack <name>')
     expect(add.usage).toContain('pwf add block <category>/<type>')
+  })
+})
+
+describe('@pwfabric/cli/authoring', () => {
+  const pkgDir = fileURLToPath(new URL('../../../', import.meta.url))
+
+  it('is an export of the package with the authoring functions', async () => {
+    const pkg = JSON.parse(await readFile(join(pkgDir, 'package.json'), 'utf8')) as { exports: Record<string, unknown> }
+    expect(pkg.exports['./authoring']).toEqual({
+      types: './dist/authoring.d.ts',
+      import: './dist/authoring.js',
+      default: './dist/authoring.js',
+    })
+    const entry = await import('../../authoring.js')
+    expect(Object.keys(entry).sort()).toEqual([
+      'PACK_ID',
+      'UsageError',
+      'addBlock',
+      'blockComponent',
+      'blockManifest',
+      'createPack',
+      'readProject',
+      'scaffoldNameProblem',
+    ])
+  })
+
+  it('bundles without the dev server, the compiler or the runner', async () => {
+    const result = await build({
+      entryPoints: [join(pkgDir, 'src', 'authoring.ts')],
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      write: false,
+      metafile: true,
+      logLevel: 'silent',
+    })
+    const inputs = Object.keys(result.metafile.inputs).map((p) => p.replace(/\\/g, '/'))
+    const heavy = inputs.filter((p) => /\/(compiler|runner|runtime|embed|esbuild)\/|\/src\/dev\/|\/src\/host\//.test(p))
+    expect(heavy).toEqual([])
   })
 })

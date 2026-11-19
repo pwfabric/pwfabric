@@ -140,8 +140,11 @@ Stop it with Ctrl-C.
 
 The commands are plain objects (`COMMANDS` from the package entry) that write
 through a `CommandIO` and resolve to an exit code, so they run in-process.
-`createPack` and `addBlock` are the functions behind `pwf create --pack` and
-`pwf add block`, for a tool that scaffolds packs itself.
+`@pwfabric/cli/authoring` carries `createPack` and `addBlock` (the functions
+behind `pwf create --pack` and `pwf add block`) and `readProject` (a folder as
+`pwf validate` and `pwf pack` read it), without the dev server, the compiler or
+the runner, so a tool that scaffolds and packs packs can bundle it. A bundled
+caller passes `engineVersion` to `createPack`.
 
 ## License
 
