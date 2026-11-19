@@ -14,6 +14,8 @@ async function project(files: Record<string, unknown>): Promise<string> {
 }
 
 const codes = (issues: { code: string }[]) => issues.map((i) => i.code)
+/** The pwpack.json member that makes a folder an app. */
+const APP = { app: {} }
 
 describe('checkSeeds', () => {
   it('passes a project without app/data and seeds in either accepted form', async () => {
@@ -223,20 +225,26 @@ describe('MESSAGES_MISSING', () => {
   })
 
   it('E-4: is an error in every language — the engine writes no word — and quiet when every id is set', async () => {
-    const files = { 'app/plan.json': plan() }
+    const files = { 'pwpack.json': APP, 'app/plan.json': plan() }
     const tr = checkMessages(await project(files))
     expect(tr.map((i) => [i.code, i.severity])).toEqual([['MESSAGES_MISSING', 'error']])
     expect(tr[0]?.message).toContain('notFound.title, notFound.body, notFound.home')
-    const en = checkMessages(await project({ 'app/plan.json': plan({ locale: 'en-GB' }) }))
+    const en = checkMessages(await project({ 'pwpack.json': APP, 'app/plan.json': plan({ locale: 'en-GB' }) }))
     expect(en.map((i) => i.severity)).toEqual(['error'])
     // An app with no plan has written no word at all.
     expect(checkMessages(await project({ 'pwpack.json': { app: {} } })).map((i) => i.severity)).toEqual(['error'])
     const done = checkMessages(
       await project({
+        'pwpack.json': APP,
         'app/plan.json': plan({ messages: { 'notFound.title': 'Sayfa yok', 'notFound.body': 'Böyle bir sayfa yok.', 'notFound.home': 'Ana sayfa' } }),
       })
     )
     expect(done).toEqual([])
+  })
+
+  it('asks a pack (no app member) for no messages: it is not opened as an app', async () => {
+    expect(checkMessages(await project({ 'pwpack.json': { id: '@pwpack/cards', version: '0.1.0' } }))).toEqual([])
+    expect(checkMessages(await project({ 'pwpack.json': { id: '@pwpack/cards', version: '0.1.0' }, 'app/plan.json': plan() }))).toEqual([])
   })
 })
 
