@@ -7,13 +7,16 @@ name: Site
 # difference: configure-pages is NOT given `static_site_generator: next`, so it
 # does not inject a basePath. The site lives at the root of its custom domain,
 # and `site/public/CNAME` keeps that domain attached across deployments.
+#
+# The site describes what is on npm: it is published when a release is
+# published (from the release's tag), not on every merge to main, so a page
+# never documents a command before the version that has it. A fix to the text
+# alone can be published by hand (workflow_dispatch, from main).
+# The github-pages environment allows deployments from main and from `v*` tags.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'site/**'
-      - '.github/workflows/site.yml'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:

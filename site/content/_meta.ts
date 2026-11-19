@@ -3,6 +3,7 @@ export default {
   index: 'Overview',
   quickstart: 'Quickstart',
   cli: 'CLI',
+  packs: 'Packs',
   authoring: 'Authoring',
   'self-host': 'Self-hosting',
   'upgrading-to-3': 'Upgrading to 3.0',

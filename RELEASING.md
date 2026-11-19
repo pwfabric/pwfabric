@@ -66,5 +66,7 @@ over.
 - **Examples:** each example pins its packs by content hash. If a pack changed
   after the last pin, run `pwf add <pack>-<version>.pwpack` in each example
   that uses it (or `node check.mjs --keep` and copy the pins) and commit.
-- **Documentation site** (`site/`): deploy it so pwfabric.com shows this
-  version.
+- **Documentation site** (`site/`): publishing the release publishes
+  pwfabric.com from the release's tag (`.github/workflows/site.yml`), so the
+  site documents what is on npm. A fix to the text alone between releases is
+  published by running that workflow by hand from `main`.
