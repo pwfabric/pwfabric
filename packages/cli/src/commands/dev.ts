@@ -12,6 +12,7 @@ import { resolve } from 'node:path'
 import { createDevServer, DEFAULT_HOSTNAME, DEFAULT_PORT, HOST_PREFIX, type DevServerInternals } from '../dev/server.js'
 import { createLocalHost } from '../host/index.js'
 import type { Command, CommandIO, ParsedArgs } from './types.js'
+import { corsFlags, UsageError } from './lib/flags.js'
 
 /** Resolves when the process is asked to stop (Ctrl+C or a termination signal). */
 export function untilInterrupted(): Promise<void> {
@@ -50,6 +51,14 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
     return 2
   }
   const hostname = typeof hostFlag === 'string' ? hostFlag : DEFAULT_HOSTNAME
+  let cors: string[]
+  try {
+    cors = [...corsFlags(args)]
+  } catch (e) {
+    if (!(e instanceof UsageError)) throw e
+    io.err(`pwf dev: ${e.message}`)
+    return 2
+  }
 
   // A switch followed by the folder (`pwf dev --no-host ./app`) is read by the
   // argument parser as the switch's value; take it back as the folder.
@@ -84,7 +93,15 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
   let server
   try {
     server = await createDevServer(
-      { root, port, hostname, log: io.out, ...(debug ? { debug } : {}), ...(localHost !== undefined ? { localHost } : {}) },
+      {
+        root,
+        port,
+        hostname,
+        log: io.out,
+        ...(debug ? { debug } : {}),
+        ...(localHost !== undefined ? { localHost } : {}),
+        ...(cors.length > 0 ? { cors } : {}),
+      },
       internals
     )
   } catch (e) {
@@ -97,6 +114,7 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
     return 1
   }
   io.out(`pwf dev: serving ${root} at ${server.url}`)
+  if (cors.length > 0) io.out(`pwf dev: cross-origin requests are answered for ${cors.join(', ')} (no credentials)`)
   io.out('press Ctrl+C to stop')
   await (options.until ?? untilInterrupted)()
   await server.close()
@@ -107,13 +125,17 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
 export const devCommand: Command = {
   name: 'dev',
   summary: 'Serve the app locally and reload it on every change',
-  usage: `pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--debug]
+  usage: `pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--cors <origin>]... [--debug]
 
   dir            the app folder (default: the current folder)
   --port <n>     port to listen on (default ${DEFAULT_PORT}; 0 picks a free one)
   --host <name>  interface to bind (default ${DEFAULT_HOSTNAME})
   --local-host   mount the local host for sign-in and data even when the app declares neither
   --no-host      do not mount the local host, even when the app declares sign-in or records
+  --cors <origin>
+                 let pages on this origin (scheme://host[:port], exact; repeat
+                 for more) read the app's files and the local host across
+                 origins. Default: none. "*" and "null" are refused.
   --debug        print an engine error with its stack trace
 
 A build that fails is listed in the terminal, and the open page shows the
@@ -123,6 +145,13 @@ The local host (under ${HOST_PREFIX}) is for development only: records live in
 memory and are seeded from app/content/ then app/data/ (again whenever those or
 entities.json change), no password is checked, and nothing
 survives a restart. The access rules of auth.json apply: dev@localhost signs in with every
-declared role, any other e-mail as a plain member.`,
+declared role, any other e-mail as a plain member.
+
+With --cors, a request whose Origin is one of the named origins gets
+Access-Control-Allow-Origin with that origin (and every answer Vary: Origin);
+its preflight is answered: GET and HEAD for the files, the local host's own
+methods and headers under ${HOST_PREFIX}. Credentials are never allowed, so the
+host's sign-in cookie does not cross origins; a page there signs in with a
+token. Any other origin is answered as without --cors.`,
   run: (args, io) => runDev(args, io),
 }

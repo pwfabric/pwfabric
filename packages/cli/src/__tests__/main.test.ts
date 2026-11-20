@@ -13,8 +13,17 @@ describe('parseArgs', () => {
   it('splits the command, positionals and flags', () => {
     expect(parseArgs(['create', 'my-app', '--dir', 'x', '--force', '--port=4601'])).toEqual({
       command: 'create',
-      args: { positionals: ['my-app'], flags: { dir: 'x', force: true, port: '4601' } },
+      args: {
+        positionals: ['my-app'],
+        flags: { dir: 'x', force: true, port: '4601' },
+        lists: { dir: ['x'], force: [true], port: ['4601'] },
+      },
     })
+  })
+  it('keeps the last value of a repeated flag in flags and every value in lists', () => {
+    const { args } = parseArgs(['run', '--cors', 'http://a.test', '--cors=http://b.test'])
+    expect(args.flags['cors']).toBe('http://b.test')
+    expect(args.lists?.['cors']).toEqual(['http://a.test', 'http://b.test'])
   })
   it('treats everything after -- as positional', () => {
     expect(parseArgs(['run', '--', '--not-a-flag']).args.positionals).toEqual(['--not-a-flag'])

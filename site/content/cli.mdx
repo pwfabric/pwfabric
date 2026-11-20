@@ -102,7 +102,7 @@ with [`pwf add block`](#pwf-add-block). The folder validates clean with
 ## `pwf dev`
 
 ```text
-pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--debug]
+pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--cors <origin>]... [--debug]
 ```
 
 | Argument / option | Meaning |
@@ -112,6 +112,7 @@ pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--debug]
 | `--host <name>` | Interface name or address to bind. Default `127.0.0.1`. |
 | `--local-host` | Mount the local host for sign-in and data even when the app declares neither. |
 | `--no-host` | Do not mount the local host, even when the app declares sign-in or records. |
+| `--cors <origin>` | Let pages on this exact origin read the app and the local host across origins ([below](#cross-origin-requests---cors)). Repeat for more. Default: none. |
 | `--debug` | Print an engine error with its stack trace. Without it, an engine error is one line. |
 
 **The local host.** When the app declares sign-in or records, `pwf dev`
@@ -298,7 +299,7 @@ the component. A type the folder already has, in any category, is refused.
 ## `pwf run`
 
 ```text
-pwf run <dir|file.pwapp> [--port <n>] [--host <name>]
+pwf run <dir|file.pwapp> [--port <n>] [--host <name>] [--cors <origin>]...
 ```
 
 | Argument / option | Meaning |
@@ -307,6 +308,7 @@ pwf run <dir|file.pwapp> [--port <n>] [--host <name>]
 | `<file.pwapp>` | A packaged pwapp (a gzipped tar, read like a `.pwpack`), served from memory. |
 | `--port <n>` | Port to listen on. Default `4700`; `0` picks a free one. |
 | `--host <name>` | Interface to bind. Default `127.0.0.1`. |
+| `--cors <origin>` | Let pages on this exact origin read the app and its records across origins ([below](#cross-origin-requests---cors)). Repeat for more. Default: none. |
 
 ```console
 $ pwf run .pwf/out
@@ -326,6 +328,36 @@ Page paths without a file extension are answered with `index.html` and a
 path-routed apps work; a missing asset is a 404. Headers declared in the
 folder's `_headers` file (such as the app's Content Security Policy) are sent
 with the files they match. Runs until Ctrl+C.
+
+### Cross-origin requests (`--cors`)
+
+By default `pwf run` and `pwf dev` answer their own origin only: no
+`Access-Control-*` header is sent and a preflight (`OPTIONS`) is a `405`. To
+load the app, or call its local host, from a page on another origin — a site
+that embeds it, a front end on its own dev server — name that origin:
+
+```console
+$ pwf run . --cors http://localhost:3000 --cors https://preview.example.com
+```
+
+Each value is one exact origin, `scheme://host[:port]`, as a browser writes it
+in `Origin`. `*`, `null` and anything with a path are refused.
+
+| Request | Answer |
+|---|---|
+| The app's files (shell, blocks, engines, manifest, receipts, media), `Origin` named | `Access-Control-Allow-Origin: <that origin>`. Preflight: `204`, methods `GET, HEAD`; of the headers it asks for, only `Cache-Control`, `Pragma`, `If-None-Match`, `If-Modified-Since` and `Range` are granted. |
+| The local host (`/_host/…`), `Origin` named | `Access-Control-Allow-Origin: <that origin>`. Preflight: `204`, methods `GET, POST, PATCH, DELETE`; of the headers it asks for, only `Content-Type`, `Authorization`, `X-App-Session` and `X-Pwapp-Request` are granted. |
+| Any other origin, or no `Origin` | As without `--cors`. |
+
+Every answer under `--cors` carries `Vary: Origin`, and none carries
+`Access-Control-Allow-Credentials`. That is what keeps the local host safe to
+open: it signs in anyone who asks, so a wildcard would let any page you visit
+read (under `pwf dev`, change) the records. Only an origin you name can, and
+only with a token it holds and sends itself (`X-App-Session` or
+`Authorization: Bearer`) — the host's sign-in cookie never crosses origins,
+and its cookie addresses still require `X-Pwapp-Request: 1`. Under `--cors`,
+`pwf run` leaves out any `Access-Control-*` header the build's `_headers`
+declares; without it they are sent as before.
 
 ## `pwf mcp`
 

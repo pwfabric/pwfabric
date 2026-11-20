@@ -17,7 +17,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { readPwpack } from '@pwfabric/pack'
 import type { Command, CommandIO, ParsedArgs } from './types.js'
-import { guard, stringFlag, UsageError } from './lib/flags.js'
+import { corsFlags, guard, stringFlag, UsageError } from './lib/flags.js'
 import { resolveFrom } from './lib/project.js'
 import { startStaticServer, type StaticHost, type StaticServer, type StaticSource } from './lib/static-server.js'
 import { createLocalHost, readEntities, rewriteEntitySources } from '../host/index.js'
@@ -136,12 +136,14 @@ export async function runRun(args: ParsedArgs, io: CommandIO, options: RunOption
   if (target === undefined) throw new UsageError('missing <dir|file.pwapp>')
   const port = parsePort(stringFlag(args, 'port'))
   const hostname = stringFlag(args, 'host') ?? '127.0.0.1'
+  const cors = corsFlags(args)
   const path = resolveFrom(io.cwd, target)
   const source = await openRunSource(path)
   const app = await appFolderOf(path)
   const host = app ? await readOnlyHostFor(app) : undefined
-  const server = await startStaticServer({ source, port, hostname, hostPrefix: HOST_PREFIX, ...(host ? { host } : {}) })
+  const server = await startStaticServer({ source, port, hostname, hostPrefix: HOST_PREFIX, cors, ...(host ? { host } : {}) })
   io.out(`Serving ${target} at ${server.url}`)
+  if (cors.size > 0) io.out(`Cross-origin requests are answered for ${[...cors].join(', ')} (no credentials).`)
   if (host) io.out(`The app's records are served read-only at ${server.url}${HOST_PREFIX.slice(1)} (pwf dev changes them).`)
   io.out('Press Ctrl-C to stop.')
   try {
@@ -155,7 +157,7 @@ export async function runRun(args: ParsedArgs, io: CommandIO, options: RunOption
 export const run: Command = {
   name: 'run',
   summary: 'Serve a built pwapp (folder or .pwapp) on a local port',
-  usage: `pwf run <dir|file.pwapp> [--port <n>] [--host <name>]
+  usage: `pwf run <dir|file.pwapp> [--port <n>] [--host <name>] [--cors <origin>]...
 
   <dir>          a built pwapp folder with an index.html (see pwf build), or an
                  app folder (its .pwf/out is served). For an app folder or its
@@ -163,11 +165,23 @@ export const run: Command = {
   <file.pwapp>   a packaged pwapp (gzipped tar, read like a .pwpack), served from memory
   --port <n>     port to listen on (default ${DEFAULT_RUN_PORT}; 0 picks a free one)
   --host <name>  interface to bind (default 127.0.0.1)
+  --cors <origin>
+                 let pages on this origin (scheme://host[:port], exact; repeat
+                 for more) read the app's files and records across origins.
+                 Default: none. "*" and "null" are refused.
 
 Page paths without a file extension are answered with index.html and a
 <base href="/">, so path-routed apps work at any depth; a missing asset is a 404.
 Paths under ${HOST_PREFIX} are never answered with index.html: without the app
 folder there is no record host, and they are a 404 with a JSON error
-(NO_RECORD_HOST) saying so.`,
+(NO_RECORD_HOST) saying so.
+
+With --cors, a request whose Origin is one of the named origins gets
+Access-Control-Allow-Origin with that origin (and every answer Vary: Origin);
+its preflight is answered: GET and HEAD for the files, the record host's own
+methods and headers under ${HOST_PREFIX}. Credentials are never allowed, so the
+host's sign-in cookie does not cross origins; a page there signs in with a
+token. The build's _headers then sets no Access-Control-* header. Any other
+origin is answered as without --cors.`,
   run: (args, io) => guard('run', io, () => runRun(args, io)),
 }

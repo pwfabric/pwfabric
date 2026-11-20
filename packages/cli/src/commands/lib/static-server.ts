@@ -11,6 +11,7 @@ import { join, resolve, sep } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import { withBaseHref } from '../../dev/shell.js'
 import { CONTENT_TYPES, contentTypeOf, isPagePath } from '../../dev/content-types.js'
+import { applyCors, isCorsHeader, type CorsOrigins } from '../../dev/cors.js'
 
 export { CONTENT_TYPES, contentTypeOf, isPagePath }
 
@@ -49,6 +50,13 @@ export interface StaticServerOptions {
   readonly port: number
   /** Default 127.0.0.1. */
   readonly hostname?: string
+  /**
+   * The origins `--cors` names (see ../../dev/cors.ts): a request from one is
+   * answered with its `Access-Control-Allow-Origin` and its preflight is
+   * answered; the build's `_headers` then sets no `Access-Control-*` header.
+   * Empty or absent: no CORS at all.
+   */
+  readonly cors?: CorsOrigins
 }
 
 export interface StaticServer {
@@ -189,12 +197,15 @@ async function handle(
   req: IncomingMessage,
   res: ServerResponse,
   host: StaticHost | undefined,
-  hostPrefix: string | undefined
+  hostPrefix: string | undefined,
+  cors: CorsOrigins
 ): Promise<void> {
+  const under = requestPath(req.url ?? '/')
+  // CORS first, so every answer below carries it — the host's own included.
+  if (applyCors(req, res, cors, isUnderPrefix(under, hostPrefix) ? 'host' : 'files')) return
   if (host && (await host.handle(req, res))) return
   // A record address is the host's or nobody's: never the shell (a page would
   // read index.html as its records and silently show none).
-  const under = requestPath(req.url ?? '/')
   if (under !== null && isUnderPrefix(under, hostPrefix)) {
     noHostAnswer(res, under, host)
     return
@@ -228,9 +239,13 @@ async function handle(
   const encoding =
     COMPRESSIBLE.test(type) && plain.byteLength >= MIN_COMPRESSED ? acceptedEncoding(req.headers['accept-encoding']) : undefined
   const body = encoding ? compressed(plain, encoding) : plain
+  const declared = await extraHeaders(source, rel ?? '')
+  // Under --cors the command line decides who may read across origins, not
+  // the build's `_headers` (a `*` there would undo the exact list).
+  if (cors.size > 0) for (const name of Object.keys(declared)) if (isCorsHeader(name)) delete declared[name]
   const headers: Record<string, string> = {
     'cache-control': 'no-cache',
-    ...(await extraHeaders(source, rel ?? '')),
+    ...declared,
     'content-type': type,
     'content-length': String(body.byteLength),
   }
@@ -238,6 +253,9 @@ async function handle(
     headers['content-encoding'] = encoding
     headers['vary'] = 'Accept-Encoding'
   }
+  // `Vary: Origin` set under --cors is kept beside the build's own.
+  const varyOrigin = res.getHeader('vary')
+  if (varyOrigin !== undefined) headers['vary'] = headers['vary'] ? `${String(varyOrigin)}, ${headers['vary']}` : String(varyOrigin)
   res.writeHead(200, headers)
   if (req.method === 'HEAD') res.end()
   else res.end(body)
@@ -283,7 +301,7 @@ function compressed(body: Uint8Array, encoding: 'br' | 'gzip'): Uint8Array {
 export function startStaticServer(options: StaticServerOptions): Promise<StaticServer> {
   const hostname = options.hostname ?? '127.0.0.1'
   const server = createServer((req, res) => {
-    handle(options.source, req, res, options.host, options.hostPrefix).catch(() => {
+    handle(options.source, req, res, options.host, options.hostPrefix, options.cors ?? new Set()).catch(() => {
       if (!res.headersSent) res.writeHead(500, TEXT)
       res.end('internal error\n')
     })
