@@ -383,7 +383,8 @@ no account and no network.
 | `pwf_create_pack` | `pwf create --pack`: a new, empty pack folder |
 | `pwf_add_pack` | `pwf add`: install a `.pwpack` (or pack folder) and pin it |
 | `pwf_add_block` | `pwf add block`: a new block of the folder's own |
-| `pwf_describe_project` | Read-only: the folder's pages, pinned packs, and the blocks (with props) and themes they offer |
+| `pwf_describe_project` | Read-only: the folder's pages, pinned packs, and the blocks (type, prop names, purpose) and themes they offer |
+| `pwf_describe_block` | Read-only: one block by `type` — the pack it comes from, every prop with its JSON schema, default and description, whether it takes children, and its full `knowledge`. An unknown type is `UNKNOWN_BLOCK_TYPE`, naming close matches |
 | `pwf_validate` | `pwf validate`: every finding with its code and path |
 | `pwf_build` | `pwf build`: the static pwapp |
 | `pwf_pack` | `pwf pack`: the deterministic `.pwpack` |

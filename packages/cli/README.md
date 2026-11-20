@@ -147,7 +147,7 @@ Stop it with Ctrl-C.
 A local MCP server on stdin/stdout for any MCP client (Claude Code, Cursor, VS
 Code, Gemini CLI, …): `npx -y @pwfabric/cli mcp` as the server command. Tools:
 `pwf_create_app`, `pwf_create_pack`, `pwf_add_pack`, `pwf_add_block`,
-`pwf_describe_project` (read-only), `pwf_validate`, `pwf_build`, `pwf_pack` —
+`pwf_describe_project` and `pwf_describe_block` (read-only), `pwf_validate`, `pwf_build`, `pwf_pack` —
 the same functions as the commands. Every tool takes `projectDir`, an absolute
 path, and writes only inside it; answers end with the next step, failures carry
 a code and the fix. No account, no network, no dev server (run `pwf dev`).

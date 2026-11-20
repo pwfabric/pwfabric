@@ -8,7 +8,16 @@
  */
 import { readdir } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import { validatePack, type PackIssue } from '@pwfabric/pack'
+import {
+  atomManifestPath,
+  blockPropDescriptors,
+  blockTypeNames,
+  nearestName,
+  UNKNOWN_BLOCK_TYPE,
+  validatePack,
+  type PackFolder,
+  type PackIssue,
+} from '@pwfabric/pack'
 import { z } from 'zod'
 import { addPack } from '../commands/add.js'
 import { buildProject, buildRouting, buildSummary, routingLine } from '../commands/build.js'
@@ -16,7 +25,7 @@ import { createApp } from '../commands/create.js'
 import { packProject } from '../commands/pack.js'
 import { CommandFailure } from '../commands/lib/failure.js'
 import { UsageError } from '../commands/lib/flags.js'
-import { pinsOf, readIdentityFile, type PackPin } from '../commands/lib/identity.js'
+import { pinsOf, readIdentityFile, stripBom, type PackPin } from '../commands/lib/identity.js'
 import { cacheDir, cacheRelDir, readCachedPack, readProject } from '../commands/lib/project.js'
 import { countLine, validateProject } from '../commands/lib/report.js'
 import { addBlock, createPack } from '../commands/lib/scaffold.js'
@@ -57,6 +66,8 @@ const FIXES: Readonly<Record<string, string>> = {
   PROJECT_INVALID: 'Fix each error listed (its code and path say what and where), then call pwf_validate.',
   BUILD_FAILED: 'Fix each error listed (its code and path say what and where), then call pwf_build again.',
   OUTPUT_FOLDER_IN_USE: 'Pass an outDir that is new, empty, or holds a previous build.',
+  [UNKNOWN_BLOCK_TYPE]:
+    "Pass a type pwf_describe_project lists (the folder's own blocks and its pinned packs'), or install the pack that has it with pwf_add_pack.",
 }
 
 const MAX_LISTED = 40
@@ -128,6 +139,95 @@ async function pinnedCatalog(root: string, pin: PackPin): Promise<CatalogEntry |
 
 function blockLine(b: FoundationBlock): string {
   return `  - ${b.type} (${b.id})${b.props.length ? ` props: ${b.props.join(', ')}` : ''}${b.purpose ? ` — ${b.purpose}` : ''}`
+}
+
+/** Where a block was found: the folder itself or one of its pinned packs, as `<id>@<version>`. */
+interface FoundBlock {
+  readonly pack: string
+  readonly own: boolean
+  readonly atomId: string
+  readonly manifestPath: string
+  readonly manifest: Record<string, unknown>
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+function manifestAt(folder: PackFolder, path: string): Record<string, unknown> | undefined {
+  const bytes = folder.files.get(path)
+  if (!bytes) return undefined
+  try {
+    const value: unknown = JSON.parse(stripBom(new TextDecoder().decode(bytes)))
+    return isRecord(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The block a receipt's `type` resolves to, as `pwf dev` and `pwf build`
+ * resolve it: the folder's own blocks first, then its pinned packs in pin
+ * order; the first that answers to the name wins. Also every name the
+ * sources answer to, for "did you mean", and the pins not in the cache.
+ */
+async function findBlock(
+  root: string,
+  identity: Record<string, unknown>,
+  type: string
+): Promise<{ found?: FoundBlock; names: string[]; missing: string[] }> {
+  const sources: { pack: string; own: boolean; folder: PackFolder }[] = [
+    { pack: `${String(identity['id'])}@${String(identity['version'])}`, own: true, folder: await readProject(root) },
+  ]
+  const missing: string[] = []
+  for (const pin of pinsOf(identity as { packs?: readonly PackPin[] })) {
+    const folder = await readCachedPack(cacheDir(root, pin.id, pin.version)).catch(() => null)
+    if (!folder || folder.files.size === 0) missing.push(`${pin.id}@${pin.version}`)
+    else sources.push({ pack: `${pin.id}@${pin.version}`, own: false, folder })
+  }
+  const names = new Set<string>()
+  let found: FoundBlock | undefined
+  for (const source of sources) {
+    for (const atom of validatePack(source.folder).atoms) {
+      if (atom.kind !== 'block') continue
+      const manifestPath = atomManifestPath(atom)
+      const manifest = manifestAt(source.folder, manifestPath)
+      const answers = blockTypeNames(atom.id, manifest)
+      answers.forEach((n) => names.add(n))
+      if (!found && manifest && answers.includes(type)) found = { pack: source.pack, own: source.own, atomId: atom.id, manifestPath, manifest }
+    }
+  }
+  return { ...(found ? { found } : {}), names: [...names].sort(), missing }
+}
+
+/** Names close to `type`: the nearest spelling and the names that contain it or that it contains. */
+function nearMatches(type: string, names: readonly string[]): string[] {
+  const lower = type.toLowerCase()
+  const near = nearestName(type, names)
+  const containing = names.filter((n) => n.toLowerCase().includes(lower) || (n.length > 2 && lower.includes(n.toLowerCase())))
+  return [...new Set([...(near ? [near] : []), ...containing])].slice(0, 5)
+}
+
+const json = (v: unknown): string => JSON.stringify(v) ?? String(v)
+
+/** One prop of a block, as the describe answer prints it. */
+function propLines(p: Record<string, unknown>): string[] {
+  const schema = isRecord(p['jsonSchema']) ? p['jsonSchema'] : undefined
+  const shown = typeof p['type'] === 'string' ? p['type'] : schema?.['type'] !== undefined ? json(schema['type']) : 'any'
+  const flags = [shown, ...(p['required'] === true ? ['required'] : []), ...(p['copy'] === true ? ['copy'] : []), ...(p['bindable'] === false ? ['literal only'] : [])]
+  const head = `  - ${String(p['name'])} (${flags.join(', ')})${'default' in p ? ` default ${json(p['default'])}` : ''}${typeof p['description'] === 'string' ? ` — ${p['description']}` : ''}`
+  return schema ? [head, `      jsonSchema ${json(schema)}`] : [head]
+}
+
+/** The manifest's `knowledge`, member by member, as written. */
+function knowledgeLines(knowledge: Record<string, unknown>): string[] {
+  return Object.entries(knowledge).flatMap(([key, value]) =>
+    typeof value === 'string'
+      ? [`  ${key}: ${value}`]
+      : Array.isArray(value)
+        ? [`  ${key}:${value.length ? '' : ' none'}`, ...value.map((v) => `    - ${typeof v === 'string' ? v : json(v)}`)]
+        : [`  ${key}: ${json(value)}`]
+  )
 }
 
 export const TOOLS: readonly ToolDefinition[] = [
@@ -242,7 +342,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     name: 'pwf_describe_project',
     title: 'Describe a project',
     description:
-      'Read an app or pack folder without changing it: its id and version, whether it is an app or a pack, its pages, the packs it pins, and the blocks (with their props and purpose) and themes those packs and the folder itself offer. Call it before writing a page.',
+      'Read an app or pack folder without changing it: its id and version, whether it is an app or a pack, its pages, the packs it pins, and the blocks (type, prop names and purpose) and themes those packs and the folder itself offer. Call it before writing a page; pwf_describe_block gives one block in full.',
     inputSchema: { projectDir },
     readOnly: true,
     run: (input) =>
@@ -257,6 +357,7 @@ export const TOOLS: readonly ToolDefinition[] = [
         const surfaces = await surfacesOf(root)
         const lines = [`${String(identity['id'])}@${String(identity['version'])} — ${kind} in ${root}`]
         if (kind === 'app') lines.push(`Pages (app/surfaces/): ${surfaces.length ? surfaces.join(', ') : 'none'}`)
+        lines.push('Blocks are listed by type; pwf_describe_block with a type gives its props (schema, default, description) and its knowledge.')
         if (ownCatalog.blocks.length) {
           lines.push('Its own blocks:', ...ownCatalog.blocks.map(blockLine))
         }
@@ -270,8 +371,8 @@ export const TOOLS: readonly ToolDefinition[] = [
         }
         const next =
           kind === 'app'
-            ? 'place blocks by type in app/surfaces/<page>.receipt.json with every text set as a prop, then pwf_validate.'
-            : 'call pwf_add_block for a new block, or pwf_validate.'
+            ? 'call pwf_describe_block for each block you will place, place them by type in app/surfaces/<page>.receipt.json with every text set as a prop, then pwf_validate.'
+            : 'call pwf_describe_block to read a block in full, pwf_add_block for a new block, or pwf_validate.'
         return ok(lines, next, {
           id: identity['id'],
           version: identity['version'],
@@ -282,6 +383,70 @@ export const TOOLS: readonly ToolDefinition[] = [
           themes: ownCatalog.themes,
           packs,
         })
+      }),
+  },
+  {
+    name: 'pwf_describe_block',
+    title: 'Describe a block',
+    description:
+      "Read one block an app or pack folder can place, without changing anything: the pack it comes from (the folder's own blocks first, then its pinned packs, as pwf dev and pwf build resolve a type), its id and type, every prop with its JSON schema (type, enum, required), default and description, whether it takes children, and its full knowledge (purpose, use cases, what it composes with, anti-patterns). Call it before placing a block whose props you have not read.",
+    inputSchema: {
+      projectDir,
+      type: z.string().min(1).describe('The block type as a receipt names it (e.g. button, or its atom id control.button); pwf_describe_project lists them.'),
+    },
+    readOnly: true,
+    run: (input) =>
+      answer(async () => {
+        const root = projectDirOf(input['projectDir'] as string)
+        const type = input['type'] as string
+        const identity = await readIdentityFile(root)
+        const { found, names, missing } = await findBlock(root, identity, type)
+        if (!found) {
+          const near = nearMatches(type, names)
+          const notCached = missing.length ? `; not in the cache, so not searched: ${missing.join(', ')} (install with pwf_add_pack)` : ''
+          throw new CommandFailure(
+            UNKNOWN_BLOCK_TYPE,
+            `no block answers to "${type}" in this folder or its pinned packs${near.length ? `; did you mean ${near.join(', ')}?` : ''}${notCached}`
+          )
+        }
+        const m = found.manifest
+        const definition = isRecord(m['definition']) ? m['definition'] : {}
+        const props = (blockPropDescriptors(m) ?? []) as unknown as Record<string, unknown>[]
+        const knowledge = isRecord(m['knowledge']) ? m['knowledge'] : {}
+        const canHaveChildren = definition['canHaveChildren'] === true
+        const blockType = typeof m['name'] === 'string' ? m['name'] : (found.atomId.split('.').pop() as string)
+        const extra = (['allowedParents', 'allowedChildTraits', 'traits'] as const).filter((k) => Array.isArray(definition[k]) && (definition[k] as unknown[]).length)
+        const lines = [
+          `${blockType} (${found.atomId}) from ${found.pack}${found.own ? ' (this folder)' : ''}, ${found.manifestPath}`,
+          ...[
+            typeof m['state'] === 'string' ? `State: ${m['state']}` : '',
+            typeof m['description'] === 'string' ? `Description: ${m['description']}` : '',
+          ].filter(Boolean),
+          props.length ? `Props (${props.length}):` : 'Props: none',
+          ...props.flatMap(propLines),
+          `Children: ${canHaveChildren ? 'yes, it is a container' : 'no, it is a leaf'}`,
+          ...extra.map((k) => `${k}: ${(definition[k] as unknown[]).map((v) => String(v)).join(', ')}`),
+          'Knowledge:',
+          ...knowledgeLines(knowledge),
+        ]
+        return ok(
+          lines,
+          `place it as { "type": "${blockType}", "props": { … } } in a receipt, with every text the visitor reads set as a prop, then pwf_validate.`,
+          {
+            pack: found.pack,
+            own: found.own,
+            id: found.atomId,
+            type: blockType,
+            manifest: found.manifestPath,
+            ...(typeof m['state'] === 'string' ? { state: m['state'] } : {}),
+            ...(typeof m['description'] === 'string' ? { description: m['description'] } : {}),
+            props,
+            ...(isRecord(definition['defaultProps']) ? { defaultProps: definition['defaultProps'] } : {}),
+            canHaveChildren,
+            ...Object.fromEntries(extra.map((k) => [k, definition[k]])),
+            knowledge,
+          }
+        )
       }),
   },
   {
