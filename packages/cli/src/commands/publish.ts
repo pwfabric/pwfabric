@@ -15,7 +15,7 @@ import { readIdentityFile } from './lib/identity.js'
 import { printIssues } from './lib/issues.js'
 import { PWF_DIR, resolveFrom } from './lib/project.js'
 import { archiveName, packProject } from './pack.js'
-import { SERVER_HELP } from './login.js'
+import { SERVER_HELP, STUDIO_WEB_HELP } from './login.js'
 import type { StoreOptions } from '../phiwebs/config.js'
 import type { Fetch } from '../phiwebs/oauth.js'
 import { publishPackFolder, packPublishedLines } from '../phiwebs/marketplace.js'
@@ -67,7 +67,8 @@ export async function runPublish(args: ParsedArgs, io: CommandIO, deps: PublishD
   const store: StoreOptions = { env: io.env, ...(deps.platform ? { platform: deps.platform } : {}), ...(deps.home ? { home: deps.home } : {}) }
   const fetchImpl = deps.fetch ?? fetch
   const server = stringFlag(args, 'server')
-  const sessionOptions = { ...store, ...(server ? { server } : {}), fetch: fetchImpl, ...(deps.now ? { now: deps.now } : {}) }
+  const studioUrl = stringFlag(args, 'studio-url')
+  const sessionOptions = { ...store, ...(server ? { server } : {}), ...(studioUrl ? { studioUrl } : {}), fetch: fetchImpl, ...(deps.now ? { now: deps.now } : {}) }
   const identity = await readIdentityFile(root)
 
   // A pack goes to the marketplace, as the workspace's publisher.
@@ -94,7 +95,8 @@ export async function runPublish(args: ParsedArgs, io: CommandIO, deps: PublishD
   io.out(`Packed ${packed.id}@${packed.version} (${packed.bytes} bytes, ${packed.files} files)`)
 
   const target = asNew ? undefined : (named ?? (await rememberedProject(root)))
-  const client = { studio: session.studio, accessToken: session.accessToken, fetch: fetchImpl }
+  // `/s/*` goes to the studio's web origin; its resource is the token's audience only.
+  const client = { studio: session.studio, url: session.url, accessToken: session.accessToken, fetch: fetchImpl }
   const bytes = new Uint8Array(await readFile(packed.file))
   const name = packed.id.split('/').pop() ?? packed.id
   const imported = await importPack(client, bytes, target ? { projectId: target } : { name })
@@ -110,7 +112,7 @@ export async function runPublish(args: ParsedArgs, io: CommandIO, deps: PublishD
   io.out(`Published ${published.app}@${published.version}`)
   io.out(`  url      ${published.url}`)
   io.out(`  project  ${imported.projectId} (remembered in ${REMEMBERED_PROJECT_FILE}; --new makes another)`)
-  io.out(`Keep building it with the studio's AI at ${session.studio}, or edit here and run \`pwf publish\` again.`)
+  io.out(`Keep building it with the studio's AI at ${session.url}, or edit here and run \`pwf publish\` again.`)
   return 0
 }
 
@@ -130,12 +132,13 @@ function printFindings(io: CommandIO, findings: readonly StudioFinding[]): void 
 export const publish: Command = {
   name: 'publish',
   summary: 'Publish an app on PhiWebs (prints its address), or a pack to its marketplace (needs pwf login)',
-  usage: `pwf publish [dir] [--project <id>] [--new] [--server <url>]
+  usage: `pwf publish [dir] [--project <id>] [--new] [--server <url>] [--studio-url <url>]
 
   dir             the app or pack folder (default: the current folder)
   --project <id>  an app: the studio project to publish into
   --new           an app: make a new project, even when the folder has one
 ${SERVER_HELP}
+${STUDIO_WEB_HELP}
 
 An app: packs the folder (as pwf pack, refusing on errors), sends the
 .pwpack to the PhiWebs studio, which validates it into a project, then

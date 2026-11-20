@@ -71,7 +71,7 @@ describe('pwf login', () => {
     expect(c.out).toContain(`  ${opened}`)
     expect(c.out.at(-3)).toBe(`Signed in to ${server.url} as ada@example.com.`)
     expect(c.out.at(-2)).toBe('  workspace  Ada Studio (owner)')
-    expect(c.out.at(-1)).toBe('  studio     https://mcp.phiwebs.com')
+    expect(c.out.at(-1)).toBe('  studio     https://studio.phiwebs.com (tokens for https://mcp.phiwebs.com)')
 
     const saved = JSON.parse(await readFile(join(dir, CREDENTIALS_FILE), 'utf8'))
     expect(saved.servers[server.url]).toMatchObject({ clientId: 'client_1', tokenEndpoint: `${server.url}/api/oauth/token` })
@@ -80,7 +80,7 @@ describe('pwf login', () => {
 
     const w = capture(dir, env)
     expect(await runWhoami(args(), w.io)).toBe(0)
-    expect(w.out).toEqual([`Signed in to ${server.url}`, '  account    ada@example.com', '  workspace  Ada Studio (owner)', '  studio     https://mcp.phiwebs.com'])
+    expect(w.out).toEqual([`Signed in to ${server.url}`, '  account    ada@example.com', '  workspace  Ada Studio (owner)', '  studio     https://studio.phiwebs.com (tokens for https://mcp.phiwebs.com)'])
 
     // A second login reuses the registered client: its port is free again.
     const again = capture(dir, env)
@@ -102,6 +102,37 @@ describe('pwf login', () => {
     } finally {
       await squatter.close()
     }
+  })
+
+  it('a saved client the server no longer knows (invalid_client at authorize) is dropped, registered again once, and the sign-in retried', async () => {
+    const { server, env, dir } = await setup()
+    expect(await runLogin(args(), capture(dir, env).io, { openBrowser: browser })).toBe(0)
+    server.forgetClients()
+    const c = capture(dir, env)
+    let opened = 0
+    expect(await runLogin(args(), c.io, { openBrowser: async (u) => ((opened += 1), void (await fetch(u))) }), c.text()).toBe(0)
+    expect(opened).toBe(2)
+    expect(server.registrations).toHaveLength(2)
+    expect(c.err.join('\n')).toContain('no longer knows the registration pwf saved')
+    expect(JSON.parse(await readFile(join(dir, CLIENTS_FILE), 'utf8')).servers[server.url].clientId).toBe('client_2')
+    expect(JSON.parse(await readFile(join(dir, CREDENTIALS_FILE), 'utf8')).servers[server.url].clientId).toBe('client_2')
+  })
+
+  it('invalid_client at the token endpoint does the same; a client registered just now is not retried', async () => {
+    const { server, env, dir } = await setup()
+    expect(await runLogin(args(), capture(dir, env).io, { openBrowser: browser })).toBe(0)
+    server.tokenInvalidClient = 1
+    const c = capture(dir, env)
+    expect(await runLogin(args(), c.io, { openBrowser: browser }), c.text()).toBe(0)
+    expect(server.registrations).toHaveLength(2)
+
+    // A fresh home: the client is registered now, so invalid_client is final.
+    const other = await setup()
+    other.server.tokenInvalidClient = 5
+    const x = capture(other.dir, other.env)
+    expect(await runLogin(args(), x.io, { openBrowser: browser })).toBe(1)
+    expect(other.server.registrations).toHaveLength(1)
+    expect(x.err.join('\n')).toContain('invalid_client')
   })
 
   it('refreshes an expired session and saves the rotated tokens', async () => {

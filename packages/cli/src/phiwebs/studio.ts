@@ -119,14 +119,16 @@ function refusal(res: Response, body: unknown, what: string): CommandFailure {
 }
 
 export interface StudioClientOptions {
-  /** The studio's address. */
+  /** The studio resource: the host of its MCP endpoint (`<studio>/mcp`). */
   readonly studio: string
+  /** The studio's web origin: the host of every `/s/*` route. */
+  readonly url: string
   readonly accessToken: string
   readonly fetch?: Fetch
 }
 
 async function call(options: StudioClientOptions, method: string, path: string, init: { body?: string | Uint8Array; contentType?: string; timeoutMs?: number }): Promise<unknown> {
-  const url = `${options.studio}${path}`
+  const url = `${options.url}${path}`
   let res: Response
   try {
     res = await (options.fetch ?? fetch)(url, {
@@ -140,7 +142,7 @@ async function call(options: StudioClientOptions, method: string, path: string, 
       signal: AbortSignal.timeout(init.timeoutMs ?? SHORT_TIMEOUT_MS),
     })
   } catch (e) {
-    throw studioFailure('STUDIO_UNREACHABLE', `cannot reach ${options.studio}: ${(e as Error).message}`)
+    throw studioFailure('STUDIO_UNREACHABLE', `cannot reach ${options.url}: ${(e as Error).message}`)
   }
   const body = await bodyOf(res)
   if (!res.ok) throw refusal(res, body, `${method} ${url}`)
@@ -214,7 +216,7 @@ export interface RpcAnswer {
 }
 
 /** Sends one JSON-RPC request to the studio's MCP endpoint (stateless: no session to open first). */
-export async function mcpRequest(options: StudioClientOptions, method: string, params: Record<string, unknown>, timeoutMs = 60_000): Promise<RpcAnswer> {
+export async function mcpRequest(options: Omit<StudioClientOptions, 'url'>, method: string, params: Record<string, unknown>, timeoutMs = 60_000): Promise<RpcAnswer> {
   const url = `${options.studio}${STUDIO_PATHS.mcp}`
   let res: Response
   try {

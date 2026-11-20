@@ -6,8 +6,19 @@
  * resource its new access token is for.
  */
 import { CommandFailure } from '../commands/lib/failure.js'
-import { deleteTokens, readTokens, saveTokens, serverUrl, type SavedStudioToken, type SavedTokens, type StoreOptions } from './config.js'
-import { refreshTokens, type Fetch, type TokenResponse } from './oauth.js'
+import {
+  defaultStudioWeb,
+  deleteClient,
+  deleteTokens,
+  namedStudioWeb,
+  readTokens,
+  saveTokens,
+  serverUrl,
+  type SavedStudioToken,
+  type SavedTokens,
+  type StoreOptions,
+} from './config.js'
+import { CLIENT_UNKNOWN, refreshTokens, type Fetch, type TokenResponse } from './oauth.js'
 
 /** A token this close to expiry is refreshed first. */
 const EXPIRY_MARGIN_MS = 60_000
@@ -15,6 +26,8 @@ const EXPIRY_MARGIN_MS = 60_000
 export interface SessionOptions extends StoreOptions {
   /** The `--server` flag, when given; else `PWF_PHIWEBS_URL`, else the default. */
   readonly server?: string
+  /** The `--studio-url` flag, when given; else `PWF_PHIWEBS_STUDIO_WEB`, else the session's. */
+  readonly studioUrl?: string
   readonly fetch?: Fetch
   readonly now?: () => number
 }
@@ -29,8 +42,10 @@ export interface Session {
 export interface StudioSession {
   /** The API the session was made with. */
   readonly server: string
-  /** The studio's address (its resource). */
+  /** The studio resource: the token's audience and the host of `<studio>/mcp`. */
   readonly studio: string
+  /** The studio's web origin: every `/s/*` call, and the address a person opens. */
+  readonly url: string
   readonly accessToken: string
   readonly scope?: string
 }
@@ -56,9 +71,10 @@ export function tokensFrom(
 }
 
 /** A studio token from a token endpoint's answer. */
-export function studioTokenFrom(res: TokenResponse, resource: string, now: number): SavedStudioToken {
+export function studioTokenFrom(res: TokenResponse, resource: string, now: number, url?: string): SavedStudioToken {
   return {
     resource,
+    ...(url ? { url } : {}),
     accessToken: res.access_token,
     ...(typeof res.expires_in === 'number' ? { expiresAt: now + res.expires_in * 1000 } : {}),
   }
@@ -84,6 +100,8 @@ async function refresh(server: string, saved: SavedTokens, resource: string | un
   } catch (e) {
     if (e instanceof CommandFailure) {
       await deleteTokens(server, options)
+      // The client is gone too: the next `pwf login` registers a new one.
+      if (e.code === CLIENT_UNKNOWN) await deleteClient(server, options)
       throw new CommandFailure('SESSION_EXPIRED', `the session with ${server} has ended (${e.message}); run \`pwf login\``)
     }
     throw e
@@ -129,15 +147,16 @@ export async function readStudioSession(options: SessionOptions): Promise<Studio
     })
   }
   const studio = saved.studio.resource
+  const url = namedStudioWeb(options.studioUrl, options.env) ?? saved.studio.url ?? defaultStudioWeb(studio)
   const now = (options.now ?? Date.now)()
   if (isFresh(saved.studio.expiresAt, now)) {
-    return { server, studio, accessToken: saved.studio.accessToken, ...(saved.scope ? { scope: saved.scope } : {}) }
+    return { server, studio, url, accessToken: saved.studio.accessToken, ...(saved.scope ? { scope: saved.scope } : {}) }
   }
   const res = await refresh(server, saved, studio, options)
-  const token = studioTokenFrom(res, studio, now)
+  const token = studioTokenFrom(res, studio, now, saved.studio.url)
   // The API's own access token stays as it was; only the shared refresh token moves on.
   const refreshToken = res.refresh_token ?? saved.refreshToken
   const scope = res.scope ?? saved.scope
   await saveTokens(server, { ...saved, ...(refreshToken ? { refreshToken } : {}), ...(scope ? { scope } : {}), studio: token }, options)
-  return { server, studio, accessToken: token.accessToken, ...(scope ? { scope } : {}) }
+  return { server, studio, url, accessToken: token.accessToken, ...(scope ? { scope } : {}) }
 }

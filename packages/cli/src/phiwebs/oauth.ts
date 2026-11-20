@@ -14,13 +14,31 @@ export type Fetch = typeof fetch
 
 /**
  * The scopes `pwf login` asks for: who you are (`openid`, `email`) and which
- * workspace (`world:read`) — what `pwf whoami` shows; publishing a pack folder
- * to the marketplace (`marketplace:publish`); and the studio's:
+ * workspace (`world:read`) — what `pwf whoami` shows; reading the marketplace
+ * (`marketplace:read`: the workspace tools `pwf mcp` lists, such as
+ * `list_marketplace`, `get_listing` and `list_pack_sources`); publishing a pack
+ * folder to the marketplace (`marketplace:publish`); and the studio's:
  * see projects (`studio:read`), import and build them (`studio:build`), and
  * publish them (`studio:publish`), for `pwf publish` and the PhiWebs tools of
  * `pwf mcp`. Every PhiWebs command adds its scope here, in this one place.
  */
-export const LOGIN_SCOPES: readonly string[] = ['openid', 'email', 'world:read', 'marketplace:publish', 'studio:read', 'studio:build', 'studio:publish']
+export const LOGIN_SCOPES: readonly string[] = [
+  'openid',
+  'email',
+  'world:read',
+  'marketplace:read',
+  'marketplace:publish',
+  'studio:read',
+  'studio:build',
+  'studio:publish',
+]
+
+/**
+ * The failure code for a client the server does not know (`invalid_client`,
+ * RFC 6749 §4.1.2.1 / §5.2), at the authorization endpoint or the token
+ * endpoint: a saved registration that is gone. `pwf login` registers again.
+ */
+export const CLIENT_UNKNOWN = 'CLIENT_UNKNOWN'
 
 /** The name the server shows on its consent screen. */
 export const CLIENT_NAME = 'PWFabric CLI'
@@ -31,8 +49,10 @@ const HTTP_TIMEOUT_MS = 30_000
 export interface ServerMetadata {
   /** The API's issuer; also the resource its own tokens are for. */
   readonly issuer?: string
-  /** The studio this API issues tokens for, when the API names it. */
+  /** The studio resource this API issues tokens for, when the API names it. */
   readonly studio_resource?: string
+  /** The studio's web origin (its `/s/*` routes), when the API names it. */
+  readonly studio_url?: string
   readonly authorization_endpoint: string
   readonly token_endpoint: string
   readonly registration_endpoint: string
@@ -104,6 +124,9 @@ export async function discover(server: string, fetchImpl: Fetch): Promise<Server
     ...(typeof body['issuer'] === 'string' ? { issuer: body['issuer'] } : {}),
     ...(typeof body['studio_resource'] === 'string'
       ? { studio_resource: safeEndpoint(body['studio_resource'], 'studio_resource', server).replace(/\/+$/, '') }
+      : {}),
+    ...(typeof body['studio_url'] === 'string'
+      ? { studio_url: safeEndpoint(body['studio_url'], 'studio_url', server).replace(/\/+$/, '') }
       : {}),
     authorization_endpoint: safeEndpoint(body['authorization_endpoint'], 'authorization_endpoint', server),
     token_endpoint: safeEndpoint(body['token_endpoint'], 'token_endpoint', server),
@@ -188,7 +211,8 @@ async function tokenRequest(endpoint: string, form: Record<string, string>, fetc
   const res = await postForm(endpoint, form, fetchImpl)
   const body = (await bodyOf(res)) as Partial<TokenResponse>
   if (!res.ok || typeof body?.access_token !== 'string') {
-    throw new CommandFailure(code, serverError(body, res.status))
+    const unknownClient = (body as { error?: unknown } | null)?.error === 'invalid_client'
+    throw new CommandFailure(unknownClient ? CLIENT_UNKNOWN : code, serverError(body, res.status))
   }
   return body as TokenResponse
 }
@@ -317,7 +341,10 @@ export async function startLoopback(preferredPort?: number): Promise<Loopback> {
   })
 
   function settle(w: Waiter, r: Callback): void {
-    if (r.error !== undefined) w.reject(new CommandFailure('AUTHORIZATION_DENIED', `the server did not authorize pwf: ${r.error}`))
+    if (r.error !== undefined) {
+      const unknownClient = r.error === 'invalid_client' || r.error.startsWith('invalid_client:')
+      w.reject(new CommandFailure(unknownClient ? CLIENT_UNKNOWN : 'AUTHORIZATION_DENIED', `the server did not authorize pwf: ${r.error}`))
+    }
     else if (!r.code) w.reject(new CommandFailure('AUTHORIZATION_DENIED', 'the callback carried no authorization code'))
     else w.resolve(r.code)
   }

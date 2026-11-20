@@ -17,12 +17,22 @@ export const DEFAULT_PHIWEBS_URL = 'https://api.phiwebs.com'
 export const PHIWEBS_URL_ENV = 'PWF_PHIWEBS_URL'
 
 /**
- * The PhiWebs studio (the resource `pwf publish` and the PhiWebs tools of
- * `pwf mcp` call) unless told otherwise or the API names its own.
+ * The PhiWebs studio as a RESOURCE: the audience of its tokens and the host of
+ * its MCP endpoint (`<resource>/mcp`), unless told otherwise or the API names
+ * its own (`studio_resource`).
  */
-export const DEFAULT_STUDIO_URL = 'https://mcp.phiwebs.com'
-/** Environment variable naming another studio; `--studio` wins over it. */
-export const STUDIO_URL_ENV = 'PWF_PHIWEBS_STUDIO_URL'
+export const DEFAULT_STUDIO_RESOURCE = 'https://mcp.phiwebs.com'
+/** Environment variable naming another studio resource; `--studio` wins over it. */
+export const STUDIO_RESOURCE_ENV = 'PWF_PHIWEBS_STUDIO_URL'
+
+/**
+ * The PhiWebs studio's WEB ORIGIN: where its `/s/*` routes are (`pwf publish`
+ * imports and publishes there) and the address a person opens. Not always the
+ * resource's host: PhiWebs' own resource answers only `/mcp`.
+ */
+export const DEFAULT_STUDIO_WEB = 'https://studio.phiwebs.com'
+/** Environment variable naming another studio origin; `--studio-url` wins over it. */
+export const STUDIO_WEB_ENV = 'PWF_PHIWEBS_STUDIO_WEB'
 
 /** Tokens saved per server. */
 export const CREDENTIALS_FILE = 'credentials.json'
@@ -55,13 +65,28 @@ export function serverUrl(flag: string | undefined, env: Env): string {
 }
 
 /**
- * The studio the user named: `flag`, else `PWF_PHIWEBS_STUDIO_URL`, else
- * undefined (login then takes the one the API names, else the default).
+ * The studio resource the user named: `flag`, else `PWF_PHIWEBS_STUDIO_URL`,
+ * else undefined (login then takes the one the API names, else the default).
  * Normalised and checked like {@link serverUrl}.
  */
-export function namedStudioUrl(flag: string | undefined, env: Env): string | undefined {
-  const raw = flag ?? env[STUDIO_URL_ENV]
+export function namedStudioResource(flag: string | undefined, env: Env): string | undefined {
+  const raw = flag ?? env[STUDIO_RESOURCE_ENV]
   return raw === undefined || raw === '' ? undefined : normalisedUrl(raw)
+}
+
+/** The studio origin the user named: `flag` (`--studio-url`), else `PWF_PHIWEBS_STUDIO_WEB`, else undefined. */
+export function namedStudioWeb(flag: string | undefined, env: Env): string | undefined {
+  const raw = flag ?? env[STUDIO_WEB_ENV]
+  return raw === undefined || raw === '' ? undefined : normalisedUrl(raw)
+}
+
+/**
+ * The studio origin when nobody named one: PhiWebs' own for PhiWebs' own
+ * resource, else the resource itself (a local or self-hosted studio serves
+ * `/s/*` and `/mcp` on one host).
+ */
+export function defaultStudioWeb(resource: string): string {
+  return resource === DEFAULT_STUDIO_RESOURCE ? DEFAULT_STUDIO_WEB : resource
 }
 
 /** `raw` as origin plus path without a trailing slash; https only, except http on this machine. */
@@ -100,8 +125,10 @@ export interface SavedClient {
 
 /** The access token for the studio, obtained with the same grant (one refresh token for both). */
 export interface SavedStudioToken {
-  /** The studio's address, which is also the resource its tokens are for. */
+  /** The studio resource: its tokens' audience, and the host of `<resource>/mcp`. */
   readonly resource: string
+  /** The studio's web origin (`/s/*`, the address a person opens); absent in sessions from an earlier pwf. */
+  readonly url?: string
   readonly accessToken: string
   /** Epoch milliseconds; absent when the server said nothing about expiry. */
   readonly expiresAt?: number
@@ -174,6 +201,16 @@ export async function deleteTokens(server: string, options: StoreOptions): Promi
 
 export async function readClient(server: string, options: StoreOptions): Promise<SavedClient | null> {
   return (await readStore<SavedClient>(join(configDir(options), CLIENTS_FILE)))[server] ?? null
+}
+
+/** Forgets one server's saved client (the server no longer knows it). */
+export async function deleteClient(server: string, options: StoreOptions): Promise<void> {
+  const dir = configDir(options)
+  const all = await readStore<SavedClient>(join(dir, CLIENTS_FILE))
+  if (!(server in all)) return
+  delete all[server]
+  if (Object.keys(all).length === 0) await rm(join(dir, CLIENTS_FILE), { force: true })
+  else await writeStore(dir, CLIENTS_FILE, all)
 }
 
 export async function saveClient(server: string, client: SavedClient, options: StoreOptions): Promise<void> {

@@ -435,7 +435,7 @@ given `phiwebs` options (`pwf mcp` passes the process's environment).
 ## `pwf publish`
 
 ```text
-pwf publish [dir] [--project <id>] [--new] [--server <url>]
+pwf publish [dir] [--project <id>] [--new] [--server <url>] [--studio-url <url>]
 ```
 
 | Option | Meaning |
@@ -444,12 +444,14 @@ pwf publish [dir] [--project <id>] [--new] [--server <url>]
 | `--project <id>` | An app: the studio project to publish into. |
 | `--new` | An app: make a new project, even when the folder has one. |
 | `--server <url>` | The PhiWebs API the session was made with. |
+| `--studio-url <url>` | The studio's web address for this publish. Default: `PWF_PHIWEBS_STUDIO_WEB` when set, else the one saved at `pwf login`. |
 
 Needs `pwf login`. **An app** goes through the PhiWebs studio:
 
 1. `pwf pack` writes the folder's `.pwpack` (to `.pwf/publish/`), refusing on
    errors as `pwf pack` does.
-2. The archive goes to the studio: `POST <studio>/s/projects/import` makes a
+2. The archive goes to the studio's web address (below, `<studio>`; not its
+   resource): `POST <studio>/s/projects/import` makes a
    new project from it, `POST <studio>/s/p/<id>/import` replaces an existing
    project's app (its history keeps each import). The studio validates it and
    answers with its findings.
@@ -491,13 +493,14 @@ errors (nothing is published then), `2` wrong usage (`--new` with
 ## `pwf login`
 
 ```text
-pwf login [--server <url>] [--studio <url>] [--no-browser]
+pwf login [--server <url>] [--studio <url>] [--studio-url <url>] [--no-browser]
 ```
 
 | Option | Meaning |
 |---|---|
 | `--server <url>` | The PhiWebs API. Default `https://api.phiwebs.com`, or `PWF_PHIWEBS_URL` when set (local and staging work). |
-| `--studio <url>` | The PhiWebs studio. Default: `PWF_PHIWEBS_STUDIO_URL` when set, else the studio the API names in its metadata (`studio_resource`), else `https://mcp.phiwebs.com`. |
+| `--studio <url>` | The PhiWebs studio as a resource: the audience of its tokens, and its MCP endpoint `<url>/mcp`. Default: `PWF_PHIWEBS_STUDIO_URL` when set, else the one the API names in its metadata (`studio_resource`), else `https://mcp.phiwebs.com`. |
+| `--studio-url <url>` | The studio's web address: where `pwf publish` imports and publishes (`/s/…`), and the address to open. Default: `PWF_PHIWEBS_STUDIO_WEB` when set, else the one the API names (`studio_url`), else `https://studio.phiwebs.com` for PhiWebs' own resource, else the resource's address. |
 | `--no-browser` | Print the sign-in address without opening a browser. |
 
 Signs in with OAuth 2.1 (authorization code and PKCE). `pwf` reads the
@@ -511,10 +514,13 @@ studio. The code is redeemed for an API token; the same grant is then
 refreshed for a studio token; one refresh token serves both, and each token
 is refreshed for its own resource when it expires. It asks for `openid`,
 `email` and `world:read` (who you are and which workspace),
+`marketplace:read` (the marketplace tools of `pwf mcp`),
 `marketplace:publish` (publishing a pack), and `studio:read`,
 `studio:build` and `studio:publish` (`pwf publish` and the PhiWebs tools of
 `pwf mcp`). A session made by an earlier `pwf` has no studio token: run
-`pwf login` again and it is added.
+`pwf login` again and it is added. A saved client the server no longer
+knows (`invalid_client`) is forgotten: `pwf` registers again once and asks
+you to sign in once more.
 
 The tokens are saved in your config folder — `%APPDATA%\pwfabric` on
 Windows, `$XDG_CONFIG_HOME/pwfabric` or `~/.config/pwfabric` elsewhere — in a

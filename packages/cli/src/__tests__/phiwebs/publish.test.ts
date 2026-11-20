@@ -44,10 +44,10 @@ interface World {
 }
 
 /** A fake API and a fake studio that trusts the API's studio tokens; env points pwf at both. */
-async function world(options: FakeServerOptions = {}, studioInEnv = true): Promise<World> {
+async function world(options: FakeServerOptions = {}, studioInEnv = true, split = false): Promise<World> {
   const api = await startFakeServer(options)
   closers.push(api)
-  const studio = await startFakeStudio((t) => api.audOf(t) === studio.url)
+  const studio = await startFakeStudio((t) => api.audOf(t) === studio.url, { split })
   closers.push(studio)
   api.studio = studio.url
   const home = await tempDir()
@@ -87,7 +87,8 @@ describe('pwf login for the API and the studio', () => {
     const auth = new URL(opened)
     expect(auth.searchParams.getAll('resource')).toEqual([w.api.url, w.studio.url])
     expect(auth.searchParams.get('scope')).toBe(LOGIN_SCOPES.join(' '))
-    for (const s of ['studio:read', 'studio:build', 'studio:publish', 'marketplace:publish']) expect(LOGIN_SCOPES).toContain(s)
+    // marketplace:read: the workspace tools the studio lists for pwf mcp (list_marketplace, get_listing, list_pack_sources).
+    for (const s of ['studio:read', 'studio:build', 'studio:publish', 'marketplace:read', 'marketplace:publish', 'world:read']) expect(LOGIN_SCOPES).toContain(s)
     // The code is redeemed for the API, then the same grant refreshed for the studio.
     expect(w.api.tokenRequests.map((r) => [r['grant_type'], r['resource']])).toEqual([
       ['authorization_code', w.api.url],
@@ -169,6 +170,96 @@ describe('pwf login for the API and the studio', () => {
     })).toBe(0)
     expect(c.err.join('\n')).toContain('`pwf publish` and the PhiWebs tools of `pwf mcp` will not work')
     expect(((await credentials(w.dir, w.api.url)) as { studio?: unknown }).studio).toBeUndefined()
+  })
+})
+
+describe('a studio whose web origin is not its resource (PhiWebs: /s/* on studio.phiwebs.com, /mcp on mcp.phiwebs.com)', () => {
+  /** A split studio the API names in its metadata; nothing in the environment. */
+  async function splitWorld(advertiseUrl = true): Promise<World> {
+    const api = await startFakeServer()
+    closers.push(api)
+    const studio = await startFakeStudio((t) => api.audOf(t) === studio.url, { split: true })
+    closers.push(studio)
+    api.studio = studio.url
+    const home = await tempDir()
+    const env: Record<string, string> = { APPDATA: home, XDG_CONFIG_HOME: home, PWF_PHIWEBS_URL: api.url, PWF_PHIWEBS_STUDIO_URL: studio.url }
+    if (advertiseUrl) env['PWF_PHIWEBS_STUDIO_WEB'] = studio.webUrl
+    return { api, studio, env, dir: join(home, 'pwfabric') }
+  }
+
+  it('the API names both: the token is for the resource, every /s/* call goes to the origin, /mcp to the resource', async () => {
+    const api = await startFakeServer()
+    closers.push(api)
+    const studio = await startFakeStudio((t) => api.audOf(t) === studio.url, { split: true })
+    closers.push(studio)
+    api.studio = studio.url
+    api.advertise = { studio_resource: studio.url, studio_url: studio.webUrl }
+    const home = await tempDir()
+    const w: World = { api, studio, env: { APPDATA: home, XDG_CONFIG_HOME: home, PWF_PHIWEBS_URL: api.url }, dir: join(home, 'pwfabric') }
+    expect(studio.webUrl).not.toBe(studio.url)
+
+    const c = capture(w.dir, w.env)
+    let opened = ''
+    expect(await login(args(), c.io, { openBrowser: async (u) => ((opened = u), void (await fetch(u))) }), c.text()).toBe(0)
+    expect(new URL(opened).searchParams.getAll('resource')).toEqual([api.url, studio.url])
+    expect(c.out.at(-1)).toBe(`  studio     ${studio.webUrl} (tokens for ${studio.url})`)
+    const saved = (await credentials(w.dir, api.url)) as { studio: { resource: string; url: string; accessToken: string } }
+    expect(saved.studio).toMatchObject({ resource: studio.url, url: studio.webUrl })
+    expect(api.audOf(saved.studio.accessToken)).toBe(studio.url)
+
+    const app = await appFolder()
+    const p = capture(app, w.env)
+    expect(await publish(args(), p.io), p.text()).toBe(0)
+    expect(studio.requests.map((r) => `${r.host} ${r.method} ${r.path}`)).toEqual([
+      'web POST /s/projects/import?name=shop',
+      'web POST /s/p/p-1/publish',
+      'web POST /s/p/p-1/open',
+      'web POST /s/p/p-1/publish',
+    ])
+    expect(p.out).toContain('  url      https://p-1.apps.example.com/')
+    expect(p.out.at(-1)).toBe(`Keep building it with the studio's AI at ${studio.webUrl}, or edit here and run \`pwf publish\` again.`)
+
+    // pwf mcp reaches the studio's tools on the resource.
+    const client = await mcpClient(w)
+    const { tools } = await client.listTools()
+    expect(tools.map((t) => t.name)).toContain('list_projects')
+    expect(studio.requests.at(-1)).toMatchObject({ host: 'resource', method: 'POST', path: '/mcp' })
+  })
+
+  it('--studio-url / PWF_PHIWEBS_STUDIO_WEB name the origin when the API does not; without either the resource host is the origin', async () => {
+    // Named at login (env): saved with the session and used by publish.
+    const named = await splitWorld(true)
+    expect(await login(args(), capture(named.dir, named.env).io), 'login').toBe(0)
+    const app = await appFolder()
+    const env = { ...named.env }
+    delete env['PWF_PHIWEBS_STUDIO_WEB']
+    expect(await publish(args([app]), capture(app, env).io)).toBe(0)
+    expect(named.studio.requests.filter((r) => r.path.startsWith('/s/')).every((r) => r.host === 'web')).toBe(true)
+
+    // Not named anywhere: the resource itself; this split studio then refuses /s/* (404) — what the bug looked like.
+    const unnamed = await splitWorld(false)
+    expect(await login(args(), capture(unnamed.dir, unnamed.env).io)).toBe(0)
+    const refused = capture(app, unnamed.env)
+    expect(await publish(args([app]), refused.io)).toBe(1)
+    expect(unnamed.studio.requests.at(-1)).toMatchObject({ host: 'resource', path: '/s/p/p-1/import' })
+    // ...and --studio-url on publish puts it right without a new login.
+    const fixed = capture(app, unnamed.env)
+    expect(await publish(args([app], { new: true, 'studio-url': unnamed.studio.webUrl }), fixed.io), fixed.text()).toBe(0)
+    expect(unnamed.studio.requests.at(-1)).toMatchObject({ host: 'web', path: '/s/p/p-1/publish' })
+  })
+
+  it("PhiWebs' own resource defaults to PhiWebs' own studio origin", async () => {
+    const w = await world({}, false)
+    w.api.studio = undefined
+    expect(await login(args(), capture(w.dir, w.env).io)).toBe(0)
+    const saved = (await credentials(w.dir, w.api.url)) as { studio: { resource: string; url: string } }
+    expect(saved.studio).toEqual(expect.objectContaining({ resource: 'https://mcp.phiwebs.com', url: 'https://studio.phiwebs.com' }))
+    // A session saved before the origin was kept reads the same default.
+    const file = join(w.dir, CREDENTIALS_FILE)
+    const all = JSON.parse(await readFile(file, 'utf8'))
+    delete all.servers[w.api.url].studio.url
+    await writeFile(file, JSON.stringify(all))
+    expect((await readStudioSession({ env: w.env }))?.url).toBe('https://studio.phiwebs.com')
   })
 })
 

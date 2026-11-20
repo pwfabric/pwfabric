@@ -164,14 +164,18 @@ address. A pack: sends it to the PhiWebs marketplace for review as the
 workspace's publisher, under its own id. Findings and refusals carry their
 codes and fixes. Needs `pwf login`.
 
-### `pwf login [--server <url>] [--studio <url>] [--no-browser]`, `pwf logout`, `pwf whoami`
+### `pwf login [--server <url>] [--studio <url>] [--studio-url <url>] [--no-browser]`, `pwf logout`, `pwf whoami`
 
 Sign in to PhiWebs with OAuth 2.1 (authorization code + PKCE, a loopback
 redirect on `127.0.0.1`, dynamic client registration), for two resources: the
 API and the studio, each with its own token. The server is
 `https://api.phiwebs.com` unless `--server` or `PWF_PHIWEBS_URL` names
-another; the studio is `--studio`, `PWF_PHIWEBS_STUDIO_URL`, the one the API
-names, or `https://mcp.phiwebs.com`. A session from an earlier `pwf` gains
+another; the studio resource (token audience, `<resource>/mcp`) is `--studio`,
+`PWF_PHIWEBS_STUDIO_URL`, the one the API names, or `https://mcp.phiwebs.com`;
+the studio's web address (`/s/*`, what `pwf publish` calls) is `--studio-url`,
+`PWF_PHIWEBS_STUDIO_WEB`, the one the API names (`studio_url`), or
+`https://studio.phiwebs.com` (another resource: its own address). A saved
+client the server no longer knows is registered again once. A session from an earlier `pwf` gains
 its studio token by signing in again. Tokens live in `%APPDATA%\pwfabric` (Windows) or
 `$XDG_CONFIG_HOME/pwfabric` / `~/.config/pwfabric`, readable by the user only,
 and are refreshed when they expire. `logout` revokes (when the server can) and

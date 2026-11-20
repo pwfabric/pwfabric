@@ -23,6 +23,8 @@ export interface FakeServerOptions {
   readonly expiresIn?: number
   /** Name the studio in the metadata (`studio_resource`). */
   readonly advertiseStudio?: string
+  /** Name the studio's web origin in the metadata (`studio_url`). */
+  readonly advertiseStudioUrl?: string
 }
 
 /** The studio resource the fake knows when none is set: PhiWebs' default. */
@@ -37,6 +39,12 @@ export interface FakeServer {
   readonly pkceChecks: boolean[]
   /** Make every refresh fail. */
   refuseRefresh: boolean
+  /** Extra members of the metadata, read per request. */
+  advertise: Record<string, string> | undefined
+  /** Forget every registered client, as a server whose database was reset. */
+  forgetClients(): void
+  /** The token endpoint answers `invalid_client` this many times (then as usual). */
+  tokenInvalidClient: number
   /** The studio resource this API issues tokens for (default {@link FAKE_DEFAULT_STUDIO}). */
   studio: string | undefined
   /** The resource a live access token is for, or undefined. */
@@ -76,6 +84,9 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     revoked: [],
     pkceChecks: [],
     refuseRefresh: false,
+    advertise: undefined,
+    forgetClients: () => clients.clear(),
+    tokenInvalidClient: 0,
     studio: undefined,
     audOf: (t) => access.get(t),
     authorizedResources: [],
@@ -112,6 +123,8 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
         ...(options.noRegistration ? {} : { registration_endpoint: `${state.url}/api/oauth/register` }),
         ...(options.revocation ? { revocation_endpoint: `${state.url}/api/oauth/revoke` } : {}),
         ...(options.advertiseStudio ? { studio_resource: options.advertiseStudio } : {}),
+        ...(options.advertiseStudioUrl ? { studio_url: options.advertiseStudioUrl } : {}),
+        ...(state.advertise ?? {}),
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
@@ -133,6 +146,16 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       const q = url.searchParams
       const redirect = q.get('redirect_uri') ?? ''
       const registered = clients.get(q.get('client_id') ?? '')
+      // An unknown client with a loopback redirect is sent back with
+      // invalid_client (no code), so a CLI learns its registration is gone.
+      if (!registered && redirect.startsWith('http://127.0.0.1:')) {
+        const back = new URL(redirect)
+        back.searchParams.set('error', 'invalid_client')
+        back.searchParams.set('error_description', 'OAuth client not found or revoked')
+        back.searchParams.set('state', q.get('state') ?? '')
+        res.writeHead(302, { location: back.toString() }).end()
+        return
+      }
       if (!registered?.includes(redirect)) return json(400, { error: { code: 'INVALID_REDIRECT_URI', message: 'not registered' } })
       if (q.get('code_challenge_method') !== 'S256' || !q.get('code_challenge') || q.get('response_type') !== 'code') {
         return json(400, { error: { code: 'INVALID_REQUEST', message: 'PKCE S256 required' } })
@@ -164,6 +187,10 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     if (url.pathname === '/api/oauth/token' && req.method === 'POST') {
       const form = Object.fromEntries(new URLSearchParams(await bodyOf(req)))
       state.tokenRequests.push(form)
+      if (state.tokenInvalidClient > 0) {
+        state.tokenInvalidClient -= 1
+        return json(401, { error: 'invalid_client', error_description: 'client not found' })
+      }
       if (form['grant_type'] === 'authorization_code') {
         const grant = codes.get(form['code'] ?? '')
         codes.delete(form['code'] ?? '')

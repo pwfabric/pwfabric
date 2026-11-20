@@ -10,20 +10,26 @@ import type { Command, CommandIO, ParsedArgs } from './types.js'
 import { boolFlag, guard, stringFlag, UsageError } from './lib/flags.js'
 import { CommandFailure } from './lib/failure.js'
 import {
-  DEFAULT_STUDIO_URL,
+  DEFAULT_STUDIO_RESOURCE,
+  DEFAULT_STUDIO_WEB,
+  defaultStudioWeb,
+  deleteClient,
   deleteTokens,
-  namedStudioUrl,
+  namedStudioResource,
+  namedStudioWeb,
   PHIWEBS_URL_ENV,
   readClient,
   readTokens,
   saveClient,
   saveTokens,
   serverUrl,
-  STUDIO_URL_ENV,
+  STUDIO_RESOURCE_ENV,
+  STUDIO_WEB_ENV,
   type StoreOptions,
 } from '../phiwebs/config.js'
 import {
   authorizationUrl,
+  CLIENT_UNKNOWN,
   discover,
   exchangeCode,
   LOGIN_SCOPES,
@@ -35,6 +41,7 @@ import {
   serverError,
   startLoopback,
   type Fetch,
+  type TokenResponse,
 } from '../phiwebs/oauth.js'
 import { readSession, readStudioSession, STUDIO_UPGRADE_HINT, studioTokenFrom, tokensFrom } from '../phiwebs/session.js'
 
@@ -91,12 +98,16 @@ export async function runLogin(args: ParsedArgs, io: CommandIO, deps: AccountDep
   const now = deps.now ?? Date.now
   const store = storeOf(io, deps)
   const server = serverUrl(stringFlag(args, 'server'), io.env)
-  const named = namedStudioUrl(stringFlag(args, 'studio'), io.env)
+  const named = namedStudioResource(stringFlag(args, 'studio'), io.env)
+  const namedWeb = namedStudioWeb(stringFlag(args, 'studio-url'), io.env)
   const meta = await discover(server, fetchImpl)
-  // The API's own tokens are for its issuer; the studio is the one named, else
-  // the one the API names, else PhiWebs' own.
+  // The API's own tokens are for its issuer; the studio resource is the one
+  // named, else the one the API names, else PhiWebs' own. Its web origin (the
+  // `/s/*` routes, the address a person opens) likewise, else PhiWebs' own
+  // for PhiWebs' resource, else the resource's host.
   const apiResource = (meta.issuer ?? server).replace(/\/+$/, '')
-  const studio = named ?? meta.studio_resource ?? DEFAULT_STUDIO_URL
+  const studio = named ?? meta.studio_resource ?? DEFAULT_STUDIO_RESOURCE
+  const studioWeb = namedWeb ?? meta.studio_url ?? defaultStudioWeb(studio)
   let studioRefused: string | undefined
 
   // The server compares the redirect address exactly, port included, so a
@@ -106,38 +117,49 @@ export async function runLogin(args: ParsedArgs, io: CommandIO, deps: AccountDep
   const savedPort = saved && saved.registrationEndpoint === meta.registration_endpoint ? Number(new URL(saved.redirectUri).port) : undefined
   const loopback = await startLoopback(savedPort)
   try {
-    let clientId: string
-    if (saved && saved.redirectUri === loopback.redirectUri && saved.registrationEndpoint === meta.registration_endpoint) {
-      clientId = saved.clientId
-    } else {
-      clientId = await registerClient(meta.registration_endpoint, loopback.redirectUri, fetchImpl)
-      await saveClient(server, { clientId, redirectUri: loopback.redirectUri, registrationEndpoint: meta.registration_endpoint }, store)
+    const register = async (): Promise<string> => {
+      const id = await registerClient(meta.registration_endpoint, loopback.redirectUri, fetchImpl)
+      await saveClient(server, { clientId: id, redirectUri: loopback.redirectUri, registrationEndpoint: meta.registration_endpoint }, store)
+      return id
+    }
+    const reused = !!saved && saved.redirectUri === loopback.redirectUri && saved.registrationEndpoint === meta.registration_endpoint
+    let clientId = reused ? saved.clientId : await register()
+
+    const signIn = async (): Promise<TokenResponse> => {
+      const { verifier, challenge } = pkcePair()
+      const state = newState()
+      const url = authorizationUrl(meta, {
+        clientId,
+        redirectUri: loopback.redirectUri,
+        state,
+        challenge,
+        scopes: LOGIN_SCOPES,
+        resources: [apiResource, studio],
+      })
+      io.out(`Signing in to ${server} and its studio ${studio}.`)
+      io.out('Open this address in your browser if it does not open by itself:')
+      io.out(`  ${url}`)
+      const waiting = loopback.waitForCode(state, deps.timeoutMs ?? LOGIN_TIMEOUT_MS)
+      // Observed now, awaited below: the answer may arrive (or fail) while the browser is still opening.
+      waiting.catch(() => {})
+      if (!boolFlag(args, 'no-browser')) await (deps.openBrowser ?? ((u: string) => openInBrowser(u)))(url)
+      const code = await waiting
+      return exchangeCode(meta.token_endpoint, { code, verifier, clientId, redirectUri: loopback.redirectUri, resource: apiResource }, fetchImpl)
     }
 
-    const { verifier, challenge } = pkcePair()
-    const state = newState()
-    const url = authorizationUrl(meta, {
-      clientId,
-      redirectUri: loopback.redirectUri,
-      state,
-      challenge,
-      scopes: LOGIN_SCOPES,
-      resources: [apiResource, studio],
-    })
-    io.out(`Signing in to ${server} and its studio ${studio}.`)
-    io.out('Open this address in your browser if it does not open by itself:')
-    io.out(`  ${url}`)
-    const waiting = loopback.waitForCode(state, deps.timeoutMs ?? LOGIN_TIMEOUT_MS)
-    // Observed now, awaited below: the answer may arrive (or fail) while the browser is still opening.
-    waiting.catch(() => {})
-    if (!boolFlag(args, 'no-browser')) await (deps.openBrowser ?? ((u: string) => openInBrowser(u)))(url)
-    const code = await waiting
-
-    const tokens = await exchangeCode(
-      meta.token_endpoint,
-      { code, verifier, clientId, redirectUri: loopback.redirectUri, resource: apiResource },
-      fetchImpl
-    )
+    let tokens: TokenResponse
+    try {
+      tokens = await signIn()
+    } catch (e) {
+      // A saved registration the server no longer knows (its database was
+      // reset, the client was removed): forget it, register once more, and
+      // sign in again. A client registered just now is not retried.
+      if (!(reused && e instanceof CommandFailure && e.code === CLIENT_UNKNOWN)) throw e
+      await deleteClient(server, store)
+      io.err(`${server} no longer knows the registration pwf saved (${e.message}); pwf registered again. Sign in once more.`)
+      clientId = await register()
+      tokens = await signIn()
+    }
     let session = tokensFrom(
       tokens,
       { clientId, tokenEndpoint: meta.token_endpoint, ...(meta.revocation_endpoint ? { revocationEndpoint: meta.revocation_endpoint } : {}) },
@@ -147,7 +169,7 @@ export async function runLogin(args: ParsedArgs, io: CommandIO, deps: AccountDep
     if (session.refreshToken) {
       try {
         const forStudio = await refreshTokens(meta.token_endpoint, { refreshToken: session.refreshToken, clientId, resource: studio }, fetchImpl)
-        session = { ...session, refreshToken: forStudio.refresh_token ?? session.refreshToken, studio: studioTokenFrom(forStudio, studio, now()) }
+        session = { ...session, refreshToken: forStudio.refresh_token ?? session.refreshToken, studio: studioTokenFrom(forStudio, studio, now(), studioWeb) }
       } catch (e) {
         if (!(e instanceof CommandFailure)) throw e
         studioRefused = e.message
@@ -164,13 +186,18 @@ export async function runLogin(args: ParsedArgs, io: CommandIO, deps: AccountDep
   io.out(who ? `Signed in to ${server} as ${who.account}.` : `Signed in to ${server}.`)
   if (who?.workspace) io.out(`  workspace  ${who.workspace}`)
   if (studioRefused === undefined) {
-    io.out(`  studio     ${studio}`)
+    io.out(`  studio     ${studioDescription(studioWeb, studio)}`)
   } else {
     io.err(
       `The studio ${studio} gave no token (${studioRefused}): \`pwf publish\` and the PhiWebs tools of \`pwf mcp\` will not work. Check --studio, then run \`pwf login\` again.`
     )
   }
   return 0
+}
+
+/** The studio as `pwf login` and `pwf whoami` print it: its address, and its resource when that is elsewhere. */
+function studioDescription(url: string, resource: string): string {
+  return url === resource ? url : `${url} (tokens for ${resource})`
 }
 
 interface Who {
@@ -220,7 +247,7 @@ export async function runWhoami(args: ParsedArgs, io: CommandIO, deps: AccountDe
   io.out(`  account    ${who.account}`)
   io.out(`  workspace  ${who.workspace ?? 'none'}`)
   const studio = await readStudioSession({ ...storeOf(io, deps), server, fetch: deps.fetch ?? fetch, ...(deps.now ? { now: deps.now } : {}) }).then(
-    (s) => s?.studio ?? 'none',
+    (s) => (s ? studioDescription(s.url, s.studio) : 'none'),
     (e: unknown) =>
       e instanceof CommandFailure && e.code === 'STUDIO_NOT_SIGNED_IN' ? `not signed in; ${STUDIO_UPGRADE_HINT}` : `unavailable (${(e as Error).message})`
   )
@@ -257,15 +284,17 @@ export async function runLogout(args: ParsedArgs, io: CommandIO, deps: AccountDe
 }
 
 export const SERVER_HELP = `  --server <url>   the PhiWebs API (default https://api.phiwebs.com, or $${PHIWEBS_URL_ENV})`
-const STUDIO_HELP = `  --studio <url>   the PhiWebs studio (default: the one the API names, else ${DEFAULT_STUDIO_URL}; or $${STUDIO_URL_ENV})`
+const STUDIO_HELP = `  --studio <url>   the PhiWebs studio resource: its tokens' audience and <url>/mcp (default: the one the API names, else ${DEFAULT_STUDIO_RESOURCE}; or $${STUDIO_RESOURCE_ENV})`
+export const STUDIO_WEB_HELP = `  --studio-url <url>  the PhiWebs studio's web address, where pwf publish imports and publishes (default: the one the API names, else ${DEFAULT_STUDIO_WEB} for PhiWebs' resource, else the resource; or $${STUDIO_WEB_ENV})`
 
 export const loginCommand: Command = {
   name: 'login',
   summary: 'Sign in to PhiWebs (opens the browser); only PhiWebs commands need it',
-  usage: `pwf login [--server <url>] [--studio <url>] [--no-browser]
+  usage: `pwf login [--server <url>] [--studio <url>] [--studio-url <url>] [--no-browser]
 
 ${SERVER_HELP}
 ${STUDIO_HELP}
+${STUDIO_WEB_HELP}
   --no-browser     print the sign-in address without opening a browser
 
 Signs in with OAuth (authorization code and PKCE): pwf registers itself with
