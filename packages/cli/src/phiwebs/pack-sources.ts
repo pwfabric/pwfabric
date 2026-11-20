@@ -1,10 +1,13 @@
 /**
  * A pack from PhiWebs for local work: `pwf add @pwpack/<handle>/<name>`. The
  * API lists the packs the signed-in workspace may use on this computer (its
- * installs whose source it may read), each with a short-lived download
- * address and the sha256 of its bytes; the rest are listed as skipped, with
- * the reason. The bytes are checked against that sha256 before anything is
- * installed. The download address is a credential: it is never printed.
+ * installs whose source it may read), each with a download address and the
+ * sha256 of its bytes; the rest are listed as skipped, with the reason. A
+ * download address on the API's own origin takes the session's token, as the
+ * listing does; one anywhere else carries its own authorization (a presigned
+ * address) and gets no token. The bytes are checked against that sha256
+ * before anything is installed. Neither the address nor the token is ever
+ * printed.
  */
 import { sha256Hex } from '@pwfabric/pack'
 import { CommandFailure } from '../commands/lib/failure.js'
@@ -35,6 +38,11 @@ export interface PackSourceOptions {
   readonly server: string
   /** An API-audience access token. */
   readonly accessToken: string
+  /**
+   * A new access token for the API, refreshed even when the saved one has not
+   * expired: asked for once when a download on the API's own origin answers 401.
+   */
+  readonly refresh?: () => Promise<string>
   readonly fetch?: Fetch
 }
 
@@ -85,6 +93,7 @@ export function packSourceFix(code: string): string {
     case 'NOT_SIGNED_IN':
       return 'Run `pwf login` to sign in to PhiWebs, then add the pack again.'
     case 'SESSION_REFUSED':
+    case 'SESSION_EXPIRED':
     case 'UNAUTHORIZED':
       return 'Run `pwf login` to sign in again.'
     case 'INSUFFICIENT_SCOPE':
@@ -149,6 +158,57 @@ async function sources(options: PackSourceOptions): Promise<{ packs: Record<stri
   return { packs: listedOf(data['packs']), skipped: listedOf(data['skipped']) }
 }
 
+/**
+ * The bytes at `url`. An address on the API's own origin is an API route and
+ * takes the session's token (refreshed once after a 401); any other is
+ * presigned and gets none. A plain-http address is refused unless the API
+ * itself is http (local development).
+ */
+async function download(url: string, name: string, options: PackSourceOptions): Promise<Uint8Array> {
+  let target: URL
+  let api: URL
+  try {
+    target = new URL(url)
+    api = new URL(options.server)
+  } catch {
+    throw packSourceFailure('PACK_DOWNLOAD_FAILED', `PhiWebs gave no usable download for ${name}`)
+  }
+  const secure = target.protocol === 'https:' || (target.protocol === 'http:' && api.protocol === 'http:')
+  if (!secure) throw packSourceFailure('PACK_DOWNLOAD_FAILED', `PhiWebs gave no usable download for ${name}: not an https address`)
+  const own = target.origin === api.origin
+  const get = async (token: string | undefined): Promise<Response> => {
+    try {
+      return await (options.fetch ?? fetch)(target.href, {
+        ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      })
+    } catch {
+      throw packSourceFailure('PACK_DOWNLOAD_FAILED', `the download of ${name} did not complete`)
+    }
+  }
+  let res = await get(own ? options.accessToken : undefined)
+  if (own && res.status === 401 && options.refresh) {
+    let token: string
+    try {
+      token = await options.refresh()
+    } catch (e) {
+      if (e instanceof CommandFailure) throw packSourceFailure(e.code, e.message)
+      throw e
+    }
+    res = await get(token)
+  }
+  if (!res.ok) {
+    if (own && (res.status === 401 || res.status === 403)) throw packSourceFailure('SESSION_REFUSED', `${options.server} refused the download of ${name} with the saved session`)
+    if (res.status === 404) throw packSourceFailure('PACK_NOT_INSTALLED', `the download of ${name} was not found in your PhiWebs workspace`)
+    throw packSourceFailure('PACK_DOWNLOAD_FAILED', `the download of ${name} answered HTTP ${res.status}`)
+  }
+  try {
+    return new Uint8Array(await res.arrayBuffer())
+  } catch {
+    throw packSourceFailure('PACK_DOWNLOAD_FAILED', `the download of ${name} did not complete`)
+  }
+}
+
 const label = (ref: PackRef): string => (ref.version ? `${ref.id}@${ref.version}` : ref.id)
 
 /**
@@ -184,15 +244,7 @@ export async function downloadPackSource(ref: PackRef, options: PackSourceOption
   if (typeof url !== 'string' || !/^[0-9a-f]{64}$/.test(sha256)) {
     throw packSourceFailure('PACK_DOWNLOAD_FAILED', `PhiWebs gave no usable download for ${name}`)
   }
-  // A presigned address: it carries its own authorization, so no token goes with it.
-  let res: Response
-  try {
-    res = await (options.fetch ?? fetch)(url, { signal: AbortSignal.timeout(TIMEOUT_MS) })
-  } catch {
-    throw packSourceFailure('PACK_DOWNLOAD_FAILED', `the download of ${name} did not complete`)
-  }
-  if (!res.ok) throw packSourceFailure('PACK_DOWNLOAD_FAILED', `the download of ${name} answered HTTP ${res.status}`)
-  const bytes = new Uint8Array(await res.arrayBuffer())
+  const bytes = await download(url, name, options)
   const got = sha256Hex(bytes)
   if (got !== sha256) throw packSourceFailure('PACK_HASH_MISMATCH', `the downloaded ${name} has sha256 ${got}, not the ${sha256} PhiWebs gave`)
   return { id: ref.id, version, sha256, bytes }
