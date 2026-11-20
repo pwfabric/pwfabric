@@ -23,6 +23,12 @@ export interface DevServerOptions {
   readonly log?: (line: string) => void
   /** Print an engine failure with its stack trace. Default false: its message only. */
   readonly debug?: boolean
+  /**
+   * Origins (`scheme://host[:port]`, as a browser sends them, see
+   * `parseCorsOrigin`) whose pages may read the app's files and the local
+   * host across origins (`pwf dev --cors`). Default none: no CORS at all.
+   */
+  readonly cors?: readonly string[]
 }
 
 export interface DevServer {

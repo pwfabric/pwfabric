@@ -23,6 +23,8 @@ export interface ParsedArgs {
   readonly positionals: readonly string[]
   /** `--flag value` and `--flag=value` become strings; bare `--flag` becomes true. */
   readonly flags: Readonly<Record<string, string | boolean>>
+  /** Every value of each flag, in order, for a flag that may be repeated. Absent: `flags` alone. */
+  readonly lists?: Readonly<Record<string, readonly (string | boolean)[]>>
 }
 
 export interface Command {

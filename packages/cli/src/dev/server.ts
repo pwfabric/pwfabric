@@ -29,6 +29,7 @@ import { PWF_DIR, type PackMemo } from './sources.js'
 import type { DevBuildResult, DevServer, DevServerOptions, StartDevServer } from './types.js'
 import { watchFolder, type WatchOptions, type Watcher } from './watcher.js'
 import { CONTENT_TYPES, contentTypeOf, isPagePath } from './content-types.js'
+import { applyCors, corsOriginsOf } from './cors.js'
 
 export { contentTypeOf, isPagePath }
 
@@ -134,6 +135,7 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
   const root = resolve(options.root)
   const log = options.log ?? ((): void => undefined)
   const hostname = options.hostname ?? DEFAULT_HOSTNAME
+  const cors = corsOriginsOf(options.cors ?? [])
   const cache = createCompileCache(
     internals.assemble?.cacheDir === undefined ? join(root, PWF_DIR, 'build-cache') : internals.assemble.cacheDir
   )
@@ -281,6 +283,10 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
       send(res, 200, CONTENT_TYPES['.json'] as string, JSON.stringify({ ok: state?.ok ?? false, diagnostics: state?.diagnostics ?? [] }))
       return
     }
+    // CORS for the app's files and the host (./cors.ts); the reload channel
+    // and the build status above are this server's own and stay same-origin.
+    const underHost = url.pathname === HOST_PREFIX || url.pathname.startsWith(`${HOST_PREFIX}/`)
+    if (applyCors(req, res, cors, underHost ? 'host' : 'files')) return
     if (host && (await host.handle(req, res))) return
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       send(res, 405, CONTENT_TYPES['.txt'] as string, 'method not allowed')
