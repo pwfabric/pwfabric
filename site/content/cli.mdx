@@ -542,6 +542,11 @@ itself as a new client at every login (dynamic client registration, for
 the loopback port it listens on this time), opens the sign-in page in your browser (the address is printed
 too), and receives the answer on `http://127.0.0.1:<port>/callback`.
 
+A session already saved for the server is ended first, as `pwf logout` ends
+it: its refresh token is revoked and the saved tokens are deleted, so signing
+in again never leaves an earlier "PWFabric CLI" connected app behind. A
+revocation that fails does not stop the new login; `pwf` says so in one line.
+
 One sign-in is for two resources (RFC 8707 `resource`): the API and the
 studio. The code is redeemed for an API token; the same grant is then
 refreshed for a studio token; one refresh token serves both, and each token

@@ -175,7 +175,8 @@ another; the studio resource (token audience, `<resource>/mcp`) is `--studio`,
 the studio's web address (`/s/*`, what `pwf publish` calls) is `--studio-url`,
 `PWF_PHIWEBS_STUDIO_WEB`, the one the API names (`studio_url`), or
 `https://studio.phiwebs.com` (another resource: its own address). Every
-login registers a new client. A session from an earlier `pwf` gains
+login registers a new client and first revokes and deletes the session it
+replaces (a failed revocation does not stop it). A session from an earlier `pwf` gains
 its studio token by signing in again. Tokens live in `%APPDATA%\pwfabric` (Windows) or
 `$XDG_CONFIG_HOME/pwfabric` / `~/.config/pwfabric`, readable by the user only,
 and are refreshed when they expire. `logout` revokes (when the server can) and

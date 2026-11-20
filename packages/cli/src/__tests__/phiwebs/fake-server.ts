@@ -39,6 +39,8 @@ export interface FakeServer {
   readonly pkceChecks: boolean[]
   /** Make every refresh fail. */
   refuseRefresh: boolean
+  /** The revocation endpoint answers 503 (and revokes nothing). */
+  refuseRevocation: boolean
   /** Extra members of the metadata, read per request. */
   advertise: Record<string, string> | undefined
   /** Forget every registered client, as a server whose database was reset. */
@@ -84,6 +86,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     revoked: [],
     pkceChecks: [],
     refuseRefresh: false,
+    refuseRevocation: false,
     advertise: undefined,
     forgetClients: () => clients.clear(),
     tokenInvalidClient: 0,
@@ -208,6 +211,7 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
     }
     if (url.pathname === '/api/oauth/revoke' && req.method === 'POST') {
       const form = Object.fromEntries(new URLSearchParams(await bodyOf(req)))
+      if (state.refuseRevocation) return json(503, { error: 'temporarily_unavailable' })
       state.revoked.push(form['token'] ?? '')
       refresh.delete(form['token'] ?? '')
       res.writeHead(200).end()

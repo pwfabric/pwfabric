@@ -23,6 +23,7 @@ import {
   serverUrl,
   STUDIO_RESOURCE_ENV,
   STUDIO_WEB_ENV,
+  type SavedTokens,
   type StoreOptions,
 } from '../phiwebs/config.js'
 import {
@@ -97,6 +98,15 @@ export async function runLogin(args: ParsedArgs, io: CommandIO, deps: AccountDep
   const named = namedStudioResource(stringFlag(args, 'studio'), io.env)
   const namedWeb = namedStudioWeb(stringFlag(args, 'studio-url'), io.env)
   const meta = await discover(server, fetchImpl)
+  // The session this login replaces ends first, as `pwf logout` ends it: each
+  // login registers its own client, so one left alive would stay a connected
+  // app until it expires. A revocation that fails does not stop the login.
+  const previous = await readTokens(server, store)
+  if (previous) {
+    const revoked = await revokeSaved(previous, fetchImpl)
+    await deleteTokens(server, store)
+    if (!revoked) io.err(`The previous session could not be revoked (${previous.revocationEndpoint ? 'the server did not confirm it' : 'the server offers no revocation endpoint'}): it stays valid until it expires.`)
+  }
   // The API's own tokens are for its issuer; the studio resource is the one
   // named, else the one the API names, else PhiWebs' own. Its web origin (the
   // `/s/*` routes, the address a person opens) likewise, else PhiWebs' own
@@ -236,6 +246,18 @@ export async function runWhoami(args: ParsedArgs, io: CommandIO, deps: AccountDe
   return 0
 }
 
+/**
+ * Revokes a saved session (RFC 7009): its refresh token, which ends the grant,
+ * else its access token. Resolves to whether the server confirmed it; false
+ * without a revocation endpoint.
+ */
+async function revokeSaved(saved: SavedTokens, fetchImpl: Fetch): Promise<boolean> {
+  if (!saved.revocationEndpoint) return false
+  const token = saved.refreshToken ?? saved.accessToken
+  const hint = saved.refreshToken ? 'refresh_token' : 'access_token'
+  return revokeToken(saved.revocationEndpoint, { token, hint, clientId: saved.clientId }, fetchImpl)
+}
+
 export async function runLogout(args: ParsedArgs, io: CommandIO, deps: AccountDeps = {}): Promise<number> {
   noPositionals(args)
   const store = storeOf(io, deps)
@@ -245,13 +267,7 @@ export async function runLogout(args: ParsedArgs, io: CommandIO, deps: AccountDe
     io.out(`Not signed in to ${server}.`)
     return 0
   }
-  let revoked = false
-  if (saved.revocationEndpoint) {
-    const fetchImpl = deps.fetch ?? fetch
-    const token = saved.refreshToken ?? saved.accessToken
-    const hint = saved.refreshToken ? 'refresh_token' : 'access_token'
-    revoked = await revokeToken(saved.revocationEndpoint, { token, hint, clientId: saved.clientId }, fetchImpl)
-  }
+  const revoked = await revokeSaved(saved, deps.fetch ?? fetch)
   await deleteTokens(server, store)
   io.out(`Signed out of ${server}; the saved session is deleted.`)
   if (!revoked) {
@@ -279,7 +295,8 @@ ${STUDIO_WEB_HELP}
   --no-browser     print the sign-in address without opening a browser
 
 Signs in with OAuth (authorization code and PKCE): pwf registers itself with
-the server (anew at every login), opens the server's sign-in page, and receives the answer on
+the server (anew at every login), revokes and deletes the session it
+replaces, opens the server's sign-in page, and receives the answer on
 http://127.0.0.1:<port>/callback. One sign-in is for two resources, each with
 its own token refreshed when it expires: the API (who you are, which
 workspace) and the studio (pwf publish, the PhiWebs tools of pwf mcp). A

@@ -99,8 +99,35 @@ describe('pwf login', () => {
     let opened = 0
     expect(await runLogin(args(), c.io, { openBrowser: async (u) => ((opened += 1), void (await fetch(u))) }), c.text()).toBe(0)
     expect(opened).toBe(1)
-    expect(c.err).toEqual([])
+    expect(c.err).toEqual(['The previous session could not be revoked (the server offers no revocation endpoint): it stays valid until it expires.'])
     expect(new URL(c.out.find((l) => l.includes('/oauth/authorize'))!.trim()).searchParams.get('client_id')).toBe('client_2')
+  })
+
+  it('a new login revokes and deletes the session it replaces; a failed revocation does not stop it', async () => {
+    const { server, env, dir } = await setup({ revocation: true })
+    expect(await runLogin(args(), capture(dir, env).io, { openBrowser: browser })).toBe(0)
+    const first = (await readFile(join(dir, CREDENTIALS_FILE), 'utf8').then(JSON.parse)).servers[server.url]
+    const again = capture(dir, env)
+    expect(await runLogin(args(), again.io, { openBrowser: browser }), again.text()).toBe(0)
+    expect(server.revoked).toEqual([first.refreshToken])
+    expect(again.err).toEqual([])
+    const second = (await readFile(join(dir, CREDENTIALS_FILE), 'utf8').then(JSON.parse)).servers[server.url]
+    expect(second.clientId).toBe('client_2')
+    expect(second.refreshToken).not.toBe(first.refreshToken)
+
+    server.refuseRevocation = true
+    const third = capture(dir, env)
+    expect(await runLogin(args(), third.io, { openBrowser: browser }), third.text()).toBe(0)
+    expect(server.revoked).toEqual([first.refreshToken])
+    expect(third.err).toEqual(['The previous session could not be revoked (the server did not confirm it): it stays valid until it expires.'])
+    expect((await readFile(join(dir, CREDENTIALS_FILE), 'utf8').then(JSON.parse)).servers[server.url].clientId).toBe('client_3')
+
+    // A login that fails after the old session ended leaves none behind.
+    server.refuseRevocation = false
+    const failed = capture(dir, env)
+    expect(await runLogin(args(), failed.io, { timeoutMs: 200, openBrowser: async () => {} })).toBe(1)
+    expect(server.revoked).toHaveLength(2)
+    expect(await readSession({ env })).toBeNull()
   })
 
   it('a refresh refused with invalid_client ends the session and forgets the saved client', async () => {
