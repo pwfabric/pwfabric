@@ -299,7 +299,15 @@ export interface SurfaceRendererProps {
   readonly basePath?: string
   /** Event handler */
   readonly onEvent?: (event: SurfaceEvent) => void
-  /** Custom block component overrides */
+  /**
+   * Block code the app gives the renderer, by block type (an app that bundles
+   * its blocks). A given component is drawn as given — the module its
+   * descriptor names is not loaded — and gets its props exactly as a loaded
+   * block does: the `definition.props` of the type's descriptor (the
+   * `blocks/manifest.json` entry handed to `DynamicArtifactProvider`) are
+   * applied before it renders. A type with no descriptor has no declarations
+   * and gets its props as written.
+   */
   readonly components?: Partial<BlockComponentRegistry>
   /** Wrapper className */
   readonly className?: string

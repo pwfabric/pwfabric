@@ -152,10 +152,14 @@ export function Preview() {
 
 `getComponents()` wraps each definition: it applies the block's declared
 `props` to the incoming props as the runtime does for a pack block (defaults
-filled in, lossless coercion, a value that does not fit replaced by its
-default) and never throws. The component receives `props`, `blockId`, `children`
+filled in, lossless coercion, a value that does not fit kept as written and
+reported) and never throws. The component receives `props`, `blockId`, `children`
 and `context`, where `context` is narrowed to `theme`, `viewport` and
 `onEvent`.
+
+A pack block, whose props are declared in its `manifest.json`, is given to the
+renderer with its descriptor instead: see
+[a block the app gives the renderer](/authoring/define-block#a-block-the-app-gives-the-renderer).
 
 Source: `packages/authoring/src/registry.ts`
 (`getComponents`, `createBlockComponentWrapper`, `mapToCustomBlockContext`),

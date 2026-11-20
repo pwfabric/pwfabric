@@ -193,8 +193,8 @@ export function DynamicBlockWrapper({
   // to 'loading' (e.g. retry) while the previous component is still valid in cache.
   if (component) {
     const Component = component
-    // The path every PACK-INSTALLED block takes. The static renderer guards
-    // `props` too (`renderer.tsx`: `block.props ?? {}`).
+    // The path a LOADED block takes. A block the app gives the renderer
+    // (`components`) gets the same props (`renderer.tsx`, renderBlock).
     return (
       <Component block={block} props={props} context={context}>
         {children}

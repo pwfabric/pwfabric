@@ -61,6 +61,7 @@ import { useEntitlements, GatedBlockPlaceholder } from './capability-gate.js'
 import { useDynamicBlocks } from './dynamic-artifact-context.js'
 import { DynamicBlockWrapper } from './DynamicBlockWrapper.js'
 import { BlockErrorBoundary } from './BlockErrorBoundary.js'
+import { blockPropsForRender } from './block-props.js'
 import { BehaviorSurfaceProvider } from './BehaviorSurfaceProvider.js'
 import { isCapability } from '../capability/type-mapping.js'
 import type { SurfaceDataSourceDefinition } from './data-binding-types.js'
@@ -631,13 +632,18 @@ function renderBlock(
     )
   }
 
-  // Install-only render — when the world has the atom
-  // installed (CDN bundle URL on the descriptor) the dynamic wrapper
-  // takes over. `customComponents` may still supply test/preview-time
-  // component overrides, but the legacy `defaultBlockComponents` map is
-  // gone; unmatched block types render as "Unknown block" placeholders.
-  const dynamicDescriptor = dynamicBlocks?.get(block.type)
-  if (dynamicDescriptor) {
+  // ONE RULE FOR A BLOCK'S PROPS, WHEREVER ITS CODE COMES FROM.
+  //
+  // A block's definition is its descriptor (a `blocks/manifest.json` entry,
+  // handed over through `DynamicArtifactProvider`): `definition.props` is what
+  // it takes. Its CODE is either given (`components[type]`, an app that
+  // bundles its blocks) or loaded (`descriptor.moduleUrl`). A given component
+  // is drawn as given — its module is not loaded — and with its descriptor's
+  // props applied exactly as a loaded one's are (block-props.ts). Without a
+  // descriptor a block has no declarations and gets its props as written.
+  const descriptor = dynamicBlocks?.get(block.type)
+  const Component = components[block.type]
+  if (!Component && descriptor) {
     let dynamicChildren: React.ReactNode = null
     if (block.children && block.children.length > 0) {
       dynamicChildren = block.children.map((child) =>
@@ -653,8 +659,8 @@ function renderBlock(
     return emitBlockWrapper(
       block,
       { ...baseWrapperProps(block, layoutStyle, scopeAttr), 'data-dynamic-block': block.type },
-      <BlockErrorBoundary blockId={block.id} blockType={block.type} props={block.props} declared={dynamicDescriptor.definition?.props}>
-        <DynamicBlockWrapper descriptor={dynamicDescriptor} block={stripHoistedStyle(block)} context={context}>
+      <BlockErrorBoundary blockId={block.id} blockType={block.type} props={block.props} declared={descriptor.definition?.props}>
+        <DynamicBlockWrapper descriptor={descriptor} block={stripHoistedStyle(block)} context={context}>
           {dynamicChildren}
         </DynamicBlockWrapper>
       </BlockErrorBoundary>,
@@ -662,8 +668,6 @@ function renderBlock(
       renderBlockWrapper
     )
   }
-
-  const Component = components[block.type]
 
   if (!Component) {
     console.warn(`Unknown block type: ${block.type}`)
@@ -708,6 +712,8 @@ function renderBlock(
     )
   }
 
+  const declared = descriptor?.definition?.props
+
   // TODO: When FormBlock contract includes `bindToEntity` prop,
   // call attachFormEntityBridge(bus, entityStore, { formId: block.id, ...block.props.bindToEntity })
   // Requires: platform/entities capability active (platform/input retired).
@@ -716,8 +722,8 @@ function renderBlock(
   return emitBlockWrapper(
     block,
     baseWrapperProps(block, layoutStyle, scopeAttr),
-    <BlockErrorBoundary blockId={block.id} blockType={block.type}>
-      <Component block={stripHoistedStyle(block)} props={block.props ?? {}} context={context}>
+    <BlockErrorBoundary blockId={block.id} blockType={block.type} props={block.props} declared={declared}>
+      <Component block={stripHoistedStyle(block)} props={blockPropsForRender(block.type, block.props, declared)} context={context}>
         {children}
       </Component>
     </BlockErrorBoundary>,
@@ -1289,7 +1295,16 @@ export function BlockRenderer({
     [customComponents, imageComponentOverride]
   )
 
-  return renderBlock({ block, context, components: componentRegistry }) as React.ReactElement
+  // The descriptors the host handed over, so a single block gets its
+  // manifest's props as it does on a surface (renderBlock).
+  const { blocks: dynamicBlockMap } = useDynamicBlocks()
+
+  return renderBlock(
+    { block, context, components: componentRegistry },
+    undefined,
+    undefined,
+    dynamicBlockMap
+  ) as React.ReactElement
 }
 
 // ============================================================

@@ -151,7 +151,11 @@ export interface EmbedOptions {
   readonly onEvent?: (event: SurfaceEvent) => void
   readonly gap?: number
   readonly padding?: number
-  /** Custom block component overrides (test/preview seams). */
+  /**
+   * Block code the app gives by block type. Drawn instead of loading the
+   * module, with the `definition.props` of the type's `dynamicBlocks` entry
+   * applied as for a loaded block.
+   */
   readonly components?: Partial<BlockComponentRegistry>
   /** Visible placeholder for block types nothing can render (preview hosts). */
   readonly placeholderMissingBlocks?: boolean

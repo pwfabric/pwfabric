@@ -140,7 +140,11 @@ export interface RenderCoreOptions {
   /** Image adapter; defaults to plain <img> when omitted. */
   readonly imageAdapter?: ImageAdapter
 
-  /** Custom block component overrides (test/preview seams). */
+  /**
+   * Block code the app gives by block type. Drawn instead of loading the
+   * module, with the `definition.props` of the type's `dynamicBlocks` entry
+   * applied as for a loaded block.
+   */
   readonly components?: Partial<BlockComponentRegistry>
 
   /** Surface event callback. */

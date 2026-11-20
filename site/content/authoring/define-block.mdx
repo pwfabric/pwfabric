@@ -213,9 +213,44 @@ undeclared prop (`BLOCK_PROP_UNKNOWN`), the wrong JSON type
 that breaks the rest of its shape (`BLOCK_PROP_SHAPE`), and a `{{…}}` in a
 prop declared `bindable: false` (`BLOCK_PROP_NOT_BINDABLE`).
 
+### A block the app gives the renderer
+
+The declarations are applied the same way wherever the block's code comes
+from. A block's definition is its descriptor: the `blocks/manifest.json` entry
+(`DynamicBlockDescriptor`) whose `definition` is the manifest's. Its code is
+either **loaded** from the descriptor's `moduleUrl`, or **given**: an app that
+bundles its blocks passes them to the renderer as `components`, by block type.
+A given component is drawn as given (its module is not loaded) and gets its
+props exactly as a loaded one does: defaults, coercion and `bindable: false`
+all come from the descriptor.
+
+So an app that bundles its blocks passes both: the descriptors through
+`DynamicArtifactProvider` (or the `dynamicBlocks` option of
+`@pwfabric/embed`) and the code as `components`.
+
+```tsx
+import { BlockSurfaceRenderer, DynamicArtifactProvider } from '@pwfabric/runtime'
+import descriptors from './build/blocks/manifest.json'
+import { NavbarBlock } from './blocks/navbar/component'
+
+export function Page({ surface }) {
+  return (
+    <DynamicArtifactProvider dynamicBlocks={descriptors}>
+      <BlockSurfaceRenderer surface={surface} components={{ navbar: NavbarBlock }} />
+    </DynamicArtifactProvider>
+  )
+}
+```
+
+The app does not apply a block's props itself: wrapping a component in
+`applyBlockProps` is not needed. Of a descriptor whose block is given, the
+renderer reads `blockType` and `definition` only. A block type with no
+descriptor has no declarations and gets its props as written.
+
 Source: `packages/contracts/src/fabric/block-prop.ts`
 (`BlockPropDescriptor`, `PropShape`, `applyBlockProps`, `checkPropValue`, `propShapeProblems`),
 `packages/runtime/src/render/block-props.ts` (`blockPropsForRender`),
+`packages/runtime/src/render/renderer.tsx` (`renderBlock`),
 `packages/cli/src/commands/validate.ts`.
 
 ## The component
