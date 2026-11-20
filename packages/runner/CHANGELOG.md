@@ -1,6 +1,6 @@
 # @pwfabric/runner
 
-## Unreleased
+## 3.3.0
 
 - Fixed: a block or engine `moduleUrl` resolves against the app's folder — the folder `blocks/` and `engines/` sit in — not against the page. The runner makes every manifest entry absolute once, when it reads the manifest, and the block loader, the preload and the engine registry use that address. A page at another path than the app's files (an app placed in a page elsewhere on the site, files on a CDN, a sub-folder) no longer asks for every module at the wrong address. With the shell in the app's folder the addresses are what they were (envelope §5).
 

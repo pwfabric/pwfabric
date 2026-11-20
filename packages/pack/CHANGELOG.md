@@ -1,5 +1,9 @@
 # @pwfabric/pack
 
+## 3.3.0
+
+- No changes; released with the other packages at 3.3.0.
+
 ## 3.2.0
 
 - Added: `checkBlockTypes` (`UNKNOWN_BLOCK_TYPE`) and `checkBlockIds` (`BLOCK_ID_DUPLICATE`), the page checks `pwf validate` and `pwf build` share, with `definedBlockTypes`, `blockTypeFirstUses`, `unknownBlockTypeIssue` and `walkReceiptBlocks`.

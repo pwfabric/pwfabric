@@ -1,6 +1,6 @@
 # @pwfabric/runtime
 
-## Unreleased
+## 3.3.0
 
 - Fixed: a block given to the renderer as `components` gets its manifest's props exactly as a loaded block does. The renderer reads them from the type's descriptor (`DynamicArtifactProvider`'s `dynamicBlocks`): defaults filled, values coerced, `bindable: false` kept as written, and the dev warnings. A given component is drawn as given, and the module its descriptor names is not loaded. `BlockRenderer` reads the descriptors too. An app that wrapped its blocks in `applyBlockProps` drops the wrapper and passes the descriptors.
 - Fixed: `blockPropsForRender` is exported from the package root, as the render module's types say.
