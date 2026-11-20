@@ -146,16 +146,6 @@ export async function startFakeServer(options: FakeServerOptions = {}): Promise<
       const q = url.searchParams
       const redirect = q.get('redirect_uri') ?? ''
       const registered = clients.get(q.get('client_id') ?? '')
-      // An unknown client with a loopback redirect is sent back with
-      // invalid_client (no code), so a CLI learns its registration is gone.
-      if (!registered && redirect.startsWith('http://127.0.0.1:')) {
-        const back = new URL(redirect)
-        back.searchParams.set('error', 'invalid_client')
-        back.searchParams.set('error_description', 'OAuth client not found or revoked')
-        back.searchParams.set('state', q.get('state') ?? '')
-        res.writeHead(302, { location: back.toString() }).end()
-        return
-      }
       if (!registered?.includes(redirect)) return json(400, { error: { code: 'INVALID_REDIRECT_URI', message: 'not registered' } })
       if (q.get('code_challenge_method') !== 'S256' || !q.get('code_challenge') || q.get('response_type') !== 'code') {
         return json(400, { error: { code: 'INVALID_REQUEST', message: 'PKCE S256 required' } })

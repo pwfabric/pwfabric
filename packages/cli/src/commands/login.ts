@@ -13,12 +13,10 @@ import {
   DEFAULT_STUDIO_RESOURCE,
   DEFAULT_STUDIO_WEB,
   defaultStudioWeb,
-  deleteClient,
   deleteTokens,
   namedStudioResource,
   namedStudioWeb,
   PHIWEBS_URL_ENV,
-  readClient,
   readTokens,
   saveClient,
   saveTokens,
@@ -29,7 +27,6 @@ import {
 } from '../phiwebs/config.js'
 import {
   authorizationUrl,
-  CLIENT_UNKNOWN,
   discover,
   exchangeCode,
   LOGIN_SCOPES,
@@ -41,7 +38,6 @@ import {
   serverError,
   startLoopback,
   type Fetch,
-  type TokenResponse,
 } from '../phiwebs/oauth.js'
 import { readSession, readStudioSession, STUDIO_UPGRADE_HINT, studioTokenFrom, tokensFrom } from '../phiwebs/session.js'
 
@@ -110,56 +106,41 @@ export async function runLogin(args: ParsedArgs, io: CommandIO, deps: AccountDep
   const studioWeb = namedWeb ?? meta.studio_url ?? defaultStudioWeb(studio)
   let studioRefused: string | undefined
 
-  // The server compares the redirect address exactly, port included, so a
-  // saved client is reused only when its port is free again; otherwise a new
-  // client is registered for the port that is.
-  const saved = await readClient(server, store)
-  const savedPort = saved && saved.registrationEndpoint === meta.registration_endpoint ? Number(new URL(saved.redirectUri).port) : undefined
-  const loopback = await startLoopback(savedPort)
+  // A fresh client for every interactive login, on whatever loopback port is
+  // free: login is rare, and the server compares the redirect exactly, so a
+  // saved client would only be usable on its own port. Registering anew also
+  // means a client the server has forgotten (a reset database, a removed
+  // client) never reaches the authorize page. The one saved for this server
+  // before is replaced.
+  const loopback = await startLoopback()
   try {
-    const register = async (): Promise<string> => {
-      const id = await registerClient(meta.registration_endpoint, loopback.redirectUri, fetchImpl)
-      await saveClient(server, { clientId: id, redirectUri: loopback.redirectUri, registrationEndpoint: meta.registration_endpoint }, store)
-      return id
-    }
-    const reused = !!saved && saved.redirectUri === loopback.redirectUri && saved.registrationEndpoint === meta.registration_endpoint
-    let clientId = reused ? saved.clientId : await register()
+    const clientId = await registerClient(meta.registration_endpoint, loopback.redirectUri, fetchImpl)
+    await saveClient(server, { clientId, redirectUri: loopback.redirectUri, registrationEndpoint: meta.registration_endpoint }, store)
 
-    const signIn = async (): Promise<TokenResponse> => {
-      const { verifier, challenge } = pkcePair()
-      const state = newState()
-      const url = authorizationUrl(meta, {
-        clientId,
-        redirectUri: loopback.redirectUri,
-        state,
-        challenge,
-        scopes: LOGIN_SCOPES,
-        resources: [apiResource, studio],
-      })
-      io.out(`Signing in to ${server} and its studio ${studio}.`)
-      io.out('Open this address in your browser if it does not open by itself:')
-      io.out(`  ${url}`)
-      const waiting = loopback.waitForCode(state, deps.timeoutMs ?? LOGIN_TIMEOUT_MS)
-      // Observed now, awaited below: the answer may arrive (or fail) while the browser is still opening.
-      waiting.catch(() => {})
-      if (!boolFlag(args, 'no-browser')) await (deps.openBrowser ?? ((u: string) => openInBrowser(u)))(url)
-      const code = await waiting
-      return exchangeCode(meta.token_endpoint, { code, verifier, clientId, redirectUri: loopback.redirectUri, resource: apiResource }, fetchImpl)
-    }
+    const { verifier, challenge } = pkcePair()
+    const state = newState()
+    const url = authorizationUrl(meta, {
+      clientId,
+      redirectUri: loopback.redirectUri,
+      state,
+      challenge,
+      scopes: LOGIN_SCOPES,
+      resources: [apiResource, studio],
+    })
+    io.out(`Signing in to ${server} and its studio ${studio}.`)
+    io.out('Open this address in your browser if it does not open by itself:')
+    io.out(`  ${url}`)
+    const waiting = loopback.waitForCode(state, deps.timeoutMs ?? LOGIN_TIMEOUT_MS)
+    // Observed now, awaited below: the answer may arrive (or fail) while the browser is still opening.
+    waiting.catch(() => {})
+    if (!boolFlag(args, 'no-browser')) await (deps.openBrowser ?? ((u: string) => openInBrowser(u)))(url)
+    const code = await waiting
 
-    let tokens: TokenResponse
-    try {
-      tokens = await signIn()
-    } catch (e) {
-      // A saved registration the server no longer knows (its database was
-      // reset, the client was removed): forget it, register once more, and
-      // sign in again. A client registered just now is not retried.
-      if (!(reused && e instanceof CommandFailure && e.code === CLIENT_UNKNOWN)) throw e
-      await deleteClient(server, store)
-      io.err(`${server} no longer knows the registration pwf saved (${e.message}); pwf registered again. Sign in once more.`)
-      clientId = await register()
-      tokens = await signIn()
-    }
+    const tokens = await exchangeCode(
+      meta.token_endpoint,
+      { code, verifier, clientId, redirectUri: loopback.redirectUri, resource: apiResource },
+      fetchImpl
+    )
     let session = tokensFrom(
       tokens,
       { clientId, tokenEndpoint: meta.token_endpoint, ...(meta.revocation_endpoint ? { revocationEndpoint: meta.revocation_endpoint } : {}) },
@@ -298,7 +279,7 @@ ${STUDIO_WEB_HELP}
   --no-browser     print the sign-in address without opening a browser
 
 Signs in with OAuth (authorization code and PKCE): pwf registers itself with
-the server, opens the server's sign-in page, and receives the answer on
+the server (anew at every login), opens the server's sign-in page, and receives the answer on
 http://127.0.0.1:<port>/callback. One sign-in is for two resources, each with
 its own token refreshed when it expires: the API (who you are, which
 workspace) and the studio (pwf publish, the PhiWebs tools of pwf mcp). A

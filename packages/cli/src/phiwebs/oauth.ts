@@ -34,9 +34,10 @@ export const LOGIN_SCOPES: readonly string[] = [
 ]
 
 /**
- * The failure code for a client the server does not know (`invalid_client`,
- * RFC 6749 §4.1.2.1 / §5.2), at the authorization endpoint or the token
- * endpoint: a saved registration that is gone. `pwf login` registers again.
+ * The failure code for a client the token endpoint does not know
+ * (`invalid_client`, RFC 6749 §5.2): the registration a session was made with
+ * is gone. A refresh that meets it forgets the session and the saved client;
+ * `pwf login` registers a new client every time anyway.
  */
 export const CLIENT_UNKNOWN = 'CLIENT_UNKNOWN'
 
@@ -341,10 +342,7 @@ export async function startLoopback(preferredPort?: number): Promise<Loopback> {
   })
 
   function settle(w: Waiter, r: Callback): void {
-    if (r.error !== undefined) {
-      const unknownClient = r.error === 'invalid_client' || r.error.startsWith('invalid_client:')
-      w.reject(new CommandFailure(unknownClient ? CLIENT_UNKNOWN : 'AUTHORIZATION_DENIED', `the server did not authorize pwf: ${r.error}`))
-    }
+    if (r.error !== undefined) w.reject(new CommandFailure('AUTHORIZATION_DENIED', `the server did not authorize pwf: ${r.error}`))
     else if (!r.code) w.reject(new CommandFailure('AUTHORIZATION_DENIED', 'the callback carried no authorization code'))
     else w.resolve(r.code)
   }

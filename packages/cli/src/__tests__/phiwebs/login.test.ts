@@ -12,7 +12,7 @@ import { runLogin as loginBody, runLogout as logoutBody, runWhoami as whoamiBody
 import { guard } from '../../commands/lib/flags.js'
 import type { CommandIO, ParsedArgs } from '../../commands/types.js'
 import { CLIENTS_FILE, configDir, CREDENTIALS_FILE, DEFAULT_PHIWEBS_URL, serverUrl } from '../../phiwebs/config.js'
-import { LOGIN_SCOPES, serverError, startLoopback } from '../../phiwebs/oauth.js'
+import { LOGIN_SCOPES, serverError } from '../../phiwebs/oauth.js'
 import { readSession } from '../../phiwebs/session.js'
 import { capture, tempDir } from '../commands/helpers.js'
 import { startFakeServer, type FakeServer, type FakeServerOptions } from './fake-server.js'
@@ -82,57 +82,34 @@ describe('pwf login', () => {
     expect(await runWhoami(args(), w.io)).toBe(0)
     expect(w.out).toEqual([`Signed in to ${server.url}`, '  account    ada@example.com', '  workspace  Ada Studio (owner)', '  studio     https://studio.phiwebs.com (tokens for https://mcp.phiwebs.com)'])
 
-    // A second login reuses the registered client: its port is free again.
+    // A second login registers anew (any free port) and replaces the saved client.
     const again = capture(dir, env)
     expect(await runLogin(args(), again.io, { openBrowser: browser })).toBe(0)
-    expect(server.registrations).toHaveLength(1)
+    expect(server.registrations).toHaveLength(2)
     const clients = JSON.parse(await readFile(join(dir, CLIENTS_FILE), 'utf8'))
-    expect(clients.servers[server.url].clientId).toBe('client_1')
+    expect(clients.servers[server.url].clientId).toBe('client_2')
+    expect(JSON.parse(await readFile(join(dir, CREDENTIALS_FILE), 'utf8')).servers[server.url].clientId).toBe('client_2')
   })
 
-  it('registers a new client when the saved one was registered elsewhere', async () => {
-    const { server, env, dir } = await setup()
-    expect(await runLogin(args(), capture(dir, env).io, { openBrowser: browser })).toBe(0)
-    // Hold the saved port so the next login must move.
-    const saved = JSON.parse(await readFile(join(dir, CLIENTS_FILE), 'utf8')).servers[server.url]
-    const squatter = await startLoopback(Number(new URL(saved.redirectUri).port))
-    try {
-      expect(await runLogin(args(), capture(dir, env).io, { openBrowser: browser })).toBe(0)
-      expect(server.registrations).toHaveLength(2)
-    } finally {
-      await squatter.close()
-    }
-  })
-
-  it('a saved client the server no longer knows (invalid_client at authorize) is dropped, registered again once, and the sign-in retried', async () => {
+  it('a login after a server reset just works: it registers anew, so the forgotten client is never used', async () => {
     const { server, env, dir } = await setup()
     expect(await runLogin(args(), capture(dir, env).io, { openBrowser: browser })).toBe(0)
     server.forgetClients()
     const c = capture(dir, env)
     let opened = 0
     expect(await runLogin(args(), c.io, { openBrowser: async (u) => ((opened += 1), void (await fetch(u))) }), c.text()).toBe(0)
-    expect(opened).toBe(2)
-    expect(server.registrations).toHaveLength(2)
-    expect(c.err.join('\n')).toContain('no longer knows the registration pwf saved')
-    expect(JSON.parse(await readFile(join(dir, CLIENTS_FILE), 'utf8')).servers[server.url].clientId).toBe('client_2')
-    expect(JSON.parse(await readFile(join(dir, CREDENTIALS_FILE), 'utf8')).servers[server.url].clientId).toBe('client_2')
+    expect(opened).toBe(1)
+    expect(c.err).toEqual([])
+    expect(new URL(c.out.find((l) => l.includes('/oauth/authorize'))!.trim()).searchParams.get('client_id')).toBe('client_2')
   })
 
-  it('invalid_client at the token endpoint does the same; a client registered just now is not retried', async () => {
-    const { server, env, dir } = await setup()
+  it('a refresh refused with invalid_client ends the session and forgets the saved client', async () => {
+    const { server, env, dir } = await setup({ expiresIn: 300 })
     expect(await runLogin(args(), capture(dir, env).io, { openBrowser: browser })).toBe(0)
     server.tokenInvalidClient = 1
-    const c = capture(dir, env)
-    expect(await runLogin(args(), c.io, { openBrowser: browser }), c.text()).toBe(0)
-    expect(server.registrations).toHaveLength(2)
-
-    // A fresh home: the client is registered now, so invalid_client is final.
-    const other = await setup()
-    other.server.tokenInvalidClient = 5
-    const x = capture(other.dir, other.env)
-    expect(await runLogin(args(), x.io, { openBrowser: browser })).toBe(1)
-    expect(other.server.registrations).toHaveLength(1)
-    expect(x.err.join('\n')).toContain('invalid_client')
+    await expect(readSession({ env, now: () => Date.now() + 10 * 60_000 })).rejects.toMatchObject({ code: 'SESSION_EXPIRED' })
+    expect(existsSync(join(dir, CREDENTIALS_FILE))).toBe(false)
+    expect(existsSync(join(dir, CLIENTS_FILE))).toBe(false)
   })
 
   it('refreshes an expired session and saves the rotated tokens', async () => {

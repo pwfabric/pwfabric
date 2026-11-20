@@ -505,8 +505,8 @@ pwf login [--server <url>] [--studio <url>] [--studio-url <url>] [--no-browser]
 
 Signs in with OAuth 2.1 (authorization code and PKCE). `pwf` reads the
 server's metadata (`/.well-known/oauth-authorization-server`), registers
-itself as a client (dynamic client registration) and remembers that client
-per server, opens the sign-in page in your browser (the address is printed
+itself as a new client at every login (dynamic client registration, for
+the loopback port it listens on this time), opens the sign-in page in your browser (the address is printed
 too), and receives the answer on `http://127.0.0.1:<port>/callback`.
 
 One sign-in is for two resources (RFC 8707 `resource`): the API and the
@@ -518,9 +518,9 @@ is refreshed for its own resource when it expires. It asks for `openid`,
 `marketplace:publish` (publishing a pack), and `studio:read`,
 `studio:build` and `studio:publish` (`pwf publish` and the PhiWebs tools of
 `pwf mcp`). A session made by an earlier `pwf` has no studio token: run
-`pwf login` again and it is added. A saved client the server no longer
-knows (`invalid_client`) is forgotten: `pwf` registers again once and asks
-you to sign in once more.
+`pwf login` again and it is added. A refresh the server refuses with
+`invalid_client` (its registration of `pwf` is gone) ends the session:
+`pwf login` again.
 
 The tokens are saved in your config folder — `%APPDATA%\pwfabric` on
 Windows, `$XDG_CONFIG_HOME/pwfabric` or `~/.config/pwfabric` elsewhere — in a
