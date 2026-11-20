@@ -184,6 +184,10 @@ export {
   resolveEndpoint,
   resolveBlockExpressions,
   literalPropsOf,
+  // What the renderer applies to every block's props, given or loaded
+  // (render/block-props.ts). A host drawing blocks through the renderer does
+  // not call it; it is here for one that draws a block by hand.
+  blockPropsForRender,
   resolveString,
   isHrefKey,
   isLinkMember,
