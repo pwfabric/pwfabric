@@ -1,6 +1,6 @@
 {
   "name": "@pwfabric/pack",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Read, validate, hash and write the pwpack folder and its deterministic .pwpack archive",
   "type": "module",
   "license": "Apache-2.0",

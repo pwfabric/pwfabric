@@ -1,5 +1,9 @@
 # @pwfabric/contracts
 
+## 3.2.0
+
+- No changes; released with the other packages at 3.2.0.
+
 ## 3.1.0
 
 - Fixed: `AtomFileManifestSchema` accepts a `ui-appearance` atom's own `darkTheme` (a surface theme, as `appearance.md` describes). The schema is strict and refused every theme atom that shipped its dark variant.

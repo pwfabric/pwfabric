@@ -1,5 +1,9 @@
 # @pwfabric/runner
 
+## 3.2.0
+
+- No changes; released with the other packages at 3.2.0.
+
 ## 3.1.0
 
 - Fixed: an app with no way in (no `auth.json` method, no issuer) draws no session bar, so `pwf dev` no longer names `pill.region` as a missing message there. `mountSessionPill` takes `door`.
