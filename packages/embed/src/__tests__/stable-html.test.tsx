@@ -14,7 +14,23 @@ import { blockJsxRuntime, blockReact, stableHtml, stableHtmlProps, STABLE_HTML_M
 import type { RenderableSurface } from '@pwfabric/contracts'
 import type { BlockComponentProps } from '@pwfabric/runtime'
 
-const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 20))
+/**
+ * Runs `work` inside React's `act`, so the hydration or update it starts has
+ * committed when this resolves. A fixed sleep here was not enough on a busy
+ * machine: an update still pending looked like "the nodes were kept".
+ */
+async function committed(work: () => void): Promise<void> {
+  const g = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  const before = g.IS_REACT_ACT_ENVIRONMENT
+  g.IS_REACT_ACT_ENVIRONMENT = true
+  try {
+    await React.act(async () => {
+      work()
+    })
+  } finally {
+    g.IS_REACT_ACT_ENVIRONMENT = before
+  }
+}
 
 const surface = (content: string): RenderableSurface =>
   ({ id: 'srf_html', blocks: [{ id: 'p1', type: 'prose', props: { content }, layout: { span: { xs: 4 } } }] }) as unknown as RenderableSurface
@@ -35,11 +51,12 @@ async function hydrateThenUpdate(component: (p: BlockComponentProps) => React.Re
   const opts = { surface: surface('Hello'), components: { prose: component }, interactionMode: 'inert' as const }
   container.innerHTML = renderToString(createSurfaceElement(opts))
   const painted = container.querySelector('[data-prose] p')
-  const handle = renderFat(container, { ...opts, hydrate: true })
-  await settle()
+  let handle!: ReturnType<typeof renderFat>
+  await committed(() => {
+    handle = renderFat(container!, { ...opts, hydrate: true })
+  })
   // The visit's own inputs, as the runner applies them: a new surface object, the same content.
-  handle.update({ ...opts, surface: surface('Hello') })
-  await settle()
+  await committed(() => handle.update({ ...opts, surface: surface('Hello') }))
   const now = container.querySelector('[data-prose] p')
   handle.unmount()
   return { kept: painted !== null && now === painted, text: now?.textContent ?? '' }
