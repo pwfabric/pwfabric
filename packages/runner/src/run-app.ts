@@ -85,7 +85,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   // `auth.json` is asked for only when `project.json` declares an identity
   // (see load-envelope.ts); every other file in parallel, as before.
   const { project, navigation, appearance, auth, connections, blockManifest, engineManifest } = await loadEnvelope(
-    { source, blocksBase, enginesBase, version: opts.version },
+    { documentBase: document.baseURI, source, blocksBase, enginesBase, version: opts.version },
     fetchJson
   )
 
@@ -327,7 +327,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     const connByName = new Map((connections?.connections ?? []).map((c) => [c.name, c]))
     const bindings: ConnectorConnectionBinding[] = engineManifest
       // A DECLARED engine has no module and no hash. Mapping it here produced
-      // `new URL(undefined, baseURI)` — a request for a file named "undefined".
+      // a request for a file named "undefined".
       // Declarations are served by the facade, from the connection they were
       // just carried onto; the registry only ever owned the bundled form.
       .filter((e) => typeof e.moduleUrl === 'string' && e.moduleUrl.length > 0)
@@ -338,9 +338,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
         descriptor: {
           id: e.atomId,
           kind: e.kind,
-          // Engines ship export-relative; absolutize against the document so the
-          // loader fetches them under any host root / sub-path (base law).
-          bundleUrl: new URL(e.moduleUrl!, document.baseURI).href,
+          // Already absolute: made so against the app's folder when the
+          // manifest was read (load-envelope.ts).
+          bundleUrl: e.moduleUrl!,
           integrity: e.integrity ?? '',
           // A provider facet's factory in its vendor's shared module.
           ...(e.export !== undefined ? { export: e.export } : {}),

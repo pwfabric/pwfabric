@@ -148,6 +148,13 @@ Each `blocks/manifest.json` entry is a `DynamicBlockDescriptor`:
   "publisherVerified": true, "definition": { "name": "navbar" } }
 ```
 
+A `moduleUrl` is relative to the app's folder — the folder that holds
+`blocks/` and `engines/` — not to the page that runs the app. The runner makes
+it absolute against that folder when it reads the manifest, so a page at
+another path than the app's files (an app placed in a page elsewhere on the
+site, or files on a CDN, passed as `runApp({ source, blocks, engines })`)
+still loads every module from the app's folder.
+
 Before evaluating a bundle the renderer fetches `moduleUrl`, hashes the bytes
 with SHA-256 and compares them to `integrity` (hex, or SRI `sha256-<base64>`).
 A missing or mismatching hash is a hard failure. Bundles keep `react` and
