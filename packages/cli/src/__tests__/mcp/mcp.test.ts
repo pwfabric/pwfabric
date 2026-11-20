@@ -64,6 +64,7 @@ describe('pwf mcp', () => {
       'pwf_add_pack',
       'pwf_add_block',
       'pwf_describe_project',
+      'pwf_describe_block',
       'pwf_validate',
       'pwf_build',
       'pwf_pack',
@@ -72,8 +73,9 @@ describe('pwf mcp', () => {
       expect(tool.description?.length).toBeGreaterThan(40)
       expect(tool.inputSchema.required).toContain('projectDir')
     }
-    const describeTool = tools.find((t) => t.name === 'pwf_describe_project')
-    expect(describeTool?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false })
+    for (const name of ['pwf_describe_project', 'pwf_describe_block']) {
+      expect(tools.find((t) => t.name === name)?.annotations).toMatchObject({ readOnlyHint: true, openWorldHint: false })
+    }
   })
 
   it('runs create → describe → add block → validate → build → pack on a temporary folder', async () => {
@@ -133,6 +135,76 @@ describe('pwf mcp', () => {
     expect(packed.structuredContent).toMatchObject({ id: '@pwpack/local/my-shop', file: join(root, 'dist', 'shop.pwpack') })
     expect((packed.structuredContent?.['hash'] as string).startsWith('sha256:')).toBe(true)
     expect(existsSync(join(root, 'dist', 'shop.pwpack'))).toBe(true)
+  })
+
+  it('describes one block in full: its pack, props with schema, children and knowledge', async () => {
+    const client = await connect()
+    const root = join(await tempDir(), 'shop')
+    await call(client, 'pwf_create_app', { projectDir: root, foundation: FIXTURE_FOUNDATION })
+    const listed = await call(client, 'pwf_describe_project', { projectDir: root })
+    expect(text(listed)).toContain('pwf_describe_block')
+    expect(text(listed)).toContain('\nNext: call pwf_describe_block')
+
+    // A block of the folder's own, with a full manifest.
+    await call(client, 'pwf_add_block', { projectDir: root, block: 'content/price-tag' })
+    const manifestPath = join(root, 'atoms', 'blocks', 'content', 'price-tag', 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    manifest.knowledge = {
+      purpose: 'Shows a price with its currency',
+      useCases: ['A product card'],
+      composesWith: ['control.button'],
+      antiPatterns: ['Long text — use text'],
+      implementation: 'Formats with Intl.NumberFormat',
+    }
+    manifest.definition = {
+      props: [
+        { name: 'amount', type: 'number', required: true, jsonSchema: { type: 'number', minimum: 0 }, description: 'The price.' },
+        { name: 'size', type: '"sm" | "lg"', default: 'sm', jsonSchema: { type: 'string', enum: ['sm', 'lg'] } },
+        { name: 'label', type: 'string', copy: true },
+      ],
+      defaultProps: { amount: 0 },
+      canHaveChildren: false,
+      traits: ['price'],
+    }
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2))
+
+    const own = await call(client, 'pwf_describe_block', { projectDir: root, type: 'price-tag' })
+    expect(own.isError, text(own)).toBeFalsy()
+    expect(own.structuredContent).toMatchObject({
+      pack: '@pwpack/local/shop@0.1.0',
+      own: true,
+      id: 'content.price-tag',
+      type: 'price-tag',
+      canHaveChildren: false,
+      defaultProps: { amount: 0 },
+      traits: ['price'],
+      knowledge: manifest.knowledge,
+    })
+    expect(own.structuredContent?.['props']).toEqual(manifest.definition.props)
+    const t = text(own)
+    expect(t).toContain('price-tag (content.price-tag) from @pwpack/local/shop@0.1.0 (this folder)')
+    expect(t).toContain('  - amount (number, required) — The price.')
+    expect(t).toContain('      jsonSchema {"type":"number","minimum":0}')
+    expect(t).toContain('  - size ("sm" | "lg") default "sm"')
+    expect(t).toContain('      jsonSchema {"type":"string","enum":["sm","lg"]}')
+    expect(t).toContain('  - label (string, copy)')
+    expect(t).toContain('Children: no, it is a leaf')
+    expect(t).toContain('  antiPatterns:\n    - Long text — use text')
+    expect(t).toContain('  implementation: Formats with Intl.NumberFormat')
+
+    // A block of a pinned pack, by type or by atom id.
+    const pinned = await call(client, 'pwf_describe_block', { projectDir: root, type: 'control.button' })
+    expect(pinned.isError, text(pinned)).toBeFalsy()
+    expect(pinned.structuredContent).toMatchObject({ own: false, id: 'control.button', type: 'button', knowledge: { purpose: 'Test fixture block button' } })
+    expect(String(pinned.structuredContent?.['pack'])).toMatch(/^@pwpack\/.+@\d+\.\d+\.\d+$/)
+    expect((pinned.structuredContent?.['props'] as { name: string }[]).map((p) => p.name)).toEqual(['label', 'href'])
+
+    // An unknown type: the build's code, with the names it is close to.
+    const unknown = await call(client, 'pwf_describe_block', { projectDir: root, type: 'buton' })
+    expect(unknown.isError).toBe(true)
+    expect(unknown.structuredContent).toMatchObject({ error: { code: 'UNKNOWN_BLOCK_TYPE' } })
+    expect(text(unknown)).toContain('did you mean button')
+    expect(text(unknown)).toContain('Fix: Pass a type pwf_describe_project lists')
   })
 
   it('creates a pack and installs another into it', async () => {

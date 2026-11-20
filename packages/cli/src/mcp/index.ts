@@ -18,10 +18,10 @@ import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } fr
 import { z } from 'zod'
 import { SERVER_INSTRUCTIONS } from './instructions.js'
 import { PhiwebsTools, publishPackTool, SIGN_IN_TOOL, type PhiwebsToolsOptions } from './phiwebs.js'
-import { TOOLS, type ToolAnswer, type ToolDefinition } from './tools.js'
+import { ADD_PACK_TOOL, addPackTool, TOOLS, type ToolAnswer, type ToolDefinition } from './tools.js'
 
 export { SERVER_INSTRUCTIONS } from './instructions.js'
-export { TOOLS, failureAnswer, type ToolAnswer, type ToolDefinition } from './tools.js'
+export { addPackTool, TOOLS, failureAnswer, type ToolAnswer, type ToolDefinition } from './tools.js'
 export { PhiwebsTools, publishPackTool, SIGN_IN_TOOL, type PhiwebsToolsOptions, type RemoteTool } from './phiwebs.js'
 
 export interface PwfMcpServerOptions {
@@ -76,7 +76,10 @@ async function runLocal(tool: ToolDefinition, args: unknown): Promise<ToolAnswer
 
 /** A server with the pwf tools (and, given `phiwebs`, PhiWebs'), not yet connected to a transport. */
 export function createPwfMcpServer(options: PwfMcpServerOptions): Server {
-  const tools = [...(options.tools ?? TOOLS), ...(options.phiwebs ? [publishPackTool(options.phiwebs)] : [])]
+  // With a PhiWebs session, pwf_add_pack also takes a PhiWebs pack id.
+  const phiwebsOptions = options.phiwebs
+  const base = (options.tools ?? TOOLS).map((t) => (phiwebsOptions && t.name === ADD_PACK_TOOL ? addPackTool(phiwebsOptions) : t))
+  const tools = [...base, ...(phiwebsOptions ? [publishPackTool(phiwebsOptions)] : [])]
   const local = new Map(tools.map((t) => [t.name, t]))
   const phiwebs = options.phiwebs && !options.localOnly ? new PhiwebsTools(options.phiwebs, new Set(local.keys())) : null
   const server = new Server(

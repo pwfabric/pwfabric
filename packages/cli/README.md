@@ -89,12 +89,16 @@ the same. Markdown notes under `atoms/` (such as the `atoms/README.md` that
 `create` writes) are documentation and travel with the pack. The same folder
 always gives the same bytes.
 
-### `pwf add <path-to.pwpack|dir> [--dir <project>]`
+### `pwf add <path-to.pwpack|dir|@pwpack/<handle>/<name>[@<version>]> [--dir <project>]`
 
 Validates the pack, copies its pack content to `.pwf/packs/<id>@<version>/`,
 pins it in `packs[]` by the content hash of exactly what was copied and adds `{ id, range: "^<major>.0.0" }` to
-`requires` (replacing an earlier entry for the same id). Only local archives
-and folders: resolving packs from npm or a pack registry is not supported.
+`requires` (replacing an earlier entry for the same id). A pack id that is not
+an existing path is a pack of the PhiWebs workspace you are signed in to
+(`pwf login`): pwf downloads it, checks it against the sha256 PhiWebs gives and
+installs it the same way; a pack PhiWebs keeps to its studio (a pattern pack,
+a licence without the source) is refused with the reason. Resolving packs from
+npm is not supported.
 
 ### `pwf add block <category>/<type> [--dir <project>]`
 
@@ -147,7 +151,7 @@ Stop it with Ctrl-C.
 A local MCP server on stdin/stdout for any MCP client (Claude Code, Cursor, VS
 Code, Gemini CLI, …): `npx -y @pwfabric/cli mcp` as the server command. Tools:
 `pwf_create_app`, `pwf_create_pack`, `pwf_add_pack`, `pwf_add_block`,
-`pwf_describe_project` (read-only), `pwf_validate`, `pwf_build`, `pwf_pack` —
+`pwf_describe_project` and `pwf_describe_block` (read-only), `pwf_validate`, `pwf_build`, `pwf_pack` —
 the same functions as the commands. Every tool takes `projectDir`, an absolute
 path, and writes only inside it; answers end with the next step, failures carry
 a code and the fix. No account, no network, no dev server (run `pwf dev`).
@@ -175,7 +179,8 @@ another; the studio resource (token audience, `<resource>/mcp`) is `--studio`,
 the studio's web address (`/s/*`, what `pwf publish` calls) is `--studio-url`,
 `PWF_PHIWEBS_STUDIO_WEB`, the one the API names (`studio_url`), or
 `https://studio.phiwebs.com` (another resource: its own address). Every
-login registers a new client. A session from an earlier `pwf` gains
+login registers a new client and first revokes and deletes the session it
+replaces (a failed revocation does not stop it). A session from an earlier `pwf` gains
 its studio token by signing in again. Tokens live in `%APPDATA%\pwfabric` (Windows) or
 `$XDG_CONFIG_HOME/pwfabric` / `~/.config/pwfabric`, readable by the user only,
 and are refreshed when they expire. `logout` revokes (when the server can) and

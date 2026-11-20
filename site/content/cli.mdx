@@ -262,17 +262,40 @@ Packed @pwpack/local/my-app@0.1.0
 
 ```text
 pwf add <path-to.pwpack|dir> [--dir <project>]
+pwf add @pwpack/<handle>/<name>[@<version>] [--dir <project>] [--server <url>]
 ```
 
 | Argument / option | Meaning |
 |---|---|
 | `<path>` | A `.pwpack` (or `.tgz`) archive, or a pwpack folder. |
+| `<pack id>` | `@pwpack/<handle>/<name>`, optionally `@<version>`: a pack installed in your PhiWebs workspace. Needs [`pwf login`](#pwf-login). |
 | `--dir <path>` | The project folder. Default: the current folder. |
+| `--server <url>` | The PhiWebs API the session was made with (as for `pwf login`). |
 
 Validates the pack, copies it to `.pwf/packs/<id>@<version>/`, pins it in
 `pwpack.json` `packs[]` by content hash and adds
-`{ id, range: ^<major>.0.0 }` to `requires`. Only local files and folders:
-resolving packs from npm or a pack registry is not supported.
+`{ id, range: ^<major>.0.0 }` to `requires`.
+
+**A pack from PhiWebs.** An argument that is a pack id, and not an existing
+path, is fetched from the PhiWebs workspace you are signed in to: `pwf` asks
+the API for the packs the workspace may use on this computer
+(`GET /api/pwpacks/sources`, scope `marketplace:read`, which `pwf login`
+requests) — its marketplace installs whose source it may read — picks the one
+named (at the version given, else the one installed), downloads it, checks
+the bytes against the sha256 PhiWebs gives, and installs it exactly as a local
+`.pwpack`. The download address is short-lived and never printed. A pack
+PhiWebs does not give out is refused with the reason and what to do:
+
+| Code | Why | What to do |
+|---|---|---|
+| `PACK_NOT_LICENSED` | The workspace's licence does not include the source. | Use it in the PhiWebs studio, or get a licence with the source. |
+| `PACK_PATTERNS_ONLY` | A pattern pack stays on the server. | Use it in the PhiWebs studio. |
+| `PACK_NOT_INSTALLED` | The workspace does not have it (or not that version). | Install it from the PhiWebs marketplace first. |
+| `PACK_SOURCE_NOT_STORED`, `PACK_LISTING_MISSING`, `PACK_SOURCE_CHANGED` | PhiWebs has no usable source for that version. | Try again later, or ask the publisher. |
+| `PACK_HASH_MISMATCH` | The download does not match its sha256. | Nothing is installed; try again. |
+| `NOT_SIGNED_IN` | No PhiWebs session. | Run `pwf login`. |
+
+Resolving packs from npm is not supported.
 
 ### `pwf add block`
 
@@ -381,9 +404,10 @@ no account and no network.
 |---|---|
 | `pwf_create_app` | `pwf create`: a new app folder on a foundation `.pwpack` |
 | `pwf_create_pack` | `pwf create --pack`: a new, empty pack folder |
-| `pwf_add_pack` | `pwf add`: install a `.pwpack` (or pack folder) and pin it |
+| `pwf_add_pack` | `pwf add`: install a `.pwpack`, a pack folder, or a PhiWebs pack id `@pwpack/<handle>/<name>[@<version>]` (signed in) and pin it |
 | `pwf_add_block` | `pwf add block`: a new block of the folder's own |
-| `pwf_describe_project` | Read-only: the folder's pages, pinned packs, and the blocks (with props) and themes they offer |
+| `pwf_describe_project` | Read-only: the folder's pages, pinned packs, and the blocks (type, prop names, purpose) and themes they offer |
+| `pwf_describe_block` | Read-only: one block by `type` — the pack it comes from, every prop with its JSON schema, default and description, whether it takes children, and its full `knowledge`. An unknown type is `UNKNOWN_BLOCK_TYPE`, naming close matches |
 | `pwf_validate` | `pwf validate`: every finding with its code and path |
 | `pwf_build` | `pwf build`: the static pwapp |
 | `pwf_pack` | `pwf pack`: the deterministic `.pwpack` |
@@ -540,6 +564,11 @@ server's metadata (`/.well-known/oauth-authorization-server`), registers
 itself as a new client at every login (dynamic client registration, for
 the loopback port it listens on this time), opens the sign-in page in your browser (the address is printed
 too), and receives the answer on `http://127.0.0.1:<port>/callback`.
+
+A session already saved for the server is ended first, as `pwf logout` ends
+it: its refresh token is revoked and the saved tokens are deleted, so signing
+in again never leaves an earlier "PWFabric CLI" connected app behind. A
+revocation that fails does not stop the new login; `pwf` says so in one line.
 
 One sign-in is for two resources (RFC 8707 `resource`): the API and the
 studio. The code is redeemed for an API token; the same grant is then
