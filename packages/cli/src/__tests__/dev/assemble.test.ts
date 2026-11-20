@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.setConfig({ testTimeout: 60_000 })
-import { assemblePwapp, blockNames } from '../../dev/assemble.js'
+import { assemblePwapp, atomsLine, blockNames } from '../../dev/assemble.js'
 import { createCompileCache } from '../../dev/compile.js'
 import { loadSources, packCacheRel, type PackMemo } from '../../dev/sources.js'
 import { makeApp, PACK_REL, parse, text } from './helpers.js'
@@ -570,6 +570,59 @@ describe('ENGINE_RANGE_EXCLUDED (E8)', () => {
     // A prerelease of the engine runs what its release runs.
     await setEngines(join(root, ...PACK_REL, 'pwpack.json'), '>=3.0.0 <4')
     expect(codes(await assemblePwapp(root, { engineVersion: '3.0.0-rc.2' }))).not.toContain('ENGINE_RANGE_EXCLUDED')
+  })
+})
+
+describe('the router a build writes (pwf build --router)', () => {
+  it('writes hash routing by default, with no base and no router meta', async () => {
+    const root = await app()
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const html = text(r.files.get('index.html'))
+    expect(html).not.toContain('<base')
+    expect(html).not.toContain('<meta name="pw-router"')
+    expect(text(r.files.get(asset(r, 'boot')))).toContain(`router: "hash"`)
+  })
+
+  it('path: runApp routes by path and the shell declares the base; auto also declares the fallback', async () => {
+    const root = await app()
+    const path = await assemblePwapp(root, { cacheDir: null, router: 'path' })
+    expect(path.ok, codes(path).join()).toBe(true)
+    const html = text(path.files.get('index.html'))
+    expect(html).toContain('<base href="/" />')
+    expect(html.indexOf('<base')).toBeLessThan(html.indexOf('./assets/'))
+    expect(html).not.toContain('<meta name="pw-router"')
+    expect(text(path.files.get(asset(path, 'boot')))).toContain(`router: "path"`)
+    // The inline scripts read the address as the runner will.
+    expect(/id="pw-page-hints">([^<]*)</.exec(html)?.[1]).toContain('"router":"path"')
+
+    const auto = await assemblePwapp(root, { cacheDir: null, router: 'auto', base: '/shop/' })
+    const autoHtml = text(auto.files.get('index.html'))
+    expect(autoHtml).toContain('<base href="/shop/" />')
+    expect(autoHtml).toContain('<meta name="pw-router" content="path" />')
+    expect(text(auto.files.get(asset(auto, 'boot')))).toContain(`router: "auto"`)
+  })
+})
+
+describe('atomsLine', () => {
+  const stats = { pages: 1, blocks: 1, engines: 0, atoms: 57, compiled: 56, fromCache: 3, failed: 0 }
+  it('names every atom the count leaves out, with why', () => {
+    expect(atomsLine(stats)).toBe('56/57 atoms compiled (3 from cache)')
+    expect(atomsLine({ ...stats, skipped: [{ id: 'RestConnector', reason: 'connector declared as data, no code to compile' }] })).toBe(
+      '56/57 atoms compiled (3 from cache; 1 skipped: RestConnector (connector declared as data, no code to compile))'
+    )
+    const many = ['a', 'b', 'c', 'd'].map((id) => ({ id, reason: 'connector declared as data, no code to compile' }))
+    expect(atomsLine({ ...stats, compiled: 52, failed: 1, skipped: many })).toBe(
+      '52/57 atoms compiled (3 from cache; 4 skipped: a, b, c and 1 more (connector declared as data, no code to compile); 1 failed (see the errors above))'
+    )
+  })
+
+  it('a build counts a connector that is a declaration only as skipped, by id', async () => {
+    const root = await app()
+    const r = await assemblePwapp(root, { cacheDir: null })
+    const skipped = r.stats.skipped ?? []
+    expect(r.stats.atoms - r.stats.compiled - r.stats.failed).toBe(skipped.length)
+    for (const s of skipped) expect(s.reason).toMatch(/declared as data, no code to compile/)
   })
 })
 

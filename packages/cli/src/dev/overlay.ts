@@ -3,7 +3,7 @@
  * instead of the app when the last build failed.
  */
 import type { AssembleDiagnostic } from './diagnostics.js'
-import { escapeHtml } from './shell.js'
+import { escapeHtml, scriptJson } from './shell.js'
 
 /** Server-Sent Events endpoint the page listens on. */
 export const EVENTS_PATH = '/_pwf/events'
@@ -20,6 +20,14 @@ export const RELOAD_JS = `(function () {
   // set) only when this is set. A classic script, so it runs before the
   // deferred module that starts the app.
   globalThis.__pwfabric_dev = true
+  // On the page shown while the last build has errors: the same list in the console.
+  var failed = document.getElementById('pwf-build-errors')
+  if (failed) {
+    try {
+      var errors = JSON.parse(failed.textContent || '[]')
+      console.error('pwf dev: the last build failed (' + errors.length + ' error' + (errors.length === 1 ? '' : 's') + '); the page reloads after the next good build.\\n' + errors.join('\\n'))
+    } catch (e) {}
+  }
   if (typeof EventSource === 'undefined') return
   var es = new EventSource('${EVENTS_PATH}')
   es.addEventListener('reload', function () { location.reload() })
@@ -34,7 +42,11 @@ export const RELOAD_JS = `(function () {
 export const RELOAD_CLIENT = `
     <script src="${RELOAD_PATH}"></script>`
 
-/** The page shown while the last build has errors. */
+/**
+ * The page shown while the last build has errors: every page path answers
+ * with it, and the reload client prints the same list in the console. The
+ * next good build reloads the page into the app.
+ */
 export function overlayHtml(diagnostics: readonly AssembleDiagnostic[], title = 'Build failed'): string {
   const errors = diagnostics.filter((d) => d.severity === 'error')
   const rest = diagnostics.length - errors.length
@@ -48,6 +60,7 @@ export function overlayHtml(diagnostics: readonly AssembleDiagnostic[], title = 
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
     <title>${escapeHtml(title)} — pwf dev</title>
     <style>
       body { margin: 0; font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; background: #1c1917; color: #fafaf9; }
@@ -68,7 +81,8 @@ export function overlayHtml(diagnostics: readonly AssembleDiagnostic[], title = 
       <ul>
 ${items}
       </ul>
-    </main>${RELOAD_CLIENT}
+    </main>
+    <script type="application/json" id="pwf-build-errors">${scriptJson(errors.map((d) => `${d.code}${d.path ? ` ${d.path}` : ''}: ${d.message}`))}</script>${RELOAD_CLIENT}
   </body>
 </html>
 `

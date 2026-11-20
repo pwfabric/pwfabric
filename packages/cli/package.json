@@ -34,6 +34,11 @@
       "types": "./dist/host/index.d.ts",
       "import": "./dist/host/index.js",
       "default": "./dist/host/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "import": "./dist/mcp/index.js",
+      "default": "./dist/mcp/index.js"
     }
   },
   "files": [
@@ -56,6 +61,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@pwfabric/authoring": "workspace:*",
     "@pwfabric/compiler": "workspace:*",
     "@pwfabric/contracts": "workspace:*",

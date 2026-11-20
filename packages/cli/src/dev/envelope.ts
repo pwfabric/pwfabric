@@ -17,6 +17,25 @@ export interface Page {
   readonly receipt: Record<string, unknown>
 }
 
+/**
+ * The pages an app serves, in order: its routes (`app.surfaceOrder`), then
+ * its own not-found page (`app.notFound`) and sign-in screen (`app.signIn`)
+ * when they are not routes. `pwf build` serves these and `pwf validate`
+ * judges the same ones.
+ */
+export function servedPageKeys(app: { readonly surfaceOrder: readonly string[]; readonly notFound?: string | undefined; readonly signIn?: string | undefined }): {
+  keys: string[]
+  notFoundKey?: string
+  signInKey?: string
+} {
+  const routeKeys = app.surfaceOrder
+  const offRoute = (key: string | undefined): string | undefined => (key !== undefined && !routeKeys.includes(key) ? key : undefined)
+  const notFoundKey = offRoute(app.notFound)
+  const signInKey = offRoute(app.signIn)
+  const keys = [...routeKeys, ...(notFoundKey ? [notFoundKey] : []), ...(signInKey && signInKey !== notFoundKey ? [signInKey] : [])]
+  return { keys, ...(notFoundKey ? { notFoundKey } : {}), ...(signInKey ? { signInKey } : {}) }
+}
+
 /** The block types a receipt places, walking `blocks` and every `children`. */
 export function blockTypesOf(receipt: unknown): string[] {
   const types = new Set<string>()

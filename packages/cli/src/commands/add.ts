@@ -7,7 +7,7 @@ import type { Command, CommandIO, ParsedArgs } from './types.js'
 import { guard, stringFlag, UsageError } from './lib/flags.js'
 import { cacheDir, cacheRelDir, readPackSource, resolveFrom, writePackFolder } from './lib/project.js'
 import { caretRange, readIdentityFile, upsertPin, upsertRequirement, writeIdentityFile } from './lib/identity.js'
-import { printIssues } from './lib/report.js'
+import { CommandFailure } from './lib/failure.js'
 import { addBlock } from './lib/scaffold.js'
 
 /** The word that turns `pwf add` into `pwf add block`. A pack folder named so is given as `./block`. */
@@ -28,26 +28,33 @@ export async function runAddBlock(args: ParsedArgs, io: CommandIO): Promise<numb
   return 0
 }
 
-export async function runAdd(args: ParsedArgs, io: CommandIO): Promise<number> {
-  if (args.positionals[0] === ADD_BLOCK) return runAddBlock(args, io)
-  const source = args.positionals[0]
-  if (source === undefined) throw new UsageError('missing <path-to.pwpack|dir>')
-  const root = resolveFrom(io.cwd, stringFlag(args, 'dir'))
-  const doc = await readIdentityFile(root)
+export interface AddedPack {
+  readonly id: string
+  readonly version: string
+  readonly hash: string
+  /** The cache folder, project-relative: `.pwf/packs/<id>@<version>`. */
+  readonly cachedIn: string
+  /** The range added to `requires`: `^<major>.0.0`. */
+  readonly range: string
+}
 
-  const sourceAbs = resolveFrom(io.cwd, source)
+/**
+ * Installs a pack build (a `.pwpack` or folder, absolute) into the project at
+ * `root`: its pack content into the cache, a pin by content hash and a
+ * requirement in `pwpack.json`. Throws a {@link CommandFailure} for an
+ * invalid pack or the project itself.
+ */
+export async function addPack(root: string, sourceAbs: string): Promise<AddedPack> {
+  const doc = await readIdentityFile(root)
   const incoming = await readPackSource(sourceAbs)
   const checked = validatePack(incoming)
   if (!checked.ok || !checked.identity) {
-    io.err(`pwf add: ${sourceAbs} is not a valid pack`)
-    printIssues(io, checked.issues.filter((i) => i.severity === 'error'))
-    return 1
+    throw new CommandFailure('PACK_INVALID', `${sourceAbs} is not a valid pack`, {
+      issues: checked.issues.filter((i) => i.severity === 'error'),
+    })
   }
   const { id, version } = checked.identity
-  if (id === doc.id) {
-    io.err(`pwf add: ${id} is this project itself`)
-    return 1
-  }
+  if (id === doc.id) throw new CommandFailure('PACK_IS_PROJECT', `${id} is this project itself`)
   // Only the pack content is installed; the pin is the hash of exactly that.
   const content = packContent(incoming)
   const hash = hashPack(content)
@@ -55,11 +62,19 @@ export async function runAdd(args: ParsedArgs, io: CommandIO): Promise<number> {
   upsertPin(doc, { id, version, hash })
   upsertRequirement(doc, id, caretRange(version))
   await writeIdentityFile(root, doc)
+  return { id, version, hash, cachedIn: cacheRelDir(id, version), range: caretRange(version) }
+}
 
-  io.out(`Added ${id}@${version}`)
-  io.out(`  cached in ${cacheRelDir(id, version)}`)
-  io.out(`  pinned    ${hash}`)
-  io.out(`  requires  ${caretRange(version)}`)
+export async function runAdd(args: ParsedArgs, io: CommandIO): Promise<number> {
+  if (args.positionals[0] === ADD_BLOCK) return runAddBlock(args, io)
+  const source = args.positionals[0]
+  if (source === undefined) throw new UsageError('missing <path-to.pwpack|dir>')
+  const root = resolveFrom(io.cwd, stringFlag(args, 'dir'))
+  const added = await addPack(root, resolveFrom(io.cwd, source))
+  io.out(`Added ${added.id}@${added.version}`)
+  io.out(`  cached in ${added.cachedIn}`)
+  io.out(`  pinned    ${added.hash}`)
+  io.out(`  requires  ${added.range}`)
   return 0
 }
 

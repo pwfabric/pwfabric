@@ -52,6 +52,9 @@ jobs:
       - name: Every sitemap URL has a page
         run: pnpm --filter pwfabric-site check:sitemap
 
+      - name: llms.txt and llms-full.txt list every page, on pwfabric.com only
+        run: pnpm --filter pwfabric-site check:llms
+
       - name: The custom domain ships with the build
         run: test "$(cat site/out/CNAME)" = "pwfabric.com"
 

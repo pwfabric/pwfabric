@@ -1,13 +1,17 @@
 ---
 title: CLI
-description: Every pwf command and option — create, dev, build, validate, pack, add and run.
+description: Every pwf command and option — create, dev, build, validate, pack, add, run, the MCP server for AI coding tools, and publishing on PhiWebs.
 ---
 
 # The `pwf` command line
 
 `pwf` creates, develops, checks, packs and serves PWFabric applications using
-only the engine's own packages. It never calls a hosted service: there is no
-login, publish or deploy command.
+only the engine's own packages. Those commands need no account and no network.
+`pwf mcp` serves the same work to AI coding tools. `pwf publish` puts an app
+online (or a pack in the marketplace) on [PhiWebs](https://phiwebs.com), the
+platform PWFabric was built for, after `pwf login`, `logout` and `whoami`
+sign the CLI in to it. Every other command works without an account and
+without a network.
 
 Install it from npm (Node 22): `npm install -g @pwfabric/cli`, or run it
 once with `npx -p @pwfabric/cli pwf <command>`. `pwf --version` prints the
@@ -34,6 +38,11 @@ pack, a missing file, a refused write), `2` wrong usage.
 | [`pack`](#pwf-pack) | Write the deterministic `.pwpack` archive of a folder |
 | [`add`](#pwf-add) | Install a pack (`.pwpack` or folder) into the project and pin it |
 | [`run`](#pwf-run) | Serve a built pwapp (folder or `.pwapp`) on a local port |
+| [`mcp`](#pwf-mcp) | Serve the pwf tools to an MCP client (Claude Code, Cursor, VS Code, Gemini CLI, …) |
+| [`publish`](#pwf-publish) | Publish an app on PhiWebs, or a pack to its marketplace |
+| [`login`](#pwf-login) | Sign in to PhiWebs (the API and the studio) |
+| [`logout`](#pwf-logout) | Sign out of PhiWebs and delete the saved session |
+| [`whoami`](#pwf-whoami) | Show the PhiWebs account and workspace pwf is signed in as |
 
 ## `pwf create`
 
@@ -55,6 +64,14 @@ foundation's own heading, text and button blocks (whichever it has), and the
 theme is one of the foundation's themes. The foundation is copied into
 `.pwf/packs/<id>@<version>/` and pinned in `pwpack.json` by content hash, so
 `dev` and `run` work offline.
+
+```console
+$ pwf create my-app --foundation ./foundation-1.0.0.pwpack
+Created @pwpack/local/my-app in …/my-app
+  foundation @pwpack/foundation@1.0.0 (sha256:88344a31…)
+  cached in  .pwf/packs/@pwpack/foundation@1.0.0
+  home page  heading, text, button; theme theme-zinc
+```
 
 The foundation pack is released as `foundation-<version>.pwpack` on the
 [GitHub releases of pwfabric/packs](https://github.com/pwfabric/packs/releases)
@@ -85,7 +102,7 @@ with [`pwf add block`](#pwf-add-block). The folder validates clean with
 ## `pwf dev`
 
 ```text
-pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host]
+pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--debug]
 ```
 
 | Argument / option | Meaning |
@@ -95,6 +112,7 @@ pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host]
 | `--host <name>` | Interface name or address to bind. Default `127.0.0.1`. |
 | `--local-host` | Mount the local host for sign-in and data even when the app declares neither. |
 | `--no-host` | Do not mount the local host, even when the app declares sign-in or records. |
+| `--debug` | Print an engine error with its stack trace. Without it, an engine error is one line. |
 
 **The local host.** When the app declares sign-in or records, `pwf dev`
 mounts a development host under `/_host` beside the pages: records live in
@@ -108,27 +126,62 @@ The same pieces are a public entry for hosts of your own:
 (see [Data and receipts](/self-host/data#what-your-host-must-provide)).
 
 Builds the app, serves it, watches the folder and rebuilds and reloads the
-page on every change. Runs until Ctrl+C. When a build fails, the page shows
-the errors instead of the app until the next good build. If the port is taken,
-it says so; pass another `--port`
-or `--port 0`.
+page on every change. Runs until Ctrl+C. When a build fails, the terminal
+lists the errors, each with its code and file (a JSON syntax error is
+`JSON_INVALID <file>`, never a stack trace), and the open page reloads into a
+"Build failed" page listing the same errors, which it also prints in the
+browser console. The next good build reloads it into the app. If the port is
+taken, it says so; pass another `--port` or `--port 0`.
+
+```console
+$ pwf dev
+built in 1772 ms — 1 page, 3 block types, 56/57 atoms compiled (56 from cache; 1 skipped: RestConnector (connector declared as data, no code to compile))
+watching …/my-app (file events)
+pwf dev: serving …/my-app at http://127.0.0.1:4600/
+press Ctrl+C to stop
+built in 619 ms — 1 page, 3 block types, 56/57 atoms compiled (56 from cache; 1 skipped: RestConnector (connector declared as data, no code to compile))
+```
+
+The last line is the rebuild after a saved change. "Skipped" names the atoms
+that have nothing to compile and why: here a connector that is a declaration
+only.
 
 ## `pwf build`
 
 ```text
-pwf build [dir] [--out <dir>]
+pwf build [dir] [--out <dir>] [--router <hash|path|auto>] [--base <path>]
 ```
 
 | Argument / option | Meaning |
 |---|---|
 | `dir` | The app folder. Default: the current folder. |
 | `--out <dir>` | Where to write the built app. Default `<dir>/.pwf/out/`. |
+| `--router <mode>` | How the built app routes: the `router` it passes to `runApp()`. `hash` (default): `#/<page>` addresses, which work on every static host. `path`: clean `/<page>` addresses; the shell carries `<base href>`, and the host must answer every page path with `index.html`. `auto`: path routing where the browser can, else hash; the shell also carries `<meta name="pw-router" content="path">`. |
+| `--base <path>` | With `path` or `auto`: the path the app is served under, written as the shell's `<base href>`. Default `/`; `--base /shop/` for an app served at `/shop/`. |
 
 Assembles the app into a static **pwapp**: `index.html`, the runner and its
 assets, one compiled bundle per block type, connector engines, and the app's
 JSON under `pwpack/`. Prints every diagnostic; on any error, nothing is
-written and the exit code is `1`. Compiled atoms are cached in
+written and the exit code is `1`. It judges the pages as
+[`pwf validate`](#pwf-validate) does, with the same codes and words
+(`UNKNOWN_BLOCK_TYPE`, `BLOCK_ID_DUPLICATE`, …). Compiled atoms are cached in
 `.pwf/build-cache/`.
+
+```console
+$ pwf build
+built 1 page, 3 block types, 0 engines — 56/57 atoms compiled (0 from cache; 1 skipped: RestConnector (connector declared as data, no code to compile)) in 1914 ms
+wrote 25 files to .pwf/out
+
+$ pwf build --router path
+built 1 page, 3 block types, 0 engines — 56/57 atoms compiled (56 from cache; 1 skipped: RestConnector (connector declared as data, no code to compile)) in 1713 ms
+router: path, base / — the host must answer every page path with index.html
+wrote 25 files to .pwf/out
+```
+
+A path-routed build runs under [`pwf run`](#pwf-run), which answers every page
+path with `index.html`, so a deep link such as `/menu` or `/dish?id=…` opens
+its page. On another host, configure that fallback (see
+[Routing on a static host](/self-host#routing-on-a-static-host)).
 
 The build also writes the app's **Content Security Policy**, derived from what
 the app declares: its data addresses, its connections' engine hosts, its
@@ -157,6 +210,15 @@ with the path each is about. Every `packs[]` pin is looked up in
 whose content hash differs from the pin is an error. Exit `1` when there is
 any error, `0` otherwise.
 
+```console
+$ pwf validate
+Errors (1):
+  UNKNOWN_BLOCK_TYPE app/surfaces/home.receipt.json: page "home" places a block of type "buton", which neither the app nor its pinned packs define
+Notes (1):
+  DOC_FILE atoms/README.md: atoms/README.md is documentation, not an atom
+@pwpack/local/my-app@0.1.0: invalid (1 error, 0 warnings; layout canonical; 0 atoms)
+```
+
 Beyond the pack validator's own findings, `validate` (and `pack`) check the
 app folder the way the local host reads it:
 
@@ -165,6 +227,8 @@ app folder the way the local host reads it:
 | `PIN_NOT_CACHED` | warning | A pinned build is not in `.pwf/packs/`; `pwf add` it. |
 | `PIN_HASH_MISMATCH` | error | The cached build's content hash differs from the pin. |
 | `PIN_INVALID` | error | A `packs[]` pin cannot name a cache folder. |
+| `UNKNOWN_BLOCK_TYPE` | error | A page places a block type that neither the app nor a pinned pack defines; `pwf build` refuses it with the same words. Not judged while a pinned pack is not cached. |
+| `BLOCK_ID_DUPLICATE` | error | Two blocks of one page, nested ones included, have the same `id` (an id is unique within its page); the message names both paths. `pwf build` refuses it too. |
 | `SEED_INVALID` | error | An `app/data/<typeId>.json(l)` file the local host would reject. |
 | `ENTITY_INVALID` | error | `app/definitions/entities.json` is not JSON, or an entry has no `typeId` or a field no `name`. |
 | `ENTITY_UNDECLARED` | error | A page binds an entity type `entities.json` does not declare. |
@@ -184,6 +248,14 @@ pwf pack [dir] [--out <file>]
 Validates first and refuses on errors. The archive never contains `.pwf/`,
 `.gitignore` or `atoms/README.md`. The same folder always gives the same
 bytes; the printed hash is the content hash that pins use.
+
+```console
+$ pwf pack
+Packed @pwpack/local/my-app@0.1.0
+  file  …/my-app/my-app-0.1.0.pwpack
+  size  1405 bytes, 6 files
+  hash  sha256:53553856…
+```
 
 ## `pwf add`
 
@@ -236,11 +308,247 @@ pwf run <dir|file.pwapp> [--port <n>] [--host <name>]
 | `--port <n>` | Port to listen on. Default `4700`; `0` picks a free one. |
 | `--host <name>` | Interface to bind. Default `127.0.0.1`. |
 
+```console
+$ pwf run .pwf/out
+Serving .pwf/out at http://127.0.0.1:4700/
+Press Ctrl-C to stop.
+```
+
+For an app folder, or its `.pwf/out`, the app's records are served read-only
+under `/_host` ([the records protocol](/self-host/data#the-endpoint-table)),
+and `pwf run` prints a line saying so. A build copied elsewhere, or a
+`.pwapp`, has no app folder beside it and so no records: an address under
+`/_host` is then a `404` with a JSON error, code `NO_RECORD_HOST`, never
+`index.html`. Serve the app folder, or use `pwf dev`.
+
 Page paths without a file extension are answered with `index.html` and a
 `<base href="/">`, so
 path-routed apps work; a missing asset is a 404. Headers declared in the
 folder's `_headers` file (such as the app's Content Security Policy) are sent
 with the files they match. Runs until Ctrl+C.
 
+## `pwf mcp`
+
+```text
+pwf mcp [--local-only] [--server <url>]
+```
+
+| Option | Meaning |
+|---|---|
+| `--local-only` | Serve the local tools only: no PhiWebs studio tools and no `phiwebs_sign_in`. For a client that connects to the studio's MCP endpoint itself, so its tools are not listed twice. |
+| `--server <url>` | The PhiWebs API the session was made with (as for `pwf login`). |
+
+Runs a local [Model Context Protocol](https://modelcontextprotocol.io) server
+on stdin/stdout, so an AI coding tool can create and check PWFabric apps with
+the same functions the commands use. It works in any MCP client: everything
+the client needs comes from the server itself — its instructions, each tool's
+description, and each answer, which ends with the natural next step. It needs
+no account and no network.
+
+| Tool | What it does |
+|---|---|
+| `pwf_create_app` | `pwf create`: a new app folder on a foundation `.pwpack` |
+| `pwf_create_pack` | `pwf create --pack`: a new, empty pack folder |
+| `pwf_add_pack` | `pwf add`: install a `.pwpack` (or pack folder) and pin it |
+| `pwf_add_block` | `pwf add block`: a new block of the folder's own |
+| `pwf_describe_project` | Read-only: the folder's pages, pinned packs, and the blocks (with props) and themes they offer |
+| `pwf_validate` | `pwf validate`: every finding with its code and path |
+| `pwf_build` | `pwf build`: the static pwapp |
+| `pwf_pack` | `pwf pack`: the deterministic `.pwpack` |
+| `pwf_publish_pack` | `pwf publish` for a pack folder: the marketplace, as your publisher (needs `pwf login`; says so when signed out) |
+
+Every tool takes `projectDir`, an absolute path, and writes only inside it. A
+failure comes back as a tool error with its code and how to fix it. No tool
+starts a server: preview with `pwf dev` in a terminal. Foundation and other
+open packs are on the [packs releases](https://github.com/pwfabric/packs/releases).
+
+Add it to your client. With `pwf` installed globally the command is `pwf`
+with the argument `mcp`; without it, use `npx` as below.
+
+**Claude Code**
+
+```sh
+claude mcp add pwfabric -- npx -y @pwfabric/cli mcp
+```
+
+**Cursor** — `.cursor/mcp.json` in the project (or `~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "pwfabric": { "command": "npx", "args": ["-y", "@pwfabric/cli", "mcp"] }
+  }
+}
+```
+
+**VS Code** — `.vscode/mcp.json` in the project:
+
+```json
+{
+  "servers": {
+    "pwfabric": { "type": "stdio", "command": "npx", "args": ["-y", "@pwfabric/cli", "mcp"] }
+  }
+}
+```
+
+**Gemini CLI** — `~/.gemini/settings.json` (or `.gemini/settings.json` in the project):
+
+```json
+{
+  "mcpServers": {
+    "pwfabric": { "command": "npx", "args": ["-y", "@pwfabric/cli", "mcp"] }
+  }
+}
+```
+
+On Windows, a client that does not run commands through a shell needs
+`"command": "cmd", "args": ["/c", "npx", "-y", "@pwfabric/cli", "mcp"]`.
+
+### PhiWebs tools in `pwf mcp`
+
+Next to the `pwf_*` tools, `pwf mcp` serves PhiWebs':
+
+- **Not signed in**: one tool, `phiwebs_sign_in`. It tells the assistant that
+  the user runs `pwf login` in a terminal, and what PhiWebs adds: building and
+  changing an app with the studio's AI, a private preview, publishing it at a
+  public address that PhiWebs hosts, and its connections and workspace.
+- **Signed in**: the PhiWebs studio's own tools (`list_projects`,
+  `start_turn`, `follow_turn`, `get_preview`, `publish`, …), each description
+  starting with "PhiWebs:". `pwf` reads their list from the studio's MCP
+  endpoint (`<studio>/mcp`) with the session's studio token, keeps it for a
+  minute, and forwards each call there as you. A remote tool may not take a
+  local tool's name, and its schema and hints are checked before it is
+  listed.
+
+What the studio answers is data: it reaches the assistant as tool results
+only, and never changes the server's instructions, which name both cases.
+Answers of the local tools point to PhiWebs where it fits: after `pwf_build`
+and after `pwf_pack` on an app, "the user runs `pwf publish`". With
+`--local-only`, neither the studio tools nor `phiwebs_sign_in` are served;
+`pwf_publish_pack` is local work and stays.
+
+The server is also a library entry, `@pwfabric/cli/mcp`
+(`createPwfMcpServer`, `serveStdio`, `TOOLS`), loaded only when used, so the
+other commands never load the MCP SDK. It lists PhiWebs tools only when
+given `phiwebs` options (`pwf mcp` passes the process's environment).
+
+## `pwf publish`
+
+```text
+pwf publish [dir] [--project <id>] [--new] [--server <url>] [--studio-url <url>]
+```
+
+| Option | Meaning |
+|---|---|
+| `dir` | The app or pack folder (default: the current folder). |
+| `--project <id>` | An app: the studio project to publish into. |
+| `--new` | An app: make a new project, even when the folder has one. |
+| `--server <url>` | The PhiWebs API the session was made with. |
+| `--studio-url <url>` | The studio's web address for this publish. Default: `PWF_PHIWEBS_STUDIO_WEB` when set, else the one saved at `pwf login`. |
+
+Needs `pwf login`. **An app** goes through the PhiWebs studio:
+
+1. `pwf pack` writes the folder's `.pwpack` (to `.pwf/publish/`), refusing on
+   errors as `pwf pack` does.
+2. The archive goes to the studio's web address (below, `<studio>`; not its
+   resource): `POST <studio>/s/projects/import` makes a
+   new project from it, `POST <studio>/s/p/<id>/import` replaces an existing
+   project's app (its history keeps each import). The studio validates it and
+   answers with its findings.
+3. The studio publishes the project (`POST <studio>/s/p/<id>/publish`, waking
+   it first when it sleeps) and `pwf` prints the address:
+
+```text
+Packed @pwpack/local/shop@0.1.0 (48211 bytes, 31 files)
+Imported as the new project p_7c1e…
+Published p_7c1e…@3f9a2c1
+  url      https://…/  (the address PhiWebs gives the app)
+  project  p_7c1e… (remembered in .pwf/phiwebs.json; --new makes another)
+```
+
+The first publish remembers the project in `.pwf/phiwebs.json` (its id only;
+`.pwf/` is in the starter's `.gitignore`), so later publishes go to the same
+project. Keep building it with the studio's AI, or edit locally and publish
+again.
+
+**A pack** goes to the PhiWebs marketplace as your workspace's publisher:
+`pwf` checks the publisher registration (`/api/marketplace/publishers/me`),
+packs the folder, and sends the `.pwpack` with its derived manifest to
+`/api/marketplace/artifacts/publish`. The pack keeps its own id — nothing
+rewrites it — and lands in review; `pwf` prints the listing and its state. A
+workspace without an approved publisher is told how to register.
+
+Findings and refusals are printed with their codes and what to do, for
+example:
+
+```text
+PACK_NOT_AVAILABLE: packs not installable: @pwpack/acme/cards
+fix: Install @pwpack/acme/cards in your PhiWebs workspace (its marketplace), or pin only open packs, then publish again.
+```
+
+Exit codes: `0` published, `1` not signed in, refused, or the studio found
+errors (nothing is published then), `2` wrong usage (`--new` with
+`--project`, either of them on a pack).
+
+## `pwf login`
+
+```text
+pwf login [--server <url>] [--studio <url>] [--studio-url <url>] [--no-browser]
+```
+
+| Option | Meaning |
+|---|---|
+| `--server <url>` | The PhiWebs API. Default `https://api.phiwebs.com`, or `PWF_PHIWEBS_URL` when set (local and staging work). |
+| `--studio <url>` | The PhiWebs studio as a resource: the audience of its tokens, and its MCP endpoint `<url>/mcp`. Default: `PWF_PHIWEBS_STUDIO_URL` when set, else the one the API names in its metadata (`studio_resource`), else `https://mcp.phiwebs.com`. |
+| `--studio-url <url>` | The studio's web address: where `pwf publish` imports and publishes (`/s/…`), and the address to open. Default: `PWF_PHIWEBS_STUDIO_WEB` when set, else the one the API names (`studio_url`), else `https://studio.phiwebs.com` for PhiWebs' own resource, else the resource's address. |
+| `--no-browser` | Print the sign-in address without opening a browser. |
+
+Signs in with OAuth 2.1 (authorization code and PKCE). `pwf` reads the
+server's metadata (`/.well-known/oauth-authorization-server`), registers
+itself as a new client at every login (dynamic client registration, for
+the loopback port it listens on this time), opens the sign-in page in your browser (the address is printed
+too), and receives the answer on `http://127.0.0.1:<port>/callback`.
+
+One sign-in is for two resources (RFC 8707 `resource`): the API and the
+studio. The code is redeemed for an API token; the same grant is then
+refreshed for a studio token; one refresh token serves both, and each token
+is refreshed for its own resource when it expires. It asks for `openid`,
+`email` and `world:read` (who you are and which workspace),
+`marketplace:read` (the marketplace tools of `pwf mcp`),
+`marketplace:publish` (publishing a pack), and `studio:read`,
+`studio:build` and `studio:publish` (`pwf publish` and the PhiWebs tools of
+`pwf mcp`). A session made by an earlier `pwf` has no studio token: run
+`pwf login` again and it is added. A refresh the server refuses with
+`invalid_client` (its registration of `pwf` is gone) ends the session:
+`pwf login` again.
+
+The tokens are saved in your config folder — `%APPDATA%\pwfabric` on
+Windows, `$XDG_CONFIG_HOME/pwfabric` or `~/.config/pwfabric` elsewhere — in a
+file only you can read, and refreshed when they expire. The server must be
+https; plain http is accepted only on `localhost`.
+
+## `pwf logout`
+
+```text
+pwf logout [--server <url>]
+```
+
+Revokes the session when the server offers revocation, then deletes the saved
+tokens. When the server has no revocation endpoint, the grant stays valid
+until it expires; end it at once by removing the "PWFabric CLI" connected app
+in your PhiWebs account.
+
+## `pwf whoami`
+
+```text
+pwf whoami [--server <url>]
+```
+
+Asks the server which account and workspace the saved session belongs to,
+and names the studio the session is signed in to. Prints "Not signed in" and
+exits `1` when there is no session.
+
 Source: `packages/cli/src/commands/*.ts` (each command's
-`usage`), `packages/cli/src/args.ts` (option parsing).
+`usage`), `packages/cli/src/args.ts` (option parsing),
+`packages/cli/src/mcp/` (the MCP server), `packages/cli/src/phiwebs/`
+(signing in, the studio and the marketplace).

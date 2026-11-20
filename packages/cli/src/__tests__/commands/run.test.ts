@@ -339,6 +339,45 @@ describe('pwf run serves the app records read-only', () => {
     expect(code).toBe(0)
   })
 
+  it('answers a record address of a copied build with a JSON 404 that says why, never with index.html', async () => {
+    const app = await builtShop()
+    // The build output copied away from its app folder: no record host beside it.
+    const copy = join(await tempDir(), 'site')
+    await cp(join(app, '.pwf', 'out'), copy, { recursive: true })
+    const c = capture(dirname(copy))
+    const code = await runRun({ positionals: [copy], flags: { port: '0' } }, c.io, {
+      until: async (server) => {
+        for (const path of ['_host/records/Product', '_host/records/Product/p1', '_host']) {
+          const res = await fetch(new URL(path, server.url))
+          expect(res.status, path).toBe(404)
+          expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8')
+          const body = (await res.json()) as { error: { code: string; message: string } }
+          expect(body.error.code).toBe('NO_RECORD_HOST')
+          expect(body.error.message).toContain('pwf dev')
+          expect(body.error.message).toContain('pwf run <app>')
+        }
+        // A write too: 404, not 405.
+        expect((await fetch(new URL('_host/records/Product', server.url), { method: 'POST', body: '{}' })).status).toBe(404)
+        // Page paths still get the shell.
+        expect((await fetch(new URL('menu', server.url))).headers.get('content-type')).toBe('text/html; charset=utf-8')
+      },
+    })
+    expect(code).toBe(0)
+    expect(c.text()).not.toMatch(/records are served read-only/)
+  })
+
+  it('answers a host address its host does not serve with a JSON 404 too', async () => {
+    const app = await builtShop()
+    const code = await runRun({ positionals: [app], flags: { port: '0' } }, capture(dirname(app)).io, {
+      until: async (server) => {
+        const res = await fetch(new URL('_host/no/such/route', server.url))
+        expect(res.status).toBe(404)
+        expect(res.headers.get('content-type')).toMatch(/^application\/json/)
+      },
+    })
+    expect(code).toBe(0)
+  })
+
   for (const served of ['app', 'build output']) {
     it(`reads through the dev query path and refuses writes — serving the ${served}`, async () => {
       const app = await builtShop()

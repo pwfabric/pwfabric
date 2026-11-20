@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { CommandFailure } from './failure.js'
 
 /** The order `pwpack.json` members are written in. Members not listed follow, in their original order. */
 export const IDENTITY_KEY_ORDER = [
@@ -53,7 +54,7 @@ export function formatJson(value: unknown): string {
 
 export async function readIdentityFile(root: string): Promise<IdentityJson> {
   const text = await readFile(join(root, IDENTITY_FILE), 'utf8').catch(() => null)
-  if (text === null) throw new Error(`${join(root, IDENTITY_FILE)} not found; run this inside a pwpack folder or pass --dir`)
+  if (text === null) throw new CommandFailure('NOT_A_PROJECT', `${join(root, IDENTITY_FILE)} not found; run this inside a pwpack folder or pass --dir`)
   let value: unknown
   try {
     value = JSON.parse(stripBom(text))

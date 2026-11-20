@@ -62,13 +62,28 @@ export interface EntityDeclaration {
   readonly unique?: readonly (readonly string[])[]
 }
 
+/**
+ * A file of the app folder the host cannot read as it must be: a mistake in
+ * the app, not in the engine. `file` is its absolute path, which the message
+ * starts with.
+ */
+export class AppFileError extends Error {
+  constructor(
+    readonly file: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'AppFileError'
+  }
+}
+
 function readJson(path: string): unknown {
   if (!existsSync(path)) return undefined
   const text = readFileSync(path, 'utf8')
   try {
     return JSON.parse(text) as unknown
   } catch (err) {
-    throw new Error(`${path} is not valid JSON: ${(err as Error).message}`)
+    throw new AppFileError(path, `${path} is not valid JSON: ${(err as Error).message}`)
   }
 }
 
@@ -212,7 +227,7 @@ function readRecordsFile(dir: string, typeId: string): Record<string, unknown>[]
   const json = readJson(jsonPath)
   if (json !== undefined) {
     if (!isObject(json) || !Array.isArray(json.data)) {
-      throw new Error(`${jsonPath} must be { "data": [ ...records ] }`)
+      throw new AppFileError(jsonPath, `${jsonPath} must be { "data": [ ...records ] }`)
     }
     return json.data.filter(isObject)
   }
@@ -227,9 +242,9 @@ function readRecordsFile(dir: string, typeId: string): Record<string, unknown>[]
       try {
         row = JSON.parse(line)
       } catch {
-        throw new Error(`${jsonl}:${n} is not valid JSON`)
+        throw new AppFileError(jsonl, `${jsonl}:${n} is not valid JSON`)
       }
-      if (!isObject(row)) throw new Error(`${jsonl}:${n} is not a JSON object`)
+      if (!isObject(row)) throw new AppFileError(jsonl, `${jsonl}:${n} is not a JSON object`)
       return row
     })
 }

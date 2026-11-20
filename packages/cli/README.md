@@ -1,8 +1,11 @@
 # pwf
 
 The PWFabric command line. It creates, checks, packs and serves PWFabric apps
-using only the engine's own packages. It never calls a hosted service: there is
-no login, publish or deploy.
+using only the engine's own packages, with no account and no network. `pwf mcp`
+serves the same work to AI coding tools over MCP. `pwf publish` puts an app
+online (or a pack in the marketplace) on [PhiWebs](https://phiwebs.com), the
+platform PWFabric was built for, once `pwf login` has signed in; every other
+command needs no account.
 
 ```sh
 pwf create my-shop --foundation ./foundation   # a new app folder
@@ -13,6 +16,9 @@ pwf add ../cards-2.1.0.pwpack                  # install and pin another pack
 pwf create --pack cards                        # a new, empty pack folder
 pwf add block content/price-tag                # a new block in a pack or app
 pwf run ./dist-app                             # serve a built pwapp
+pwf mcp                                        # MCP server for AI coding tools (stdio)
+pwf login                                      # sign in to PhiWebs (whoami, logout)
+pwf publish                                    # publish the app on PhiWebs, print its address
 ```
 
 Every command prints `--help`. Exit codes: `0` success, `1` failure (invalid
@@ -136,6 +142,46 @@ so path-routed apps work; a missing asset is a 404. Headers the folder's
 `_headers` file declares (the app's policy) are sent with matching files.
 Stop it with Ctrl-C.
 
+### `pwf mcp`
+
+A local MCP server on stdin/stdout for any MCP client (Claude Code, Cursor, VS
+Code, Gemini CLI, …): `npx -y @pwfabric/cli mcp` as the server command. Tools:
+`pwf_create_app`, `pwf_create_pack`, `pwf_add_pack`, `pwf_add_block`,
+`pwf_describe_project` (read-only), `pwf_validate`, `pwf_build`, `pwf_pack` —
+the same functions as the commands. Every tool takes `projectDir`, an absolute
+path, and writes only inside it; answers end with the next step, failures carry
+a code and the fix. No account, no network, no dev server (run `pwf dev`).
+Signed in (`pwf login`), it also lists the PhiWebs studio's tools and forwards
+their calls; signed out, `phiwebs_sign_in` explains how to sign in.
+`pwf_publish_pack` publishes a pack folder to the marketplace (signed in).
+`--local-only` serves the local tools only. Client configuration: see the CLI page on [pwfabric.com](https://pwfabric.com/cli#pwf-mcp).
+
+### `pwf publish [dir] [--project <id>] [--new]`
+
+An app: packs it, imports the `.pwpack` into a PhiWebs studio project (new,
+or the one remembered in `.pwf/phiwebs.json`), publishes it and prints the
+address. A pack: sends it to the PhiWebs marketplace for review as the
+workspace's publisher, under its own id. Findings and refusals carry their
+codes and fixes. Needs `pwf login`.
+
+### `pwf login [--server <url>] [--studio <url>] [--studio-url <url>] [--no-browser]`, `pwf logout`, `pwf whoami`
+
+Sign in to PhiWebs with OAuth 2.1 (authorization code + PKCE, a loopback
+redirect on `127.0.0.1`, dynamic client registration), for two resources: the
+API and the studio, each with its own token. The server is
+`https://api.phiwebs.com` unless `--server` or `PWF_PHIWEBS_URL` names
+another; the studio resource (token audience, `<resource>/mcp`) is `--studio`,
+`PWF_PHIWEBS_STUDIO_URL`, the one the API names, or `https://mcp.phiwebs.com`;
+the studio's web address (`/s/*`, what `pwf publish` calls) is `--studio-url`,
+`PWF_PHIWEBS_STUDIO_WEB`, the one the API names (`studio_url`), or
+`https://studio.phiwebs.com` (another resource: its own address). Every
+login registers a new client. A session from an earlier `pwf` gains
+its studio token by signing in again. Tokens live in `%APPDATA%\pwfabric` (Windows) or
+`$XDG_CONFIG_HOME/pwfabric` / `~/.config/pwfabric`, readable by the user only,
+and are refreshed when they expire. `logout` revokes (when the server can) and
+deletes them; `whoami` prints the account and workspace, or exits 1 when not
+signed in.
+
 ## Programmatic use
 
 The commands are plain objects (`COMMANDS` from the package entry) that write
@@ -144,7 +190,9 @@ through a `CommandIO` and resolve to an exit code, so they run in-process.
 behind `pwf create --pack` and `pwf add block`) and `readProject` (a folder as
 `pwf validate` and `pwf pack` read it), without the dev server, the compiler or
 the runner, so a tool that scaffolds and packs packs can bundle it. A bundled
-caller passes `engineVersion` to `createPack`.
+caller passes `engineVersion` to `createPack`. `@pwfabric/cli/mcp` carries the
+MCP server (`createPwfMcpServer`, `serveStdio`, `TOOLS`); it is the only entry
+that loads the MCP SDK.
 
 ## License
 

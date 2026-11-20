@@ -17,9 +17,9 @@
 import { createHash } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { join, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { CreateLocalHost, LocalHost } from '../host/index.js'
-import { assemblePwapp, type AssembleOptions, type AssembleResult } from './assemble.js'
+import { assemblePwapp, atomsLine, type AssembleOptions, type AssembleResult } from './assemble.js'
 import { createCompileCache } from './compile.js'
 import { formatDiagnostic, type AssembleDiagnostic } from './diagnostics.js'
 import { hostNeeds } from './needs-host.js'
@@ -77,6 +77,26 @@ function send(res: ServerResponse, status: number, type: string, body: string | 
     'content-length': typeof body === 'string' ? Buffer.byteLength(body) : body.byteLength,
   })
   res.end(head ? undefined : body)
+}
+
+/**
+ * A file of the app the local host could not read (the host's
+ * `AppFileError`, known by its shape: this module knows the host's interface
+ * only) as a diagnostic on that file: `JSON_INVALID` when it is not JSON,
+ * `FILE_INVALID` otherwise. Undefined for any other error.
+ */
+export function appFileDiagnostic(root: string, e: unknown): AssembleDiagnostic | undefined {
+  if (!(e instanceof Error) || e.name !== 'AppFileError') return undefined
+  const file = (e as Error & { file?: unknown }).file
+  if (typeof file !== 'string') return undefined
+  const rel = relative(root, file).split(sep).join('/')
+  const path = rel && !rel.startsWith('..') && !isAbsolute(rel) ? rel : file
+  return {
+    severity: 'error',
+    code: /is not valid JSON/.test(e.message) ? 'JSON_INVALID' : 'FILE_INVALID',
+    message: e.message.split(file).join(path),
+    path,
+  }
 }
 
 /** Lines for the terminal: everything that is the app's own, and a count of what pinned packs say. */
@@ -172,20 +192,44 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
     let result: AssembleResult
     await ensureHost()
     try {
+      // The host reads the app's files too (auth.json, entities.json, the
+      // receipts): one it cannot read is the app's mistake, reported as the
+      // build reports it — a code and the file — not as an engine failure.
+      let entries: Readonly<Record<string, unknown>> | undefined
+      let unreadable: AssembleDiagnostic | undefined
+      if (host) {
+        try {
+          // Host addresses go out relative ('/_host/…'), so a page reaches its host at whatever
+          // address it was opened on — localhost, 127.0.0.1, a LAN name, a preview proxy. An
+          // origin fixed at start-up made every other address a cross-origin write the browser blocks.
+          entries = host.envelopeEntries('')
+        } catch (e) {
+          unreadable = appFileDiagnostic(root, e)
+          if (!unreadable) throw e
+        }
+      }
       result = await assemblePwapp(root, {
         ...internals.assemble,
         publishedAt,
         cache,
         packMemo,
         shellExtra: RELOAD_CLIENT,
-        // Host addresses go out relative ('/_host/…'), so a page reaches its host at whatever
-        // address it was opened on — localhost, 127.0.0.1, a LAN name, a preview proxy. An
-        // origin fixed at start-up made every other address a cross-origin write the browser blocks.
-        ...(host ? { envelopeEntries: host.envelopeEntries('') } : {}),
+        ...(entries ? { envelopeEntries: entries } : {}),
       })
+      if (unreadable) {
+        // The build names the same file itself when it reads it (JSON_INVALID); say it once.
+        const named = result.diagnostics.some((d) => d.severity === 'error' && d.path === unreadable.path)
+        result = { ...result, ok: false, diagnostics: named ? result.diagnostics : [unreadable, ...result.diagnostics] }
+      }
     } catch (e) {
+      // An engine failure: its message, and the stack only when asked (pwf dev --debug).
+      const message = e instanceof Error ? (options.debug ? (e.stack ?? e.message) : e.message) : String(e)
       const diagnostics: AssembleDiagnostic[] = [
-        { severity: 'error', code: 'INTERNAL', message: e instanceof Error ? (e.stack ?? e.message) : String(e) },
+        {
+          severity: 'error',
+          code: 'INTERNAL',
+          message: options.debug ? message : `${message} (an engine error; pwf dev --debug prints its stack)`,
+        },
       ]
       result = {
         ok: false,
@@ -200,9 +244,7 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
     log(
       `${result.ok ? 'built' : 'build failed'} in ${result.ms} ms — ${stats.pages} page${stats.pages === 1 ? '' : 's'}, ${
         stats.blocks
-      } block type${stats.blocks === 1 ? '' : 's'}, ${stats.compiled}/${stats.atoms} atoms compiled (${stats.fromCache} from cache${
-        stats.failed ? `, ${stats.failed} failed` : ''
-      })`
+      } block type${stats.blocks === 1 ? '' : 's'}, ${atomsLine(stats)}`
     )
     for (const line of logLines(result.diagnostics)) log(`  ${line}`)
     const sig = servedSignature(result)
