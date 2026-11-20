@@ -1,5 +1,9 @@
 # @pwfabric/authoring
 
+## 3.3.1
+
+- No changes; released with the other packages at 3.3.1.
+
 ## 3.3.0
 
 - No changes; released with the other packages at 3.3.0.
