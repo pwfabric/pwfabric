@@ -121,9 +121,27 @@ export async function readSession(options: SessionOptions): Promise<Session | nu
   if (isFresh(saved.expiresAt, now)) {
     return { server, accessToken: saved.accessToken, ...(saved.scope ? { scope: saved.scope } : {}) }
   }
+  return refreshedSession(server, saved, now, options)
+}
+
+/** Refreshes the API's access token of `saved`, saves the rotated tokens, and answers the session. */
+async function refreshedSession(server: string, saved: SavedTokens, now: number, options: SessionOptions): Promise<Session> {
   const tokens = tokensFrom(await refresh(server, saved, undefined, options), saved, now)
   await saveTokens(server, tokens, options)
   return { server, accessToken: tokens.accessToken, ...(tokens.scope ? { scope: tokens.scope } : {}) }
+}
+
+/**
+ * {@link readSession}, the API's access token refreshed even when it has not
+ * expired yet: for a call the API refused with 401 although the token looked
+ * fresh. Null when not signed in; a refresh the server refuses forgets the
+ * session and fails with SESSION_EXPIRED.
+ */
+export async function refreshSession(options: SessionOptions): Promise<Session | null> {
+  const server = serverUrl(options.server, options.env)
+  const saved = await readTokens(server, options)
+  if (!saved) return null
+  return refreshedSession(server, saved, (options.now ?? Date.now)(), options)
 }
 
 /** What to do with a session saved before pwf signed in to the studio. */

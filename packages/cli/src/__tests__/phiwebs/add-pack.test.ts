@@ -63,7 +63,7 @@ function mockedFetch(api: FakeServer, answer: Answer, bytes: Uint8Array, seen: S
     const authorization = new Headers(init?.headers).get('authorization')
     if (url === `${api.url}${PACK_SOURCES_PATH}`) {
       seen.push({ url, authorization })
-      return Response.json({ data: { packs: answer.packs ?? [], skipped: answer.skipped ?? [], expiresAt: new Date().toISOString() } })
+      return Response.json({ data: { packs: answer.packs ?? [], skipped: answer.skipped ?? [] } })
     }
     if (url === DOWNLOAD) {
       seen.push({ url, authorization })
@@ -186,6 +186,113 @@ describe('pwf add <PhiWebs pack id>', () => {
     expect(parsePackRef('@pwpack/cards')).toBeNull()
     expect(parsePackRef('./cards.pwpack')).toBeNull()
     expect(parsePackRef('@pwpack/Acme/cards')).toBeNull()
+  })
+})
+
+describe('pwf add <PhiWebs pack id>, downloaded from the API itself', () => {
+  const FILE = '/api/pwpacks/sources/file'
+
+  /**
+   * The pack sources answer with a download on the API's own origin, without
+   * `expiresAt`; the download is answered by `onFile` (each try recorded),
+   * everything else by the fake API (its token endpoint included).
+   */
+  function apiFetch(api: FakeServer, bytes: Uint8Array, seen: Seen[], onFile: (n: number) => Response | undefined = () => undefined): Fetch {
+    let tries = 0
+    return (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input)
+      const authorization = new Headers(init?.headers).get('authorization')
+      if (url === `${api.url}${PACK_SOURCES_PATH}`) {
+        seen.push({ url, authorization })
+        const downloadUrl = `${api.url}${FILE}?id=${encodeURIComponent(ID)}&version=2.1.0`
+        return Response.json({ data: { packs: [{ id: ID, version: '2.1.0', sha256: sha256Hex(bytes), downloadUrl }], skipped: [] } })
+      }
+      if (url.startsWith(`${api.url}${FILE}?`)) {
+        seen.push({ url, authorization })
+        tries += 1
+        return onFile(tries) ?? new Response(bytes, { headers: { 'content-type': 'application/gzip' } })
+      }
+      return fetch(input, init)
+    }) as Fetch
+  }
+
+  it('sends the session token to a download on the API origin, accepts a listing without expiresAt, and prints neither', async () => {
+    const { api, env, dir, root } = await signedIn()
+    const archive = await cardsArchive()
+    const seen: Seen[] = []
+    const c = capture(root, env)
+    expect(await add(args([ID]), c.io, { fetch: apiFetch(api, archive.bytes, seen) }), c.text()).toBe(0)
+    expect(c.out[0]).toBe(`Added ${ID}@2.1.0`)
+    const saved = JSON.parse(await readFile(join(dir, CREDENTIALS_FILE), 'utf8')).servers[api.url]
+    expect(seen.map((s) => s.authorization)).toEqual([`Bearer ${saved.accessToken}`, `Bearer ${saved.accessToken}`])
+    expect(c.text()).not.toContain(saved.accessToken)
+    expect(c.text()).not.toContain(FILE)
+    expect(c.text()).not.toMatch(/expires/i)
+  })
+
+  it('refreshes the token once after a 401, and stops at a second 401 asking for pwf login', async () => {
+    const { api, env, dir, root } = await signedIn()
+    const archive = await cardsArchive()
+    const before = JSON.parse(await readFile(join(dir, CREDENTIALS_FILE), 'utf8')).servers[api.url]
+    const seen: Seen[] = []
+    const c = capture(root, env)
+    const once = apiFetch(api, archive.bytes, seen, (n) => (n === 1 ? new Response('{}', { status: 401 }) : undefined))
+    expect(await add(args([ID]), c.io, { fetch: once }), c.text()).toBe(0)
+    const after = JSON.parse(await readFile(join(dir, CREDENTIALS_FILE), 'utf8')).servers[api.url]
+    expect(after.accessToken).not.toBe(before.accessToken)
+    expect(seen.map((s) => s.authorization)).toEqual([`Bearer ${before.accessToken}`, `Bearer ${before.accessToken}`, `Bearer ${after.accessToken}`])
+    expect(c.text()).not.toContain(after.accessToken)
+
+    const pwpackJson = await readFile(join(root, 'pwpack.json'), 'utf8')
+    const refused: Seen[] = []
+    const r = capture(root, env)
+    expect(await add(args([ID]), r.io, { fetch: apiFetch(api, archive.bytes, refused, () => new Response('{}', { status: 401 })) })).toBe(1)
+    expect(refused.filter((s) => s.url.includes(FILE))).toHaveLength(2)
+    expect(r.err[0]).toMatch(/^SESSION_REFUSED: /)
+    expect(r.err[1]).toBe('fix: Run `pwf login` to sign in again.')
+    expect(r.text()).not.toContain(FILE)
+    expect(r.text()).not.toMatch(/Bearer|[0-9a-f]{24}/)
+    expect(await readFile(join(root, 'pwpack.json'), 'utf8')).toBe(pwpackJson)
+  })
+
+  it('maps a 403, a 404 and another failure of the download to its code', async () => {
+    const { api, env, root } = await signedIn()
+    const archive = await cardsArchive()
+    const run = async (status: number): Promise<string[]> => {
+      const c = capture(root, env)
+      expect(await add(args([ID]), c.io, { fetch: apiFetch(api, archive.bytes, [], () => new Response('{}', { status })) })).toBe(1)
+      expect(c.text()).not.toContain(FILE)
+      return c.err
+    }
+    expect((await run(403))[0]).toMatch(/^SESSION_REFUSED: /)
+    expect(await run(404)).toEqual([
+      `PACK_NOT_INSTALLED: the download of ${ID}@2.1.0 was not found in your PhiWebs workspace`,
+      'fix: Install it in your PhiWebs workspace from the marketplace first (or check the id and version), then add it again.',
+    ])
+    expect((await run(500))[0]).toBe(`PACK_DOWNLOAD_FAILED: the download of ${ID}@2.1.0 answered HTTP 500`)
+  })
+
+  it('sends no token to another origin, and refuses a plain-http download from an https API', async () => {
+    const archive = await cardsArchive()
+    const seen: Seen[] = []
+    const other: Fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input)
+      seen.push({ url, authorization: new Headers(init?.headers).get('authorization') })
+      if (url.endsWith(PACK_SOURCES_PATH)) {
+        const downloadUrl = url.startsWith('https://api.example.com') ? 'http://api.example.com/file' : 'https://api.example.com/api/pwpacks/sources/file?id=x'
+        return Response.json({ data: { packs: [{ id: ID, version: '2.1.0', sha256: sha256Hex(archive.bytes), downloadUrl }] } })
+      }
+      return new Response(archive.bytes)
+    }) as Fetch
+    const { downloadPackSource } = await import('../../phiwebs/pack-sources.js')
+    // A local (http) API whose download lives elsewhere: that origin gets no token.
+    const got = await downloadPackSource({ id: ID }, { server: 'http://127.0.0.1:9', accessToken: 'tok-secret', fetch: other })
+    expect(got.sha256).toBe(sha256Hex(archive.bytes))
+    expect(seen.map((s) => s.authorization)).toEqual(['Bearer tok-secret', null])
+    // An https API never downloads over plain http, even from its own host.
+    seen.length = 0
+    await expect(downloadPackSource({ id: ID }, { server: 'https://api.example.com', accessToken: 'tok-secret', fetch: other })).rejects.toMatchObject({ code: 'PACK_DOWNLOAD_FAILED' })
+    expect(seen).toHaveLength(1)
   })
 })
 

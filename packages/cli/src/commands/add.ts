@@ -15,7 +15,7 @@ import { addBlock } from './lib/scaffold.js'
 import type { StoreOptions } from '../phiwebs/config.js'
 import type { Fetch } from '../phiwebs/oauth.js'
 import { downloadPackSource, packSourceFailure, parsePackRef } from '../phiwebs/pack-sources.js'
-import { readSession } from '../phiwebs/session.js'
+import { readSession, refreshSession } from '../phiwebs/session.js'
 import { SERVER_HELP } from './login.js'
 
 /** The word that turns `pwf add` into `pwf add block`. A pack folder named so is given as `./block`. */
@@ -106,7 +106,17 @@ export async function addPackFrom(root: string, base: string, arg: string, deps?
   const doc = await readIdentityFile(root)
   const session = deps ? await readSession(deps) : null
   if (!session) throw packSourceFailure('NOT_SIGNED_IN', `${arg} is a PhiWebs pack id, and pwf is not signed in to PhiWebs`)
-  const source = await downloadPackSource(ref, { server: session.server, accessToken: session.accessToken, ...(deps?.fetch ? { fetch: deps.fetch } : {}) })
+  const refresh = async (): Promise<string> => {
+    const renewed = deps ? await refreshSession(deps) : null
+    if (!renewed) throw packSourceFailure('NOT_SIGNED_IN', `${arg} is a PhiWebs pack id, and pwf is not signed in to PhiWebs`)
+    return renewed.accessToken
+  }
+  const source = await downloadPackSource(ref, {
+    server: session.server,
+    accessToken: session.accessToken,
+    refresh,
+    ...(deps?.fetch ? { fetch: deps.fetch } : {}),
+  })
   const name = `${source.id}@${source.version}`
   const incoming = await readPwpack(source.bytes).catch((e: unknown) => {
     throw new CommandFailure('PACK_INVALID', `${name} from PhiWebs is not a readable .pwpack: ${(e as Error).message}`)
