@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { loadEnvelope, wantsAuthJson, type JsonFetcher } from './load-envelope.js'
 
-const AT = { source: './pwpack', blocksBase: './blocks', enginesBase: './engines' }
+const AT = { documentBase: 'https://app.example/', source: './pwpack', blocksBase: './blocks', enginesBase: './engines' }
 
 /** A fetcher over a fixed set of files; a missing file rejects as a 404 does. */
 function served(files: Record<string, unknown>): { fetchJson: JsonFetcher; asked: string[] } {
@@ -110,5 +110,60 @@ describe('loadEnvelope with a publish version', () => {
     const { fetchJson, asked } = served({ ...base, './pwpack/project.json': project })
     await loadEnvelope({ ...AT, version: undefined }, fetchJson)
     expect(asked.every((u) => !u.includes('?'))).toBe(true)
+  })
+})
+
+describe('loadEnvelope: module URLs resolve against the app folder, not the page', () => {
+  const blocks = [{ blockType: 'text', moduleUrl: 'blocks/text.1a2b3c4d.mjs', integrity: 'x' }]
+  const engines = [
+    { connection: 'graph', atomId: 'Graph', kind: 'connector', moduleUrl: 'engines/Graph.1a2b3c4d.mjs', integrity: 'y' },
+    { connection: 'decl', atomId: 'Decl', kind: 'connector', engine: { kind: 'rest' } },
+  ]
+  const files = (prefix: string): Record<string, unknown> => ({
+    './pwpack/project.json': project,
+    [`${prefix}blocks/manifest.json`]: blocks,
+    [`${prefix}engines/manifest.json`]: engines,
+  })
+
+  it('standard layout (the shell in the app folder): the same address the page would resolve', async () => {
+    for (const documentBase of ['https://app.example/', 'https://app.example/index.html', 'https://host.example/apps/menu/']) {
+      const env = await loadEnvelope({ ...AT, documentBase }, served(files('./')).fetchJson)
+      expect(env.blockManifest[0]?.moduleUrl).toBe(new URL('blocks/text.1a2b3c4d.mjs', documentBase).href)
+      expect(env.engineManifest?.[0]?.moduleUrl).toBe(new URL('engines/Graph.1a2b3c4d.mjs', documentBase).href)
+    }
+  })
+
+  it('a page at another path than the app files: the modules resolve to the files', async () => {
+    const at = {
+      documentBase: 'https://host.example/sites/team/pages/home.aspx',
+      source: '/assets/menu/pwpack',
+      blocksBase: '/assets/menu/blocks',
+      enginesBase: '/assets/menu/engines',
+    }
+    const env = await loadEnvelope(at, served({ ...files('/assets/menu/'), '/assets/menu/pwpack/project.json': project }).fetchJson)
+    expect(env.blockManifest[0]?.moduleUrl).toBe('https://host.example/assets/menu/blocks/text.1a2b3c4d.mjs')
+    expect(env.engineManifest?.[0]?.moduleUrl).toBe('https://host.example/assets/menu/engines/Graph.1a2b3c4d.mjs')
+  })
+
+  it('app files on another origin (a CDN): the modules resolve there', async () => {
+    const at = {
+      documentBase: 'https://host.example/page',
+      source: 'https://cdn.example/apps/menu/pwpack',
+      blocksBase: 'https://cdn.example/apps/menu/blocks',
+      enginesBase: 'https://cdn.example/apps/menu/engines',
+    }
+    const env = await loadEnvelope(
+      at,
+      served({ ...files('https://cdn.example/apps/menu/'), 'https://cdn.example/apps/menu/pwpack/project.json': project }).fetchJson
+    )
+    expect(env.blockManifest[0]?.moduleUrl).toBe('https://cdn.example/apps/menu/blocks/text.1a2b3c4d.mjs')
+    expect(env.engineManifest?.[0]?.moduleUrl).toBe('https://cdn.example/apps/menu/engines/Graph.1a2b3c4d.mjs')
+  })
+
+  it('keeps a declared engine (no module) as it is, and an absolute moduleUrl unchanged', async () => {
+    const abs = [{ blockType: 'x', moduleUrl: 'https://cdn.example/x.mjs', integrity: 'z' }]
+    const env = await loadEnvelope(AT, served({ ...files('./'), './blocks/manifest.json': abs }).fetchJson)
+    expect(env.blockManifest[0]?.moduleUrl).toBe('https://cdn.example/x.mjs')
+    expect(env.engineManifest?.[1]).toEqual(engines[1])
   })
 })
