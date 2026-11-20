@@ -19,14 +19,16 @@
  *   record key) — the runtime's first render decides it (data-protocol
  *   §1.1). A `requiresSession` source is loading too: who is signed in is
  *   not known to the build (`pending`, {@link firstFrameAuthState}, §2.6);
- * - the phone layout, `xs` ({@link STATIC_VIEWPORT}): mobile first;
+ * - the phone layout, `xs` ({@link STATIC_VIEWPORT}): mobile first — the
+ *   build writes what a wider window changes as CSS beside it
+ *   ({@link STATIC_LAYOUT_ID}), so the frame is the page at every width;
  * - the app's locale, `en` when it names none ({@link firstFrameLocale}).
  *
  * Whatever the real visit differs in — a visitor who is signed in, a wider
  * window, cached rows — the runner applies right after hydration, as an
- * update of the same tree. A visit whose address seeds the page's state
- * (`?id=12`) is not painted from the build at all (the shell's first-paint
- * script leaves the root empty): that page's first frame is not the build's.
+ * update of the same tree. A visit whose address carries a query key that
+ * changes the page's first frame is not painted from the build at all (the
+ * shell's first-paint script empties the root): that frame is not the build's.
  *
  * @module @pwfabric/runner/first-frame
  */
@@ -43,6 +45,15 @@ export const STATIC_VIEWPORT = 'xs'
 
 /** Below this window width the breakpoint is {@link STATIC_VIEWPORT} (contracts BREAKPOINTS: `sm` starts at 640). */
 export const STATIC_VIEWPORT_MAX_WIDTH = 639
+
+/**
+ * The id of the `<style>` that lays the first frame out at every wider
+ * breakpoint (pwapp-format §2.5): the frame is drawn at {@link STATIC_VIEWPORT}
+ * and this stylesheet gives each node the inline style a wider window would.
+ * The runner removes it once the page is its own at the visitor's width —
+ * after the update that follows hydration — or when it draws the page anew.
+ */
+export const STATIC_LAYOUT_ID = 'pw-static-layout'
 
 /** The attribute on `#pw-root` naming the page whose first frame it holds. */
 export const STATIC_PAGE_ATTR = 'data-pw-static'

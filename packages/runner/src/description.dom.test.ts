@@ -5,7 +5,7 @@
  * The shell had none, so search results and link previews had nothing to say.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { applyDescription, descriptionOf } from './description.js'
+import { applyCanonical, applyDescription, canonicalOf, descriptionOf, publicOriginOf } from './description.js'
 
 const meta = (): HTMLMetaElement | null => document.head.querySelector('meta[name="description"]')
 
@@ -33,5 +33,29 @@ describe('applyDescription', () => {
     expect(meta()?.content).toBe('A café.')
     applyDescription(document, undefined, undefined)
     expect(meta()).toBeNull()
+  })
+})
+
+describe('the canonical address (envelope §4)', () => {
+  const link = (): HTMLLinkElement | null => document.head.querySelector('link[rel="canonical"]')
+  afterEach(() => link()?.remove())
+
+  it('is the app’s public origin with the page’s path; none without an http(s) origin', () => {
+    expect(canonicalOf('https://example.com', '/pricing/')).toBe('https://example.com/pricing/')
+    expect(canonicalOf('https://example.com/', '/')).toBe('https://example.com/')
+    expect(canonicalOf('https://example.com:8443', '/shop/a/')).toBe('https://example.com:8443/shop/a/')
+    expect(canonicalOf(undefined, '/pricing/')).toBeUndefined()
+    expect(canonicalOf('ftp://example.com', '/')).toBeUndefined()
+    expect(canonicalOf('not a url', '/')).toBeUndefined()
+    expect(publicOriginOf(' https://Example.com ')).toBe('https://example.com')
+  })
+
+  it('writes the link, keeps one per document, and removes it for a page with none', () => {
+    applyCanonical(document, 'https://example.com/')
+    applyCanonical(document, 'https://example.com/pricing/')
+    expect(document.head.querySelectorAll('link[rel="canonical"]')).toHaveLength(1)
+    expect(link()?.getAttribute('href')).toBe('https://example.com/pricing/')
+    applyCanonical(document, undefined)
+    expect(link()).toBeNull()
   })
 })

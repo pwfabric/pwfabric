@@ -19,6 +19,7 @@ export { pageKeyOf, rewriteHrefs, assembleNav, assembleFooter, FOOTER_BAND_ID, r
 export {
   STATIC_VIEWPORT,
   STATIC_VIEWPORT_MAX_WIDTH,
+  STATIC_LAYOUT_ID,
   STATIC_PAGE_ATTR,
   PAGE_ATTR,
   FIRST_FRAME_USER,
@@ -34,7 +35,8 @@ export { projectAppearanceRef } from './run-app.js'
 export type { ToHref } from './helpers.js'
 
 // Router
-export { createRouter, resolveRouterMode } from './router.js'
+export { createRouter, resolveRouterMode, pathHref, hashHref } from './router.js'
+export { descriptionOf, publicOriginOf, canonicalOf } from './description.js'
 export { renderNotFound } from './not-found.js'
 
 // Preview bridge (off by default; see preview-bridge.ts)

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { createRouter } from './router.js'
+import { createRouter, hashHref, pathHref } from './router.js'
 
 /**
  * `createRouter` reads `location` once at construction (base derivation) and
@@ -184,5 +184,32 @@ describe('hash router', () => {
       stubLocation('/index.html', '#/#tepe')
       expect(createRouter('hash', PAGES, 'home').current()).toBe('home')
     })
+  })
+})
+
+/**
+ * A page's address under path routing is the folder its own document is
+ * served from (`<key>/index.html`, pwapp-format §1): written so, a static
+ * host answers it without a redirect, and the entry page is the base itself.
+ */
+describe('path router addresses: the folder of each page’s own document', () => {
+  it('writes the entry as the base and every other page as <base><key>/', () => {
+    stubLocation('/')
+    const router = createRouter('path', PAGES, 'home', { basePath: '/' })
+    expect(router.toHref('home')).toBe('/')
+    expect(router.toHref('people')).toBe('/people/')
+    expect(pathHref('/shop/', 'home')('people')).toBe('/shop/people/')
+    expect(pathHref('/shop/', 'home')('home')).toBe('/shop/')
+  })
+
+  it('reads the page back with or without the slash', () => {
+    for (const path of ['/people/', '/people']) {
+      stubLocation(path)
+      expect(createRouter('path', PAGES, 'home', { basePath: '/' }).current()).toBe('people')
+    }
+  })
+
+  it('the hash router is unchanged: #/<key>', () => {
+    expect(hashHref('people')).toBe('#/people')
   })
 })
