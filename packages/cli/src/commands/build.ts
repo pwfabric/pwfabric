@@ -131,6 +131,9 @@ export async function runBuild(args: ParsedArgs, io: CommandIO): Promise<number>
   const line = routingLine(routing)
   if (line) io.out(line)
   io.out(`wrote ${result.files.size} files to ${shown(io.cwd, built.out)}`)
+  // What search engines and language models read, when the app declares its origin.
+  const found = ['sitemap.xml', 'llms.txt', 'llms-full.txt'].filter((f) => result.files.has(f))
+  if (found.length > 0) io.out(`for search engines and language models: ${found.join(', ')}`)
   return 0
 }
 
@@ -155,6 +158,7 @@ export const buildCommand: Command = {
 Each page's document carries its first frame as visible HTML, its title and
 description, and — when app/plan.json declares the app's public "origin" — its
 canonical address and Open Graph tags; sitemap.xml then lists every page and
-robots.txt names it.`,
+robots.txt names it, and a path-routed build writes llms.txt (every page, with
+its title and description) and llms-full.txt (every page's words as text).`,
   run: runBuild,
 }

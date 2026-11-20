@@ -38,6 +38,7 @@ import { withSessionSources } from '../host/session-sources.js'
 import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
 import { deriveCsp, headersFile } from './csp.js'
 import { documentHead, isRecordPage, pageDocuments, publicOriginOf, robotsTxt, SERVED_FOLDERS, sitemapXml } from './documents.js'
+import { llmsFullTxt, llmsTxt, type LlmsPage } from './llms.js'
 import { firstPaintData, paintPages, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
 import { canonicalOf, hashHref, pathHref } from '@pwfabric/runner'
 import {
@@ -198,6 +199,36 @@ function declaredOrigins(atom: CompiledAtom, diagnostics: AssembleDiagnostic[]):
  */
 function titleOf(plan: unknown): string {
   return textOf(plan, 'title') ?? ''
+}
+
+/** A receipt member that is text as it stands — not empty, no expression — trimmed. */
+function literalText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' && !value.includes('{{') ? value.trim() : undefined
+}
+
+/**
+ * `keys` in the app's navigation order: the entry page first (the navbar's
+ * logo links to it), then each page `navigation.json` links to, in document
+ * order (`surfaceKey`, or a root-relative `href`), then the rest as the app
+ * lists them.
+ */
+export function navigationOrder(navigation: unknown, entry: string, keys: readonly string[]): string[] {
+  const linked: string[] = [entry]
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(walk)
+    if (!isRecord(node)) return
+    const key =
+      typeof node['surfaceKey'] === 'string'
+        ? node['surfaceKey']
+        : typeof node['href'] === 'string' && /^\/(?!\/)/.test(node['href'])
+          ? node['href'].replace(/[?#].*$/, '').replace(/^\/+|\/+$/g, '') || entry
+          : undefined
+    if (key !== undefined) linked.push(key)
+    for (const v of Object.values(node)) walk(v)
+  }
+  walk(navigation)
+  const ordered = [...new Set(linked)].filter((k) => keys.includes(k))
+  return [...ordered, ...keys.filter((k) => !ordered.includes(k))]
 }
 
 /** A non-empty trimmed string member of `doc`, or undefined. */
@@ -834,16 +865,49 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // THE SITEMAP: every page's own address on the app's public origin — not a
   // record page (it names no page without its record), and nothing of an app
   // that requires sign-in, which a crawler cannot read.
-  const listed = origin === undefined || gated
+  const listedDocs = origin === undefined || gated
     ? []
     : documents
         .filter((d) => !d.notFound && d.key !== undefined && d.path !== undefined)
         .filter((d) => !isRecordPage(servedReceipts.get(d.key as string)))
-        .map((d) => canonicalOf(origin, d.path as string))
-        .filter((u): u is string => u !== undefined)
-  const sitemap = listed.length > 0 ? canonicalOf(origin, `${base.endsWith('/') ? base : `${base}/`}sitemap.xml`) : undefined
+        .map((d) => ({ key: d.key as string, url: canonicalOf(origin, d.path as string) }))
+        .filter((d): d is { key: string; url: string } => d.url !== undefined)
+  const listed = listedDocs.map((d) => d.url)
+  const baseDir = base.endsWith('/') ? base : `${base}/`
+  const sitemap = listed.length > 0 ? canonicalOf(origin, `${baseDir}sitemap.xml`) : undefined
   if (sitemap !== undefined) files.set('sitemap.xml', enc.encode(sitemapXml(listed)))
   files.set('robots.txt', enc.encode(robotsTxt(sitemap)))
+  // THE PAGES FOR A LANGUAGE MODEL (llms.txt, llms-full.txt): the sitemap's
+  // pages, in the app's navigation order, under path routing — where each
+  // page has an address of its own to cite.
+  if (byPath && origin !== undefined && listedDocs.length > 0) {
+    const order = navigationOrder(JSON.parse(new TextDecoder().decode(files.get('pwpack/navigation.json'))) as unknown, entry, listedDocs.map((d) => d.key))
+    const llmsPages: LlmsPage[] = order.map((key) => {
+      const doc = listedDocs.find((d) => d.key === key) as { key: string; url: string }
+      const receipt = servedReceipts.get(key)
+      const own = painted.find((p) => p.key === key)
+      const description = literalText(isRecord(receipt) ? receipt['description'] : undefined)
+      return {
+        title: literalText(isRecord(receipt) ? receipt['title'] : undefined) ?? (title || key),
+        url: doc.url,
+        ...(description !== undefined ? { description } : {}),
+        ...(own ? { html: own.html } : {}),
+      }
+    })
+    const appInfo = { name: title || identity.id, ...(appDescription !== undefined ? { description: appDescription } : {}) }
+    // A link the frame draws, as an absolute address: against the app's base
+    // on its origin; a fragment against the page it is on.
+    const linkFor = (page: LlmsPage) => (href: string): string | undefined => {
+      if (href.trim() === '' || href.includes('{{')) return undefined
+      try {
+        return new URL(href, href.startsWith('#') ? page.url : `${origin}${baseDir}`).href
+      } catch {
+        return undefined
+      }
+    }
+    files.set('llms.txt', enc.encode(llmsTxt(appInfo, llmsPages)))
+    files.set('llms-full.txt', enc.encode(llmsFullTxt(appInfo, llmsPages, linkFor)))
+  }
 
   const publishedAtoms = atoms
     .filter((a) => used.has(a))

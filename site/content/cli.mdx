@@ -186,7 +186,9 @@ page again. Its `<head>` is the page's own: its title, its description and,
 when `app/plan.json` declares the app's public `origin` (`"origin":
 "https://example.com"`), its canonical address and Open Graph tags
 (`og:image` from the plan's `image`). With an origin the build also writes
-`sitemap.xml`, and `robots.txt` names it. A path-routed build runs as it is on
+`sitemap.xml`, and `robots.txt` names it, plus [`llms.txt`](https://llmstxt.org)
+(every page with its title and description) and `llms-full.txt` (every page's
+words as text, the navbar and footer once at the end). A path-routed build runs as it is on
 any static host and under [`pwf run`](#pwf-run); an unknown address is answered
 with `404.html`, status 404 (see
 [Routing on a static host](/self-host#routing-on-a-static-host)).

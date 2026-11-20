@@ -61,8 +61,15 @@ describe('static server', () => {
     await mkdir(join(dir, 'pricing'), { recursive: true })
     await writeFile(join(dir, 'pricing', 'index.html'), '<!doctype html><base href="/" /><p>pricing</p>')
     await writeFile(join(dir, '404.html'), '<!doctype html><base href="/" /><p>not here</p>')
+    await writeFile(join(dir, 'llms.txt'), '# App')
+    await writeFile(join(dir, 'llms-full.txt'), '# App')
     const server = await startStaticServer({ source: { dir }, port: 0 })
     try {
+      for (const file of ['llms.txt', 'llms-full.txt']) {
+        const res = await fetch(new URL(file, server.url))
+        expect(res.status, file).toBe(200)
+        expect(res.headers.get('content-type'), file).toBe('text/plain; charset=utf-8')
+      }
       for (const path of ['pricing', 'pricing/', 'pricing/index.html']) {
         const res = await fetch(new URL(path, server.url))
         expect(res.status, path).toBe(200)

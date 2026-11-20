@@ -29,10 +29,12 @@
 import { BREAKPOINTS } from '@pwfabric/core'
 
 /** An element of a rendered frame. */
-interface Element {
+export interface Element {
   readonly tag: string
   readonly attrs: ReadonlyMap<string, string>
   readonly children: Element[]
+  /** Its element children and its text (decoded), in document order. */
+  readonly content: (Element | string)[]
   /** The text of a `<style>` element. */
   text: string
   readonly parent: Element | null
@@ -57,11 +59,13 @@ const ATTR = /([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g
 
 /** The element tree of a frame's markup (its root holds the frame's top-level elements). */
 export function parseFrame(html: string): Element {
-  const root: Element = { tag: '#root', attrs: new Map(), children: [], text: '', parent: null }
+  const root: Element = { tag: '#root', attrs: new Map(), children: [], content: [], text: '', parent: null }
   let open: Element = root
   let i = 0
   while (i < html.length) {
     const lt = html.indexOf('<', i)
+    const textEnd = lt < 0 ? html.length : lt
+    if (textEnd > i) open.content.push(decode(html.slice(i, textEnd)))
     if (lt < 0) break
     if (html.startsWith('<!--', lt)) {
       const end = html.indexOf('-->', lt + 4)
@@ -102,8 +106,9 @@ export function parseFrame(html: string): Element {
       if (name === '/') continue
       attrs.set(name, decode(a[2] ?? a[3] ?? a[4] ?? ''))
     }
-    const el: Element = { tag, attrs, children: [], text: '', parent: open }
+    const el: Element = { tag, attrs, children: [], content: [], text: '', parent: open }
     open.children.push(el)
+    open.content.push(el)
     i = j + 1
     if (VOID.has(tag) || selfClosing) continue
     if (RAW.has(tag)) {
