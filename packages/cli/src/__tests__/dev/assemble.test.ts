@@ -122,7 +122,13 @@ describe('assemblePwapp', () => {
     // What each page needs is named once; the shell asks for the opened page's (page-hints.dom.test.ts).
     const hints = JSON.parse(html.match(/<script type="application\/json" id="pw-page-hints">(.*?)<\/script>/)?.[1] ?? '{}')
     const manifest = parse(r.files.get('blocks/manifest.json')) as { moduleUrl: string }[]
-    expect(hints.pages.home).toEqual({ receipt: 'pwpack/surfaces/home.receipt.json', modules: manifest.map((m) => m.moduleUrl).sort() })
+    expect(hints.pages.home).toEqual({
+      receipt: 'pwpack/surfaces/home.receipt.json',
+      modules: manifest.map((m) => m.moduleUrl).sort(),
+      frame: 'pwpack/surfaces/home.html',
+    })
+    // …and which page this document holds, so its frame is not asked for again.
+    expect(hints.page).toBe('home')
     expect(html).not.toMatch(/<script src=/)
     // A hashed name is the hash of the bytes.
     const { createHash } = await import('node:crypto')
@@ -302,7 +308,7 @@ describe('assemblePwapp', () => {
     expect((parse(hosted.files.get('pwpack/project.json')) as { identity?: Record<string, unknown> }).identity?.['door']).toBeUndefined()
   })
 
-  it('describes the app: the plan’s description, else the entry page’s', async () => {
+  it('describes each page: its own description, else the plan’s', async () => {
     const root = await app()
     const receiptPath = join(root, 'app', 'surfaces', 'home.receipt.json')
     const receipt = JSON.parse(await readFile(receiptPath, 'utf8')) as Record<string, unknown>
@@ -313,9 +319,14 @@ describe('assemblePwapp', () => {
     const planPath = join(root, 'app', 'plan.json')
     const plan = JSON.parse(await readFile(planPath, 'utf8').catch(() => '{}')) as Record<string, unknown>
     await writeFile(planPath, JSON.stringify({ ...plan, description: 'A demo app.' }))
+    // The page's own wins, as the runner keeps it (envelope §4).
+    const both = await assemblePwapp(root, { cacheDir: null })
+    expect(text(both.files.get('index.html'))).toContain('<meta name="description" content="The home page." />')
+    expect((parse(both.files.get('pwpack/project.json')) as Record<string, unknown>)['description']).toBe('A demo app.')
+    await writeFile(receiptPath, JSON.stringify(receipt))
     const fromPlan = await assemblePwapp(root, { cacheDir: null })
     expect(text(fromPlan.files.get('index.html'))).toContain('<meta name="description" content="A demo app." />')
-    expect((parse(fromPlan.files.get('pwpack/project.json')) as Record<string, unknown>)['description']).toBe('A demo app.')
+    expect(text(fromPlan.files.get('index.html'))).toContain('<meta property="og:description" content="A demo app." />')
   })
 
   it('says which command fills a missing pack cache', async () => {

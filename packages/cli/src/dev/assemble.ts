@@ -36,9 +36,11 @@ import { collectMedia, fillMediaSlots } from './media.js'
 import { declaredRecordFields, withRecordFields } from '../host/record-fields.js'
 import { withSessionSources } from '../host/session-sources.js'
 import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
-import { deriveCsp, headersFile, robotsTxt } from './csp.js'
-import { firstPaintData, paintPages, staticPageFile, staticRootHtml, type PaintedPage } from './static-paint.js'
-import { STATIC_VIEWPORT_MAX_WIDTH } from '@pwfabric/runner'
+import { deriveCsp, headersFile } from './csp.js'
+import { documentHead, isRecordPage, pageDocuments, publicOriginOf, robotsTxt, SERVED_FOLDERS, sitemapXml } from './documents.js'
+import { llmsFullTxt, llmsTxt, type LlmsPage } from './llms.js'
+import { firstPaintData, paintPages, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
+import { canonicalOf, hashHref, pathHref } from '@pwfabric/runner'
 import {
   BOOT_FILES,
   FIRST_PAINT_SCRIPT,
@@ -199,6 +201,36 @@ function titleOf(plan: unknown): string {
   return textOf(plan, 'title') ?? ''
 }
 
+/** A receipt member that is text as it stands — not empty, no expression — trimmed. */
+function literalText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' && !value.includes('{{') ? value.trim() : undefined
+}
+
+/**
+ * `keys` in the app's navigation order: the entry page first (the navbar's
+ * logo links to it), then each page `navigation.json` links to, in document
+ * order (`surfaceKey`, or a root-relative `href`), then the rest as the app
+ * lists them.
+ */
+export function navigationOrder(navigation: unknown, entry: string, keys: readonly string[]): string[] {
+  const linked: string[] = [entry]
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(walk)
+    if (!isRecord(node)) return
+    const key =
+      typeof node['surfaceKey'] === 'string'
+        ? node['surfaceKey']
+        : typeof node['href'] === 'string' && /^\/(?!\/)/.test(node['href'])
+          ? node['href'].replace(/[?#].*$/, '').replace(/^\/+|\/+$/g, '') || entry
+          : undefined
+    if (key !== undefined) linked.push(key)
+    for (const v of Object.values(node)) walk(v)
+  }
+  walk(navigation)
+  const ordered = [...new Set(linked)].filter((k) => keys.includes(k))
+  return [...ordered, ...keys.filter((k) => !ordered.includes(k))]
+}
+
 /** A non-empty trimmed string member of `doc`, or undefined. */
 function textOf(doc: unknown, key: string): string | undefined {
   const v = isRecord(doc) ? doc[key] : undefined
@@ -344,6 +376,19 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const signInPage = signInKey === undefined ? undefined : pages.find((p) => p.key === signInKey)
   const routes = pages.filter((p) => p !== notFoundPage && p !== signInPage)
   const entry = identity.app.entry
+  // Under path routing a route is a folder of the served app (`<key>/index.html`).
+  if ((options.router ?? 'hash') !== 'hash') {
+    for (const page of routes) {
+      if (page.key !== entry && SERVED_FOLDERS.includes(page.key)) {
+        diagnostics.push({
+          severity: 'error',
+          code: 'PAGE_KEY_RESERVED',
+          message: `page "${page.key}" is named like a folder of the served app (${SERVED_FOLDERS.join(', ')}); under path routing its address would be that folder. Rename the page.`,
+          path: page.path,
+        })
+      }
+    }
+  }
   if (!identity.app.surfaceOrder.includes(entry)) {
     diagnostics.push({ severity: 'error', code: 'ENTRY_NOT_A_PAGE', message: `app.entry "${entry}" is not in app.surfaceOrder`, path: 'pwpack.json' })
   }
@@ -552,12 +597,30 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // The app's words (`plan.json` `messages`), carried as they are: the runner
   // reads every word it draws there first (envelope §2).
   const messages = messagesOf(plan, diagnostics)
-  // The app in a sentence (`app/plan.json` `description`); the shell's
-  // <meta name="description"> falls back to the entry page's own, which is
-  // also what the runner shows on that page.
+  // The app in a sentence (`app/plan.json` `description`): every page's
+  // <meta name="description"> that states none of its own.
   const appDescription = textOf(plan, 'description')
-  const entryPage = routes.find((p) => p.key === entry)
-  const shellDescription = appDescription ?? textOf(entryPage?.receipt, 'description')
+  // Where the app is published (`plan.json` `origin`) and the picture a link
+  // preview shows (`image`): each page's canonical address and Open Graph tags.
+  const declaredOrigin = textOf(plan, 'origin')
+  const origin = publicOriginOf(declaredOrigin)
+  if (declaredOrigin !== undefined && (origin === undefined || new URL(declaredOrigin).pathname.replace(/\/+$/, '') !== '')) {
+    diagnostics.push({
+      severity: 'error',
+      code: 'ORIGIN_INVALID',
+      message: `plan.json "origin" is "${declaredOrigin}": it is the app's public origin, scheme and host only (https://example.com); the path the app is served under is the build's --base`,
+      path: 'app/plan.json',
+    })
+  }
+  const image = textOf(plan, 'image')
+  if (image !== undefined && !/^https?:\/\//i.test(image) && !app.folder.files.has(image.replace(/^\.?\//, ''))) {
+    diagnostics.push({
+      severity: 'error',
+      code: 'IMAGE_INVALID',
+      message: `plan.json "image" is "${image}": it is an http(s) address or a file of the app (media/<file>), and the app has no such file`,
+      path: 'app/plan.json',
+    })
+  }
   // An app that requires sign-in shows a visitor the gate first; whether the
   // renderer is ever needed is up to the visitor, so it is not preloaded.
   const gated = isRecord(authDoc) && authDoc['required'] === true
@@ -598,24 +661,54 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const hinted: Record<string, PageHints> = {}
   if (!gated) for (const page of [...routes, ...(notFoundPage ? [notFoundPage] : [])]) hinted[page.key] = hintsOf(page)
   const router = options.router ?? 'hash'
+  const byPath = router !== 'hash'
+  const base = options.base ?? '/'
+  // A page's address, as the runner's router writes it — into every link the
+  // first frame draws, and the document each page is served from.
+  const toHref = byPath ? pathHref(base, entry) : hashHref
   // The inline scripts read the address as the runner will: by path when it routes by path.
   const routed = router === 'hash' ? {} : { router }
   const pageHints = {
     ...routed,
     entry,
-    maxWidth: STATIC_VIEWPORT_MAX_WIDTH,
     routes: routes.map((p) => p.key),
     ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
     pages: hinted,
   }
   const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref, router })
   const assets: ShellAssets = { ...assets0, boot: hashedName('assets/boot.js', bootJs) }
-  let firstPaint: { rootHtml: string; data: Record<string, unknown> } | undefined
-  const shell = (csp?: string): Uint8Array =>
-    enc.encode(
+  let painted: readonly PaintedPage[] = []
+  let firstPaintJson: Record<string, unknown> | undefined
+  const documents = pageDocuments({
+    byPath,
+    entry,
+    routes: routes.map((p) => p.key),
+    ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
+    base,
+    toHref,
+  })
+  // One document per page under path routing, the one shell under hash
+  // routing: each with its page's head and its page's first frame.
+  const shell = (doc: (typeof documents)[number], csp?: string): Uint8Array => {
+    const own = doc.key === undefined ? undefined : painted.find((p) => p.key === doc.key)
+    const page = doc.key === undefined ? undefined : pages.find((p) => p.key === doc.key)
+    const head = documentHead({
+      doc,
+      receipt: page ? (servedReceipts.get(page.key) ?? page.receipt) : undefined,
+      appTitle: title,
+      ...(appDescription !== undefined ? { appDescription } : {}),
+      ...(origin !== undefined ? { origin } : {}),
+      ...(image !== undefined ? { image } : {}),
+      gated,
+      base,
+    })
+    return enc.encode(
       buildShellHtml({
-        title,
-        ...(shellDescription !== undefined ? { description: shellDescription } : {}),
+        title: head.title,
+        ...(head.description !== undefined ? { description: head.description } : {}),
+        ...(head.canonical !== undefined ? { canonical: head.canonical } : {}),
+        ...(head.image !== undefined ? { image: head.image } : {}),
+        ...(head.noindex ? { noindex: true } : {}),
         ...(locale !== undefined ? { lang: locale } : {}),
         webfontHref,
         ...(options.shellExtra !== undefined ? { bodyExtra: options.shellExtra } : {}),
@@ -624,12 +717,15 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         preloadRenderer: !gated,
         bootFiles: BOOT_FILES.filter((f) => files.has(f)),
         themeCss: new TextDecoder().decode(themeCss),
-        pageHints,
-        ...(firstPaint ? { firstPaint } : {}),
+        pageHints: { ...pageHints, ...(doc.key !== undefined ? { page: doc.key } : {}) },
+        ...(firstPaintJson
+          ? { firstPaint: { rootHtml: own ? staticRootHtml(own) : '', layoutCss: own?.layoutCss ?? '', data: firstPaintJson } }
+          : {}),
         router,
         ...(options.base !== undefined ? { base: options.base } : {}),
       })
     )
+  }
   files.set(assets.boot, enc.encode(bootJs))
   files.set(assets.runner, enc.encode(runtime.runnerJs))
   files.set(assets.embed, enc.encode(runtime.embedJs))
@@ -654,6 +750,8 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         ...(messages !== undefined ? { messages } : {}),
       }),
       ...(appDescription !== undefined ? { description: appDescription } : {}),
+      ...(origin !== undefined ? { origin } : {}),
+      ...(image !== undefined ? { image: /^https?:\/\//i.test(image) ? image : `pwpack/${image.replace(/^\.?\//, '')}` } : {}),
     })
   )
   for (const page of pages) {
@@ -715,7 +813,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     }
     const project = served('pwpack/project.json')
     const paintable = [...routes, ...(notFoundPage ? [notFoundPage] : [])]
-    const painted = isRecord(project)
+    const result = isRecord(project)
       ? await paintPages({
           staticJs: runtime.staticJs,
           blockManifest,
@@ -725,35 +823,33 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
           appearance: served('pwpack/appearance.json'),
           auth: isRecord(project['identity']) ? served('pwpack/auth.json') : undefined,
           pages: paintable.map((p) => ({ key: p.key, receipt: (servedReceipts.get(p.key) ?? p.receipt) as Record<string, unknown> })),
+          toHref,
         })
       : { pages: [] as PaintedPage[], diagnostics: [] }
-    diagnostics.push(...painted.diagnostics)
-    const entryPainted = painted.pages.find((p) => p.key === entry)
-    for (const page of painted.pages) if (page !== entryPainted) files.set(staticPageFile(page.key), enc.encode(page.html))
-    // A deep link's frame is asked for with the document (shell.ts PageHints.frame).
-    for (const page of painted.pages) {
+    diagnostics.push(...result.diagnostics)
+    painted = result.pages
+    // Every painted page's frame is also a file of its own, for a document
+    // that holds another page's (a hash address, a host's SPA fallback).
+    for (const page of painted) files.set(staticPageFile(page.key), enc.encode(staticPageFragment(page)))
+    // Such a document asks for it with itself (shell.ts PageHints.frame).
+    for (const page of painted) {
       const hint = hinted[page.key]
-      if (page !== entryPainted && hint) {
-        hinted[page.key] = { ...hint, frame: staticPageFile(page.key), ...(page.addressKeys.length > 0 ? { frameKeys: page.addressKeys } : {}) }
-      }
+      if (hint) hinted[page.key] = { ...hint, frame: staticPageFile(page.key), ...(page.addressKeys.length > 0 ? { frameKeys: page.addressKeys } : {}) }
     }
-    if (painted.pages.length > 0) {
-      firstPaint = {
-        rootHtml: entryPainted ? staticRootHtml(entryPainted) : '',
-        data: firstPaintData({
-          ...routed,
-          entry,
-          routes: routes.map((p) => p.key),
-          ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
-          pages: painted.pages,
-        }),
-      }
+    if (painted.length > 0) {
+      firstPaintJson = firstPaintData({
+        ...routed,
+        entry,
+        routes: routes.map((p) => p.key),
+        ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
+        pages: painted,
+      })
     }
   }
 
   const csp = deriveCsp({
     importMapText: importMapText(),
-    inlineScripts: [...(Object.keys(hinted).length > 0 ? [PAGE_HINTS_SCRIPT] : []), ...(firstPaint ? [FIRST_PAINT_SCRIPT] : [])],
+    inlineScripts: [...(Object.keys(hinted).length > 0 ? [PAGE_HINTS_SCRIPT] : []), ...(firstPaintJson ? [FIRST_PAINT_SCRIPT] : [])],
     receipts: servedReceipts,
     connections,
     engines: engineManifest,
@@ -764,9 +860,54 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     blocks: placedBlocks,
   })
   // Written last: the shell preloads only boot files the folder has.
-  files.set('index.html', shell(csp.meta))
-  files.set('_headers', enc.encode(headersFile(csp.header, csp.mediaHeader)))
-  files.set('robots.txt', enc.encode(robotsTxt()))
+  for (const doc of documents) files.set(doc.file, shell(doc, csp.meta))
+  files.set('_headers', enc.encode(headersFile(csp.header, csp.mediaHeader, documents.map((d) => d.file))))
+  // THE SITEMAP: every page's own address on the app's public origin — not a
+  // record page (it names no page without its record), and nothing of an app
+  // that requires sign-in, which a crawler cannot read.
+  const listedDocs = origin === undefined || gated
+    ? []
+    : documents
+        .filter((d) => !d.notFound && d.key !== undefined && d.path !== undefined)
+        .filter((d) => !isRecordPage(servedReceipts.get(d.key as string)))
+        .map((d) => ({ key: d.key as string, url: canonicalOf(origin, d.path as string) }))
+        .filter((d): d is { key: string; url: string } => d.url !== undefined)
+  const listed = listedDocs.map((d) => d.url)
+  const baseDir = base.endsWith('/') ? base : `${base}/`
+  const sitemap = listed.length > 0 ? canonicalOf(origin, `${baseDir}sitemap.xml`) : undefined
+  if (sitemap !== undefined) files.set('sitemap.xml', enc.encode(sitemapXml(listed)))
+  files.set('robots.txt', enc.encode(robotsTxt(sitemap)))
+  // THE PAGES FOR A LANGUAGE MODEL (llms.txt, llms-full.txt): the sitemap's
+  // pages, in the app's navigation order, under path routing — where each
+  // page has an address of its own to cite.
+  if (byPath && origin !== undefined && listedDocs.length > 0) {
+    const order = navigationOrder(JSON.parse(new TextDecoder().decode(files.get('pwpack/navigation.json'))) as unknown, entry, listedDocs.map((d) => d.key))
+    const llmsPages: LlmsPage[] = order.map((key) => {
+      const doc = listedDocs.find((d) => d.key === key) as { key: string; url: string }
+      const receipt = servedReceipts.get(key)
+      const own = painted.find((p) => p.key === key)
+      const description = literalText(isRecord(receipt) ? receipt['description'] : undefined)
+      return {
+        title: literalText(isRecord(receipt) ? receipt['title'] : undefined) ?? (title || key),
+        url: doc.url,
+        ...(description !== undefined ? { description } : {}),
+        ...(own ? { html: own.html } : {}),
+      }
+    })
+    const appInfo = { name: title || identity.id, ...(appDescription !== undefined ? { description: appDescription } : {}) }
+    // A link the frame draws, as an absolute address: against the app's base
+    // on its origin; a fragment against the page it is on.
+    const linkFor = (page: LlmsPage) => (href: string): string | undefined => {
+      if (href.trim() === '' || href.includes('{{')) return undefined
+      try {
+        return new URL(href, href.startsWith('#') ? page.url : `${origin}${baseDir}`).href
+      } catch {
+        return undefined
+      }
+    }
+    files.set('llms.txt', enc.encode(llmsTxt(appInfo, llmsPages)))
+    files.set('llms-full.txt', enc.encode(llmsFullTxt(appInfo, llmsPages, linkFor)))
+  }
 
   const publishedAtoms = atoms
     .filter((a) => used.has(a))

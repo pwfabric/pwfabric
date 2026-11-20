@@ -122,25 +122,28 @@ Source: `packages/runner/src/types.ts` (`RunAppOptions`).
 The default router is `hash`: routes live after `#` in the URL, which works on
 every static host without configuration.
 
-`path` routing gives clean URLs but needs the host to serve `index.html` for
-every path (an "SPA fallback") and to declare the app's base with
-`<base href="/">` in that `index.html` (`<base href="/sub/path/">` when the app
-lives under a sub-path). The shell addresses its scripts relatively
-(`./assets/boot.js`), so without a base a nested path such as `/team/ada`
-loads `/team/assets/boot.js` and misses. `pwf run` and `pwf dev` add the base
-themselves. `pwf build --router path` writes `<base href="/">` into the shell
-and `router: 'path'` into `boot.js` (`--base /sub/path/` for a sub-path), so
-the folder needs only the host's fallback. `router: 'path'` uses it as asked.
+`path` routing gives clean URLs, `/<page>/`. `pwf build --router path` writes
+every page as a document of its own — `index.html` for the entry page,
+`<page>/index.html` for every other, and `404.html` for an address that names
+no page — so the folder needs no host configuration: Cloudflare Pages,
+Netlify, GitHub Pages, S3 and the like serve a folder's `index.html` at the
+folder's address (sending `/<page>` on to `/<page>/` or serving it in place),
+and serve `404.html` with status 404 for any path no file answers. A host
+that does not serve `404.html` by itself must be told to. Each document
+declares the app's base with `<base href="/">` (`--base /sub/path/` for a
+sub-path) — the shell addresses its scripts relatively (`./assets/boot.js`) —
+and `boot.js` passes `router: 'path'`. A host that instead answers every path
+with `index.html` (an "SPA fallback") still works: the first-paint script
+swaps in the page the address names, but an unknown address then answers 200.
 `router: 'auto'` picks `path` only when `history.pushState` works **and** the
-page declares the fallback:
+page declares it:
 
 ```html
 <meta name="pw-router" content="path" />
 ```
 
-otherwise `auto` falls back to `hash`. `pwf build --router auto` writes the
-base and this meta for you. If you enable `path` without
-the fallback, deep links return the host's 404.
+otherwise `auto` routes by `hash`. `pwf build --router auto` writes the base,
+this meta and the page documents for you.
 
 Source: `packages/runner/src/types.ts` (`router`),
 `packages/runner/src/router.ts`.

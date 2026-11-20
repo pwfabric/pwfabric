@@ -505,7 +505,7 @@ export const TOOLS: readonly ToolDefinition[] = [
         .enum(['hash', 'path', 'auto'])
         .optional()
         .describe(
-          "How the built app routes, as `pwf build --router`. hash (default): #/<page> addresses, works on every static host. path: clean /<page> addresses; the host must answer every page path with index.html. auto: path where the browser can, else hash."
+          "How the built app routes, as `pwf build --router`. hash (default): #/<page> addresses, works on every static host. path: clean /<page>/ addresses; every page is a document of its own (<page>/index.html) and 404.html answers an unknown path, which static hosts serve as they are. auto: path where the browser can, else hash."
         ),
       base: z
         .string()

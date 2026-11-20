@@ -26,14 +26,14 @@ import type {
 } from '@pwfabric/runtime'
 import type { RunAppOptions, SurfaceReceipt } from './types.js'
 import { loadRenderer, warmBlockModules } from './renderer.js'
-import { applyDescription } from './description.js'
+import { applyCanonical, applyDescription, canonicalOf } from './description.js'
 import { composeTitle, doorHeaders, fetchJson, queryStateSeed, receiptFilesOf, rewriteHrefs, seedStateFromQuery, withVersion } from './helpers.js'
 import {
   FIRST_FRAME_USER,
   PAGE_ATTR,
+  STATIC_LAYOUT_ID,
   STATIC_PAGE_ATTR,
   STATIC_VIEWPORT,
-  STATIC_VIEWPORT_MAX_WIDTH,
   firstFrameAuthState,
   firstFrameDoorOf,
   firstFrameLocale,
@@ -459,12 +459,13 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   /**
    * THE BUILD'S FIRST FRAME OF THIS PAGE, when the shell holds one
    * (pwapp-format §2.5): `#pw-root` naming the page. Taken once — by the
-   * first page drawn — and only when the window is at the breakpoint it was
-   * drawn at. Whether the address lets the build's frame stand is the shell's
-   * first-paint script's to decide — it knows which query keys change a
-   * page's first frame, and puts no frame in the root otherwise. The
-   * hydrating render reads no address either way; the address's seed arrives
-   * in the update after it.
+   * first page drawn — at whatever width the window is: the frame is drawn at
+   * the phone breakpoint and its stylesheet (`#pw-static-layout`) lays it out
+   * for a wider one until the update after hydration does. Whether the
+   * address lets the build's frame stand is the shell's first-paint script's
+   * to decide — it knows which query keys change a page's first frame, and
+   * leaves no frame in the root otherwise. The hydrating render reads no
+   * address either way; the address's seed arrives in the update after it.
    */
   let staticTaken = false
   function staticRootFor(key: string): HTMLElement | null {
@@ -473,8 +474,12 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     const root = container.firstElementChild
     if (!(root instanceof HTMLElement) || root.id !== 'pw-root' || root.getAttribute(STATIC_PAGE_ATTR) !== key) return null
     if (container.childElementCount !== 1) return null
-    if (window.innerWidth > STATIC_VIEWPORT_MAX_WIDTH) return null
     return root
+  }
+
+  /** The first frame's stylesheet, once the page no longer needs it (see {@link STATIC_LAYOUT_ID}). */
+  function dropStaticLayout(): void {
+    document.getElementById(STATIC_LAYOUT_ID)?.remove()
   }
 
   /** The receipt a page was fetched from, for the not-found page and every route. */
@@ -601,6 +606,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     })
     if (project.title) document.title = project.title
     applyDescription(document, undefined, project.description)
+    if (router.mode === 'path') applyCanonical(document, undefined)
   }
 
   /**
@@ -664,6 +670,10 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // stands in until the renderer reports it resolved (`onDescription`).
     const descriptionTemplate = typeof receipt.description === 'string' ? receipt.description : undefined
     applyDescription(document, descriptionTemplate, project.description)
+    // The page's own address on the app's public origin, under path routing:
+    // the not-found page has none. Under hash routing every page is the one
+    // document the build wrote, and keeps its canonical address.
+    if (router.mode === 'path') applyCanonical(document, notFoundPage ? undefined : canonicalOf(project.origin, router.toHref(key)))
 
     // Token-backed entity facade (only with a live session and declared
     // entity bindings) — otherwise omitted so embed's offline stubs apply.
@@ -718,6 +728,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // not drawn again.
     const staticRoot = staticRootFor(key)
     if (!staticRoot) {
+      dropStaticLayout()
       container.replaceChildren()
       const mount = document.createElement('div')
       mount.id = 'pw-root'
@@ -875,7 +886,12 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
         onHydrated: () => {
           void handle.then((h) => {
             const update = (h as { update?: (o: Record<string, unknown>) => void } | null)?.update
-            if (current?.handle === handle && typeof update === 'function') update({ ...options, surface })
+            if (current?.handle !== handle || typeof update !== 'function') return
+            update({ ...options, surface })
+            // The update draws the page at the window's own breakpoint; once
+            // it is on screen the first frame's stylesheet says nothing the
+            // inline styles do not (two frames: the commit, then its paint).
+            requestAnimationFrame(() => requestAnimationFrame(dropStaticLayout))
           })
         },
       })

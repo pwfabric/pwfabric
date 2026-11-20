@@ -45,6 +45,18 @@ export interface PwappProject {
    * states none of its own (envelope §2).
    */
   readonly description?: string
+  /**
+   * The app's public origin (`https://example.com`), from `app/plan.json`
+   * `origin`: a page's canonical address is this origin and the page's path
+   * (envelope §4). Absent: the app names no canonical address.
+   */
+  readonly origin?: string
+  /**
+   * The picture a link preview shows for the app (`og:image`), from
+   * `app/plan.json` `image`: an absolute `http(s)` address, or the app's own
+   * file (`pwpack/media/<file>`).
+   */
+  readonly image?: string
   readonly entrySurfaceId: string
   readonly surfaceOrder: readonly string[]
   readonly surfaceReceiptFiles?: Readonly<Record<string, string>>

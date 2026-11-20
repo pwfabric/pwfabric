@@ -1,7 +1,7 @@
 // End-to-end: the round-trip apps of the spec, through the built `pwf`
 // binary, rendered in a real headless Chrome driven over CDP.
 //
-//   node test/e2e/run-e2e.mjs [--only l1,l2,l3,l3-dev,l3-loop,csp-probe,sdk-block,foundation] [--foundation <dir>]
+//   node test/e2e/run-e2e.mjs [--only l1,l1-path,l2,l3,l3-dev,l3-loop,csp-probe,sdk-block,foundation] [--foundation <dir>]
 //
 // For each round-trip app (spec/roundtrip/<app>/input, copied to a temp dir):
 //   pwf add <the fixture foundation>  (the pin must equal the spec's)
@@ -9,6 +9,9 @@
 //   pwf build                         exit 0
 //   pwf run .pwf/out --port 0         and the page renders what the receipts say
 //
+// l1-path builds L1 with `--router path` and a public origin: one document per
+// page with its first frame as visible markup and its own head, 404.html served
+// with status 404, and the runner adopting the painted page at a desktop width.
 // l3-loop drives sign-in and data through the local host under `pwf dev`, on a
 // copy of L3 extended with what the loop needs (see L3_LOOP below).
 // `foundation` runs `pwf create --foundation <dir>` + `pwf dev` against a real
@@ -36,7 +39,7 @@ const flag = (name) => {
   return i >= 0 ? argv[i + 1] : undefined
 }
 const foundationDir = flag('foundation') ?? process.env.PWF_E2E_FOUNDATION
-const only = new Set((flag('only') ?? `l1,l2,l3,l3-dev,l3-loop,csp-probe,sdk-block${foundationDir ? ',foundation' : ''}`).split(','))
+const only = new Set((flag('only') ?? `l1,l1-path,l2,l3,l3-dev,l3-loop,csp-probe,sdk-block${foundationDir ? ',foundation' : ''}`).split(','))
 const log = (line) => process.stdout.write(`${line}\n`)
 const finish = (summary, code = 0) => {
   process.stdout.write(`${JSON.stringify(summary)}\n`)
@@ -265,6 +268,94 @@ async function l1(browser, s) {
     await app.cleanup()
   }
   return
+}
+
+/** The words of an HTML document a reader without scripts sees: its body, minus scripts, styles and templates. */
+const wordsOf = (html) =>
+  (/<body[^>]*>([\s\S]*)<\/body>/.exec(html)?.[1] ?? '')
+    .replace(/<(script|style|template)\b[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+async function l1Path(browser, s) {
+  s.rename('l1-static, path routing (pwf build --router path, pwf run)')
+  const app = await prepare(s, 'l1-static')
+  try {
+    const planPath = join(app.root, 'app', 'plan.json')
+    const plan = JSON.parse(await readFile(planPath, 'utf8'))
+    await writeFile(planPath, JSON.stringify({ ...plan, origin: 'https://studio.example.com' }, null, 2))
+    const v = await pwf(['validate'], app.root)
+    s.check('pwf validate exits 0', v.code === 0, v.out + v.err)
+    const b = await timed(s, 'buildMs', () => pwf(['build', '--router', 'path'], app.root))
+    s.check('pwf build --router path exits 0', b.code === 0, b.out + b.err)
+    if (b.code !== 0) return
+    const out = join(app.root, '.pwf', 'out')
+    // ONE DOCUMENT PER PAGE, its first frame as visible markup.
+    for (const [file, words] of [
+      ['index.html', 'A small studio that makes small things.'],
+      [join('about', 'index.html'), 'Two people, one workbench, since 2019.'],
+    ]) {
+      const html = await readFile(join(out, file), 'utf8')
+      s.check(`${file}: the page's words are visible without scripts`, wordsOf(html).includes(words), wordsOf(html).slice(0, 200))
+      s.check(`${file}: no template`, !html.includes('<template'))
+    }
+    const aboutHtml = await readFile(join(out, 'about', 'index.html'), 'utf8')
+    s.check('about: its own title', aboutHtml.includes('<title>Static two-page site — About</title>'))
+    s.check('about: its canonical address', aboutHtml.includes('<link rel="canonical" href="https://studio.example.com/about/" />'))
+    s.check('about: og:url', aboutHtml.includes('<meta property="og:url" content="https://studio.example.com/about/" />'))
+    s.check('about: not the home page’s words', !wordsOf(aboutHtml).includes('A small studio'))
+    const sitemap = await readFile(join(out, 'sitemap.xml'), 'utf8')
+    s.check('sitemap.xml lists both pages', sitemap.includes('<loc>https://studio.example.com/</loc>') && sitemap.includes('<loc>https://studio.example.com/about/</loc>'), sitemap)
+    s.check('robots.txt names the sitemap', (await readFile(join(out, 'robots.txt'), 'utf8')).includes('Sitemap: https://studio.example.com/sitemap.xml'))
+
+    const server = await pwfServe(['run', join('.pwf', 'out'), '--port', '0'], app.root, /Serving \S+ at (http\S+)/)
+    try {
+      // AS A STATIC HOST SERVES IT.
+      for (const path of ['about/', 'about']) {
+        const res = await fetch(new URL(path, server.url))
+        s.check(`pwf run: /${path} is the about document`, res.status === 200 && (await res.text()).includes('data-pw-static="about"'))
+      }
+      const missing = await fetch(new URL('no/such/page', server.url))
+      const missingHtml = await missing.text()
+      s.check('pwf run: an unknown path is 404.html, status 404', missing.status === 404 && missingHtml.includes('<meta name="robots" content="noindex" />'), missing.status)
+
+      // HYDRATION AT A DESKTOP WIDTH: the painted nodes are adopted, not drawn again.
+      const page = await browser.newPage()
+      s.page = page
+      await page.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
+      await page.send('Page.addScriptToEvaluateOnNewDocument', {
+        source:
+          "document.addEventListener('DOMContentLoaded', () => { const r = document.getElementById('pw-root'); window.__painted = r ? [...r.querySelectorAll('*')] : []; window.__layoutAtLoad = Boolean(document.getElementById('pw-static-layout')) })",
+      })
+      await timed(s, 'renderMs', async () => {
+        await page.goto(new URL('about/', server.url).href)
+        await page.waitFor("window.__painted && window.__painted.some((e) => Object.keys(e).some((k) => k.startsWith('__reactFiber')))")
+        await page.waitFor("!document.getElementById('pw-static-layout')", { what: 'the frame’s stylesheet to be removed after the update' })
+      })
+      const seen = await page.evaluate(
+        "({ painted: window.__painted.length, gone: window.__painted.filter((e) => !e.isConnected).length, layoutAtLoad: window.__layoutAtLoad, viewport: document.querySelector('[data-pw-surface]')?.getAttribute('data-viewport') })"
+      )
+      s.check('desktop: the frame was painted with its stylesheet', seen.painted > 0 && seen.layoutAtLoad === true, seen)
+      s.check('desktop: no painted node drawn again', seen.gone === 0, seen)
+      s.check('desktop: the page is at the window’s breakpoint after the update', seen.viewport === 'xl', seen)
+      await checkClean(s, page, 'about (desktop)')
+      // IN-APP NAVIGATION keeps the head the page's own.
+      await page.evaluate("(() => { const a = document.createElement('a'); a.href = '/'; document.body.appendChild(a); a.click() })()")
+      await page.waitFor(textOf('[data-block-id="headline"]'))
+      s.check('home: the address is the base', (await page.evaluate('location.pathname')) === '/')
+      s.check(
+        'home: title and canonical follow the page',
+        (await page.evaluate("document.title + ' ' + document.querySelector('link[rel=canonical]')?.getAttribute('href')")) ===
+          'Static two-page site — Home https://studio.example.com/'
+      )
+      await checkClean(s, page, 'home (navigated)')
+    } finally {
+      await server.stop()
+    }
+  } finally {
+    await app.cleanup()
+  }
 }
 
 async function l2(browser, s) {
@@ -705,7 +796,7 @@ async function describePage(page) {
 
 // ── main ─────────────────────────────────────────────────────────────
 
-const SCENARIOS = { l1, l2, l3, 'l3-dev': l3Dev, 'l3-loop': l3Loop, 'csp-probe': cspProbe, 'sdk-block': sdkBlock, foundation: realFoundation }
+const SCENARIOS = { l1, 'l1-path': l1Path, l2, l3, 'l3-dev': l3Dev, 'l3-loop': l3Loop, 'csp-probe': cspProbe, 'sdk-block': sdkBlock, foundation: realFoundation }
 const browser = await launchChrome({ chrome: chromePath })
 log(`chrome: ${browser.version} (${chromePath})`)
 const results = []

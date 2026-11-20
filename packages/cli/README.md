@@ -141,8 +141,10 @@ in `index.html`, as `_headers`, and as `publish.json` `csp`.
 
 Serves a built pwapp (any folder with an `index.html`, or a `.pwapp` archive
 opened in memory) on `http://127.0.0.1:4700/` by default; `--port 0` picks a
-free port. Page paths without a file extension are answered with `index.html`,
-so path-routed apps work; a missing asset is a 404. Headers the folder's
+free port. It answers as a static host does: a page's own document
+(`<page>/index.html`) at its address, `404.html` with status 404 where no page
+is, and `index.html` for a page path in a folder without `404.html` (hash
+routing, or a build from before 3.4); a missing asset is a 404. Headers the folder's
 `_headers` file declares (the app's policy) are sent with matching files.
 Stop it with Ctrl-C.
 

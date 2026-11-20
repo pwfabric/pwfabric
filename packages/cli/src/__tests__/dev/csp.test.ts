@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { deriveCsp, engineHostOrigin, headersFile, originOf, robotsTxt, scriptHash, serializeCsp } from '../../dev/csp.js'
+import { deriveCsp, engineHostOrigin, headersFile, originOf, scriptHash, serializeCsp } from '../../dev/csp.js'
+import { robotsTxt } from '../../dev/documents.js'
 import { headerPatternMatches, parseHeadersFile } from '../../commands/lib/static-server.js'
 
 const base = { importMapText: '{"imports":{}}', receipts: new Map<string, unknown>(), engines: [], media: [] }

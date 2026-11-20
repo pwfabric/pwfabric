@@ -60,9 +60,10 @@ pwf run ./my-app-export
 
 `pwf run <folder>` serves any built pwapp folder, the one an export gives or
 the one [`pwf build`](#track-c--build-a-pwfabric-app-from-scratch) writes. It
-also takes a packaged `.pwapp` file and serves it from memory. Page paths
-without a file extension are answered with `index.html` and a
-`<base href="/">`, so apps that use clean URLs work at any depth. `--port <n>` picks another port (`0` for any free one)
+also takes a packaged `.pwapp` file and serves it from memory. It answers as a
+static host does: a page's own document (`<page>/index.html`) at its address,
+and `404.html` with status 404 where no page is (a hash-routed folder, which
+has none, answers `index.html`). `--port <n>` picks another port (`0` for any free one)
 and `--host <name>` another interface.
 
 The runner fetches `pwpack/project.json` and `blocks/manifest.json`, mounts
@@ -94,13 +95,13 @@ Policy can allow it by hash; start-up code of your own goes in a file too.
 `runApp()` takes `source`, `blocks`, `engines`, `router` (`'hash'` ·
 `'path'` · `'auto'`) and `mount`; every one has a default that
 matches the folder above, so `runApp()` with no arguments is equivalent. Clean
-URLs (`router: 'path'`) need the host to serve `index.html` for every path
-and to declare the app's base with `<base href="/">` (the app's sub-path, if
-it has one), or the shell's relative script addresses miss on nested paths;
-`router: 'auto'` chooses them only when the shell also carries
-`<meta name="pw-router" content="path" />`. `pwf build --router path` (or
-`--router auto`, with `--base /sub/path/` for a sub-path) writes both into the
-shell for you; see [`pwf build`](/cli#pwf-build).
+URLs (`router: 'path'`) need the app's base declared with `<base href="/">`
+(the app's sub-path, if it has one), or the shell's relative script addresses
+miss on nested paths; `router: 'auto'` chooses them only when the shell also
+carries `<meta name="pw-router" content="path" />`. `pwf build --router path`
+(or `--router auto`, with `--base /sub/path/` for a sub-path) writes both, and
+one document per page that a static host serves as it is; see
+[`pwf build`](/cli#pwf-build).
 
 That is the whole self-host for a static app. If the app reads or writes data
 it will call an API: its own records are read and written at
@@ -376,8 +377,8 @@ pwf run .pwf/out
 
 Open the address. That folder is plain static files: copy it to any static
 host and it runs there the same way. It routes by hash (`#/<page>`); for clean
-`/<page>` addresses build with `pwf build --router path` and have the host
-answer every page path with `index.html` (`pwf run` does). An app with
+`/<page>/` addresses build with `pwf build --router path`: every page is then
+a document of its own, which any static host serves without configuration. An app with
 records reads them from a host: `pwf run` of the app folder serves them
 read-only under `/_host`, and a copied folder has none (see
 [the records protocol](/self-host/data#the-endpoint-table)).

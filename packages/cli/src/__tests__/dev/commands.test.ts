@@ -110,14 +110,17 @@ describe('pwf build', () => {
     const boot = /\.\/(assets\/boot\.[0-9a-f]{8}\.js)/.exec(html)?.[1] ?? ''
     expect(await readFile(join(out, boot), 'utf8')).toContain('router: "path"')
 
-    // A deep link is the shell, with ONE base, and its relative assets resolve against it.
+    // An address that names no page is 404.html, status 404, with ONE base,
+    // and its relative assets resolve against it.
+    expect(await readFile(join(out, '404.html'), 'utf8')).toContain('<meta name="robots" content="noindex" />')
     const { runRun } = await import('../../commands/run.js')
     expect(
       await runRun({ positionals: [root], flags: { port: '0' } }, capture(root).io, {
         until: async (server) => {
+          expect((await fetch(new URL('./', server.url))).status).toBe(200)
           const page = new URL('home/deeper', server.url)
           const res = await fetch(page)
-          expect(res.status).toBe(200)
+          expect(res.status).toBe(404)
           const served = await res.text()
           expect(served.match(/<base /g)).toHaveLength(1)
           const base = /<base href="([^"]+)"/.exec(served)?.[1] ?? ''

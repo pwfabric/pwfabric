@@ -1,7 +1,11 @@
 /**
- * A small static file server for a built pwapp: correct content types, no
- * directory listings, no path escapes, and an SPA fallback to `index.html`
- * for page paths.
+ * A small static file server for a built pwapp, answering as a static host
+ * does (pwapp-format §1): correct content types, no directory listings, no
+ * path escapes; a path is its file or its folder's `index.html` (a page's
+ * own document under path routing); a path no file answers is the folder's
+ * `404.html` with status 404 — or, for a folder that has none (an app routed
+ * by hash, or built before pages had documents of their own), `index.html`
+ * for a page path, as an SPA fallback.
  */
 import { createHash } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
@@ -93,16 +97,28 @@ async function load(source: StaticSource, rel: string): Promise<Uint8Array | nul
   return new Uint8Array(await readFile(abs))
 }
 
-/** Resolves a request to a file: the path itself, `<path>/index.html`, then the SPA fallback for page paths. */
-export async function resolveRequest(source: StaticSource, rel: string): Promise<{ path: string; body: Uint8Array } | null> {
+/** The folder's not-found document: a host serves it, with status 404, for a path no file answers. */
+export const NOT_FOUND_FILE = '404.html'
+
+/**
+ * Resolves a request to a file: the path itself, `<path>/index.html`; for a
+ * page path nothing answers, the folder's `404.html` (status 404), or
+ * `index.html` when the folder has none.
+ */
+export async function resolveRequest(
+  source: StaticSource,
+  rel: string
+): Promise<{ path: string; body: Uint8Array; status: 200 | 404 } | null> {
   const candidates = rel === '' ? ['index.html'] : [rel, `${rel}/index.html`]
-  // A page path is answered with the shell.
-  if (rel !== '' && isPagePath(rel)) candidates.push('index.html')
   for (const path of candidates) {
     const body = await load(source, path)
-    if (body) return { path, body }
+    if (body) return { path, body, status: 200 }
   }
-  return null
+  if (rel === '' || !isPagePath(rel)) return null
+  const notFound = await load(source, NOT_FOUND_FILE)
+  if (notFound) return { path: NOT_FOUND_FILE, body: notFound, status: 404 }
+  const shell = await load(source, 'index.html')
+  return shell ? { path: 'index.html', body: shell, status: 200 } : null
 }
 
 const TEXT = { 'content-type': 'text/plain; charset=utf-8' }
@@ -256,7 +272,7 @@ async function handle(
   // `Vary: Origin` set under --cors is kept beside the build's own.
   const varyOrigin = res.getHeader('vary')
   if (varyOrigin !== undefined) headers['vary'] = headers['vary'] ? `${String(varyOrigin)}, ${headers['vary']}` : String(varyOrigin)
-  res.writeHead(200, headers)
+  res.writeHead(found.status, headers)
   if (req.method === 'HEAD') res.end()
   else res.end(body)
 }

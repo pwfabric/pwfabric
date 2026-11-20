@@ -318,7 +318,7 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
       resolvedQuery = query
       writeLocation(location.pathname + location.search + hash, how)
     },
-    toHref: (key) => `#/${key}`,
+    toHref: hashHref,
     applyScroll() {
       scrollToAnchor(hashAnchorOf(location.hash))
     },
@@ -401,6 +401,22 @@ function trimBase(path: string): string {
   return path.replace(/\/+$/, '')
 }
 
+/**
+ * A page's address under path routing, for an app whose base path is `base`
+ * (`/shop/`, or `/`): the entry page is the base itself, every other page the
+ * folder `<base><key>/`. That is the address a static host serves the page's
+ * own document at (`<key>/index.html`, pwapp-format §1) without a redirect,
+ * and the one the build writes into the page's links and canonical address.
+ * `<base><key>` without the slash names the same page.
+ */
+export function pathHref(base: string, entry: string): ToHref {
+  const root = trimBase(base)
+  return (key) => (key === entry ? `${root}/` : `${root}/${key}/`)
+}
+
+/** The hash router's address of a page: `#/<key>`. */
+export const hashHref: ToHref = (key) => `#/${key}`
+
 function createPathRouter(
   pages: readonly string[],
   entry: string,
@@ -440,7 +456,7 @@ function createPathRouter(
     writeQuery(query, how) {
       writeLocation(location.pathname + (query ? `?${query}` : '') + location.hash, how)
     },
-    toHref: (key) => `${base}/${key}`,
+    toHref: pathHref(base, entry),
     applyScroll() {
       scrollToAnchor(location.hash.startsWith('#') ? location.hash.slice(1) : null)
     },

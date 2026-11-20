@@ -20,7 +20,7 @@ async function builtApp(): Promise<string> {
 }
 
 describe('static server', () => {
-  it('serves files with their content types, falls back to index.html for pages and 404s missing assets', async () => {
+  it('serves files with their content types; a folder without 404.html (hash routing, an older build) falls back to index.html for pages; 404s missing assets', async () => {
     const dir = await builtApp()
     const server = await startStaticServer({ source: { dir }, port: 0 })
     try {
@@ -51,6 +51,40 @@ describe('static server', () => {
       expect(head.status).toBe(200)
       expect(head.headers.get('content-length')).toBe('30')
       expect((await fetch(server.url, { method: 'POST' })).status).toBe(405)
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('serves a path-routed build as a static host does: each page’s own document, 404.html with status 404', async () => {
+    const dir = await builtApp()
+    await mkdir(join(dir, 'pricing'), { recursive: true })
+    await writeFile(join(dir, 'pricing', 'index.html'), '<!doctype html><base href="/" /><p>pricing</p>')
+    await writeFile(join(dir, '404.html'), '<!doctype html><base href="/" /><p>not here</p>')
+    await writeFile(join(dir, 'llms.txt'), '# App')
+    await writeFile(join(dir, 'llms-full.txt'), '# App')
+    const server = await startStaticServer({ source: { dir }, port: 0 })
+    try {
+      for (const file of ['llms.txt', 'llms-full.txt']) {
+        const res = await fetch(new URL(file, server.url))
+        expect(res.status, file).toBe(200)
+        expect(res.headers.get('content-type'), file).toBe('text/plain; charset=utf-8')
+      }
+      for (const path of ['pricing', 'pricing/', 'pricing/index.html']) {
+        const res = await fetch(new URL(path, server.url))
+        expect(res.status, path).toBe(200)
+        expect(await res.text(), path).toContain('<p>pricing</p>')
+      }
+      for (const path of ['nope', 'a/b/c', 'layout.two-pane']) {
+        const res = await fetch(new URL(path, server.url))
+        expect(res.status, path).toBe(404)
+        expect(await res.text(), path).toContain('<p>not here</p>')
+      }
+      // A missing asset is no page: a plain 404, never a document.
+      const asset = await fetch(new URL('assets/missing.js', server.url))
+      expect(asset.status).toBe(404)
+      expect(await asset.text()).toBe('not found\n')
+      expect(await (await fetch(server.url)).text()).toContain('id="root"')
     } finally {
       await server.close()
     }

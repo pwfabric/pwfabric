@@ -17,7 +17,8 @@
  * every fetched source loading (nothing is fetched here — build-time data
  * never reaches a visitor's HTML), and every source settled without a
  * request settled (idle; `requiresSession` refused); nobody signed in; nothing read from the
- * address; the phone layout. An app that requires sign-in has no first frame
+ * address; the phone layout — and, beside it, what a wider window changes,
+ * as CSS (static-layout.ts). An app that requires sign-in has no first frame
  * the build can know (who is signed in decides what is drawn): it is not
  * painted. A record page (`notFoundWhenEmpty`) is: its first frame is the
  * shell and its loading frame, whichever record the address names; a record
@@ -36,7 +37,7 @@ import {
   FIRST_FRAME_USER,
   STATIC_PAGE_ATTR,
   STATIC_VIEWPORT,
-  STATIC_VIEWPORT_MAX_WIDTH,
+  STATIC_LAYOUT_ID,
   addressStateKeys,
   firstFrameAuthState,
   firstFrameDoorOf,
@@ -50,6 +51,7 @@ import {
 } from '@pwfabric/runner'
 import type { AssembleDiagnostic } from './diagnostics.js'
 import { escapeHtml } from './shell.js'
+import { WIDE_BREAKPOINTS, staticLayoutOf } from './static-layout.js'
 
 const require = createRequire(import.meta.url)
 
@@ -63,9 +65,6 @@ export function loadStaticRenderer(): Promise<string> {
   })
   return cachedStatic
 }
-
-/** The hash router's address of a page (runner router.ts): what every built shell routes with. */
-const hashHref = (key: string): string => `#/${key}`
 
 /** A value no app's address carries: what a query key is seeded with to learn whether it changes a page's first frame. */
 const ADDRESS_PROBE = 'pw-address-probe'
@@ -91,13 +90,18 @@ export interface StaticPaintInput {
   readonly auth: unknown
   /** Every route, then the app's not-found page when it has one. */
   readonly pages: readonly StaticPage[]
+  /** How the built app writes a page's address: the runner's router's `toHref` for the build's router and base. */
+  readonly toHref: (key: string) => string
 }
 
 /** What a page's first frame came out as. */
 export interface PaintedPage {
   readonly key: string
+  /** The frame at the phone breakpoint: the inner HTML of `#pw-root`. */
   readonly html: string
-  /** The query keys that seed the page's state: an address carrying one is not painted from the build. */
+  /** The stylesheet that lays the frame out at every wider breakpoint (static-layout.ts); empty when nothing differs. */
+  readonly layoutCss: string
+  /** The query keys that change the page's first frame: an address carrying one is not painted from the build. */
   readonly addressKeys: readonly string[]
 }
 
@@ -208,7 +212,7 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
   const appearanceRef = projectAppearanceRef(input.appearance)
   const ctx = {
     entry,
-    toHref: hashHref,
+    toHref: input.toHref,
     navigation: (input.navigation ?? null) as Parameters<typeof pageSurfaceOf>[3]['navigation'],
     door,
     user: FIRST_FRAME_USER,
@@ -217,18 +221,19 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
   // The address a page reads: none.
   const address = { query: () => '', writeQuery: () => undefined, notFound: () => undefined }
   const failedBlocks = new Map<string, { message: string; pages: string[] }>()
+  const reshapedBlocks = new Map<string, string[]>()
   const painted: PaintedPage[] = []
   for (const page of input.pages) {
     const served = page.receipt as unknown as Parameters<typeof pageSurfaceOf>[0]
     // As the runner fetches it: the app's own records read from its API base.
     const receipt = ownApiBase ? ownRecordsReceipt(served, ownApiBase) : served
-    const render = (params: URLSearchParams): ReturnType<StaticRenderer['renderStatic']> =>
+    const render = (params: URLSearchParams, viewport: string = STATIC_VIEWPORT): ReturnType<StaticRenderer['renderStatic']> =>
       renderer.renderStatic(pageSurfaceOf(receipt, page.key, params, ctx), {
         mode: 'fat',
         blocks: input.blockManifest,
-        ...firstFrameOptions({ project: runnerProject, appearanceRef, receipt, entry, toHref: hashHref }),
+        ...firstFrameOptions({ project: runnerProject, appearanceRef, receipt, entry, toHref: input.toHref }),
         identity: { state: firstFrameAuthState(firstDoor), onAction: () => undefined },
-        viewport: STATIC_VIEWPORT,
+        viewport,
         locale: firstFrameLocale(runnerProject),
         address,
       })
@@ -245,7 +250,13 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
       // loading, so its frame — the shell and the loading frame — stands
       // (E16); a `?tab=` its tabs read does not.
       const keys = addressStateKeys(receipt).filter((k) => render(new URLSearchParams({ [k]: ADDRESS_PROBE })).html !== result.html)
-      painted.push({ key: page.key, html: result.html, addressKeys: keys })
+      // THE FRAME AT EVERY WIDTH: the same page drawn at each wider
+      // breakpoint, and what differs from the phone's written as CSS.
+      const wide: Record<string, string> = {}
+      for (const bp of WIDE_BREAKPOINTS) wide[bp.name] = render(new URLSearchParams(), bp.name).html
+      const layout = staticLayoutOf(result.html, wide)
+      for (const type of layout.reshaped) reshapedBlocks.set(type, [...(reshapedBlocks.get(type) ?? []), page.key])
+      painted.push({ key: page.key, html: result.html, layoutCss: layout.css, addressKeys: keys })
     } catch (err) {
       diagnostics.push({
         severity: 'warning',
@@ -262,23 +273,37 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
       message: `block "${blockType}" threw while rendering outside a browser (${message}), on ${pages.map((p) => `"${p}"`).join(', ')}: the static first paint leaves it empty and the browser draws it, so the page moves when it appears. A block's render must be pure; browser APIs belong in effects.`,
     })
   }
+  for (const [blockType, pages] of reshapedBlocks) {
+    diagnostics.push({
+      severity: 'info',
+      code: 'STATIC_PAINT_WIDTH',
+      message: `block "${blockType}" draws different markup on a wider window, on ${pages.map((p) => `"${p}"`).join(', ')}: before the renderer runs it shows its phone form at every width. A block that lays itself out for the width in CSS is painted right at every width.`,
+    })
+  }
   return { pages: painted, diagnostics }
 }
 
-/** The entry page's first frame, as the shell holds it (`<template id="pw-entry-frame">`) until the first-paint script puts it into `#root`. */
+/** A page's first frame as a document's body holds it: `#pw-root` naming the page, the frame inside. */
 export function staticRootHtml(page: PaintedPage): string {
   return `<div id="pw-root" ${STATIC_PAGE_ATTR}="${escapeHtml(page.key)}">${page.html}</div>`
 }
 
-/** The served file holding a page's first frame, for a visitor who arrives at it. */
+/** The served file holding a page's first frame, for a document that holds another page's. */
 export function staticPageFile(key: string): string {
   return `pwpack/surfaces/${key}.html`
 }
 
+/** That file's content: the frame's stylesheet (`#pw-static-layout`), then its `#pw-root`. */
+export function staticPageFragment(page: PaintedPage): string {
+  const layout = page.layoutCss ? `<style id="${STATIC_LAYOUT_ID}">${page.layoutCss.replace(/<\//g, '<\\/')}</style>` : ''
+  return `${layout}${staticRootHtml(page)}`
+}
+
 /**
  * What the shell's first-paint script reads (`<script type="application/json"
- * id="pw-first-paint">`): which page each address names, whether the window
- * is at the painted breakpoint, which query keys would seed the page.
+ * id="pw-first-paint">`): which page each address names, which query keys
+ * change a page's first frame, and the file each painted page's frame is
+ * served in. The same on every document of the app.
  */
 export function firstPaintData(input: {
   /** How the app routes, when not by hash: the script then reads the page off the path. */
@@ -288,16 +313,13 @@ export function firstPaintData(input: {
   readonly notFound?: string
   readonly pages: readonly PaintedPage[]
 }): Record<string, unknown> {
-  const pages: Record<string, { keys: readonly string[]; file?: string }> = {}
-  for (const p of input.pages) {
-    pages[p.key] = { keys: p.addressKeys, ...(p.key === input.entry ? {} : { file: staticPageFile(p.key) }) }
-  }
+  const pages: Record<string, { keys: readonly string[]; file: string }> = {}
+  for (const p of input.pages) pages[p.key] = { keys: p.addressKeys, file: staticPageFile(p.key) }
   return {
     ...(input.router ? { router: input.router } : {}),
     entry: input.entry,
     routes: input.routes,
     ...(input.notFound ? { notFound: input.notFound } : {}),
-    maxWidth: STATIC_VIEWPORT_MAX_WIDTH,
     pages,
   }
 }
