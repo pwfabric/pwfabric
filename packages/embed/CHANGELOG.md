@@ -1,5 +1,9 @@
 # @pwfabric/embed
 
+## 3.3.1
+
+- No changes; released with the other packages at 3.3.1.
+
 ## 3.3.0
 
 - Fixed: a block passed as `components` gets the props its `dynamicBlocks` entry declares, as a loaded block does, and its module is not loaded (@pwfabric/runtime).

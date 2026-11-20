@@ -1,6 +1,6 @@
 # @pwfabric/cli
 
-## Unreleased
+## 3.3.1
 
 - Fixed: `pwf add @pwpack/<handle>/<name>` (and `pwf_add_pack` with a pack id) downloads a pack whose address PhiWebs gives on the API's own origin. That download now carries the session's `Authorization: Bearer` token, as `GET /api/pwpacks/sources` does; after a `401` the token is refreshed once and the download tried again. An address on any other origin (a presigned one) still gets no token. A plain-http address is refused unless the API itself is http (local development). A download the API refuses (`401`/`403`) fails with `SESSION_REFUSED` (run `pwf login`), one it does not find (`404`) with `PACK_NOT_INSTALLED`, any other with `PACK_DOWNLOAD_FAILED`; neither the address nor the token is printed. The listing's `expiresAt` is no longer expected.
 
