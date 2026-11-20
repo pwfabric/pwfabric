@@ -89,12 +89,16 @@ the same. Markdown notes under `atoms/` (such as the `atoms/README.md` that
 `create` writes) are documentation and travel with the pack. The same folder
 always gives the same bytes.
 
-### `pwf add <path-to.pwpack|dir> [--dir <project>]`
+### `pwf add <path-to.pwpack|dir|@pwpack/<handle>/<name>[@<version>]> [--dir <project>]`
 
 Validates the pack, copies its pack content to `.pwf/packs/<id>@<version>/`,
 pins it in `packs[]` by the content hash of exactly what was copied and adds `{ id, range: "^<major>.0.0" }` to
-`requires` (replacing an earlier entry for the same id). Only local archives
-and folders: resolving packs from npm or a pack registry is not supported.
+`requires` (replacing an earlier entry for the same id). A pack id that is not
+an existing path is a pack of the PhiWebs workspace you are signed in to
+(`pwf login`): pwf downloads it, checks it against the sha256 PhiWebs gives and
+installs it the same way; a pack PhiWebs keeps to its studio (a pattern pack,
+a licence without the source) is refused with the reason. Resolving packs from
+npm is not supported.
 
 ### `pwf add block <category>/<type> [--dir <project>]`
 

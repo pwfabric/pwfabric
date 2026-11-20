@@ -19,7 +19,7 @@ import {
   type PackIssue,
 } from '@pwfabric/pack'
 import { z } from 'zod'
-import { addPack } from '../commands/add.js'
+import { addPackFrom } from '../commands/add.js'
 import { buildProject, buildRouting, buildSummary, routingLine } from '../commands/build.js'
 import { createApp } from '../commands/create.js'
 import { packProject } from '../commands/pack.js'
@@ -31,6 +31,7 @@ import { countLine, validateProject } from '../commands/lib/report.js'
 import { addBlock, createPack } from '../commands/lib/scaffold.js'
 import { catalogOf, type FoundationBlock } from '../commands/lib/starter.js'
 import { projectDirOf, readSource, writeTarget } from './paths.js'
+import type { PhiwebsToolsOptions } from './phiwebs.js'
 
 /** The answer of one tool call, as the MCP `tools/call` result. */
 export interface ToolAnswer {
@@ -95,7 +96,9 @@ export function failureAnswer(e: unknown): ToolAnswer {
   const code = e instanceof CommandFailure ? e.code : e instanceof UsageError ? 'USAGE' : 'FAILED'
   const message = e instanceof Error ? e.message : String(e)
   const issues = e instanceof CommandFailure ? e.issues : []
-  const fix = FIXES[code] ?? 'Read the message, correct the input or the folder, and call the tool again.'
+  // A failure that prints its own fix (the PhiWebs ones) carries it in its lines.
+  const ownFix = e instanceof CommandFailure ? e.lines?.find((l) => l.startsWith('fix: '))?.slice(5) : undefined
+  const fix = FIXES[code] ?? ownFix ?? 'Read the message, correct the input or the folder, and call the tool again.'
   const text = [`${code}: ${message}`, ...listed(issues), '', `Fix: ${fix}`].join('\n')
   return {
     isError: true,
@@ -230,6 +233,39 @@ function knowledgeLines(knowledge: Record<string, unknown>): string[] {
   )
 }
 
+/**
+ * pwf_add_pack. `phiwebs` is where the PhiWebs session lives, for a pack named
+ * by its id; without it (a server made with no PhiWebs options) a pack id
+ * finds no session, as when the user is not signed in.
+ */
+export const ADD_PACK_TOOL = 'pwf_add_pack'
+
+export function addPackTool(phiwebs?: PhiwebsToolsOptions): ToolDefinition {
+  return {
+    name: ADD_PACK_TOOL,
+    title: 'Add a pack to a project',
+    description:
+      'Install a pack into an app or pack folder: its content is copied to .pwf/packs/<id>@<version>/, pinned in pwpack.json by content hash and required at ^<major>.0.0. The pack is a local .pwpack or pack folder (released open packs: https://github.com/pwfabric/packs/releases), or the id @pwpack/<handle>/<name>[@<version>] of a pack installed in the signed-in PhiWebs workspace (needs `pwf login`): downloaded, checked against its sha256, and installed the same way.',
+    inputSchema: {
+      projectDir,
+      pack: z
+        .string()
+        .describe('A .pwpack file or a pack folder (absolute, or relative to projectDir), or a PhiWebs pack id @pwpack/<handle>/<name>[@<version>].'),
+    },
+    readOnly: false,
+    run: (input) =>
+      answer(async () => {
+        const root = projectDirOf(input['projectDir'] as string)
+        const added = await addPackFrom(root, root, input['pack'] as string, phiwebs)
+        return ok(
+          [`Added ${added.id}@${added.version}`, `Cached in ${added.cachedIn}, pinned ${added.hash}, requires ${added.range}`],
+          'call pwf_describe_project to see the blocks it offers and pwf_describe_block for one in full, place them in a receipt, then pwf_validate.',
+          { ...added }
+        )
+      }),
+  }
+}
+
 export const TOOLS: readonly ToolDefinition[] = [
   {
     name: 'pwf_create_app',
@@ -296,27 +332,7 @@ export const TOOLS: readonly ToolDefinition[] = [
         return ok(lines, 'call pwf_add_block to add a block, then pwf_validate.', { ...created })
       }),
   },
-  {
-    name: 'pwf_add_pack',
-    title: 'Add a pack to a project',
-    description:
-      'Install a pack build (.pwpack or pack folder) into an app or pack folder: its content is copied to .pwf/packs/<id>@<version>/, pinned in pwpack.json by content hash and required at ^<major>.0.0. Only local files: download released packs from https://github.com/pwfabric/packs/releases first.',
-    inputSchema: {
-      projectDir,
-      pack: z.string().describe('The pack to install: a .pwpack file or a pack folder (absolute, or relative to projectDir).'),
-    },
-    readOnly: false,
-    run: (input) =>
-      answer(async () => {
-        const root = projectDirOf(input['projectDir'] as string)
-        const added = await addPack(root, readSource(root, input['pack'] as string))
-        return ok(
-          [`Added ${added.id}@${added.version}`, `Cached in ${added.cachedIn}, pinned ${added.hash}, requires ${added.range}`],
-          'call pwf_describe_project to see the blocks it offers, place them in a receipt, then pwf_validate.',
-          { ...added }
-        )
-      }),
-  },
+  addPackTool(),
   {
     name: 'pwf_add_block',
     title: 'Add a block',
