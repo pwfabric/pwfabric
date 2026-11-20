@@ -12,7 +12,6 @@ import { PAGE_HINTS_SCRIPT } from '../../dev/shell.js'
 
 const hints = {
   entry: 'menu',
-  maxWidth: 639,
   routes: ['menu', 'dish'],
   notFound: 'notfound',
   pages: {
@@ -69,12 +68,12 @@ describe('the page-hints script', () => {
 
   it('E-5: the frame is asked for only where the first-paint script will put it in', () => {
     const page = ['preload fetch ./pwpack/surfaces/dish.receipt.json cors', 'preload fetch ./blocks/b.2.mjs cors']
-    // Wider than the painted breakpoint: the runner draws the page, the frame
-    // would be "preloaded but not used within a few seconds".
-    expect(run('#/dish?id=3', hints, 1280)).toEqual(page)
-    // A query key that changes the frame keeps the build's frame out too.
+    // A query key that changes the frame keeps the build's frame out.
     expect(run('#/dish?tab=reviews', hints, 390)).toEqual(page)
-    expect(run('#/dish?id=3', hints, 639)).toEqual([...page, 'preload fetch ./pwpack/surfaces/dish.html cors'])
+    // At every width: the frame is the page's at any width (its layout stylesheet).
+    expect(run('#/dish?id=3', hints, 1280)).toEqual([...page, 'preload fetch ./pwpack/surfaces/dish.html cors'])
+    // The document already holds the page's frame (its own document): not asked for again.
+    expect(run('#/dish?id=3', { ...hints, page: 'dish' }, 390)).toEqual(page)
   })
 
   it('an address naming no route asks for the not-found page’s', () => {

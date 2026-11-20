@@ -7,6 +7,7 @@ vi.setConfig({ testTimeout: 60_000 })
 import { assemblePwapp } from '../../dev/assemble.js'
 import { FIRST_PAINT_SCRIPT, PAGE_HINTS_SCRIPT } from '../../dev/shell.js'
 import { firstPaintData } from '../../dev/static-paint.js'
+import { visibleText } from '../../dev/static-layout.js'
 import { PACK_REL, makeApp, text } from './helpers.js'
 
 let cleanups: (() => Promise<void>)[] = []
@@ -22,20 +23,25 @@ async function app(): Promise<string> {
 const codes = (r: { diagnostics: readonly { code: string }[] }): string[] => r.diagnostics.map((d) => d.code)
 
 describe('the static first paint (pwapp-format §2.5)', () => {
-  it('writes the entry page into #root, before any script runs', async () => {
+  it('writes the entry page into #root as visible markup, before any script runs', async () => {
     const r = await assemblePwapp(await app(), { cacheDir: null })
     expect(r.ok, codes(r).join()).toBe(true)
     const html = text(r.files.get('index.html'))
-    // Held in a template the first-paint script puts into the (empty) root:
-    // a visitor who opens another page never fetches this page's pictures.
-    expect(html).toContain('<div id="root"></div>')
-    const root = html.slice(html.indexOf('<template id="pw-entry-frame">'), html.indexOf('</template>'))
-    expect(root).toContain('<div id="pw-root" data-pw-static="home">')
-    // The page's own words, from the pack's compiled blocks.
-    expect(root).toContain('Hello from k-app')
-    // The phone layout, the renderer's own root.
+    // The document's own content: no template, no script needed to show it.
+    expect(html).not.toContain('<template')
+    const start = html.indexOf('<div id="root">')
+    const root = html.slice(start, html.indexOf('<script type="application/json" id="pw-first-paint">'))
+    expect(root).toContain('<div id="root"><div id="pw-root" data-pw-static="home">')
+    // The page's own words, from the pack's compiled blocks — read as a crawler does.
+    expect(visibleText(root)).toContain('Hello from k-app')
+    // Drawn at the phone breakpoint, the renderer's own root…
     expect(root).toContain('data-viewport="xs"')
     expect(root).not.toMatch(/<script/i)
+    // …and laid out at every wider one by its stylesheet in <head>.
+    const layout = html.match(/<style id="pw-static-layout">([\s\S]*?)<\/style>/)?.[1] ?? ''
+    expect(layout).toContain('@media (min-width:640px)')
+    expect(layout).toContain('@media (min-width:1024px)')
+    expect(html.indexOf('<style id="pw-static-layout">')).toBeLessThan(html.indexOf('</head>'))
     expect(codes(r).filter((c) => c.startsWith('STATIC_PAINT'))).toEqual([])
   })
 
@@ -49,7 +55,7 @@ describe('the static first paint (pwapp-format §2.5)', () => {
     expect(html).toContain(`<script>${PAGE_HINTS_SCRIPT}</script>`)
     expect(text(r.files.get('_headers'))).toContain(hintsHash)
     const data = JSON.parse(html.match(/<script type="application\/json" id="pw-first-paint">(.*?)<\/script>/)?.[1] ?? '{}')
-    expect(data).toMatchObject({ entry: 'home', routes: ['home'], maxWidth: 639, pages: { home: { keys: [] } } })
+    expect(data).toEqual({ entry: 'home', routes: ['home'], pages: { home: { keys: [], file: 'pwpack/surfaces/home.html' } } })
   })
 
   it('is the same bytes on every build (no build-time clock, data or machine locale)', async () => {
@@ -66,6 +72,7 @@ describe('the static first paint (pwapp-format §2.5)', () => {
     const html = text(r.files.get('index.html'))
     expect(html).toContain('<div id="root"></div>')
     expect(html).not.toContain('pw-first-paint')
+    expect(html).not.toContain('pw-static-layout')
   })
 
   it('draws the account control the app DECLARES, though the build has no auth.json (conference-companion, React #418)', async () => {
@@ -104,25 +111,24 @@ export default function Bar(p: { props?: { account?: { signedIn?: boolean } } })
     expect(project.identity).toMatchObject({ methods: ['password'], registration: 'open', door: false })
   })
 
-  it('the first-paint data names each painted page, its seeding keys and, past the entry, its file', () => {
+  it('the first-paint data names each painted page, the query keys that change its frame and its file', () => {
     expect(
       firstPaintData({
         entry: 'menu',
         routes: ['menu', 'visit', 'dish'],
         notFound: 'notfound',
         pages: [
-          { key: 'menu', html: '', addressKeys: ['category'] },
-          { key: 'visit', html: '', addressKeys: [] },
-          { key: 'notfound', html: '', addressKeys: [] },
+          { key: 'menu', html: '', layoutCss: '', addressKeys: ['category'] },
+          { key: 'visit', html: '', layoutCss: '', addressKeys: [] },
+          { key: 'notfound', html: '', layoutCss: '', addressKeys: [] },
         ],
       })
     ).toEqual({
       entry: 'menu',
       routes: ['menu', 'visit', 'dish'],
       notFound: 'notfound',
-      maxWidth: 639,
       pages: {
-        menu: { keys: ['category'] },
+        menu: { keys: ['category'], file: 'pwpack/surfaces/menu.html' },
         visit: { keys: [], file: 'pwpack/surfaces/visit.html' },
         notfound: { keys: [], file: 'pwpack/surfaces/notfound.html' },
       },
@@ -153,16 +159,18 @@ export default function Bar(p: { props?: { account?: { signedIn?: boolean } } })
 
     const r = await assemblePwapp(root, { cacheDir: null })
     expect(r.ok, codes(r).join()).toBe(true)
+    // The frame's own file: its stylesheet, then its root.
+    expect(text(r.files.get('pwpack/surfaces/dish.html'))).toMatch(/^<style id="pw-static-layout">[\s\S]*<\/style><div id="pw-root" data-pw-static="dish">/)
     expect(text(r.files.get('pwpack/surfaces/dish.html'))).toContain('A dish')
     const html = text(r.files.get('index.html'))
     const data = JSON.parse(html.match(/<script type="application\/json" id="pw-first-paint">(.*?)<\/script>/)?.[1] ?? '{}')
     // `?id=` seeds a source that is still loading: the dish frame stands for every dish.
     expect(data.pages.dish).toEqual({ keys: [], file: 'pwpack/surfaces/dish.html' })
     expect(data.pages.order).toEqual({ keys: ['id'], file: 'pwpack/surfaces/order.html' })
-    // A deep link asks for its frame with the document; the entry's is in the shell.
+    // A deep link asks for its frame with the document; the document's own page is in it.
     const hints = JSON.parse(html.match(/<script type="application\/json" id="pw-page-hints">(.*?)<\/script>/)?.[1] ?? '{}')
     expect(hints.pages.dish.frame).toBe('pwpack/surfaces/dish.html')
-    expect(hints.pages.home.frame).toBeUndefined()
+    expect(hints.page).toBe('home')
   })
   it('a source settled without a request is settled in the frame (idle with no ?id=); one only a session can read waits, loading (E-6)', async () => {
     const root = await app()

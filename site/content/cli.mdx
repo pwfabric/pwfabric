@@ -157,7 +157,7 @@ pwf build [dir] [--out <dir>] [--router <hash|path|auto>] [--base <path>]
 |---|---|
 | `dir` | The app folder. Default: the current folder. |
 | `--out <dir>` | Where to write the built app. Default `<dir>/.pwf/out/`. |
-| `--router <mode>` | How the built app routes: the `router` it passes to `runApp()`. `hash` (default): `#/<page>` addresses, which work on every static host. `path`: clean `/<page>` addresses; the shell carries `<base href>`, and the host must answer every page path with `index.html`. `auto`: path routing where the browser can, else hash; the shell also carries `<meta name="pw-router" content="path">`. |
+| `--router <mode>` | How the built app routes: the `router` it passes to `runApp()`. `hash` (default): `#/<page>` addresses, which work on every static host. `path`: clean `/<page>/` addresses; every page is a document of its own (`index.html` for the entry, `<page>/index.html`, and `404.html` for an address that names no page), which a static host serves as it is. `auto`: path routing where the browser can, else hash; the shell also carries `<meta name="pw-router" content="path">`. |
 | `--base <path>` | With `path` or `auto`: the path the app is served under, written as the shell's `<base href>`. Default `/`; `--base /shop/` for an app served at `/shop/`. |
 
 Assembles the app into a static **pwapp**: `index.html`, the runner and its
@@ -175,13 +175,20 @@ wrote 25 files to .pwf/out
 
 $ pwf build --router path
 built 1 page, 3 block types, 0 engines — 56/57 atoms compiled (56 from cache; 1 skipped: RestConnector (connector declared as data, no code to compile)) in 1713 ms
-router: path, base / — the host must answer every page path with index.html
-wrote 25 files to .pwf/out
+router: path, base / — one document per page (<page>/index.html) and 404.html, which a static host serves as they are
+wrote 27 files to .pwf/out
 ```
 
-A path-routed build runs under [`pwf run`](#pwf-run), which answers every page
-path with `index.html`, so a deep link such as `/menu` or `/dish?id=…` opens
-its page. On another host, configure that fallback (see
+Every page's document holds that page's **first frame as plain HTML**, laid out
+for every window width, so a reader without scripts — and a search engine —
+reads the page's words; the runner then adopts that HTML instead of drawing the
+page again. Its `<head>` is the page's own: its title, its description and,
+when `app/plan.json` declares the app's public `origin` (`"origin":
+"https://example.com"`), its canonical address and Open Graph tags
+(`og:image` from the plan's `image`). With an origin the build also writes
+`sitemap.xml`, and `robots.txt` names it. A path-routed build runs as it is on
+any static host and under [`pwf run`](#pwf-run); an unknown address is answered
+with `404.html`, status 404 (see
 [Routing on a static host](/self-host#routing-on-a-static-host)).
 
 The build also writes the app's **Content Security Policy**, derived from what
@@ -346,9 +353,11 @@ and `pwf run` prints a line saying so. A build copied elsewhere, or a
 `/_host` is then a `404` with a JSON error, code `NO_RECORD_HOST`, never
 `index.html`. Serve the app folder, or use `pwf dev`.
 
-Page paths without a file extension are answered with `index.html` and a
-`<base href="/">`, so
-path-routed apps work; a missing asset is a 404. Headers declared in the
+The folder is served as a static host serves it: a path is its file or its
+folder's `index.html` (a page's own document); a page path no file answers is
+the folder's `404.html`, with status 404 — or, for a folder without one (a
+hash-routed app, or a build from before 3.4), `index.html` with a
+`<base href="/">`. A missing asset is a 404. Headers declared in the
 folder's `_headers` file (such as the app's Content Security Policy) are sent
 with the files they match. Runs until Ctrl+C.
 

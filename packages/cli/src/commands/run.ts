@@ -170,8 +170,11 @@ export const run: Command = {
                  for more) read the app's files and records across origins.
                  Default: none. "*" and "null" are refused.
 
-Page paths without a file extension are answered with index.html and a
-<base href="/">, so path-routed apps work at any depth; a missing asset is a 404.
+Served as a static host serves it: a path is its file, or its folder's
+index.html (a page's own document); a page path no file answers is the
+folder's 404.html with status 404 — or, for a folder without one (hash
+routing, or a build that predates page documents), index.html with a
+<base href="/">. A missing asset is a 404.
 Paths under ${HOST_PREFIX} are never answered with index.html: without the app
 folder there is no record host, and they are a 404 with a JSON error
 (NO_RECORD_HOST) saying so.

@@ -24,6 +24,7 @@ import {
   blockShimFiles,
   shimSource,
 } from '@pwfabric/core/host-imports'
+import { STATIC_LAYOUT_ID } from '@pwfabric/runner'
 
 const require = createRequire(import.meta.url)
 
@@ -217,10 +218,16 @@ export const BOOT_FILES = [
 ] as const
 
 export interface ShellOptions {
-  /** The app's title (`plan.json` `title`); empty when it states none. */
+  /** The document's `<title>`: the page's title composed with the app's (receipt §1), or the app's; empty when it states none. */
   readonly title: string
-  /** `<meta name="description">`: the app's description, or its entry page's. */
+  /** `<meta name="description">`: the page's description, else the app's. */
   readonly description?: string
+  /** `<link rel="canonical">` and `og:url`: the page's address on the app's public origin, when the app declares one. */
+  readonly canonical?: string
+  /** `og:image`: the app's preview picture, as an absolute address. */
+  readonly image?: string
+  /** The document answers an address that names no page (`404.html`): it asks search engines not to index it. */
+  readonly noindex?: boolean
   /** `<html lang>`: the app's locale. Absent or not a tag: no `lang`. */
   readonly lang?: string
   /** The webfont stylesheet of the app's theme and its pages' own (theme.ts `webfontStylesheetHref`): preconnected and preloaded. */
@@ -257,22 +264,27 @@ export interface ShellOptions {
   /**
    * What each page needs first, by page key (see {@link PageHints}): the
    * shell asks for the OPENED page's only ({@link PAGE_HINTS_SCRIPT}).
+   * `page` is the page whose first frame this document holds: its frame is
+   * not asked for again.
    */
   readonly pageHints?: {
     readonly entry: string
-    /** The widest window the build painted a first frame for (pwapp-format §2.5). */
-    readonly maxWidth?: number
+    readonly page?: string
     readonly routes: readonly string[]
     readonly notFound?: string
     readonly pages: Readonly<Record<string, PageHints>>
   }
   /**
-   * The static first paint (pwapp-format §2.5): the entry page's first frame,
-   * written into `<template id="pw-entry-frame">`, and what
-   * {@link FIRST_PAINT_SCRIPT} reads to put it, or another page's, into
-   * `#root` before the browser paints. Absent: `#root` is empty.
+   * The static first paint (pwapp-format §2.5): the first frame of the page
+   * this document is for — `#pw-root` and its content, written into `#root`
+   * as the document's own visible content (empty when the page is not
+   * painted) — the stylesheet that lays it out at every wider breakpoint
+   * (`<style id="pw-static-layout">` in `<head>`), and what
+   * {@link FIRST_PAINT_SCRIPT} reads to take it away, or put another page's
+   * in, when the address names another page. Absent: `#root` is empty and
+   * the script is not written.
    */
-  readonly firstPaint?: { readonly rootHtml: string; readonly data: Record<string, unknown> }
+  readonly firstPaint?: { readonly rootHtml: string; readonly layoutCss: string; readonly data: Record<string, unknown> }
 }
 
 /**
@@ -331,10 +343,10 @@ export const PAGE_HINTS_SCRIPT = String.raw`(function () {
     if (typeof page.receipt === 'string') add(page.receipt, 'fetch')
     for (var j = 0; j < (page.modules || []).length; j++) if (typeof page.modules[j] === 'string') add(page.modules[j], 'fetch')
     if (typeof page.image === 'string') add(page.image, 'image', page.imagePriority === true)
-    // The frame only where the first-paint script puts it in: at the painted
-    // width, with no query key that changes it. Anywhere else the runner
-    // draws the page and the frame was "preloaded but not used".
-    var painted = typeof page.frame === 'string' && window.innerWidth <= d.maxWidth
+    // The frame only where the first-paint script puts it in: a page this
+    // document does not hold, with no query key that changes it. Anywhere
+    // else it was "preloaded but not used".
+    var painted = typeof page.frame === 'string' && key !== d.page
     if (painted && m && m[2]) {
       var query = new URLSearchParams(m[2])
       for (var i = 0; i < (page.frameKeys || []).length; i++) if (query.has(page.frameKeys[i])) painted = false
@@ -345,18 +357,16 @@ export const PAGE_HINTS_SCRIPT = String.raw`(function () {
 
 /**
  * The shell's inline script after `#root`, run where it stands — before the
- * first paint. It puts the build's first frame of the opened page into the
- * (empty) root, only where it is this visit's first frame:
- * - the address names the entry page: its frame, from
- *   `<template id="pw-entry-frame">` — a template, so a visitor who opened
- *   another page never downloads the entry page's pictures;
- * - another painted page (or one the app does not have, when it ships a
- *   not-found page): that page's frame is fetched
- *   (`pwpack/surfaces/<key>.html`) and put in place when it arrives — unless
- *   the runner has drawn into the root by then;
- * - a window wider than the painted breakpoint, a page that is not painted,
- *   or an address whose query carries a key that changes the page's first
- *   frame: nothing; the runner draws the page.
+ * first paint. The document holds the first frame of the page it is for
+ * (`#pw-root[data-pw-static="<key>"]`); the script lets it stand only where
+ * it is this visit's first frame — the address names that page, and its
+ * query carries no key that changes the frame. Otherwise it takes the frame
+ * and its stylesheet (`#pw-static-layout`) away before the browser paints
+ * them, and when the address names another painted page (or one the app does
+ * not have, while its not-found page is painted) and no such key, fetches
+ * that page's frame (`pwpack/surfaces/<key>.html`: its stylesheet and its
+ * `#pw-root`) and puts it in place when it arrives — unless the runner has
+ * drawn into the root by then.
  * Constant text, so the Content Security Policy allows it by one hash.
  */
 export const FIRST_PAINT_SCRIPT = String.raw`(function () {
@@ -367,23 +377,25 @@ export const FIRST_PAINT_SCRIPT = String.raw`(function () {
     var d = JSON.parse(data.textContent || '{}')
     ${ADDRESS_KEY}
     var page = own(d.pages, key) ? d.pages[key] : null
-    if (!page || window.innerWidth > d.maxWidth) return
-    if (m && m[2]) {
+    if (page && m && m[2]) {
       var query = new URLSearchParams(m[2])
-      for (var i = 0; i < page.keys.length; i++) if (query.has(page.keys[i])) return
+      for (var i = 0; i < page.keys.length; i++) if (query.has(page.keys[i])) { page = null; break }
     }
-    var frame = document.getElementById('pw-entry-frame')
-    if (!page.file) {
-      if (frame && frame.content) root.appendChild(frame.content)
-      return
-    }
+    var held = root.firstElementChild
+    if (page && held && held.getAttribute('data-pw-static') === key) return
+    var layout = document.getElementById('pw-static-layout')
+    if (layout) layout.parentNode.removeChild(layout)
+    while (root.firstChild) root.removeChild(root.firstChild)
+    if (!page || !page.file) return
     fetch('./' + page.file).then(function (r) { return r.ok ? r.text() : '' }).then(function (html) {
       if (!html || root.firstChild) return
-      var el = document.createElement('div')
-      el.id = 'pw-root'
-      el.setAttribute('data-pw-static', key)
-      el.innerHTML = html
-      root.appendChild(el)
+      var t = document.createElement('template')
+      t.innerHTML = html
+      var style = t.content.getElementById('pw-static-layout')
+      var frame = t.content.getElementById('pw-root')
+      if (!frame) return
+      if (style) document.head.appendChild(style)
+      root.appendChild(frame)
     }).catch(function () {})
   } catch (e) {}
 })()`
@@ -404,11 +416,10 @@ export interface PageHints {
   readonly imagePriority?: boolean
   /**
    * The page's first frame (`pwpack/surfaces/<key>.html`, pwapp-format §2.5),
-   * for a page painted at build that is not the entry: asked for with the
-   * document, so the first-paint script's fetch of it is not one more round
-   * trip behind the runner. Only where that script will put it in: at the
-   * painted width (`maxWidth` of the hints) and with none of `frameKeys` in
-   * the address's query.
+   * for a page painted at build: asked for with the document, so the
+   * first-paint script's fetch of it is not one more round trip behind the
+   * runner. Only where that script will put it in: on a document that holds
+   * another page's frame, and with none of `frameKeys` in the address's query.
    */
   readonly frame?: string
   /** The query keys that change the page's first frame (the first-paint data's `keys`). */
@@ -552,6 +563,20 @@ export function buildShellHtml(options: ShellOptions): string {
     ? `
     <meta name="description" content="${escapeHtml(options.description.trim())}" />`
     : ''
+  // What a search engine and a link preview read: the page's own (§2.4).
+  const meta = [
+    options.noindex ? '<meta name="robots" content="noindex" />' : '',
+    options.canonical ? `<link rel="canonical" href="${escapeHtml(options.canonical)}" />` : '',
+    '<meta property="og:type" content="website" />',
+    options.title ? `<meta property="og:title" content="${escapeHtml(options.title)}" />` : '',
+    options.description?.trim() ? `<meta property="og:description" content="${escapeHtml(options.description.trim())}" />` : '',
+    options.canonical ? `<meta property="og:url" content="${escapeHtml(options.canonical)}" />` : '',
+    options.image ? `<meta property="og:image" content="${escapeHtml(options.image)}" />` : '',
+  ]
+    .filter((l) => l !== '')
+    .map((l) => `
+    ${l}`)
+    .join('')
   // `async`: downloaded with the page and run the moment it arrives, holding
   // neither the parser nor the first paint, and not waiting for the runner
   // (which waits for this element when it needs the renderer).
@@ -582,10 +607,13 @@ export function buildShellHtml(options: ShellOptions): string {
     <base href="${escapeHtml(options.base ?? '/')}" />${router === 'auto' ? `
     <meta name="pw-router" content="path" />` : ''}`
   const firstPaint = options.firstPaint
-    ? `${options.firstPaint.rootHtml ? `
-    <template id="pw-entry-frame">${options.firstPaint.rootHtml}</template>` : ''}
+    ? `
     <script type="application/json" id="pw-first-paint">${scriptJson(options.firstPaint.data)}</script>
     <script>${FIRST_PAINT_SCRIPT}</script>`
+    : ''
+  const layout = options.firstPaint?.layoutCss
+    ? `
+    <style id="${STATIC_LAYOUT_ID}">${options.firstPaint.layoutCss.replace(/<\//g, '<\\/')}</style>`
     : ''
   const hints = options.pageHints && Object.keys(options.pageHints.pages).length > 0
     ? `
@@ -597,14 +625,14 @@ export function buildShellHtml(options: ShellOptions): string {
   <head>
     <meta charset="UTF-8" />${base}${csp}
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(options.title)}</title>${description}
+    <title>${escapeHtml(options.title)}</title>${description}${meta}
     <link rel="icon" href="data:," />
-    ${options.themeCss !== undefined ? `<style>${options.themeCss.replace(/<\//g, '<\\/')}</style>` : `<link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />`}${fonts}
+    ${options.themeCss !== undefined ? `<style>${options.themeCss.replace(/<\//g, '<\\/')}</style>` : `<link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />`}${layout}${fonts}
     <script type="importmap">${importMapText()}</script>
     <link rel="modulepreload" href="./${escapeHtml(assets.runner)}" />${renderer}${shims}${boot}${hints}
   </head>
   <body>
-    <div id="root"></div>${firstPaint}
+    <div id="root">${options.firstPaint?.rootHtml ?? ''}</div>${firstPaint}
     <script type="module" src="./${escapeHtml(assets.boot)}"></script>${options.bodyExtra ?? ''}
   </body>
 </html>

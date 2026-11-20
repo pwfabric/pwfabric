@@ -2,17 +2,21 @@
 /**
  * The static first paint, checked in a browser (pwapp-format §2.5):
  *
- *   node scripts/hydration-check.mjs <app folder>… [--port 5010]
+ *   node scripts/hydration-check.mjs <app folder>… [--port 5010] [--router hash|path]
  *
- * For every app it builds the app with THIS checkout's CLI, serves it with
- * `pwf run`, and opens every painted page (`#pw-first-paint`) at phone width.
- * A page FAILS when:
+ * For every app it builds the app with THIS checkout's CLI (`--router`, default
+ * hash), serves it with `pwf run`, and opens every painted page
+ * (`#pw-first-paint`) at phone width and at desktop width — the frame is drawn
+ * at the phone breakpoint and laid out for a wider window by its stylesheet,
+ * and the runner hydrates it at every width. A page FAILS when:
  *  - React reports the HTML does not match the first render (a recoverable
  *    hydration error: "#418", "did not match");
  *  - any node the build painted is gone after hydration and the update the
  *    runner applies right after it (it was drawn again, not adopted);
  *  - the page was not hydrated at all (positive control: the painted root
  *    carries React's fiber, so a check that saw nothing cannot pass);
+ *  - the frame's stylesheet (`#pw-static-layout`) is still there after the
+ *    update that brings the page to the window's width;
  *  - the page is a record page (notFoundWhenEmpty source) opened with a real
  *    record id from its fallback data, and the record did not load within the
  *    check window (address seed never reached state, or source stayed idle).
@@ -29,6 +33,10 @@
  * correct. They are worth monitoring: if the count grows, the first-paint
  * script may need a timing adjustment.
  *
+ * At desktop width, a block the build named as drawing different markup on a
+ * wider window (`STATIC_PAINT_WIDTH`) is drawn again by that update, by
+ * design: its nodes are not counted.
+ *
  * Needs a Chromium for Playwright (`pnpm exec playwright install chromium`).
  * Exits 1 when any page fails, 2 on a usage or build error.
  */
@@ -42,9 +50,13 @@ const cli = join(here, '..', 'packages', 'cli', 'dist', 'bin.js')
 const args = process.argv.slice(2)
 const portAt = args.indexOf('--port')
 let port = portAt >= 0 ? Number(args[portAt + 1]) : 5010
-const apps = args.filter((a, i) => !a.startsWith('--') && (portAt < 0 || i !== portAt + 1))
-if (apps.length === 0) {
-  console.error('usage: node scripts/hydration-check.mjs <app folder>… [--port 5010]')
+const routerAt = args.indexOf('--router')
+const router = routerAt >= 0 ? args[routerAt + 1] : 'hash'
+const apps = args.filter((a, i) => !a.startsWith('--') && (portAt < 0 || i !== portAt + 1) && (routerAt < 0 || i !== routerAt + 1))
+/** The widths every page is opened at: a phone, and a desktop. */
+const WIDTHS = [390, 1440]
+if (apps.length === 0 || (router !== 'hash' && router !== 'path')) {
+  console.error('usage: node scripts/hydration-check.mjs <app folder>… [--port 5010] [--router hash|path]')
   process.exit(2)
 }
 
@@ -65,9 +77,9 @@ async function ready(url, ms = 20_000) {
 }
 
 /** What one painted page came out as in the browser. */
-async function checkPage(browser, origin, key, pageInfo) {
+async function checkPage(browser, origin, key, pageInfo, width, address, reshaped) {
   const { query, isRecord } = pageInfo
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  const page = await browser.newPage({ viewport: { width, height: 844 } })
   const problems = []
   page.on('console', (m) => {
     const text = m.text()
@@ -94,9 +106,11 @@ async function checkPage(browser, origin, key, pageInfo) {
       const root = document.getElementById('pw-root')
       window.__pwPainted = root ? [...root.querySelectorAll('*')] : []
       window.__pwPaintedRoot = root
+      // Read now: a node drawn again is detached later, and has no block around it then.
+      window.__pwPaintedTypes = window.__pwPainted.map((e) => e.closest('[data-block-type]')?.getAttribute('data-block-type') ?? null)
     })
   })
-  await page.goto(`${origin}/#/${key}${query}`)
+  await page.goto(`${origin}${address}${query}`)
   // Record pages need time for the record to load after hydration.
   await page.waitForTimeout(isRecord ? 5000 : 3000)
   const seen = await page.evaluate(() => {
@@ -111,6 +125,8 @@ async function checkPage(browser, origin, key, pageInfo) {
     // Hoisted resources (`<link>`, `<style precedence>`) carry no fiber; any adopted element does.
     const adopted = (e) => Object.keys(e).some((k) => k.startsWith('__reactFiber'))
     return {
+      layoutLeft: Boolean(document.getElementById('pw-static-layout')),
+      goneTypes: painted.map((e, i) => [e, window.__pwPaintedTypes[i]]).filter(([e]) => !e.isConnected).map(([, t]) => t),
       painted: painted.length,
       kept: root?.isConnected === true,
       hydrated: painted.some((e) => e.isConnected && adopted(e)),
@@ -167,6 +183,7 @@ async function checkPage(browser, origin, key, pageInfo) {
   if (!seen.kept && notFound) {
     return { skipped: 'no such record: the not-found page replaced it', problems }
   }
+  if (seen.layoutLeft) problems.push('the frame’s stylesheet (#pw-static-layout) is still in the document after the update')
   if (!seen.kept && !notFound) problems.push('the painted root was replaced')
   else if (seen.kept && !seen.hydrated) problems.push('the painted root was not hydrated')
   // A SOURCE THAT WAITS FOR THE SESSION (E-6): the build paints a
@@ -174,7 +191,11 @@ async function checkPage(browser, origin, key, pageInfo) {
   // to it; right after hydration the runner says (signed out here), and the
   // blocks drawn for its loading state give way to its signed-out state. That
   // is an update after hydration, like a record arriving — not a mismatch.
-  const gone = seen.gone.filter((_, i) => !pageInfo.sessionBlocks?.has(seen.goneBlocks[i]))
+  // At a wider width, a block whose markup differs there is drawn again by the
+  // update after hydration, by design (STATIC_PAINT_WIDTH).
+  const gone = seen.gone.filter(
+    (_, i) => !pageInfo.sessionBlocks?.has(seen.goneBlocks[i]) && !(width > 639 && reshaped.has(seen.goneTypes[i]))
+  )
   if (gone.length > 0) {
     const counts = new Map()
     for (const g of gone) counts.set(g, (counts.get(g) ?? 0) + 1)
@@ -306,7 +327,7 @@ let skipped = 0
 const browser = await chromium.launch()
 try {
   for (const app of apps.map((a) => resolve(a))) {
-    const built = spawnSync(process.execPath, [cli, 'build', app], { encoding: 'utf8' })
+    const built = spawnSync(process.execPath, [cli, 'build', app, '--router', router], { encoding: 'utf8' })
     if (built.status !== 0) {
       console.error(`${basename(app)}: pwf build failed\n${built.stdout}${built.stderr}`)
       process.exitCode = 2
@@ -318,7 +339,15 @@ try {
       console.log(`${basename(app)}: no static first paint (an app that requires sign-in) — nothing to check`)
       continue
     }
-    const keys = Object.keys(JSON.parse(data).pages)
+    const first = JSON.parse(data)
+    const keys = Object.keys(first.pages)
+    const reshaped = new Set([...built.stdout.matchAll(/STATIC_PAINT_WIDTH\s+block "([^"]+)"/g)].map((m) => m[1]))
+    // The page's address: its own document under path routing (the not-found
+    // page at an address no page has), its hash route otherwise.
+    const addressOf = (key) =>
+      router === 'path'
+        ? key === first.notFound ? '/pw-check-no-such-page' : key === first.entry ? '/' : `/${key}/`
+        : `/#/${key}`
     const at = port++
     const server = spawn(process.execPath, [cli, 'run', app, '--port', String(at)], { stdio: 'ignore' })
     try {
@@ -326,11 +355,13 @@ try {
       await ready(`${origin}/index.html`)
       for (const key of keys) {
         const pageInfo = recordPageInfo(join(app, '.pwf', 'out'), key)
-        const { problems, skipped: skip } = await checkPage(browser, origin, key, pageInfo)
-        if (problems.length > 0) failed++
-        if (skip) skipped++
-        const status = problems.length > 0 ? 'FAIL' : skip ? 'skip' : 'ok  '
-        console.log(`${status} ${basename(app)} #/${key}${pageInfo.query}${skip ? ` (${skip})` : ''}${problems.map((p) => `\n       ${p}`).join('')}`)
+        for (const width of WIDTHS) {
+          const { problems, skipped: skip } = await checkPage(browser, origin, key, pageInfo, width, addressOf(key), reshaped)
+          if (problems.length > 0) failed++
+          if (skip) skipped++
+          const status = problems.length > 0 ? 'FAIL' : skip ? 'skip' : 'ok  '
+          console.log(`${status} ${basename(app)} ${addressOf(key)}${pageInfo.query} @${width}${skip ? ` (${skip})` : ''}${problems.map((p) => `\n       ${p}`).join('')}`)
+        }
       }
     } finally {
       server.kill()

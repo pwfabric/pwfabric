@@ -86,7 +86,9 @@ export function buildSummary(result: AssembleResult): string {
 
 /** `router: path, base / — …`, for a build that does not route by hash; undefined for hash. */
 export function routingLine(routing: BuildRouting): string | undefined {
-  return routing.router === 'hash' ? undefined : `router: ${routing.router}, base ${routing.base ?? '/'} — the host must answer every page path with index.html`
+  return routing.router === 'hash'
+    ? undefined
+    : `router: ${routing.router}, base ${routing.base ?? '/'} — one document per page (<page>/index.html) and 404.html, which a static host serves as they are`
 }
 
 export async function runBuild(args: ParsedArgs, io: CommandIO): Promise<number> {
@@ -141,11 +143,18 @@ export const buildCommand: Command = {
   --out <dir>      where to write the pwapp (default: <dir>/.pwf/out)
   --router <mode>  how the app routes, runApp's router (default hash):
                      hash  #/<page> addresses; works on every static host
-                     path  /<page> addresses; the shell carries <base href>, and
-                           the host must answer every page path with index.html
+                     path  /<page>/ addresses; every page is a document of its
+                           own (index.html for the entry, <page>/index.html, and
+                           404.html for an address that names no page), which a
+                           static host serves with no configuration
                      auto  path where the browser can, else hash; the shell also
                            carries <meta name="pw-router" content="path">
   --base <path>    the path the app is served under, for path and auto
-                   (default /; e.g. --base /shop/)`,
+                   (default /; e.g. --base /shop/)
+
+Each page's document carries its first frame as visible HTML, its title and
+description, and — when app/plan.json declares the app's public "origin" — its
+canonical address and Open Graph tags; sitemap.xml then lists every page and
+robots.txt names it.`,
   run: runBuild,
 }

@@ -353,19 +353,25 @@ export const MEDIA = 'public, max-age=3600'
  * the folder may be kept (pwapp-format §2.1, §2.2).
  *
  * A host applies EVERY rule that matches a path and joins a header two rules
- * set, so the caching rules match disjoint paths: the shell, the hashed
+ * set, so the caching rules match disjoint paths: the documents (the shell,
+ * and under path routing each page's and `404.html`), the hashed
  * runtime files (`assets/`), the hashed block and engine modules, and the
  * files under fixed names — the shims, the two manifests, the envelope —
  * which are revalidated. Media comes last and replaces the envelope's rule
  * (`! Cache-Control`), since it lives under `pwpack/` too.
  */
-export function headersFile(policy: string, mediaPolicy: string): string {
+export function headersFile(policy: string, mediaPolicy: string, documents: readonly string[] = []): string {
   const rule = (path: string, ...lines: string[]): string => `${path}\n${lines.map((l) => `  ${l}\n`).join('')}`
+  // A page's document is served at its folder (`/pricing/`) and as the file.
+  const pages = documents
+    .filter((f) => f !== 'index.html')
+    .flatMap((f) => (f.endsWith('/index.html') ? [`/${f.slice(0, -'index.html'.length)}`, `/${f}`] : [`/${f}`]))
   return [
     rule('/*', `Content-Security-Policy: ${policy}`),
     rule('/pwpack/media/*', '! Content-Security-Policy', `Content-Security-Policy: ${mediaPolicy}`),
     rule('/', `Cache-Control: ${REVALIDATE}`),
     rule('/index.html', `Cache-Control: ${REVALIDATE}`),
+    ...pages.map((p) => rule(p, `Cache-Control: ${REVALIDATE}`)),
     rule('/assets/*', `Cache-Control: ${IMMUTABLE}`),
     rule('/blocks/*.mjs', `Cache-Control: ${IMMUTABLE}`),
     rule('/engines/*.mjs', `Cache-Control: ${IMMUTABLE}`),
@@ -375,12 +381,4 @@ export function headersFile(policy: string, mediaPolicy: string): string {
     rule('/pwpack/*', `Cache-Control: ${REVALIDATE}`),
     rule('/pwpack/media/*', '! Cache-Control', `Cache-Control: ${MEDIA}`),
   ].join('')
-}
-
-/**
- * `robots.txt`: a published app is meant to be found, so every crawler may
- * read every path. (A host that serves an app privately answers with its own.)
- */
-export function robotsTxt(): string {
-  return 'User-agent: *\nAllow: /\n'
 }

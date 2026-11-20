@@ -97,9 +97,10 @@ page. It never falls back to the entry page.
   motion) and the runner writes it onto that page's route, query kept —
   `#/session?id=4#rsvp` — so a reload or a shared link opens the same page at
   the same place. A route may carry a query and an anchor, in that order.
-- **path mode**: `<base>/<key>`, where `<base>` is the shell's `<base href>`.
-  Needs an SPA fallback on the host. A `#section` link stays on the page
-  shown (`<base>/<key>?query#section`), although `<base href>` would resolve it
+- **path mode**: `<base><key>/` (the entry page is `<base>`), where `<base>` is
+  the shell's `<base href>` — the folder of the page's own document, which a
+  static host serves as it is. A `#section` link stays on the page
+  shown (`<base><key>/?query#section`), although `<base href>` would resolve it
   against the entry page. `router: 'auto'` chooses path mode only
   when the page also declares `<meta name="pw-router" content="path">`.
 
