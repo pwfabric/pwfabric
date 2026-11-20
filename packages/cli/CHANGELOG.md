@@ -1,5 +1,13 @@
 # @pwfabric/cli
 
+## 3.4.0
+
+- Added: `pwf build --router path|auto` writes one HTML document per page: `index.html` for the entry page, `<key>/index.html` for every other page, and `404.html` from the app's not-found page. Page links are written as `<base><key>/`. Page keys that name a served folder (`assets`, `blocks`, `engines`, `shims`, `pwpack`) are refused (`PAGE_KEY_RESERVED`).
+- Added: each page's first frame is visible markup in the document at every width, not a `<template>` used only up to 639 px. What differs at wider breakpoints is a scoped `<style id="pw-static-layout">`. A block whose markup changes with width keeps its phone form until scripts run; the build reports it as `STATIC_PAINT_WIDTH` (info).
+- Added: a per-page head: title, description and Open Graph tags; `canonical` and `og:url` from the new optional plan `origin`, `og:image` from the optional `image` (`ORIGIN_INVALID`, `IMAGE_INVALID`).
+- Added: with an `origin`, `sitemap.xml` (every static page except record pages; none for an app that requires sign-in), a `Sitemap:` line in `robots.txt`, and `llms.txt` / `llms-full.txt` (llmstxt.org; chrome repeated on every page written once under "Site navigation").
+- Changed: `pwf run` serves the per-page documents as a static host does, answers an unknown page with `404.html` and status 404, and serves the llms files as `text/plain`.
+
 ## 3.3.1
 
 - Fixed: `pwf add @pwpack/<handle>/<name>` (and `pwf_add_pack` with a pack id) downloads a pack whose address PhiWebs gives on the API's own origin. That download now carries the session's `Authorization: Bearer` token, as `GET /api/pwpacks/sources` does; after a `401` the token is refreshed once and the download tried again. An address on any other origin (a presigned one) still gets no token. A plain-http address is refused unless the API itself is http (local development). A download the API refuses (`401`/`403`) fails with `SESSION_REFUSED` (run `pwf login`), one it does not find (`404`) with `PACK_NOT_INSTALLED`, any other with `PACK_DOWNLOAD_FAILED`; neither the address nor the token is printed. The listing's `expiresAt` is no longer expected.

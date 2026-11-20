@@ -1,5 +1,10 @@
 # @pwfabric/runner
 
+## 3.4.0
+
+- Changed: the runner adopts the static first frame at every width (the 639 px gate is gone) and removes the build's layout stylesheet once the real render is in place.
+- Added: in-app navigation updates the document title, description and, under path routing, `canonical`.
+
 ## 3.3.1
 
 - No changes; released with the other packages at 3.3.1.
