@@ -166,7 +166,9 @@ their calls; signed out, `phiwebs_sign_in` explains how to sign in.
 
 An app: packs it, imports the `.pwpack` into a PhiWebs studio project (new,
 or the one remembered in `.pwf/phiwebs.json`), publishes it and prints the
-address. A pack: sends it to the PhiWebs marketplace for review as the
+address. When the studio holds the publish for a person's approval (`202`,
+`awaiting_approval`), it prints the address to approve it instead and exits
+`0`; nothing is online until it is approved. A pack: sends it to the PhiWebs marketplace for review as the
 workspace's publisher, under its own id. Findings and refusals carry their
 codes and fixes. Needs `pwf login`.
 

@@ -533,6 +533,21 @@ Published p_7c1e…@3f9a2c1
   project  p_7c1e… (remembered in .pwf/phiwebs.json; --new makes another)
 ```
 
+When the studio holds the publish for a person's approval (it answers `202`
+with `status: "awaiting_approval"` and an `approveUrl`), nothing is online
+yet. `pwf` prints where to approve it, never "Published", and exits `0`:
+
+```text
+Waiting for approval: p_7c1e…@3f9a2c1 is not online yet
+  approve  https://…  (where the person approves this version)
+  url      https://…/ (once approved)
+  project  p_7c1e… (remembered in .pwf/phiwebs.json; --new makes another)
+Open the approve address and approve this version in the studio before …; the app goes online then.
+```
+
+An approval answer without a usable `http(s)` approve address fails with
+`PUBLISH_FAILED`.
+
 The first publish remembers the project in `.pwf/phiwebs.json` (its id only;
 `.pwf/` is in the starter's `.gitignore`), so later publishes go to the same
 project. Keep building it with the studio's AI, or edit locally and publish

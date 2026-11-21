@@ -18,7 +18,11 @@ export const STUDIO_PATHS = {
   importInto: (id: string) => `/s/p/${encodeURIComponent(id)}/import`,
   /** Wakes a project (publishing needs it awake). */
   open: (id: string) => `/s/p/${encodeURIComponent(id)}/open`,
-  /** Publishes a project; answers `{ app, version, url }`. */
+  /**
+   * Publishes a project; answers `{ app, version, url }`, or `202` with
+   * `{ status: 'awaiting_approval', approveUrl, version, url }` when a person
+   * approves the publish in the studio first.
+   */
   publish: (id: string) => `/s/p/${encodeURIComponent(id)}/publish`,
   /** The remote MCP endpoint (stateless Streamable HTTP, JSON answers). */
   mcp: '/mcp',
@@ -127,7 +131,14 @@ export interface StudioClientOptions {
   readonly fetch?: Fetch
 }
 
-async function call(options: StudioClientOptions, method: string, path: string, init: { body?: string | Uint8Array; contentType?: string; timeoutMs?: number }): Promise<unknown> {
+type CallInit = { body?: string | Uint8Array; contentType?: string; timeoutMs?: number }
+
+async function call(options: StudioClientOptions, method: string, path: string, init: CallInit): Promise<unknown> {
+  return (await send(options, method, path, init)).body
+}
+
+/** One studio call: its HTTP status and body; a refusal throws. */
+async function send(options: StudioClientOptions, method: string, path: string, init: CallInit): Promise<{ status: number; body: unknown }> {
   const url = `${options.url}${path}`
   let res: Response
   try {
@@ -146,7 +157,7 @@ async function call(options: StudioClientOptions, method: string, path: string, 
   }
   const body = await bodyOf(res)
   if (!res.ok) throw refusal(res, body, `${method} ${url}`)
-  return body
+  return { status: res.status, body }
 }
 
 /** What an import answered. */
@@ -181,24 +192,62 @@ export async function importPack(options: StudioClientOptions, bytes: Uint8Array
   return { projectId, findings: findingsOf(body?.['findings']) }
 }
 
-/** What a publish answered. */
-export interface PublishResult {
-  readonly app: string
-  readonly version: string
-  readonly url: string
+/** What a publish answered: the app is online, or it waits for a person's approval. */
+export type PublishResult =
+  | { readonly state: 'published'; readonly app: string; readonly version: string; readonly url: string }
+  | {
+      readonly state: 'awaiting_approval'
+      readonly app: string
+      /** The version the approval is for, when the studio names it. */
+      readonly version?: string
+      /** Where the person approves (or rejects) this version in the studio. */
+      readonly approveUrl: string
+      /** The address the app will have once approved, when the studio names it. */
+      readonly url?: string
+      /** When the request lapses, when the studio says. */
+      readonly expiresAt?: string
+    }
+
+/** An http(s) address, normalized; undefined for anything else (it is printed to a terminal). */
+function webAddress(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  try {
+    const u = new URL(value)
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : undefined
+  } catch {
+    return undefined
+  }
 }
 
-/** Publishes a project, waking it first when the studio says it is asleep. */
+const PRINTABLE = /^[!-~]{1,64}$/
+
+/** A short id or timestamp the studio sends back; undefined when it is not plain printable text. */
+function plain(value: unknown): string | undefined {
+  return typeof value === 'string' && PRINTABLE.test(value) ? value : undefined
+}
+
+/**
+ * Publishes a project, waking it first when the studio says it is asleep.
+ * A `202` (or `status: 'awaiting_approval'`) is not a publish: nothing is
+ * online until a person approves it in the studio, at `approveUrl`.
+ */
 export async function publishProject(options: StudioClientOptions, projectId: string): Promise<PublishResult> {
   const once = async (): Promise<PublishResult> => {
-    const body = (await call(options, 'POST', STUDIO_PATHS.publish(projectId), { body: '{}', contentType: 'application/json', timeoutMs: LONG_TIMEOUT_MS })) as Record<
-      string,
-      unknown
-    > | null
-    if (typeof body?.['url'] !== 'string' || typeof body['version'] !== 'string') {
+    const { status, body: raw } = await send(options, 'POST', STUDIO_PATHS.publish(projectId), { body: '{}', contentType: 'application/json', timeoutMs: LONG_TIMEOUT_MS })
+    const body = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+    const app = plain(body['app']) ?? projectId
+    if (status === 202 || body['status'] === 'awaiting_approval') {
+      const approveUrl = webAddress(body['approveUrl'])
+      if (!approveUrl) throw studioFailure('PUBLISH_FAILED', 'the studio says the publish waits for approval but gave no address to approve it')
+      const url = webAddress(body['url'])
+      const version = plain(body['version'])
+      const expiresAt = plain(body['expiresAt'])
+      return { state: 'awaiting_approval', app, approveUrl, ...(version ? { version } : {}), ...(url ? { url } : {}), ...(expiresAt ? { expiresAt } : {}) }
+    }
+    if (typeof body['url'] !== 'string' || typeof body['version'] !== 'string') {
       throw studioFailure('PUBLISH_FAILED', 'the studio answered the publish without an address')
     }
-    return { app: typeof body['app'] === 'string' ? body['app'] : projectId, version: body['version'], url: body['url'] }
+    return { state: 'published', app: typeof body['app'] === 'string' ? body['app'] : projectId, version: body['version'], url: body['url'] }
   }
   try {
     return await once()

@@ -2,7 +2,8 @@
  * `pwf publish [dir]` — puts an app folder online on PhiWebs: `pwf pack`,
  * then the .pwpack into a studio project (a new one, or the one this folder
  * published to before), then the studio publishes it and pwf prints the
- * address. A pack folder goes to the PhiWebs marketplace instead, as the
+ * address — or, when a person approves each publish in the studio, the
+ * address where they approve it (nothing is online until then). A pack folder goes to the PhiWebs marketplace instead, as the
  * workspace's publisher. Needs `pwf login`; every other command keeps
  * working without it.
  */
@@ -109,6 +110,14 @@ export async function runPublish(args: ParsedArgs, io: CommandIO, deps: PublishD
   }
 
   const published = await publishProject(client, imported.projectId)
+  if (published.state === 'awaiting_approval') {
+    io.out(`Waiting for approval: ${published.app}${published.version ? `@${published.version}` : ''} is not online yet`)
+    io.out(`  approve  ${published.approveUrl}`)
+    if (published.url) io.out(`  url      ${published.url} (once approved)`)
+    io.out(`  project  ${imported.projectId} (remembered in ${REMEMBERED_PROJECT_FILE}; --new makes another)`)
+    io.out(`Open the approve address and approve this version in the studio${published.expiresAt ? ` before ${published.expiresAt}` : ''}; the app goes online then.`)
+    return 0
+  }
   io.out(`Published ${published.app}@${published.version}`)
   io.out(`  url      ${published.url}`)
   io.out(`  project  ${imported.projectId} (remembered in ${REMEMBERED_PROJECT_FILE}; --new makes another)`)
@@ -142,7 +151,9 @@ ${STUDIO_WEB_HELP}
 
 An app: packs the folder (as pwf pack, refusing on errors), sends the
 .pwpack to the PhiWebs studio, which validates it into a project, then
-publishes the project and prints its address. The first publish makes a new
+publishes the project and prints its address. When the studio asks for a
+person's approval first, pwf prints the address to approve it in the studio
+instead (exit 0); nothing is online until then. The first publish makes a new
 project and remembers its id in ${REMEMBERED_PROJECT_FILE}; later publishes
 replace that project's app (its history keeps each import).
 

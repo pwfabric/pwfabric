@@ -25,7 +25,7 @@ import { createPwfMcpServer, SERVER_INSTRUCTIONS, SIGN_IN_TOOL, TOOLS } from '..
 import { PUBLISH_HINT } from '../../mcp/tools.js'
 import { capture, FIXTURE_FOUNDATION, tempDir } from '../commands/helpers.js'
 import { FAKE_DEFAULT_STUDIO, startFakeServer, type FakeServer, type FakeServerOptions } from './fake-server.js'
-import { startFakeStudio, type FakeStudio } from './fake-studio.js'
+import { FAKE_STUDIO_TOOLS, startFakeStudio, type FakeStudio } from './fake-studio.js'
 
 const closers: { close(): Promise<void> }[] = []
 afterEach(async () => {
@@ -303,6 +303,54 @@ describe('pwf publish an app', () => {
     expect(named.out).toContain('Imported into project p-1')
   })
 
+  it('a publish the studio holds for approval prints the approve address, not "Published", and exits 0', async () => {
+    const w = await signedIn()
+    const app = await appFolder()
+    w.studio.publishAnswer = {
+      status: 202,
+      body: {
+        status: 'awaiting_approval',
+        requestId: 'r-1',
+        approveUrl: 'https://studio.example.com/p/p-1?approve=r-1',
+        version: 'abc1234',
+        url: 'https://p-1.apps.example.com/',
+        action: 'publish',
+        expiresAt: '2026-01-01T00:30:00.000Z',
+      },
+    }
+    const c = capture(app, w.env)
+    expect(await publish(args(), c.io), c.text()).toBe(0)
+    expect(c.out.some((l) => /^Published/.test(l)), c.text()).toBe(false)
+    expect(c.out).toContain('Waiting for approval: p-1@abc1234 is not online yet')
+    expect(c.out).toContain('  approve  https://studio.example.com/p/p-1?approve=r-1')
+    expect(c.out).toContain('  url      https://p-1.apps.example.com/ (once approved)')
+    expect(c.out.at(-1)).toContain('approve this version in the studio before 2026-01-01T00:30:00.000Z')
+    expect(c.err).toEqual([])
+    // The project is still remembered: the next publish goes to it.
+    expect(JSON.parse(await readFile(join(app, ...REMEMBERED_PROJECT_FILE.split('/')), 'utf8'))).toEqual({ projectId: 'p-1' })
+
+    // A 202 alone (no status) is not a publish either; without url or version the lines say less.
+    w.studio.publishAnswer = { status: 202, body: { approveUrl: 'https://studio.example.com/p/p-1?approve=r-2' } }
+    const bare = capture(app, w.env)
+    expect(await publish(args(), bare.io), bare.text()).toBe(0)
+    expect(bare.out.some((l) => /^Published/.test(l))).toBe(false)
+    expect(bare.out).toContain('Waiting for approval: p-1 is not online yet')
+    expect(bare.out).toContain('  approve  https://studio.example.com/p/p-1?approve=r-2')
+    expect(bare.out.some((l) => l.startsWith('  url '))).toBe(false)
+  })
+
+  it('an approval answer without a usable approve address is a failure, never "Published"', async () => {
+    const w = await signedIn()
+    const app = await appFolder()
+    for (const approveUrl of [undefined, 'javascript:alert(1)', 'not a url']) {
+      w.studio.publishAnswer = { status: 202, body: { status: 'awaiting_approval', version: 'abc1234', url: 'https://p-1.apps.example.com/', ...(approveUrl ? { approveUrl } : {}) } }
+      const c = capture(app, w.env)
+      expect(await publish(args(), c.io), c.text()).toBe(1)
+      expect(c.out.some((l) => /^Published/.test(l))).toBe(false)
+      expect(c.err.join('\n')).toContain('PUBLISH_FAILED: the studio says the publish waits for approval but gave no address to approve it')
+    }
+  })
+
   it('shows findings and refusals with their codes and fixes', async () => {
     const w = await signedIn()
     const app = await appFolder()
@@ -504,6 +552,17 @@ describe('pwf mcp and PhiWebs', () => {
     // pwf_pack on an app points to pwf publish.
     const packed = await call(client, 'pwf_pack', { projectDir: await appFolder() })
     expect(text(packed)).toContain(PUBLISH_HINT.slice(1))
+  })
+
+  it("signed in, the studio's publish tool is forwarded as it answers: awaiting approval, with the approve address", async () => {
+    const w = await signedIn()
+    w.studio.tools = [...FAKE_STUDIO_TOOLS, { name: 'publish', description: 'Asks to put the project online.', inputSchema: { type: 'object', properties: { projectId: { type: 'string' } } } }]
+    const client = await mcpClient(w)
+    const answer = await call(client, 'publish', { projectId: 'p-1' })
+    expect(answer.isError).toBeUndefined()
+    expect(answer.structuredContent).toMatchObject({ status: 'awaiting_approval', approveUrl: `${w.studio.webUrl}/p/p-1?approve=r-1`, version: 'abc1234' })
+    expect(text(answer)).toContain('Waiting for approval')
+    expect(text(answer)).not.toMatch(/^Published/m)
   })
 
   it('signed in, pwf_publish_pack publishes a pack folder as the publisher', async () => {

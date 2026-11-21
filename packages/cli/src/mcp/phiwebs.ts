@@ -57,7 +57,7 @@ const WHAT_PHIWEBS_ADDS = [
   'Signed in, the PhiWebs tools are listed here next to the pwf_* tools. With them you can:',
   "- build an app and change it by describing what you want: the studio's AI writes it;",
   '- open a private preview of it;',
-  '- publish it at a public address, hosted by PhiWebs, and unpublish it;',
+  '- publish it at a public address, hosted by PhiWebs, and unpublish it (when the studio asks a person to approve, the answer gives the address to approve it);',
   '- manage its connections to other services, and the workspace around it.',
   'In a terminal, `pwf publish` puts a local app folder online the same way.',
 ]
