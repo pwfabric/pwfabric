@@ -4,7 +4,7 @@
  *
  * @module @pwfabric/pack/validate
  */
-import { checkPropValue, propShapeProblems, type AtomRef, type PropShape, type PwpackIdentity } from '@pwfabric/contracts'
+import { checkPropValue, layoutSlotProblems, propShapeProblems, type AtomRef, type PropShape, type PwpackIdentity } from '@pwfabric/contracts'
 import { classifyPackPath } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins, safeParsePwpackIdentity } from '@pwfabric/contracts/schemas'
 import type { PackFolder, PackIssue } from './types.js'
@@ -63,6 +63,8 @@ export interface PackValidation {
 }
 
 const APP_SURFACES = 'app/surfaces/'
+/** The app's layout, the receipt every page is drawn in (receipt §4). */
+export const LAYOUT_FILE = 'app/layout.receipt.json'
 /** A page key: a name, or names joined by `/` for a page in a folder of `app/surfaces/`. */
 const PAGE_PATH = /^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.-]*)*$/
 const PLAN_FILE = 'app/plan.json'
@@ -366,6 +368,13 @@ export function validatePack(pack: PackFolder): PackValidation {
         }
       }
     }
+  }
+  // ---- the layout (receipt §4): exactly one bare page slot, outside any repeat ----
+  const layoutBytes = pack.files.get(LAYOUT_FILE)
+  const layoutDoc = layoutBytes ? parseJson(layoutBytes) : undefined
+  if (layoutDoc?.ok) {
+    const problems = layoutSlotProblems(layoutDoc.value)
+    if (problems.length > 0) add('error', 'APP_LAYOUT_SLOT', `${LAYOUT_FILE}: ${problems.join('; ')}`, LAYOUT_FILE)
   }
   // ---- public files (copied, as they are, to the served app's root) ----
   // None may land on a path the build writes, and none may be script:

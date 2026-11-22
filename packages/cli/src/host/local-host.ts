@@ -50,6 +50,7 @@ import {
 import {
   readAuth,
   readEntities,
+  readLayoutReceipt,
   readReceipt,
   readSignInKey,
   surfaceKeys,
@@ -405,7 +406,11 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
 
   function receiptFor(key: string, base: string): Record<string, unknown> | undefined {
     const receipt = readReceipt(root, key)
-    if (!receipt) return undefined
+    return receipt ? declaredReceipt(receipt, base) : undefined
+  }
+
+  /** A receipt — a page's or the layout's — as the host serves it. */
+  function declaredReceipt(receipt: Record<string, unknown>, base: string): Record<string, unknown> {
     const entities = readEntities(root)
     // The record's fields ride on the source, as `pwf build` writes them
     // (record-fields.ts), so a form here sends the same body it will there;
@@ -465,6 +470,9 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
         const receipt = receiptFor(key, base)
         if (receipt) out[`surfaces/${key}.receipt.json`] = receipt
       }
+      // The app's layout (receipt §4), its sources reading from the host like a page's.
+      const layout = readLayoutReceipt(root)
+      if (layout) out['layout.receipt.json'] = declaredReceipt(layout, base)
       return out
     },
 

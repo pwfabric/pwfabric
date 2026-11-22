@@ -22,7 +22,8 @@ import {
   type PackValidation,
   type PageReceipt,
 } from '@pwfabric/pack'
-import { PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
+import { assemblePage, PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
+import { layoutSlotProblems, PAGE_SLOT_TYPE } from '@pwfabric/contracts'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { engineVersion, pinsOf } from './identity.js'
 import { engineRangeDiagnostics, isRecord, jsonOf, loadSources, type LoadedSources } from '../../dev/sources.js'
@@ -429,11 +430,26 @@ export function checkPages(loaded: LoadedSources): PackIssue[] {
     // A missing or unreadable receipt is the pack validation's finding.
     if (isRecord(receipt) && Array.isArray(receipt['blocks'])) pages.push({ key, path, receipt })
   }
-  const issues = pages.flatMap((page) => checkBlockIds(page))
+  // The layout (receipt §4), when it is one: each page is judged as drawn in it.
+  const layoutPath = 'app/layout.receipt.json'
+  const layoutDoc = jsonOf(app.folder, layoutPath)
+  const layout = isRecord(layoutDoc) && Array.isArray(layoutDoc['blocks']) && layoutSlotProblems(layoutDoc).length === 0 ? layoutDoc : undefined
+  type Receipt = Parameters<typeof assemblePage>[1]
+  const issues: PackIssue[] = []
+  for (const page of pages) {
+    const drawn = layout
+      ? assemblePage(layout as unknown as Receipt, page.receipt as unknown as Receipt, { key: page.key, entry: identity.app.entry })
+      : { receipt: page.receipt, problems: [] }
+    issues.push(...checkBlockIds({ path: page.path, receipt: drawn.receipt }))
+    for (const problem of drawn.problems) {
+      if (problem.kind === 'source') issues.push({ severity: 'error', code: 'SOURCE_ID_DUPLICATE', path: page.path, message: `${problem.message} (${layoutPath})` })
+    }
+  }
   const allPacksRead = loaded.packs.length === (identity.packs ?? []).length
   if (allPacksRead) {
     const known = definedBlockTypes(blockSourcesOf(loaded))
-    issues.push(...checkBlockTypes(pages, (type) => known.has(type)))
+    const judged: PageReceipt[] = layout ? [...pages, { key: 'layout', path: layoutPath, receipt: layout }] : pages
+    issues.push(...checkBlockTypes(judged, (type) => type === PAGE_SLOT_TYPE || known.has(type)))
   }
   return issues
 }

@@ -253,6 +253,28 @@ describe('validatePack — app', () => {
     })
   })
 
+  describe('the layout (app/layout.receipt.json)', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home'] } }
+    const receipts = { 'app/surfaces/home.receipt.json': '{"blocks":[]}' }
+    const withLayout = (layout: unknown): string[] => codes(withIdentity(identity, { ...receipts, 'app/layout.receipt.json': JSON.stringify(layout) }))
+
+    it('accepts one page slot at any depth, and an app without a layout', () => {
+      expect(withLayout({ blocks: [{ id: 'nav', type: 'navbar' }, { id: 'main', type: 'section', children: [{ type: 'pw:page', id: 'slot' }] }] })).toEqual([])
+      expect(codes(withIdentity(identity, receipts))).toEqual([])
+    })
+
+    it('refuses no slot, two slots, a slot with more than type and id, and a slot inside a repeat (APP_LAYOUT_SLOT)', () => {
+      expect(withLayout({ blocks: [{ id: 'nav', type: 'navbar' }] })).toEqual(['APP_LAYOUT_SLOT'])
+      expect(withLayout({ blocks: [{ type: 'pw:page' }, { type: 'pw:page' }] })).toEqual(['APP_LAYOUT_SLOT'])
+      expect(withLayout({ blocks: [{ type: 'pw:page', props: { x: 1 } }] })).toEqual(['APP_LAYOUT_SLOT'])
+      expect(withLayout({ blocks: [{ id: 'r', type: 'repeater', repeat: '{{state.tabs}}', children: [{ type: 'pw:page' }] }] })).toEqual(['APP_LAYOUT_SLOT'])
+    })
+
+    it('reports a layout that is not JSON once, as JSON_INVALID', () => {
+      expect(codes(withIdentity(identity, { ...receipts, 'app/layout.receipt.json': '{' }))).toEqual(['JSON_INVALID'])
+    })
+  })
+
   describe('the plan pages (app/plan.json surfaces)', () => {
     const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'about'] } }
     const receipts = { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/about.receipt.json': '{"blocks":[]}' }

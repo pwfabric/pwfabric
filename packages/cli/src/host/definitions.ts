@@ -188,6 +188,12 @@ export function surfaceKeys(root: string): string[] {
   return keys.filter((k) => PAGE_PATH.test(k)).sort()
 }
 
+/** The app's layout (`app/layout.receipt.json`, receipt §4), or undefined. */
+export function readLayoutReceipt(root: string): Record<string, unknown> | undefined {
+  const raw = readJson(join(root, 'app', 'layout.receipt.json'))
+  return isObject(raw) && Array.isArray(raw['blocks']) ? raw : undefined
+}
+
 export function readReceipt(root: string, key: string): Record<string, unknown> | undefined {
   if (!PAGE_PATH.test(key)) return undefined
   const raw = readJson(join(root, 'app', 'surfaces', `${key}.receipt.json`))

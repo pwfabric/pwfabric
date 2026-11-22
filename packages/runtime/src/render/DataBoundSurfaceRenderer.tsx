@@ -605,7 +605,9 @@ function useSurfaceData(
    * out, a `requiresSession` source is not asked (isRefusedWithoutSession);
    * pending, it waits, loading (awaitsSession).
    */
-  signedIn?: SessionKnown
+  signedIn?: SessionKnown,
+  /** The page this surface is; a change resets the page's state (see below). */
+  pageKey?: string
 ): SurfaceDataResult {
   const meRef = React.useRef(me)
   meRef.current = me
@@ -622,11 +624,12 @@ function useSurfaceData(
   // yet: it is left out here and written once the first data pass has
   // settled (see the effect after the expression context).
   const derivedSeeds = React.useMemo(() => derivedSeedsOf(initialState), [initialState])
-  const [surfaceState, setSurfaceState] = React.useState<Record<string, unknown>>(() => {
+  const seedState = (): Record<string, unknown> => {
     const plain: Record<string, unknown> = { ...initialState }
     for (const key of Object.keys(derivedSeeds)) delete plain[key]
     return plain
-  })
+  }
+  const [surfaceState, setSurfaceState] = React.useState<Record<string, unknown>>(seedState)
 
   // ADDRESS SEED APPLIED AFTER HYDRATION (data-protocol §1.1 / pwapp-format §2.5).
   //
@@ -664,7 +667,7 @@ function useSurfaceData(
   // (`notFoundWhenEmpty`) idle: that page is never shown — the not-found page
   // replaces it — so its first frame stays the one every record it names
   // loads in, and a record page's frame stands for any `?id=` (E16).
-  const [sourceData, setSourceData] = React.useState<Record<string, SourceData>>(() => {
+  const seedSourceData = (): Record<string, SourceData> => {
     if (!dataSources) return {}
     const seeded: Record<string, SourceData> = {}
     const state = initialState ?? {}
@@ -693,7 +696,8 @@ function useSurfaceData(
       }
     }
     return seeded
-  })
+  }
+  const [sourceData, setSourceData] = React.useState<Record<string, SourceData>>(seedSourceData)
   // ADDRESS SEED APPLIED AFTER HYDRATION — render-time adjustment body.
   //
   // `useState` for `lastAppliedInitialState` is declared above; the if-body
@@ -1143,6 +1147,8 @@ function useSurfaceData(
     }
     const changed = sources.filter((s) => requestKeyOf(s, surfaceState, me, signedIn) !== requestKeysRef.current[s.id])
     if (changed.length > 0) void fetchSources(changed)
+    // Nothing new to ask (another page whose sources are all the layout's): settled.
+    else setInitialLoaded(true)
   }, [dataSources, surfaceState, me, signedIn, fetchSources, dataService])
 
   // ---- Unmount: abort what is in flight, forget what was fetched ----
@@ -1275,6 +1281,27 @@ function useSurfaceData(
   // can count the rows it will filter. A key something already wrote — the
   // address, a control that mounted first — keeps that value.
   const derivedDoneRef = React.useRef(false)
+
+  // ---- Another page in the same mount (`pageKey`) ----
+  // The blocks both pages draw — an app layout's (receipt §4) — stay mounted;
+  // the page's own state starts from its seeds, as on a fresh mount, and the
+  // rows of a source the page still declares (the layout's) are kept: the
+  // fetch effect asks only for the sources whose request is new.
+  const [shownPage, setShownPage] = React.useState(pageKey)
+  if (shownPage !== pageKey) {
+    setShownPage(pageKey)
+    setSurfaceState(seedState())
+    setLastAppliedInitialState(initialState)
+    const declared = new Set((dataSources ?? []).map((source) => source.id))
+    const seeded = seedSourceData()
+    setSourceData((prev) => {
+      const next: Record<string, SourceData> = { ...seeded }
+      for (const [id, entry] of Object.entries(prev)) if (declared.has(id) && next[id] === undefined && entry.idle !== true) next[id] = entry
+      return next
+    })
+    setInitialLoaded(false)
+    derivedDoneRef.current = false
+  }
   React.useEffect(() => {
     if (!initialLoaded || derivedDoneRef.current) return
     derivedDoneRef.current = true
@@ -1565,7 +1592,8 @@ function DataBoundInner({
       writeOnly,
       locale,
       authState.user,
-      auth ? (authState.pending === true ? 'pending' : authState.signedIn) : undefined
+      auth ? (authState.pending === true ? 'pending' : authState.signedIn) : undefined,
+      (rendererProps as { pageKey?: string }).pageKey
     )
   const pageScope = React.useMemo<Record<string, unknown>>(
     () => ({ ...pageData, __auth: authState, me: authState.user }),

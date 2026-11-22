@@ -129,6 +129,8 @@ export interface EmbedOptions {
   readonly locale?: string
   /** The visitor's consent and the categories the app's scripts wait for (envelope §2.2): `context.consent*` of every block. */
   readonly consent?: ConsentStore
+  /** The page this surface is: a change between renders of one mount resets the page's state, the blocks that stay stay mounted. */
+  readonly pageKey?: string
   /** The app's words (`plan.json` `messages`) the blocks' own words read first. */
   readonly messages?: AppMessages
   /**
@@ -204,6 +206,7 @@ function passthrough(options?: EmbedOptions): Partial<RenderCoreOptions> {
     ...(o.onDescription !== undefined ? { onDescription: o.onDescription } : {}),
     ...(o.locale !== undefined ? { locale: o.locale } : {}),
     ...(o.consent !== undefined ? { consent: o.consent } : {}),
+    ...(o.pageKey !== undefined ? { pageKey: o.pageKey } : {}),
     ...(o.messages !== undefined ? { messages: o.messages } : {}),
     ...(o.address !== undefined ? { address: o.address } : {}),
     ...(o.identity !== undefined ? { identity: o.identity } : {}),

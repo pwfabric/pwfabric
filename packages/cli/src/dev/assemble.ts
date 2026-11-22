@@ -13,7 +13,7 @@
  */
 import { join } from 'node:path'
 import { blockPropDescriptors, blockTypeFirstUses, blockTypeNames, checkBlockIds, checkReceiptBlockProps, hashPack, publicReservedReason, publicScriptReason, unknownBlockTypeIssue } from '@pwfabric/pack'
-import type { BlockOrigins } from '@pwfabric/contracts'
+import { layoutSlotProblems, PAGE_SLOT_TYPE, type BlockOrigins } from '@pwfabric/contracts'
 import { atomKindMeta } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins } from '@pwfabric/contracts/schemas'
 import { compileProviderBundle, compileSources, createCompileCache, providerFacetOf, type CompileCache, type CompiledAtom } from './compile.js'
@@ -42,7 +42,7 @@ import { llmsFullTxt, llmsTxt, type LlmsPage } from './llms.js'
 import { planHeadersOf, planRedirectsOf, planScriptOrigins, planScriptsOf, redirectsFile } from './plan-site.js'
 import { parseHeadersFile } from '../commands/lib/static-server.js'
 import { firstPaintData, onPageFragmentLinks, paintPages, shareFrameStyles, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
-import { canonicalOf, hashHref, pathHref } from '@pwfabric/runner'
+import { assemblePage, canonicalOf, hashHref, pathHref } from '@pwfabric/runner'
 import {
   BOOT_FILES,
   FIRST_PAINT_SCRIPT,
@@ -298,6 +298,38 @@ function withPageAppearance(receipt: Record<string, unknown>, wears: PageAppeara
   return receipt
 }
 
+/** The app's layout in its source, and as the envelope serves it (`project.json` `layoutReceiptFile`). */
+export const LAYOUT_FILE = 'app/layout.receipt.json'
+export const LAYOUT_RECEIPT_FILE = 'layout.receipt.json'
+
+/**
+ * The app's layout (receipt §4), read like a page: absent, none. One that is
+ * not a receipt, or does not hold exactly one bare page slot
+ * (APP_LAYOUT_SLOT), is an error, and no page is drawn in it.
+ */
+function layoutOf(folder: SourcePack['folder'], diagnostics: AssembleDiagnostic[], reported: ReadonlySet<string | undefined>): Page | undefined {
+  const bytes = folder.files.get(LAYOUT_FILE)
+  if (!bytes) return undefined
+  const value = jsonOf(folder, LAYOUT_FILE)
+  if (value instanceof Error || !isRecord(value) || !Array.isArray(value['blocks'])) {
+    if (!reported.has(LAYOUT_FILE)) {
+      diagnostics.push({
+        severity: 'error',
+        code: 'RECEIPT_INVALID',
+        message: value instanceof Error ? `not JSON: ${value.message}` : 'a layout is an object with a "blocks" array',
+        path: LAYOUT_FILE,
+      })
+    }
+    return undefined
+  }
+  const problems = layoutSlotProblems(value)
+  if (problems.length > 0) {
+    if (!reported.has(LAYOUT_FILE)) diagnostics.push({ severity: 'error', code: 'APP_LAYOUT_SLOT', message: `${LAYOUT_FILE}: ${problems.join('; ')}`, path: LAYOUT_FILE })
+    return undefined
+  }
+  return { key: 'layout', path: LAYOUT_FILE, bytes, receipt: value }
+}
+
 /**
  * The receipt as served, without its authoring information: `knowledge` (what
  * the page is for, the patterns it exercises) stays in the app's source; no
@@ -460,6 +492,24 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       }
     }
   }
+  // ── the layout (receipt §4): the receipt every page is drawn in ──
+  const layoutPage = layoutOf(app.folder, diagnostics, reported)
+  /**
+   * A page's receipt assembled into the layout (envelope §4 step 2), the way
+   * the runner assembles it: what the first frame, the page hints and the
+   * policy read. The envelope serves page and layout apart.
+   */
+  const inLayout = (key: string, receipt: unknown, layout: unknown, blocks?: readonly BlockManifestEntry[]): { receipt: unknown; problems: readonly { kind: string; id: string; message: string }[] } => {
+    if (!isRecord(layout) || !isRecord(receipt) || !Array.isArray(receipt['blocks'])) return { receipt, problems: [] }
+    type Receipt = Parameters<typeof assemblePage>[1]
+    type Blocks = NonNullable<Parameters<typeof assemblePage>[2]['blocks']>
+    return assemblePage(layout as unknown as Receipt, receipt as unknown as Receipt, {
+      key,
+      entry,
+      notFoundPage: key === notFoundKey,
+      ...(blocks ? { blocks: blocks as unknown as Blocks } : {}),
+    })
+  }
   if (!identity.app.surfaceOrder.includes(entry)) {
     diagnostics.push({ severity: 'error', code: 'ENTRY_NOT_A_PAGE', message: `app.entry "${entry}" is not in app.surfaceOrder`, path: 'pwpack.json' })
   }
@@ -536,19 +586,28 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     const props = list[0] ? blockPropDescriptors(list[0].manifest) : undefined
     if (list[0] && props) propCatalog.set(name, { atomId: list[0].id, props })
   }
-  for (const page of pages) {
+  for (const page of [...pages, ...(layoutPage ? [layoutPage] : [])]) {
     for (const issue of checkReceiptBlockProps(page.receipt, propCatalog, page.path)) {
       diagnostics.push({ severity: 'warning', code: issue.code, message: issue.message, path: page.path })
     }
-    // A block id is unique within its page (receipt §2), as `pwf validate` says too.
-    for (const issue of checkBlockIds(page)) diagnostics.push({ severity: 'error', code: issue.code, message: issue.message, path: page.path })
+  }
+  for (const page of pages) {
+    // A block id is unique within its page (receipt §2) — the page as drawn,
+    // in the layout — as `pwf validate` says too; so is a data source id.
+    const drawn = inLayout(page.key, page.receipt, layoutPage?.receipt)
+    for (const issue of checkBlockIds({ path: page.path, receipt: drawn.receipt })) diagnostics.push({ severity: 'error', code: issue.code, message: issue.message, path: page.path })
+    for (const problem of drawn.problems) {
+      if (problem.kind === 'source') diagnostics.push({ severity: 'error', code: 'SOURCE_ID_DUPLICATE', message: `${problem.message} (${LAYOUT_FILE})`, path: page.path })
+    }
   }
 
   const used = new Set<CompiledAtom>()
   const placedBlocks: { atomId: string; origins?: BlockOrigins }[] = []
   const blockManifest: BlockManifestEntry[] = []
   const modules = new Map<string, Uint8Array>()
-  for (const [type, page] of blockTypeFirstUses(pages)) {
+  for (const [type, page] of blockTypeFirstUses([...pages, ...(layoutPage ? [layoutPage] : [])])) {
+    // The layout's page slot is the format's, no block (receipt §4).
+    if (type === PAGE_SLOT_TYPE) continue
     const candidates = byName.get(type) ?? []
     const atom = candidates[0]
     if (!atom) {
@@ -728,9 +787,11 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const hintsOf = (page: Page): PageHints => {
     const receipt = servedReceiptOf(page)
     const image = firstImageOf(receipt)
+    // The modules of the page as drawn: the layout's blocks too.
+    const drawn = inLayout(page.key, receipt, layoutPage?.receipt).receipt
     return {
       receipt: `pwpack/surfaces/${page.key}.receipt.json`,
-      modules: [...new Set(blockTypesOf(receipt).map((t) => moduleOf.get(t)).filter((m): m is string => m !== undefined))].sort(),
+      modules: [...new Set(blockTypesOf(drawn).map((t) => moduleOf.get(t)).filter((m): m is string => m !== undefined))].sort(),
       ...(image ? { image: servedHref(image.src), ...(image.priority ? { imagePriority: true } : {}) } : {}),
     }
   }
@@ -835,6 +896,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       // The scripts the runner loads once the visitor consents (envelope §2.2).
       ...(planScripts.length > 0 ? { scripts: planScripts } : {}),
       ...(publicFiles.length > 0 ? { publicFiles: publicFiles.map(([rel]) => rel) } : {}),
+      ...(layoutPage ? { layoutReceiptFile: LAYOUT_RECEIPT_FILE } : {}),
     })
   )
   for (const page of pages) {
@@ -845,6 +907,10 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       )
     )
     files.set(`pwpack/surfaces/${page.key}.receipt.json`, declared === page.receipt ? page.bytes : json(declared))
+  }
+  if (layoutPage) {
+    const declared = withoutAuthoring(withSessionSources(withRecordFields(layoutPage.receipt, recordFields), entityDeclarations, authDeclaration))
+    files.set(`pwpack/${LAYOUT_RECEIPT_FILE}`, declared === layoutPage.receipt ? layoutPage.bytes : json(declared))
   }
   files.set('pwpack/navigation.json', json(isRecord(navigationDoc) ? navigationDoc : deriveNavigation(routes, entry)))
   if (appearance) files.set('pwpack/appearance.json', json(appearance))
@@ -878,6 +944,16 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       servedReceipts.set(page.key, page.receipt)
     }
   }
+  // Each page as drawn: assembled into the layout as served (receipt §4).
+  const servedLayoutBytes = files.get(`pwpack/${LAYOUT_RECEIPT_FILE}`)
+  let servedLayout: unknown = layoutPage?.receipt
+  try {
+    if (layoutPage && servedLayoutBytes) servedLayout = JSON.parse(new TextDecoder().decode(servedLayoutBytes)) as unknown
+  } catch {
+    // The source's layout stands in.
+  }
+  const drawnReceipts = new Map<string, unknown>()
+  for (const [key, receipt] of servedReceipts) drawnReceipts.set(key, inLayout(key, receipt, servedLayout, blockManifest).receipt)
   const envelopeAuthBytes = files.get('pwpack/auth.json')
 
   // ── the static first paint (pwapp-format §2.5) ────────────────────
@@ -905,7 +981,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
           navigation: served('pwpack/navigation.json'),
           appearance: served('pwpack/appearance.json'),
           auth: isRecord(project['identity']) ? served('pwpack/auth.json') : undefined,
-          pages: paintable.map((p) => ({ key: p.key, receipt: (servedReceipts.get(p.key) ?? p.receipt) as Record<string, unknown> })),
+          pages: paintable.map((p) => ({ key: p.key, receipt: (drawnReceipts.get(p.key) ?? p.receipt) as Record<string, unknown> })),
           toHref,
         })
       : { pages: [] as PaintedPage[], diagnostics: [] }
@@ -943,7 +1019,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const csp = deriveCsp({
     importMapText: importMapText(),
     inlineScripts: [...(Object.keys(hinted).length > 0 ? [PAGE_HINTS_SCRIPT] : []), ...(firstPaintJson ? [FIRST_PAINT_SCRIPT] : [])],
-    receipts: servedReceipts,
+    receipts: drawnReceipts,
     connections,
     engines: engineManifest,
     envelopeAuth: envelopeAuthBytes ? JSON.parse(new TextDecoder().decode(envelopeAuthBytes)) : undefined,
