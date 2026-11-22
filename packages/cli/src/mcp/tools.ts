@@ -12,6 +12,7 @@ import {
   atomManifestPath,
   blockPropDescriptors,
   blockTypeNames,
+  resolveBlockType,
   nearestName,
   UNKNOWN_BLOCK_TYPE,
   validatePack,
@@ -191,17 +192,19 @@ async function findBlock(
     else sources.push({ pack: `${pin.id}@${pin.version}`, own: false, folder })
   }
   const names = new Set<string>()
-  let found: FoundBlock | undefined
+  // In resolution order, so the block found is the one a receipt's type names (resolveBlockType).
+  const blocks: { atom: FoundBlock; id: string; manifest?: Record<string, unknown> }[] = []
   for (const source of sources) {
     for (const atom of validatePack(source.folder).atoms) {
       if (atom.kind !== 'block') continue
       const manifestPath = atomManifestPath(atom)
       const manifest = manifestAt(source.folder, manifestPath)
-      const answers = blockTypeNames(atom.id, manifest)
-      answers.forEach((n) => names.add(n))
-      if (!found && manifest && answers.includes(type)) found = { pack: source.pack, own: source.own, atomId: atom.id, manifestPath, manifest }
+      blockTypeNames(atom.id, manifest).forEach((n) => names.add(n))
+      if (manifest) blocks.push({ atom: { pack: source.pack, own: source.own, atomId: atom.id, manifestPath, manifest }, id: atom.id, manifest })
     }
   }
+  const hit = resolveBlockType(type, blocks)
+  const found = hit && !('ambiguous' in hit) ? hit.atom : undefined
   return { ...(found ? { found } : {}), names: [...names].sort(), missing }
 }
 

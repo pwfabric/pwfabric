@@ -12,7 +12,7 @@
  * be pinned). Nothing is fetched; every input is on disk.
  */
 import { join } from 'node:path'
-import { blockPropDescriptors, blockTypeFirstUses, blockTypeNames, checkBlockIds, checkReceiptBlockProps, hashPack, publicReservedReason, publicScriptReason, unknownBlockTypeIssue } from '@pwfabric/pack'
+import { ambiguousBlockTypeMessage, BLOCK_TYPE_AMBIGUOUS, blockPropDescriptors, blockTypeFirstUses, blockTypeNames, checkBlockIds, resolveBlockType, checkReceiptBlockProps, hashPack, publicReservedReason, publicScriptReason, unknownBlockTypeIssue } from '@pwfabric/pack'
 import {
   addressTable,
   catalogueFor,
@@ -746,10 +746,15 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // time, not in the visitor's browser: a prop the manifest does not declare,
   // a value that does not fit its declared shape (the runtime renders it
   // as written, with a developer warning), a template on a literal-only prop. Warnings.
+  // Which block a type names: the one rule of @pwfabric/pack resolveBlockType
+  // (an id or a manifest name first, a short name only when one block has it).
+  const named = atoms.filter((a) => a.kind === 'block').map((a) => ({ atom: a, id: a.id, ...(a.manifest ? { manifest: a.manifest } : {}) }))
   const propCatalog = new Map<string, { atomId: string; props: NonNullable<ReturnType<typeof blockPropDescriptors>> }>()
-  for (const [name, list] of byName) {
-    const props = list[0] ? blockPropDescriptors(list[0].manifest) : undefined
-    if (list[0] && props) propCatalog.set(name, { atomId: list[0].id, props })
+  for (const name of byName.keys()) {
+    const hit = resolveBlockType(name, named)
+    if (!hit || 'ambiguous' in hit) continue
+    const props = blockPropDescriptors(hit.atom.manifest)
+    if (props) propCatalog.set(name, { atomId: hit.id, props })
   }
   for (const page of [...pages, ...localed.pages, ...(layoutPage ? [layoutPage] : [])]) {
     for (const issue of checkReceiptBlockProps(page.receipt, propCatalog, page.path)) {
@@ -773,8 +778,13 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   for (const [type, page] of blockTypeFirstUses([...pages, ...localed.pages, ...(layoutPage ? [layoutPage] : [])])) {
     // The layout's page slot is the format's, no block (receipt §4).
     if (type === PAGE_SLOT_TYPE) continue
-    const candidates = byName.get(type) ?? []
-    const atom = candidates[0]
+    const hit = resolveBlockType(type, named)
+    if (hit && 'ambiguous' in hit) {
+      diagnostics.push({ severity: 'error', code: BLOCK_TYPE_AMBIGUOUS, message: ambiguousBlockTypeMessage(type, page.key, hit.ambiguous.map((b) => b.id)), path: page.path })
+      continue
+    }
+    const atom = hit?.atom
+    const shadowed = hit ? hit.shadowed.map((b) => b.atom) : []
     if (!atom) {
       // The same finding, worded the same, as `pwf validate` (@pwfabric/pack checkBlockTypes).
       const issue = unknownBlockTypeIssue(type, page)
@@ -783,11 +793,11 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     }
     if (!used.has(atom)) placedBlocks.push({ atomId: atom.id, ...declaredOrigins(atom, diagnostics) })
     used.add(atom)
-    if (candidates.length > 1) {
+    if (shadowed.length > 0) {
       diagnostics.push({
         severity: 'info',
         code: 'BLOCK_TYPE_SHADOWED',
-        message: `block type "${type}" resolves to ${atomLabel(atom)}; also defined by ${candidates.slice(1).map(atomLabel).join(', ')}`,
+        message: `block type "${type}" resolves to ${atomLabel(atom)}; also defined by ${shadowed.map(atomLabel).join(', ')}`,
         path: page.path,
       })
     }
