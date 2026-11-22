@@ -11,6 +11,7 @@ import { resolveFrom } from './lib/project.js'
 import { readBuiltOutput } from './lib/built-output.js'
 import { loadPlaywright, PLAYWRIGHT_MISSING, type PlaywrightLoader } from './lib/hydration.js'
 import { startStaticServer } from './lib/static-server.js'
+import { PIN_FIXED_ELEMENTS } from './lib/pin-fixed.js'
 import { appFolderOf, openRunSource, readOnlyHostFor } from './run.js'
 import { HOST_PREFIX } from '../dev/server.js'
 import { isObject } from './lib/app-files.js'
@@ -87,6 +88,8 @@ export async function runShoot(args: ParsedArgs, io: CommandIO, deps: ShootDeps 
           await page.goto(`${origin}${address}`)
           await page.waitForTimeout(deps.settleMs ?? 1500)
           const file = join(dir, `${shotName(address)}@${width}${themes.length > 1 || theme === 'dark' ? `-${theme}` : ''}.png`)
+          // A fixed element in the place a visitor sees it, not wherever the window was.
+          await page.evaluate(PIN_FIXED_ELEMENTS)
           await page.screenshot({ path: file, fullPage: true })
           await page.close()
           written.push(file)
