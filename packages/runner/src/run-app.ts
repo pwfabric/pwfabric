@@ -924,6 +924,8 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     let rendered: unknown
     if (staticRoot) rendered = hydrateFirstFrame(staticRoot, receipt, key, surface, renderOptions)
     else if (kept) {
+      // The first frame's stylesheet laid out the page drawn before.
+      dropStaticLayout()
       kept.update({ ...renderOptions, surface })
       rendered = kept
     } else rendered = fabric.render('#pw-root', { surface }, renderOptions)
