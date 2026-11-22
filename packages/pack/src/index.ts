@@ -42,7 +42,8 @@ export {
   writePwpack,
   type PwpackLimits,
 } from './archive.js'
-export { DIR_MODE, FILE_MODE, FIXED_MTIME } from './tar.js'
+export { DIR_MODE, FILE_MODE, FIXED_MTIME, readTar, writeTar } from './tar.js'
+export type { TarEntry, TarReadLimits } from './tar.js'
 export { hashPack, legacyContentHash, sha256Hex } from './hash.js'
 export {
   deriveAtoms,
