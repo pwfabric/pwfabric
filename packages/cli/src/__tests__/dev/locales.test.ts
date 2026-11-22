@@ -251,3 +251,23 @@ describe('og:locale (language_TERRITORY)', () => {
     expect(ogLocaleOf('zh-Hant')).toBe('zh_TW')
   })
 })
+
+describe('the frame files the documents name', () => {
+  for (const router of ['hash', 'path'] as const) {
+    it(`exist, for every locale's documents, under ${router} routing`, async () => {
+      const r = await assemblePwapp(await bakery(), { cacheDir: null, router })
+      expect(r.ok, errors(r).join(' | ')).toBe(true)
+      const named = new Set<string>()
+      for (const [file, bytes] of r.files) {
+        if (!file.endsWith('.html') || file.startsWith('pwpack/')) continue
+        const d = doc(text(bytes))
+        const hints = JSON.parse(d.getElementById('pw-page-hints')?.textContent ?? '{"pages":{}}') as { pages: Record<string, { frame?: string }> }
+        for (const p of Object.values(hints.pages)) if (p.frame) named.add(p.frame)
+        const paint = JSON.parse(d.getElementById('pw-first-paint')?.textContent ?? '{"pages":{}}') as { pages: Record<string, { file?: string }> }
+        for (const p of Object.values(paint.pages)) if (p.file) named.add(p.file)
+      }
+      expect(named.size).toBeGreaterThan(0)
+      for (const f of named) expect(r.files.has(f), f).toBe(true)
+    })
+  }
+})

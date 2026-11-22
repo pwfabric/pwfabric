@@ -1319,7 +1319,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
               routes: routes.map((p) => p.key),
               ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
               pages: framed,
-              ...(locales && lang !== undefined ? { locale: { lang: frameLang ?? lang, addresses: addressKeysOf(localed.addresses, lang) } } : {}),
+              ...(locales && lang !== undefined ? { locale: { ...(frameLang !== undefined ? { lang: frameLang } : {}), addresses: addressKeysOf(localed.addresses, lang) } } : {}),
             })
           : undefined
       if (other) editions.set(lang as string, { ...other, painted: framed, ...(data ? { firstPaintJson: data } : {}) })

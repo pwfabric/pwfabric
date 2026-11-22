@@ -332,8 +332,13 @@ export function firstPaintData(input: {
   readonly routes: readonly string[]
   readonly notFound?: string
   readonly pages: readonly PaintedPage[]
-  /** An app with locales: the locale the frames are drawn in, and every address to the page it names in it (envelope §2.3). */
-  readonly locale?: { readonly lang: string; readonly addresses: Readonly<Record<string, string>> }
+  /**
+   * An app with locales: every address to the page it names in the locale the
+   * frames are drawn in (envelope §2.3), and, for a locale other than the
+   * default, that locale — its frames are `<key>.<lang>.html`; the default
+   * locale's are `<key>.html`, as the frame files are written.
+   */
+  readonly locale?: { readonly lang?: string; readonly addresses: Readonly<Record<string, string>> }
 }): Record<string, unknown> {
   const pages: Record<string, { keys: readonly string[]; file: string }> = {}
   for (const p of input.pages) pages[p.key] = { keys: p.addressKeys, file: staticPageFile(p.key, input.locale?.lang) }
