@@ -69,6 +69,15 @@ describe('the app icon (appearance brand.favicon)', () => {
     expect(directive(cspOf(r), 'img-src')).toContain('https://cdn.example.com')
   })
 
+  it('refuses an http address (mixed content on an https page) and opens no origin for it', async () => {
+    const root = await app()
+    await editJson(root, 'app/definitions/appearance.json', (d) => ({ ...d, brand: { favicon: 'http://cdn.example.com/icon.svg' } }))
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(errors(r).map((d) => d.code)).toContain('FAVICON_INVALID')
+    expect(text(r.files.get('index.html'))).toContain('<link rel="icon" href="data:," />')
+    expect(cspOf(r)).not.toContain('cdn.example.com')
+  })
+
   it('refuses a file the app does not have, and keeps the empty icon without one', async () => {
     const root = await app()
     const plain = await assemblePwapp(root, { cacheDir: null })

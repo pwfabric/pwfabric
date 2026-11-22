@@ -311,7 +311,8 @@ function withoutAuthoring(receipt: Record<string, unknown>): Record<string, unkn
 
 /**
  * The app's icon (`appearance` `brand.favicon`) as the documents link it: an
- * absolute http(s) address as written; a media file of the app
+ * absolute https address as written (an http icon on an https page is mixed
+ * content, which the browser blocks); a media file of the app
  * (`media/<file>`) as served, `pwpack/media/<file>`; a public file
  * (`public/favicon.ico`, or `favicon.ico`) at the app's root. A file the app does not have, or any other
  * form, is an error (FAVICON_INVALID) and the documents keep the empty icon.
@@ -322,7 +323,7 @@ function faviconOf(config: Record<string, unknown> | undefined, files: ReadonlyM
   if (raw === undefined) return undefined
   const value = typeof raw === 'string' ? raw.trim() : ''
   // An address the head carries: visible ASCII, no whitespace or control character.
-  if (/^https?:\/\/[\x21-\x7e]+$/i.test(value)) return value
+  if (/^https:\/\/[\x21-\x7e]+$/i.test(value)) return value
   const file = value.replace(/^\.?\//, '')
   if (/^media\/(?!.*(?:^|\/)\.\.?(?:\/|$))[^\s?#]+$/.test(file) && files.has(file)) return `pwpack/${file}`
   // A public file (`public/favicon.ico`, or as served: `favicon.ico`) is served at the app's root.
@@ -331,7 +332,7 @@ function faviconOf(config: Record<string, unknown> | undefined, files: ReadonlyM
   diagnostics.push({
     severity: 'error',
     code: 'FAVICON_INVALID',
-    message: `brand.favicon is "${value}": it is an http(s) address or a file of the app (media/<file>, or a file of public/), and the app has no such file`,
+    message: `brand.favicon is "${value}": it is an https address or a file of the app (media/<file>, or a file of public/), and the app has no such file`,
     path: 'app/definitions/appearance.json',
   })
   return undefined
