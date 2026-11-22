@@ -1,0 +1,76 @@
+---
+title: Upgrading to 3.5
+description: What changes for a block, an app and a pack moving to PWFabric 3.5 — position keys on the block wrapper, the app icon's forms, and Foundation 2.0's navbar.
+---
+
+# Upgrading to 3.5
+
+3.5 adds app layouts, apps in several languages, a title template, plurals and
+the visitor's light or dark choice. None of these need a change to an existing
+app. Three things do: where a block's position keys apply, the forms the app
+icon may take, and, for apps on Foundation 2.0, the navbar's `sticky` prop.
+`pwf validate` reports the icon; the other two are visible on the page.
+
+## 1. Position keys apply to the block wrapper
+
+`position`, `top`, `right`, `bottom`, `left`, `inset`, `zIndex` and
+`alignSelf` in a block's `style` now apply to the element the renderer wraps
+the block in, not to the block's own root. A fixed or sticky block is now
+positioned against the page, as its author meant, and not inside a wrapper
+that ignored it.
+
+One case changes how a page looks: a sticky block inside a row whose items
+stretch (a two-column `grid` or `stack`, a sidebar beside the content). A
+stretched wrapper is as tall as the row, so it has no room to stick. Give the
+block `alignSelf: "start"`:
+
+```json
+{ "id": "toc", "type": "toc", "style": { "position": "sticky", "top": "1rem", "alignSelf": "start" } }
+```
+
+A fixed navbar (`position: "fixed"`) needs nothing more; a fixed navbar inside
+a stretched row takes `alignSelf: "start"` too.
+
+## 2. The app icon
+
+`brand.favicon` in `app/definitions/appearance.json` is one of:
+
+- a media file of the app, `media/<file>` (served as `pwpack/media/<file>`);
+- a file of `public/` (`public/favicon.ico`, or as served, `favicon.ico`);
+- an absolute `https://` address.
+
+Anything else is an error in `pwf validate` and `pwf build`
+(`FAVICON_INVALID`): an `http://` address (mixed content, which the browser
+blocks), a file the app does not have, and the served form
+`pwpack/media/<file>`, for which the message names the file to write instead,
+`media/<file>`. Documents now link the icon with its type
+(`<link rel="icon" type="image/png">`).
+
+## 3. Foundation 2.0: the navbar has no `sticky`
+
+Foundation 2.0 removes the navbar's `sticky` prop. Make a navbar stay at the
+top with its block style:
+
+```json
+{ "id": "nav", "type": "navbar", "style": { "position": "sticky", "top": 0, "zIndex": 100 } }
+```
+
+Inside a stretched row, add `alignSelf: "start"` (section 1).
+
+## Also new in 3.5
+
+Nothing here needs a change; each is described in the specification.
+
+- **App layout**: `app/layout.receipt.json` wraps every page, its one
+  `{ "type": "pw:page" }` slot holding the page; a page opts out with
+  `"layout": false`. Its blocks stay mounted from page to page.
+- **Apps in several languages**: `locales` and `defaultLocale` in the plan,
+  `app/messages/<lang>.json`, a receipt's `path` per locale, `t('<id>')` in
+  receipts, one document per page per locale, `hreflang` and one sitemap.
+- **Title template**: `titleTemplate` in the plan (`"%s · Acme Bakery"`).
+- **Plurals** in messages: `{n, plural, one {# item} other {# items}}`.
+- **The visitor's colour scheme**: `context.colorScheme` and
+  `context.setColorScheme` for a light or dark switch.
+- A plan's `public/` files, scripts behind consent, headers and redirects.
+- `pwf validate` now refuses a pinned pack that is not cached
+  (`PIN_NOT_CACHED`), as `pwf build` does, with the same fix: `pwf add <id>@<version>`.
