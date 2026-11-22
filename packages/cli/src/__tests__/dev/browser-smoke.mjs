@@ -1,11 +1,14 @@
 // Browser smoke: boots an assembled pwapp's real module graph in a jsdom
 // document and prints what rendered as one JSON line.
 //
-//   node browser-smoke.mjs <app url> [--expect <selector>]
+//   node browser-smoke.mjs <app url> [--expect <selector>] [--go <hash> --until <text>]
 //
 // The page runs only what the shell names: the renderer and the runner (the
 // renderer seeds every global a block imports; there is no seed script).
 // --expect waits for one more element and reports its text.
+// --go then follows an address (`#/about`) the way a link does, waits until
+// the page shows <text>, and reports whether the first `[data-k="stack"]`
+// is the same element as before (`kept`): a layout's block stays mounted.
 //
 // Runs as a plain Node process (the test runner's module sandbox has no
 // dynamic import for evaluated code). jsdom has no import maps and Node cannot
@@ -19,6 +22,8 @@ import { JSDOM } from 'jsdom'
 const base = process.argv[2]
 const flags = process.argv.slice(3)
 const expectSelector = flags.includes('--expect') ? flags[flags.indexOf('--expect') + 1] : null
+const go = flags.includes('--go') ? flags[flags.indexOf('--go') + 1] : null
+const until = flags.includes('--until') ? flags[flags.indexOf('--until') + 1] : null
 const nodeFetch = globalThis.fetch
 const get = async (p) => (await nodeFetch(new URL(p, base))).text()
 const dataUrl = (code) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
@@ -109,6 +114,14 @@ await runner.runApp({
 const deadline = Date.now() + 20_000
 const rendered = () => document.querySelector('[data-k="title"]') && (!expectSelector || document.querySelector(expectSelector))
 while (Date.now() < deadline && !rendered()) await new Promise((r) => setTimeout(r, 100))
+let navigation
+if (go) {
+  const before = document.querySelector('[data-k="stack"]')
+  location.hash = go
+  const shown = () => (document.body.textContent ?? '').includes(until ?? '')
+  while (Date.now() < deadline && !shown()) await new Promise((r) => setTimeout(r, 100))
+  navigation = { shown: shown(), kept: before !== null && document.querySelector('[data-k="stack"]') === before, title: document.title }
+}
 process.stdout.write(
   JSON.stringify({
     seeded,
@@ -118,6 +131,7 @@ process.stdout.write(
     heading: document.querySelector('[data-k="title"]')?.textContent ?? null,
     stack: Boolean(document.querySelector('[data-k="stack"]')),
     expected: expectSelector ? (document.querySelector(expectSelector)?.textContent ?? null) : undefined,
+    navigation,
     primary: document.querySelector('[data-k="title"]')?.getAttribute('style') ?? null,
     errors,
   }) + '\n'

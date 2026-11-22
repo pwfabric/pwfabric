@@ -36,6 +36,7 @@ export {
   firstFrameLocale,
 } from './first-frame.js'
 export type { PageContext, PageSurface } from './first-frame.js'
+export { assemblePage, currentPageHref, marksCurrentPage } from './layout.js'
 export { projectAppearanceRef } from './run-app.js'
 export type { ToHref } from './helpers.js'
 

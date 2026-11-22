@@ -305,6 +305,13 @@ export interface SurfaceRendererProps {
   /** The visitor's consent (envelope §2.2), handed to every block as `context.consentCategories`, `consent` and `setConsent`. */
   readonly consent?: ConsentStore
   /**
+   * The page this surface is (the runner's page key). When it changes between
+   * two renders of the same mount, the page's state and the data of the
+   * sources it no longer declares are dropped, while the blocks that stay —
+   * an app layout's (receipt §4) — stay mounted.
+   */
+  readonly pageKey?: string
+  /**
    * How this host writes an app link (its router's form); handed to every
    * block as `context.appHref`. Absent, a link is written as given.
    */

@@ -70,6 +70,27 @@ describe('pwf validate', () => {
     expect(await main(['validate'], capture(root).io)).toBe(0)
   })
 
+  it('judges each page in the app layout: its blocks known, the slot no block, ids unique with the layout', async () => {
+    const { root } = await created()
+    const path = join(root, 'app', 'surfaces', 'home.receipt.json')
+    const home = JSON.parse(await readFile(path, 'utf8')) as { blocks: { id: string }[] }
+    const first = home.blocks[0]!.id
+    const layoutPath = join(root, 'app', 'layout.receipt.json')
+    await writeFile(layoutPath, JSON.stringify({ blocks: [{ id: 'chrome', type: 'text', props: { content: 'x' } }, { type: 'pw:page' }] }))
+    expect(await main(['validate'], capture(root).io)).toBe(0)
+
+    await writeFile(layoutPath, JSON.stringify({ blocks: [{ id: first, type: 'hologram', props: {} }, { type: 'pw:page' }] }))
+    const v = capture(root)
+    expect(await main(['validate'], v.io)).toBe(1)
+    expect(v.err.find((l) => l.includes('UNKNOWN_BLOCK_TYPE'))).toContain('app/layout.receipt.json')
+    expect(v.err.find((l) => l.includes('BLOCK_ID_DUPLICATE'))).toContain(`block id "${first}" is used twice on this page`)
+
+    await writeFile(layoutPath, JSON.stringify({ blocks: [{ id: 'chrome', type: 'text', props: { content: 'x' } }] }))
+    const s = capture(root)
+    expect(await main(['validate'], s.io)).toBe(1)
+    expect(s.err.join(' ')).toContain('APP_LAYOUT_SLOT')
+  })
+
   it('groups errors, warnings and notes and exits 1 on errors', async () => {
     const cwd = await tempDir()
     await mkdir(join(cwd, 'blocks', 'x', 'y'), { recursive: true })

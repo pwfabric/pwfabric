@@ -39,6 +39,7 @@ export * from './events.js'
 
 // Layout types
 export * from './layout.js'
+export * from './app-layout.js'
 
 // Listings, publishers and licence grants — how a host distributes an atom —
 // are not part of this package; the atom itself is described by ./atom.js.

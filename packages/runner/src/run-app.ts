@@ -75,6 +75,7 @@ import { ownRecordsReceipt } from './own-records.js'
 import { receiptSurfaceId, startPreviewSession, type PreviewPage, type PreviewSession } from './preview-session.js'
 import type { PreviewSurface } from './preview-bridge.js'
 import { createConsent } from './consent.js'
+import { assemblePage } from './layout.js'
 
 export { projectAppearanceRef } from './appearance-ref.js'
 
@@ -430,7 +431,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   })
 
   /** The page on screen, kept so an identity change that is not a sign-in can reach it in place. */
-  let current: { seq: number; surface: unknown; options: Record<string, unknown>; handle: unknown } | null = null
+  let current: { seq: number; surface: unknown; options: Record<string, unknown>; handle: unknown; layout?: boolean } | null = null
   /**
    * THE PAGE READS A NEW `__auth` WITHOUT BEING DRAWN AGAIN. A refused
    * password leaves the visitor on the same form with what they typed; a
@@ -515,6 +516,60 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     )
   }
 
+  /**
+   * THE APP'S LAYOUT (receipt §4), fetched once per load like a receipt —
+   * with the visitor's credential — when `project.json` names one. One that
+   * cannot be had is asked for again by the next page; until then pages are
+   * drawn without it.
+   */
+  let layoutLoad: Promise<SurfaceReceipt | null> | undefined
+  let layoutNow: SurfaceReceipt | null = null
+  function appLayout(): Promise<SurfaceReceipt | null> {
+    const file = project.layoutReceiptFile
+    if (!file) return Promise.resolve(null)
+    layoutLoad ??= fetchReceipt(file).then(
+      (layout) => (layoutNow = layout),
+      (err: unknown) => {
+        console.warn('[pwapp] the app layout could not be fetched; this page is drawn without it', err)
+        layoutLoad = undefined
+        return null
+      }
+    )
+    return layoutLoad
+  }
+
+  /** The pages drawn inside the layout: on to another one, the layout's blocks stay mounted. */
+  const inLayout = new WeakSet<SurfaceReceipt>()
+
+  /** Page `key`'s receipt, assembled into the layout (envelope §4 step 2): what every later step reads. */
+  async function fetchPage(file: string, key: string, notFoundPage: boolean): Promise<SurfaceReceipt> {
+    const [receipt, layout] = await Promise.all([fetchReceipt(file), appLayout()])
+    return assembledPage(layout, receipt, key, notFoundPage)
+  }
+
+  function assembledPage(layout: SurfaceReceipt | null, receipt: SurfaceReceipt, key: string, notFoundPage: boolean): SurfaceReceipt {
+    const { receipt: assembled, problems } = assemblePage(layout, receipt, { key, entry, notFoundPage, blocks: blockManifest })
+    for (const p of problems) console.warn(`[pwapp] page "${key}": ${p.message}`)
+    if (layout && receipt.layout !== false) inLayout.add(assembled)
+    return assembled
+  }
+
+  /**
+   * The mount of the page on screen, when the next page can be drawn into it
+   * — both drawn inside the layout, and the mount still the one in the
+   * document — so only what the page puts in the slot changes (receipt §4).
+   */
+  async function keptLayoutMount(): Promise<{ update(o: Record<string, unknown>): void } | null> {
+    const page = current
+    if (!page?.layout) return null
+    const handle = (await page.handle) as { update?: (o: Record<string, unknown>) => void; container?: unknown } | null | undefined
+    if (page !== current || typeof handle?.update !== 'function') return null
+    const root = container.firstElementChild
+    if (container.childElementCount !== 1 || !(root instanceof HTMLElement) || root.id !== 'pw-root') return null
+    if (handle.container !== undefined && handle.container !== root) return null
+    return handle as { update(o: Record<string, unknown>): void }
+  }
+
   async function route(change?: RouteChange): Promise<void> {
     const gated = isGated(project, bridge, Boolean(appSession))
     // THE APP'S SIGN-IN SCREEN, at the address the visitor is on: in front of
@@ -541,7 +596,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
 
     const file = receiptFiles[key]
     if (!file) throw new Error(`[pwapp] no receipt file for page "${key}"`)
-    const receipt = await fetchReceipt(file)
+    const receipt = await fetchPage(file, key, false)
     if (seq !== routeSeq) return
 
     /**
@@ -576,7 +631,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     const file = own ? receiptFiles[own] : undefined
     if (own && file) {
       try {
-        const receipt = await fetchReceipt(file)
+        const receipt = await fetchPage(file, own, true)
         if (seq !== routeSeq) return
         await renderPage(seq, own, receipt, new URLSearchParams(router.query()), true)
         return
@@ -597,7 +652,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     shown = null
     const key = ownSignIn as string
     try {
-      const receipt = await fetchReceipt(receiptFiles[key] as string)
+      const receipt = await fetchPage(receiptFiles[key] as string, key, false)
       if (seq !== routeSeq) return
       await renderPage(seq, key, receipt, new URLSearchParams(router.query()), true)
     } catch (err) {
@@ -754,7 +809,11 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // drawn anew rather than hydrated.
     const taken = staticRootFor(key)
     const staticRoot = frameWhole ? taken : null
-    if (!staticRoot) {
+    // From one page in the layout to another: the same mount, so the layout's
+    // blocks stay mounted and only the slot's content changes.
+    const kept = !staticRoot && inLayout.has(receipt) ? await keptLayoutMount() : null
+    if (seq !== routeSeq) return
+    if (!staticRoot && !kept) {
       dropStaticLayout()
       container.replaceChildren()
       const mount = document.createElement('div')
@@ -764,6 +823,8 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     const renderOptions: Record<string, unknown> = {
       mode: 'fat',
       blocks: blockManifest,
+      // Which page this is: another page in a kept mount starts its own state afresh.
+      pageKey: key,
       // The appearance, the loading strategy (paint first, fill in after),
       // the link writer, the app's locale and words: the options the first
       // frame is drawn with, the same in the build (first-frame.ts).
@@ -842,10 +903,13 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // DataBoundSurfaceRenderer, which exposes it via SurfaceConnectionsContext.
       ...(connectionsValue ? { connections: connectionsValue } : {}),
     }
-    const rendered = staticRoot
-      ? hydrateFirstFrame(staticRoot, receipt, key, surface, renderOptions)
-      : fabric.render('#pw-root', { surface }, renderOptions)
-    current = { seq, surface, options: renderOptions, handle: rendered }
+    let rendered: unknown
+    if (staticRoot) rendered = hydrateFirstFrame(staticRoot, receipt, key, surface, renderOptions)
+    else if (kept) {
+      kept.update({ ...renderOptions, surface })
+      rendered = kept
+    } else rendered = fabric.render('#pw-root', { surface }, renderOptions)
+    current = { seq, surface, options: renderOptions, handle: rendered, layout: inLayout.has(receipt) }
     if (preview && !notFoundPage) {
       // Kept, not discarded: the bridge re-renders through this handle.
       const surfaceId = receiptSurfaceId(receipt)
@@ -935,10 +999,11 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // The same pipeline a fetched receipt goes through, and the same query
       // seeding — the pushed page behaves like the built one would.
       prepare: (pushed: PreviewSurface) => {
-        const receipt = withOwnRecords(pushed as unknown as SurfaceReceipt)
+        const key = router.current() ?? entry
+        const receipt = assembledPage(layoutNow, withOwnRecords(pushed as unknown as SurfaceReceipt), key, false)
         const seeded = seedStateFromQuery(receipt, new URLSearchParams(router.query()))
         return {
-          blocks: pageBlocks(receipt.blocks, router.current() ?? entry),
+          blocks: pageBlocks(receipt.blocks, key),
           ...(pushed.appearance !== undefined ? { appearance: pushed.appearance } : {}),
           capabilities: rewriteHrefs(seeded.capabilities ?? [], entry, router.toHref),
         }

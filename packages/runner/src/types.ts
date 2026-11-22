@@ -46,6 +46,17 @@ export interface PwappProject {
    */
   readonly description?: string
   /**
+   * How a page's title becomes the document title (receipt §1.1), from
+   * `app/plan.json` `titleTemplate`: exactly one `%s`, which the page's title
+   * replaces; `%%` writes a `%`. Absent: `<app title> — <page title>`.
+   */
+  readonly titleTemplate?: string
+  /**
+   * The app's layout (receipt §4), relative to the envelope: the receipt every
+   * page is drawn in. Absent: the app has none, and the runner asks for none.
+   */
+  readonly layoutReceiptFile?: string
+  /**
    * The app's public origin (`https://example.com`), from `app/plan.json`
    * `origin`: a page's canonical address is this origin and the page's path
    * (envelope §4). Absent: the app names no canonical address.
@@ -353,6 +364,10 @@ export interface SurfaceReceipt {
   readonly title?: string
   /** The page in a sentence: its `<meta name="description">` (receipt §1). */
   readonly description?: string
+  /** `false`: the page's `title` is the whole document title (receipt §1.1). */
+  readonly titleTemplate?: boolean
+  /** `false`: the page is drawn without the app's layout (receipt §4). */
+  readonly layout?: boolean
   readonly blocks: SurfaceBlockNode[]
   readonly appearance?: unknown
   readonly capabilities?: readonly {
