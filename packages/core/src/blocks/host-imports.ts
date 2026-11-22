@@ -67,7 +67,9 @@ export type HostImportKind = 'global'
  *                 served) but its named exports come back `undefined`. That is
  *                 strictly better than an unresolved bare specifier, which
  *                 fails the whole module at link time — but it is a gap, and
- *                 naming it here keeps it visible.
+ *                 naming it here keeps it visible. No entry is in this class
+ *                 today: react-dom and `@pwfabric/core` were, though the
+ *                 renderer bundle seeds both.
  */
 export type HostSeeding = 'every-host' | 'app-host' | 'unseeded'
 
@@ -124,9 +126,10 @@ export const BLOCK_HOST_IMPORTS: readonly HostImport[] = [
     specifier: 'react-dom',
     kind: 'global',
     global: '__pwfabric_react_dom',
-    seeding: 'unseeded',
+    seeding: 'every-host',
     shim: 'react-dom.mjs',
-    reason: 'Blocks that portal or measure reach for react-dom; same-instance rule as React.',
+    reason:
+      'Blocks that portal or measure reach for react-dom; same-instance rule as React. The renderer bundle (`@pwfabric/embed`) seeds it from its own react-dom, so the page needs no second script for it.',
   },
   {
     specifier: '@pwfabric/runtime',
@@ -176,9 +179,10 @@ export const BLOCK_HOST_IMPORTS: readonly HostImport[] = [
     specifier: '@pwfabric/core',
     kind: 'global',
     global: '__pwfabric_core',
-    seeding: 'unseeded',
+    seeding: 'every-host',
     shim: 'core.mjs',
-    reason: 'Block layout helpers and breakpoint constants blocks resolve at render time.',
+    reason:
+      'Block layout helpers and breakpoint constants blocks resolve at render time. The renderer bundle (`@pwfabric/embed`) seeds it from its own copy of the package.',
   },
   {
     specifier: '@pwfabric/authoring',

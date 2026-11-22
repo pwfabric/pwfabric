@@ -130,12 +130,19 @@ describe('derivations', () => {
     // An entry nothing seeds is a gap, not a requirement. Putting it in a host's
     // list would produce a gate that cannot be satisfied; leaving it out
     // silently would hide it. It goes in its own list.
-    const unseeded = unseededHostGlobals().map((i) => i.global)
-    expect(unseeded.length).toBeGreaterThan(0)
-    for (const g of unseeded) {
+    for (const g of unseededHostGlobals().map((i) => i.global)) {
       expect(blockHostGlobals('app-host')).not.toContain(g)
       expect(blockHostGlobals('standalone')).not.toContain(g)
     }
+  })
+
+  it('records react-dom and @pwfabric/core as seeded by every host', () => {
+    // The renderer bundle (@pwfabric/embed embed-global.ts) seeds both, so a
+    // page that loads it serves them; the list said nothing seeded them.
+    expect(unseededHostGlobals()).toEqual([])
+    const standalone = blockHostGlobals('standalone')
+    expect(standalone).toContain('__pwfabric_react_dom')
+    expect(standalone).toContain('__pwfabric_core')
   })
 
   it('reads the jsx-runtime global the seeders actually write', () => {
@@ -238,9 +245,20 @@ describe('shim sources', () => {
     )
   })
 
-  it('degrades to undefined exports for a global nothing seeds yet', async () => {
-    const mod = await load(shimSource('core.mjs', '__pwfabric_core', ['BREAKPOINTS']), {})
-    expect(mod['BREAKPOINTS']).toBeUndefined()
+  it('degrades to undefined exports for a global no host is required to seed', async () => {
+    // No entry on the list is unseeded today; a shim outside the every-host
+    // class still degrades rather than throws.
+    const mod = await load(shimSource('extra.mjs', '__pwfabric_extra', ['thing']), {})
+    expect(mod['thing']).toBeUndefined()
+  })
+
+  it('throws a readable error when react-dom or @pwfabric/core is not seeded: every host seeds them now', async () => {
+    await expect(load(shimSource('core.mjs', '__pwfabric_core', ['BREAKPOINTS']), {})).rejects.toThrow(
+      /globalThis\.__pwfabric_core is not seeded, so @pwfabric\/core cannot be imported by a block/
+    )
+    await expect(load(shimSource('react-dom.mjs', '__pwfabric_react_dom', ['createPortal']), {})).rejects.toThrow(
+      /globalThis\.__pwfabric_react_dom is not seeded/
+    )
   })
 
   it('seeds the authoring kit on every host: a documented block calls defineBlock() when it loads', () => {
