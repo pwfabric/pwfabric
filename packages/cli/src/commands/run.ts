@@ -47,7 +47,7 @@ export function parsePort(value: string | undefined): number {
   return port
 }
 
-async function isAppFolder(dir: string): Promise<boolean> {
+export async function isAppFolder(dir: string): Promise<boolean> {
   try {
     const identity = JSON.parse(await readFile(join(dir, 'pwpack.json'), 'utf8')) as { app?: unknown }
     return identity.app !== undefined && identity.app !== null
