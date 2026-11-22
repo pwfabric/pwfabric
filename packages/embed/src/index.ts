@@ -128,6 +128,10 @@ export interface EmbedOptions {
   readonly onDescription?: (description: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
+  /** The app's languages (envelope §2.3): `context.locales` of every block. */
+  readonly locales?: readonly string[]
+  /** The current page in every locale: `context.alternates` of every block. */
+  readonly alternates?: Readonly<Record<string, string>>
   /** The visitor's consent and the categories the app's scripts wait for (envelope §2.2): `context.consent*` of every block. */
   readonly consent?: ConsentStore
   /** The visitor's colour scheme (appearance §4.1): `context.colorScheme` / `setColorScheme` of every block. */
@@ -208,6 +212,8 @@ function passthrough(options?: EmbedOptions): Partial<RenderCoreOptions> {
     ...(o.onTitle !== undefined ? { onTitle: o.onTitle } : {}),
     ...(o.onDescription !== undefined ? { onDescription: o.onDescription } : {}),
     ...(o.locale !== undefined ? { locale: o.locale } : {}),
+    ...(o.locales !== undefined ? { locales: o.locales } : {}),
+    ...(o.alternates !== undefined ? { alternates: o.alternates } : {}),
     ...(o.consent !== undefined ? { consent: o.consent } : {}),
     ...(o.colorScheme !== undefined ? { colorScheme: o.colorScheme } : {}),
     ...(o.pageKey !== undefined ? { pageKey: o.pageKey } : {}),

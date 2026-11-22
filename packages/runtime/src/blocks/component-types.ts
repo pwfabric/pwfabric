@@ -54,6 +54,10 @@ export interface BlockComponentContext {
   readonly capabilities?: Map<string, unknown>
   /** The app's locale (BCP 47); see the runtime's `BlockContext.locale`. */
   readonly locale?: string
+  /** The app's languages; see the runtime's `BlockContext.locales`. */
+  readonly locales?: readonly string[]
+  /** The current page in every locale; see the runtime's `BlockContext.alternates`. */
+  readonly alternates?: Readonly<Record<string, string>>
   /** An app page's path in the host's router form; see the runtime's `BlockContext.appHref`. */
   readonly appHref?: (path: string) => string
   /** The consent categories the app's scripts wait for; see the runtime's `BlockContext.consentCategories`. */
