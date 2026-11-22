@@ -109,6 +109,8 @@ describe('envelopeEntries', () => {
         ).replace(/%20/g, '+')}`,
         authProviderRef: base,
         returns: 'data',
+        // Kept, so it binds { fn, field, value, count } and not a list (data-protocol §2.3).
+        aggregate: { fn: 'sum', field: 'price', filter: { field: 'price', operator: 'gt', value: 4 } },
       },
       // Orders are `member` `read own`: only a session can be answered (session-sources.ts).
       {
@@ -118,6 +120,7 @@ describe('envelopeEntries', () => {
         endpoint: `${base}/records/Order/count`,
         authProviderRef: base,
         returns: 'data',
+        aggregate: { fn: 'count' },
         requiresSession: true,
       },
       { id: 'remote', kind: 'entity', entityType: 'Product', connector: 'shop-api' },
