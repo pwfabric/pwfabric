@@ -71,6 +71,28 @@ describe('hoisted-style stripping (double-margin fix)', () => {
   })
 })
 
+describe('positioning keys belong to the wrapper (sticky)', () => {
+  it('hoists position, the offsets, zIndex and alignSelf to the wrapper and keeps them off the inner element', () => {
+    const html = render([
+      {
+        id: 'nav', type: 'echo', props: {},
+        style: { position: 'sticky', top: '0', insetInlineStart: '0', zIndex: '20', alignSelf: 'start', color: 'red' },
+      },
+    ])
+    // A sticky element sticks inside its containing block: on the inner
+    // element that is the wrapper, as tall as the block, so it never sticks.
+    const wrapper = wrapperStyle(html, 'nav')
+    expect(wrapper).toContain('position:sticky')
+    expect(wrapper).toContain('top:0')
+    expect(wrapper).toContain('inset-inline-start:0')
+    expect(wrapper).toContain('z-index:20')
+    expect(wrapper).toContain('align-self:start')
+    const inner = html.slice(html.indexOf('data-echo'))
+    expect(inner).not.toMatch(/position|top:|inset|z-index|align-self/)
+    expect(inner).toContain('color:red')
+  })
+})
+
 describe('grid-item min-width guard', () => {
   it('zeroes min-width on children of a grid parent', () => {
     const html = render([
