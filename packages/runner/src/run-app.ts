@@ -136,11 +136,38 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   let sayNow = runnerMessages(project.messages, project.locale)
   const say: RunnerMessages = (id, vars) => sayNow(id, vars)
   /** Draws in `lang` from now on: its words over the default's, `<html lang>`. */
-  async function useLocale(lang: string | undefined): Promise<void> {
+  /** A page's own words file (`pageMessages`), fetched once. */
+  const pageWordFiles = new Map<string, Promise<Readonly<Record<string, string>>>>()
+  const pageWordFile = (path: string): Promise<Readonly<Record<string, string>>> => {
+    let load = pageWordFiles.get(path)
+    if (!load) {
+      load = fetchJson<Record<string, string>>(withVersion(`${source}/${path}`, opts.version)).then(
+        (w) => (w && typeof w === 'object' ? w : {}),
+        () => ({})
+      )
+      pageWordFiles.set(path, load)
+    }
+    return load
+  }
+  /**
+   * The words page `key` reads in `lang`: its own file when the build wrote
+   * one — the ids it, its layout and the runner read, already over the
+   * default's — and the catalogues only for a page that computes an id (or
+   * a build that wrote no page files).
+   */
+  async function wordsOf(lang: string, key: string | undefined): Promise<Readonly<Record<string, string>>> {
+    const declaration = localeDeclaration as NonNullable<typeof localeDeclaration>
+    const file = key !== undefined ? project.pageMessages?.[lang]?.[key] : undefined
+    const full = async (): Promise<Record<string, string>> => ({ ...(await catalogue(declaration.defaultLocale)), ...(await catalogue(lang)) })
+    if (!file) return full()
+    const own = await pageWordFile(file)
+    return key !== undefined && project.pageMessagesDynamic?.includes(key) ? { ...(await full()), ...own } : own
+  }
+  async function useLocale(lang: string | undefined, key: string | undefined): Promise<void> {
     if (!localeDeclaration || lang === undefined) return
-    const [defaults, own] = await Promise.all([catalogue(localeDeclaration.defaultLocale), catalogue(lang)])
+    const next = await wordsOf(lang, key)
     drawnLocale = lang
-    words = { ...defaults, ...own }
+    words = next
     sayNow = runnerMessages(words, lang)
     document.documentElement.lang = lang
   }
@@ -636,8 +663,8 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // The locale the address names (envelope §3), and its words, before any
     // word is drawn — the gate's and the sign-in screen's included.
     if (localeDeclaration) {
-      router.current()
-      await useLocale(router.locale())
+      const shownKey = router.current()
+      await useLocale(router.locale(), shownKey ?? project.notFoundSurfaceId ?? entry)
     }
     const gated = isGated(project, bridge, Boolean(appSession))
     // THE APP'S SIGN-IN SCREEN, at the address the visitor is on: in front of
@@ -795,6 +822,8 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   ): Promise<void> {
     // The page's block modules start downloading now, beside the renderer.
     warmBlockModules(receipt.blocks, blockManifest)
+    // The words of this page in the locale drawn (fetched once; the route asked first).
+    if (localeDeclaration) await useLocale(router.locale(), key)
     // The renderer, the first time a page is drawn (renderer.ts) — never for
     // a visitor the gate holds — and the engine registry, which is its.
     const fabric = await loadRenderer(rendererUrl)
@@ -1005,10 +1034,18 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     }
     // THE VISITOR'S LANGUAGE, offered once, after the first page is drawn
     // (and hydrated): never in the first frame (envelope §2.3).
-    if (localeDeclaration && !suggested && drawnLocale !== undefined) {
+    // Only for an app that writes the suggestion, and only once the browser is
+    // idle: no other locale's words are fetched before.
+    if (localeDeclaration && !suggested && drawnLocale !== undefined && typeof words?.['locale.suggestion'] === 'string' && words['locale.suggestion'] !== '') {
       suggested = true
       const drawn = drawnLocale
-      setTimeout(() => {
+      const shownKey = key
+      const whenIdle = (run: () => void): void => {
+        const idle = (window as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback
+        if (typeof idle === 'function') idle(run, { timeout: 5000 })
+        else setTimeout(run, 2000)
+      }
+      whenIdle(() => {
         void mountLocaleSuggestion({
           appId,
           drawn,
@@ -1023,9 +1060,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
           })(),
           doc: document,
           hrefOf: (lang) => router.hrefIn(lang, router.current() ?? entry),
-          wordsOf: async (lang) => ({ ...(await catalogue(localeDeclaration.defaultLocale)), ...(await catalogue(lang)) }),
+          wordsOf: (lang) => wordsOf(lang, shownKey),
         })
-      }, 0)
+      })
     }
     // Where the address says — the top for a plain page, the anchored element
     // when it names one. An unconditional scrollTo(0,0) here is what undid an
