@@ -46,7 +46,7 @@ import {
 } from './envelope.js'
 import { collectMedia, fillMediaSlots } from './media.js'
 import { faviconOf } from './favicon.js'
-import { bodyFontOf, fontAssetsOf, fontsOf, unreadableMetricsMessage, withFontFallbacks } from './fonts.js'
+import { bodyFontOf, familiesWithoutFiles, fontAssetsOf, fontsOf, unreadableMetricsMessage, withFontFallbacks } from './fonts.js'
 import { declaredRecordFields, withRecordFields } from '../host/record-fields.js'
 import { withSessionSources } from '../host/session-sources.js'
 import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
@@ -717,6 +717,22 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   }
   const appearance = withFallbackStacks(resolveAppearance(appearanceDoc, themes, diagnostics))
   const config = appearanceConfigOf(appearance)
+  // FONT_FILES_MISSING of a pack's theme the app wears: validation judges the
+  // app's own files (its appearance.json and its own theme atoms), not a pack's.
+  const worn = namedThemeOf(appearanceDoc, themes)
+  if (worn && worn.from !== (app.label || app.id)) {
+    const own = appearanceConfigOf(isRecord(appearanceDoc) ? appearanceDoc : undefined)
+    for (const m of familiesWithoutFiles(config)) {
+      const set = own?.[m.set]
+      if (isRecord(set) && isRecord(set['typography']) && set['typography'][m.token] !== undefined) continue
+      diagnostics.push({
+        severity: 'warning',
+        code: 'FONT_FILES_MISSING',
+        message: `the theme ${worn.manifestId ?? worn.id} (from ${worn.from}) that app/definitions/appearance.json uses names the family "${m.family}" (${m.token}) but the app ships no files for it, so it is drawn in its fallback: add its woff2 files under media/fonts/ and list them in the theme's fonts in appearance.json (pwf font add "${m.family}" --from …)`,
+        path: 'app/definitions/appearance.json',
+      })
+    }
+  }
   // Each page's own appearance (its receipt's `appearance`), resolved the same
   // way: a page that names a theme wears it (theme.ts resolvePageAppearance).
   const appTheme = { config, theme: namedThemeOf(appearanceDoc, themes) }

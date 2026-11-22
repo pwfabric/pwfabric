@@ -10,8 +10,32 @@
  * @module @pwfabric/cli/dev/fonts
  */
 import { createHash } from 'node:crypto'
+import { FONT_FALLBACKS } from '@pwfabric/contracts'
 import { fallbackFaceOf, woff2Metrics, type FallbackKind } from './font-file.js'
 import { isRecord } from './sources.js'
+
+const GENERIC_FAMILIES: ReadonlySet<string> = new Set(FONT_FALLBACKS)
+
+/**
+ * The families a resolved configuration's typography names first (light and
+ * dark) that are neither generic nor in its `fonts`: drawn in their fallback.
+ */
+export function familiesWithoutFiles(config: Record<string, unknown> | undefined): { family: string; token: string; set: 'theme' | 'darkTheme' }[] {
+  const shipped = new Set(themeFontsOf(config).map((f) => f.family.toLowerCase()))
+  const out: { family: string; token: string; set: 'theme' | 'darkTheme' }[] = []
+  for (const key of ['theme', 'darkTheme'] as const) {
+    const set = config?.[key]
+    if (!isRecord(set)) continue
+    const typography = isRecord(set['typography']) ? set['typography'] : {}
+    for (const token of ['fontFamily', 'headingFontFamily', 'monoFontFamily']) {
+      const stack = typography[token]
+      const first = typeof stack === 'string' ? stack.split(',')[0]?.trim().replace(/^["']|["']$/g, '').trim() : undefined
+      if (!first || GENERIC_FAMILIES.has(first.toLowerCase()) || shipped.has(first.toLowerCase()) || out.some((o) => o.family === first)) continue
+      out.push({ family: first, token, set: key })
+    }
+  }
+  return out
+}
 
 /** One file of a family, as the theme names it. */
 export interface FontFile {

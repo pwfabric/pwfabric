@@ -352,6 +352,47 @@ describe('validatePack — app', () => {
       expect(codes(app({ 'app/definitions/appearance.json': doc, 'media/fonts/inter.woff2': 'not a font' }), 'error')).toEqual(['FONT_FILE_INVALID'])
       expect(codes(app({ 'app/definitions/appearance.json': doc, 'media/fonts/inter.woff2': 'wOF2' + 'x'.repeat(512_001) }), 'error')).toEqual(['FONT_FILE_INVALID'])
     })
+
+    describe('of the app’s own theme atom its appearance uses', () => {
+      const atom = (themeTokens: unknown, darkTheme?: unknown) =>
+        JSON.stringify({ id: 'theme-brand', kind: 'ui-appearance', theme: themeTokens, ...(darkTheme ? { darkTheme } : {}) })
+      const missing = (v: PackValidation) => v.issues.filter((i) => i.code === 'FONT_FILES_MISSING')
+
+      it('warns about a family the atom names without files, at the atom', () => {
+        for (const use of ['brand', 'theme-brand']) {
+          const v = app({ 'app/definitions/appearance.json': JSON.stringify({ use }), 'atoms/appearance/brand/manifest.json': atom({ typography: { fontFamily: 'Fraunces, serif' } }) })
+          expect(missing(v).map((i) => [i.path, i.message.includes('"Fraunces"')]), use).toEqual([['atoms/appearance/brand/manifest.json', true]])
+        }
+        // The reference shape too, and the atom's dark variant.
+        const dark = app({ 'app/definitions/appearance.json': JSON.stringify({ config: { use: 'brand' } }), 'atoms/appearance/brand/manifest.json': atom({}, { typography: { headingFontFamily: 'Lora' } }) })
+        expect(missing(dark).map((i) => i.message.includes('"Lora"'))).toEqual([true])
+      })
+
+      it('takes the atom’s own fonts as shipped, and the override’s over it', () => {
+        const ships = app({
+          'app/definitions/appearance.json': JSON.stringify({ use: 'brand' }),
+          'atoms/appearance/brand/manifest.json': atom({ typography: { fontFamily: 'Inter, sans-serif' }, fonts: inter }),
+          'media/fonts/inter.woff2': WOFF2,
+        })
+        expect(missing(ships)).toEqual([])
+        expect(codes(ships, 'error').filter((c) => c === 'FONT_FILE_INVALID')).toEqual([])
+        // The document's typography overrides the atom's: its family is the one judged, at appearance.json.
+        const over = app({
+          'app/definitions/appearance.json': JSON.stringify({ use: 'brand', theme: { typography: { fontFamily: 'Fraunces' } } }),
+          'atoms/appearance/brand/manifest.json': atom({ typography: { fontFamily: 'Inter, sans-serif' }, fonts: inter }),
+          'media/fonts/inter.woff2': WOFF2,
+        })
+        expect(missing(over).map((i) => [i.path, i.message.includes('"Fraunces"')])).toEqual([['app/definitions/appearance.json', true]])
+        // A file the atom names that is not there is refused, at the atom.
+        const broken = app({ 'app/definitions/appearance.json': JSON.stringify({ use: 'brand' }), 'atoms/appearance/brand/manifest.json': atom({ typography: { fontFamily: 'Inter' }, fonts: inter }) })
+        expect(broken.issues.filter((i) => i.code === 'FONT_FILE_INVALID').map((i) => i.message)).toEqual([expect.stringContaining('atoms/appearance/brand/manifest.json names the font file media/fonts/inter.woff2')])
+      })
+
+      it('judges only the document when the theme it uses is none of the app’s own (a pack’s: the build judges it)', () => {
+        const v = app({ 'app/definitions/appearance.json': JSON.stringify({ use: 'elsewhere' }), 'atoms/appearance/brand/manifest.json': atom({ typography: { fontFamily: 'Fraunces' } }) })
+        expect(missing(v)).toEqual([])
+      })
+    })
   })
 
   describe('the plan pages (app/plan.json surfaces)', () => {

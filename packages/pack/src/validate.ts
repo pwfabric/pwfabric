@@ -105,6 +105,28 @@ function firstFamily(stack: unknown): string | undefined {
   return first ? first : undefined
 }
 
+/**
+ * The app's own theme atom (`atoms/appearance/<name>/manifest.json`) that a
+ * `use` names, matched as the build matches it: as given, as `theme-<name>`,
+ * then with an `appearance-`/`theme-` prefix removed, by folder name or by
+ * the manifest's own id; the first folder in order wins.
+ */
+function ownThemeAtom(files: ReadonlyMap<string, Uint8Array>, use: string): { path: string; theme?: unknown; darkTheme?: unknown } | undefined {
+  const atoms: { name: string; id?: string; path: string; doc: Record<string, unknown> }[] = []
+  for (const path of [...files.keys()].sort()) {
+    const m = /^atoms\/appearance\/([^/]+)\/manifest\.json$/.exec(path)
+    const parsed = m ? parseJson(files.get(path) as Uint8Array) : undefined
+    if (!m || !parsed?.ok || !isRecord(parsed.value) || !isRecord(parsed.value['theme'])) continue
+    atoms.push({ name: m[1] as string, ...(typeof parsed.value['id'] === 'string' ? { id: parsed.value['id'] } : {}), path, doc: parsed.value })
+  }
+  const bare = use.trim().replace(/^(appearance|theme)-/, '')
+  for (const wanted of [use.trim(), `theme-${bare}`, bare]) {
+    const hit = atoms.find((a) => a.name === wanted || a.id === wanted)
+    if (hit) return { path: hit.path, theme: hit.doc['theme'], ...(hit.doc['darkTheme'] !== undefined ? { darkTheme: hit.doc['darkTheme'] } : {}) }
+  }
+  return undefined
+}
+
 /** The catalogues of an app in several languages (envelope §2.3). */
 const APP_MESSAGES = 'app/messages/'
 /** A page key: a name, or names joined by `/` for a page in a folder of `app/surfaces/`. */
@@ -436,10 +458,32 @@ export function validatePack(pack: PackFolder): PackValidation {
   const appearanceDoc = appearanceBytes ? parseJson(appearanceBytes) : undefined
   if (appearanceDoc?.ok && isRecord(appearanceDoc.value)) {
     const root = isRecord(appearanceDoc.value['config']) ? appearanceDoc.value['config'] : appearanceDoc.value
-    const tokenSets = [root['theme'], root['darkTheme']].filter(isRecord)
+    // The theme the app wears: the app's own theme atom its `use` names, the
+    // document's tokens over it per group, as the build resolves it. A pack's
+    // theme is not in this pack: the build judges that one.
+    const atom = typeof root['use'] === 'string' ? ownThemeAtom(pack.files, root['use']) : undefined
+    const tokenSets = (
+      [
+        [atom?.theme, root['theme']],
+        [atom?.darkTheme, root['darkTheme']],
+      ] as const
+    )
+      .filter(([base, own]) => isRecord(base) || isRecord(own))
+      .map(([base, own]) => {
+        const ownGroups = isRecord(own) ? own : {}
+        const set: Record<string, unknown> = { ...(isRecord(base) ? base : {}) }
+        for (const [k, v] of Object.entries(ownGroups)) set[k] = isRecord(v) && isRecord(set[k]) ? { ...(set[k] as Record<string, unknown>), ...v } : v
+        /** The file a member of `group` (and `token` in it) is written in. */
+        const fileOf = (group: string, token?: string): string => {
+          const g = ownGroups[group]
+          const mine = token === undefined ? g !== undefined : isRecord(g) && g[token] !== undefined
+          return mine || !atom ? APPEARANCE_FILE : atom.path
+        }
+        return { set, fileOf }
+      })
     const shipped = new Set<string>()
     const judged = new Set<string>()
-    for (const set of tokenSets) {
+    for (const { set, fileOf } of tokenSets) {
       for (const font of Array.isArray(set['fonts']) ? set['fonts'] : []) {
         if (!isRecord(font)) continue
         if (typeof font['family'] === 'string') shipped.add(font['family'].trim().toLowerCase())
@@ -448,22 +492,23 @@ export function validatePack(pack: PackFolder): PackValidation {
           if (src === undefined || judged.has(src)) continue
           judged.add(src)
           const problem = fontFileProblem(src, pack.files.get(src))
-          if (problem) add('error', 'FONT_FILE_INVALID', `${APPEARANCE_FILE} names the font file ${src}, which ${problem}`, src.startsWith('media/') ? src : APPEARANCE_FILE)
+          if (problem) add('error', 'FONT_FILE_INVALID', `${fileOf('fonts')} names the font file ${src}, which ${problem}`, src.startsWith('media/') ? src : fileOf('fonts'))
         }
       }
     }
     const missing = new Set<string>()
-    for (const set of tokenSets) {
+    for (const { set, fileOf } of tokenSets) {
       const typography = isRecord(set['typography']) ? set['typography'] : {}
       for (const token of ['fontFamily', 'headingFontFamily', 'monoFontFamily']) {
         const first = firstFamily(typography[token])
         if (first === undefined || GENERIC_FAMILIES.has(first.toLowerCase()) || shipped.has(first.toLowerCase()) || missing.has(first)) continue
         missing.add(first)
+        const where = fileOf('typography', token)
         add(
           'warning',
           'FONT_FILES_MISSING',
-          `${APPEARANCE_FILE} names the family "${first}" (${token}) but ships no files for it, so it is drawn in its fallback: add its woff2 files under media/fonts/ and list them in the theme's fonts (pwf font add "${first}" --from …)`,
-          APPEARANCE_FILE
+          `${where} names the family "${first}" (${token}) but ships no files for it, so it is drawn in its fallback: add its woff2 files under media/fonts/ and list them in the theme's fonts (pwf font add "${first}" --from …)`,
+          where
         )
       }
     }
