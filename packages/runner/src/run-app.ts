@@ -73,6 +73,7 @@ import { isOwnApiRef, ownApiBaseOf } from './api-base.js'
 import { ownRecordsReceipt } from './own-records.js'
 import { receiptSurfaceId, startPreviewSession, type PreviewPage, type PreviewSession } from './preview-session.js'
 import type { PreviewSurface } from './preview-bridge.js'
+import { createConsent } from './consent.js'
 
 export { projectAppearanceRef } from './appearance-ref.js'
 
@@ -105,6 +106,22 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   // here, and one the app does not set is drawn as nothing.
   const say = runnerMessages(project.messages)
   const dataCache = sessionDataCache(sessionStorage, appId)
+  // THE VISITOR'S CONSENT and the scripts that wait for it (envelope §2.2):
+  // handed to every block as `context.consent` / `setConsent`; nothing is
+  // loaded before the first page is drawn (`consent.start()` below).
+  const consent = createConsent({
+    appId,
+    scripts: project.scripts,
+    storage: (() => {
+      try {
+        return window.localStorage
+      } catch {
+        return undefined
+      }
+    })(),
+    win: window,
+    doc: document,
+  })
   const boot = await bootSession({ project, auth, storage: sessionStorage, appId })
   let appSession: AppSession | null = boot.session
   // A visitor who will see a page gets the renderer started now, so it is
@@ -744,6 +761,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // And a page the visitor has already seen shows yesterday's rows
       // while today's load, so going back and forth costs nothing visible.
       dataCache,
+      consent,
       // A `navigate` action is followed as a link to its address would be
       // (router.follow): `location.assign('#rsvp')` replaced the hash route.
       onNavigateAction: (url: string) => router.follow(url),
@@ -972,4 +990,5 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   })
 
   await route()
+  consent.start()
 }

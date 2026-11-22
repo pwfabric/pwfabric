@@ -134,6 +134,25 @@ export interface CapabilityProvider {
   readonly data?: unknown
 }
 
+/** The visitor's consent answers: category → consented. A category not answered is absent. */
+export type ConsentAnswers = Readonly<Record<string, boolean>>
+
+/**
+ * The visitor's consent as a host keeps it (envelope §2.2): the categories
+ * the app's scripts wait for, the answers so far, and a way to record new
+ * ones. The runner's is backed by browser storage and loads the scripts.
+ */
+export interface ConsentStore {
+  /** The categories the app's scripts name, each once, in declaration order. */
+  readonly categories: readonly string[]
+  /** The answers so far; the same object until they change. */
+  answers(): ConsentAnswers
+  /** Records answers, merged over the previous ones; a category not in `categories` is ignored. */
+  set(answers: ConsentAnswers): void
+  /** Called after every change of the answers; returns the unsubscribe. */
+  subscribe(listener: () => void): () => void
+}
+
 /**
  * Block rendering context
  */
@@ -180,6 +199,24 @@ export interface BlockContext {
    * built from a row is still checked by the block (`safeDataLink`).
    */
   readonly appHref: LinkHref
+  /**
+   * The consent categories the app's scripts wait for, each once, in
+   * declaration order (envelope §2.2): what a consent block asks about.
+   * Empty when the app declares no script.
+   */
+  readonly consentCategories?: readonly string[]
+  /**
+   * The visitor's answers so far, `{ <category>: true | false }`; a category
+   * not answered is absent. `{}` in the first frame and the hydrating render
+   * (the build knows no visitor); the stored answers arrive right after.
+   */
+  readonly consent?: ConsentAnswers
+  /**
+   * Records the visitor's answers, merged over the previous ones; a category
+   * not in `consentCategories` is ignored. A host without a consent store
+   * ignores the call.
+   */
+  readonly setConsent?: (answers: ConsentAnswers) => void
 }
 
 // ============================================================
@@ -265,6 +302,8 @@ export interface SurfaceRendererProps {
   readonly surface: RenderableSurface
   /** The app's locale, handed to every block as `context.locale`. */
   readonly locale?: string
+  /** The visitor's consent (envelope §2.2), handed to every block as `context.consentCategories`, `consent` and `setConsent`. */
+  readonly consent?: ConsentStore
   /**
    * How this host writes an app link (its router's form); handed to every
    * block as `context.appHref`. Absent, a link is written as given.

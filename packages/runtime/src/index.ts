@@ -81,6 +81,8 @@ export type {
   BlockComponentRegistry,
   CapabilityProvider,
   BlockContext,
+  ConsentAnswers,
+  ConsentStore,
   SurfaceEventType,
   SurfaceEvent,
   SurfaceRendererProps,

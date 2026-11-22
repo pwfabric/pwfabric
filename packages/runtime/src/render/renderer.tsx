@@ -863,6 +863,12 @@ const SURFACE_BASE_CSS =
  * definitions come from the pack-derived registry (the host's installed
  * blocks and receipts) rather than hardcoded starter exports.
  */
+/** No consent store: nothing to subscribe to, nothing answered, no category. */
+const noSubscribe = (): (() => void) => () => undefined
+const NO_ANSWERS: Readonly<Record<string, boolean>> = Object.freeze({})
+const noAnswers = (): Readonly<Record<string, boolean>> => NO_ANSWERS
+const NO_CATEGORIES: readonly string[] = Object.freeze([])
+
 export function SurfaceRenderer({
   surface,
   capabilities = [],
@@ -885,6 +891,7 @@ export function SurfaceRenderer({
   onSelection,
   locale,
   linkHref: linkHrefProp,
+  consent: consentStore,
 }: SurfaceRendererProps): React.ReactElement {
   // The root, so focus is kept inside the surface when the focused block is
   // hidden (focus-keeper.ts). Only a live surface moves focus.
@@ -940,6 +947,16 @@ export function SurfaceRenderer({
   const contextLinkHref = useSurfaceLinkHref()
   const appHref = useAppHref(linkHrefProp ?? contextLinkHref)
 
+  // The visitor's consent: `{}` while hydrating (the first frame knows no
+  // visitor), then the host's answers, re-read on every change.
+  const consentAnswers = React.useSyncExternalStore(
+    consentStore ? consentStore.subscribe : noSubscribe,
+    consentStore ? consentStore.answers : noAnswers,
+    noAnswers
+  )
+  const consentCategories = consentStore?.categories ?? NO_CATEGORIES
+  const setConsent = React.useCallback((answers: Readonly<Record<string, boolean>>) => consentStore?.set(answers), [consentStore])
+
   // Build block context (theme removed from BlockContext)
   const context: BlockContext = React.useMemo(
     () => ({
@@ -951,8 +968,11 @@ export function SurfaceRenderer({
       interactionMode,
       ...(locale ? { locale } : {}),
       appHref,
+      consentCategories,
+      consent: consentAnswers,
+      setConsent,
     }),
-    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode, locale, appHref]
+    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode, locale, appHref, consentCategories, consentAnswers, setConsent]
   )
 
   // Create image component override if adapter is provided

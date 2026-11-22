@@ -56,6 +56,12 @@ export interface BlockComponentContext {
   readonly locale?: string
   /** An app page's path in the host's router form; see the runtime's `BlockContext.appHref`. */
   readonly appHref?: (path: string) => string
+  /** The consent categories the app's scripts wait for; see the runtime's `BlockContext.consentCategories`. */
+  readonly consentCategories?: readonly string[]
+  /** The visitor's consent answers so far; see the runtime's `BlockContext.consent`. */
+  readonly consent?: Readonly<Record<string, boolean>>
+  /** Records consent answers; see the runtime's `BlockContext.setConsent`. */
+  readonly setConsent?: (answers: Readonly<Record<string, boolean>>) => void
 }
 
 // ============================================================

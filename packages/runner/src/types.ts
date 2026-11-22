@@ -57,6 +57,14 @@ export interface PwappProject {
    * file (`pwpack/media/<file>`).
    */
   readonly image?: string
+  /**
+   * Third-party scripts the app loads once the visitor consents to their
+   * category (envelope §2.2): `{ key, src, integrity?, origins?, consent }[]`,
+   * from `app/plan.json` `scripts`. The runner loads them (consent.ts).
+   */
+  readonly scripts?: readonly unknown[]
+  /** The app's public files as served (`favicon.ico`, `docs/guide.pdf`): file links, not pages. */
+  readonly publicFiles?: readonly string[]
   readonly entrySurfaceId: string
   readonly surfaceOrder: readonly string[]
   readonly surfaceReceiptFiles?: Readonly<Record<string, string>>

@@ -37,6 +37,7 @@ import type {
   SurfaceConnectionsValue,
   DataServiceConfig,
   SurfaceDataCache,
+  ConsentStore,
   LinkHref,
   SurfaceAddress,
   SurfaceAuthHost,
@@ -107,6 +108,8 @@ export interface RenderCoreOptions {
   readonly onDescription?: (description: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
+  /** The visitor's consent and the categories the app's scripts wait for (envelope §2.2): `context.consent*` of every block. */
+  readonly consent?: ConsentStore
   /**
    * The app's words (`plan.json` `messages`): what a block's own words
    * (`useAppMessage`, `ui.*` ids) read before their neutral fallback.
@@ -238,6 +241,7 @@ function buildRendererProps(opts: RenderCoreOptions): Record<string, unknown> {
   if (opts.onTitle !== undefined) props.onTitle = opts.onTitle
   if (opts.onDescription !== undefined) props.onDescription = opts.onDescription
   if (opts.locale !== undefined) props.locale = opts.locale
+  if (opts.consent !== undefined) props.consent = opts.consent
   if (opts.address !== undefined) props.address = opts.address
   if (opts.identity !== undefined) props.identity = opts.identity
   if (opts.interactionMode !== undefined) props.interactionMode = opts.interactionMode
