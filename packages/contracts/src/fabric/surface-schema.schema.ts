@@ -102,7 +102,17 @@ export const blockSnapshotSchema: z.ZodType<any> = z.lazy(() =>
 const fontFileSchema = z
   .object({
     src: z.string().regex(/^media\/fonts\/(?!\.)[A-Za-z0-9._-]+\.woff2$/),
-    weight: z.union([z.number().int().min(100).max(900), z.string().regex(/^[1-9]00 [1-9]00$/)]),
+    // A CSS weight, 1 to 1000; a variable font's range low to high.
+    weight: z.union([
+      z.number().int().min(1).max(1000),
+      z
+        .string()
+        .regex(/^(?:1000|[1-9]\d{0,2}) (?:1000|[1-9]\d{0,2})$/)
+        .refine((r) => {
+          const [lo, hi] = r.split(' ').map(Number)
+          return (lo as number) <= (hi as number)
+        }, 'a range runs from low to high'),
+    ]),
     style: z.enum(['normal', 'italic']).optional(),
     unicodeRange: z
       .string()
