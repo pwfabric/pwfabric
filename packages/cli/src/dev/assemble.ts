@@ -1023,6 +1023,12 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         ...(head.image !== undefined ? { image: head.image } : {}),
         ...(head.noindex ? { noindex: true } : {}),
         ...(doc.locale !== undefined ? { lang: doc.locale, localized: true } : locale !== undefined ? { lang: locale } : {}),
+        ...(title ? { siteName: title } : {}),
+        ...(locales && doc.locale !== undefined
+          ? { ogLocale: { locale: doc.locale, alternates: locales.locales.filter((l) => l !== doc.locale) } }
+          : locale !== undefined
+            ? { ogLocale: { locale } }
+            : {}),
         webfontHref,
         ...(options.shellExtra !== undefined ? { bodyExtra: options.shellExtra } : {}),
         ...(csp !== undefined ? { csp } : {}),

@@ -181,3 +181,33 @@ describe('an app in several languages, hash routing', () => {
     expect(words(d)).toContain('Fresh bread every morning')
   })
 })
+
+describe('the tags a link preview reads', () => {
+  it('names the site, the locale and its alternates, the card, and the icon type', async () => {
+    const root = await bakery({ image: 'https://cdn.example.com/hero.jpg' })
+    await put(root, 'app/definitions/appearance.json', { brand: { favicon: 'https://cdn.example.com/icon.svg' } })
+    const r = await assemblePwapp(root, { cacheDir: null, router: 'path' })
+    expect(r.ok, errors(r).join(' | ')).toBe(true)
+    const d = doc(text(r.files.get('de/preise/index.html')))
+    const meta = (p: string): string[] => [...d.querySelectorAll(`meta[property="${p}"], meta[name="${p}"]`)].map((m) => m.getAttribute('content') ?? '')
+    expect(meta('og:site_name')).toEqual(['K Demo'])
+    expect(meta('og:locale')).toEqual(['de'])
+    expect(meta('og:locale:alternate')).toEqual(['en'])
+    expect(meta('twitter:card')).toEqual(['summary_large_image'])
+    expect(d.querySelector('link[rel="icon"]')?.getAttribute('type')).toBe('image/svg+xml')
+  })
+
+  it('writes a small card without a picture, and og:locale as Open Graph writes it', async () => {
+    const a = await makeApp()
+    cleanups.push(a.cleanup)
+    const planPath = join(a.root, 'app', 'plan.json')
+    const plan = JSON.parse(await readFile(planPath, 'utf8')) as Record<string, unknown>
+    await writeFile(planPath, JSON.stringify({ ...plan, locale: 'en-GB' }))
+    const r = await assemblePwapp(a.root, { cacheDir: null })
+    const d = doc(text(r.files.get('index.html')))
+    expect(d.querySelector('meta[name="twitter:card"]')?.getAttribute('content')).toBe('summary')
+    expect(d.querySelector('meta[property="og:locale"]')?.getAttribute('content')).toBe('en_GB')
+    expect(d.querySelector('meta[property="og:locale:alternate"]')).toBeNull()
+    expect(d.querySelector('link[rel="icon"]')?.hasAttribute('type')).toBe(false)
+  })
+})
