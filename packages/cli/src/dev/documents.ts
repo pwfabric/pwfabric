@@ -64,6 +64,21 @@ function literal(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' && !value.includes('{{') ? value.trim() : undefined
 }
 
+/** `{{t('<id>')}}`: a word by a literal id, which a producer can write. */
+const T_CALL = /\{\{\s*t\(\s*(['"])([^'"]+)\1\s*\)\s*\}\}/g
+
+/**
+ * `value` with each `{{t('<id>')}}` written as the word of `words` (a
+ * locale's catalogue over the default's), so a static head or llms.txt
+ * reads the locale's words (envelope §2.3); any other expression is left for
+ * the browser. Unchanged without words, or for a value that is not text.
+ */
+export function wordedText(value: unknown, words: Readonly<Record<string, string>> | undefined, locale: string | undefined): unknown {
+  if (!words || typeof value !== 'string') return value
+  const say = runnerMessages(words, locale)
+  return value.replace(T_CALL, (_, _q: string, id: string) => say(id as never))
+}
+
 /** What a document's head says about its page. */
 export interface DocumentHead {
   readonly title: string
@@ -102,10 +117,7 @@ export function documentHead(input: {
   readonly base: string
 }): DocumentHead {
   const receipt = !input.gated && input.receipt && typeof input.receipt === 'object' ? (input.receipt as Record<string, unknown>) : {}
-  const say = input.words ? runnerMessages(input.words, input.locale) : undefined
-  // `{{t('<id>')}}` is the locale's word; any other expression is the browser's.
-  const worded = (value: unknown): unknown =>
-    say && typeof value === 'string' ? value.replace(/\{\{\s*t\(\s*(['"])([^'"]+)\1\s*\)\s*\}\}/g, (_, _q: string, id: string) => say(id as never)) : value
+  const worded = (value: unknown): unknown => wordedText(value, input.words, input.locale)
   const title = composeTitle(input.appTitle || undefined, literal(worded(receipt['title'])), { template: input.titleTemplate, own: receipt['titleTemplate'] === false }) ?? ''
   const description = descriptionOf(worded(receipt['description']), input.appDescription)
   const canonical = input.doc.path !== undefined ? canonicalOf(input.origin, input.doc.path) : undefined

@@ -151,6 +151,13 @@ describe('the static head of each locale', () => {
     // An id the locale does not set reads the default's word.
     expect(de.querySelector('meta[name="description"]')?.getAttribute('content')).toBe('What bread costs.')
     expect(doc(text(r.files.get('pricing/index.html'))).title).toBe('K Demo — Prices')
+    // llms.txt and llms-full.txt name each locale's page by its word, with its description.
+    const llms = text(r.files.get('llms.txt'))
+    expect(llms).toContain('- [Prices](https://bakery.example.com/pricing/): What bread costs.')
+    expect(llms).toContain('- [Preise](https://bakery.example.com/de/preise/): What bread costs.')
+    const full = text(r.files.get('llms-full.txt'))
+    expect(full).toContain('## Preise')
+    expect(full).not.toContain('{{t(')
   })
 })
 
