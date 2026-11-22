@@ -88,9 +88,9 @@ export function strayPageKeyOf(href: string, pages: readonly string[]): string |
  * option (`linkHrefFor`). A literal page with expressions after it
  * (`/session?id={{item.id}}`) is rewritten here.
  */
-export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref): T {
+export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref, pageKey?: string): T {
   if (Array.isArray(node)) {
-    return node.map((n) => rewriteHrefs(n, entry, toHref)) as unknown as T
+    return node.map((n) => rewriteHrefs(n, entry, toHref, pageKey)) as unknown as T
   }
   if (node && typeof node === 'object') {
     const out: Record<string, unknown> = {}
@@ -112,6 +112,11 @@ export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref): T {
         // `activeHref` likewise marks no nav item: a not-found page's
         // `activeHref: ""` marked the entry's item as the page shown.
         out[k] = ''
+      } else if (pageKey !== undefined && k !== 'activeHref' && isLinkMember(k, node as Record<string, unknown>) && typeof v === 'string' && v.startsWith('#') && !v.startsWith('#/')) {
+        // A FRAGMENT-ONLY LINK names a place in the page it is on (envelope
+        // §3): written as that page's address with the fragment, so the link
+        // the DOM holds works opened in a new tab or copied, not only clicked.
+        out[k] = toHref(pageKey) + v
       } else if (isLinkMember(k, node as Record<string, unknown>) && typeof v === 'string' && !/^[a-z][a-z0-9+.-]*:/i.test(v) && !v.startsWith('#') && !v.startsWith('//') && !isExpressionLink(v)) {
         // THE PAGE IS THE ADDRESS; the query and fragment ride along. Keying
         // the whole href would make `/api-reference#authentication` into the
@@ -126,7 +131,7 @@ export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref): T {
         const path = cut ? v.slice(0, cut.index) : v
         out[k] = toHref(pageKeyOf(path) ?? entry) + (cut ? v.slice(cut.index) : '')
       } else {
-        out[k] = rewriteHrefs(v, entry, toHref)
+        out[k] = rewriteHrefs(v, entry, toHref, pageKey)
       }
     }
     return out as T
@@ -138,8 +143,8 @@ export function rewriteHrefs<T>(node: T, entry: string, toHref: ToHref): T {
  * The `linkHref` render option: a link resolved at render time, written for
  * the active router by the same rule as every other link.
  */
-export function linkHrefFor(entry: string, toHref: ToHref): (href: string) => string {
-  return (href) => rewriteHrefs({ href }, entry, toHref).href
+export function linkHrefFor(entry: string, toHref: ToHref, pageKey?: string): (href: string) => string {
+  return (href) => rewriteHrefs({ href }, entry, toHref, pageKey).href
 }
 
 // ============================================================

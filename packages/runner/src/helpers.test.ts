@@ -185,6 +185,13 @@ describe('a link whose page is an expression', () => {
     expect(linkHrefFor(ENTRY, hashHref)('https://example.com/x')).toBe('https://example.com/x')
     expect(linkHrefFor(ENTRY, hashHref)('#speakers')).toBe('#speakers')
   })
+
+  it("writes a fragment-only link as the page's own address with the fragment, on a known page (envelope §3)", () => {
+    expect(linkHrefFor(ENTRY, hashHref, 'talks')('#speakers')).toBe('#/talks#speakers')
+    expect(linkHrefFor(ENTRY, pathHref, 'talks')('#speakers')).toBe('/apps/intranet/talks#speakers')
+    expect(linkHrefFor(ENTRY, pathHref, ENTRY)('#')).toBe('/apps/intranet/home#')
+    expect(rewriteHrefs({ props: { href: '#faq', ctaHref: '#', activeHref: '' } }, ENTRY, hashHref, 'help')).toEqual({ props: { href: '#/help#faq', ctaHref: '#/help#', activeHref: '' } })
+  })
 })
 
 describe('assembleNav', () => {
