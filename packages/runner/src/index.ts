@@ -13,7 +13,7 @@ export { ownApiBaseOf, isOwnApiRef } from './api-base.js'
 export { ownRecordsSource, ownRecordsCapabilities, ownRecordsReceipt } from './own-records.js'
 
 // Pure envelope helpers
-export { pageKeyOf, rewriteHrefs, assembleNav, assembleFooter, FOOTER_BAND_ID, receiptFilesOf, composeTitle, fetchJson, doorHeaders, withVersion, addressStateKeys } from './helpers.js'
+export { pageKeyOf, rewriteHrefs, assembleNav, assembleFooter, FOOTER_BAND_ID, receiptFilesOf, composeTitle, applyTitleTemplate, isTitleTemplate, fetchJson, doorHeaders, withVersion, addressStateKeys } from './helpers.js'
 
 // The first frame of a page, as the runner hydrates it and the build paints it
 export {

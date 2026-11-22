@@ -83,6 +83,8 @@ export function documentHead(input: {
   readonly doc: PageDocument
   readonly receipt: unknown
   readonly appTitle: string
+  /** The app's title template (`plan.json` `titleTemplate`, receipt §1.1). */
+  readonly titleTemplate?: string
   readonly appDescription?: string
   readonly origin?: string
   readonly image?: string
@@ -90,7 +92,7 @@ export function documentHead(input: {
   readonly base: string
 }): DocumentHead {
   const receipt = !input.gated && input.receipt && typeof input.receipt === 'object' ? (input.receipt as Record<string, unknown>) : {}
-  const title = composeTitle(input.appTitle || undefined, literal(receipt['title'])) ?? ''
+  const title = composeTitle(input.appTitle || undefined, literal(receipt['title']), { template: input.titleTemplate, own: receipt['titleTemplate'] === false }) ?? ''
   const description = descriptionOf(receipt['description'], input.appDescription)
   const canonical = input.doc.path !== undefined ? canonicalOf(input.origin, input.doc.path) : undefined
   const image = previewImageOf(input.image, input.origin, input.base)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { checkAccess, checkEntities, checkMessages, checkReservedSources, checkSeeds, checkStatusKeys, reachableMessageIds } from '../../commands/lib/report.js'
+import { checkAccess, checkEntities, checkMessages, checkReservedSources, checkSeeds, checkStatusKeys, checkTitleTemplate, reachableMessageIds } from '../../commands/lib/report.js'
 import { tempDir } from './helpers.js'
 
 async function project(files: Record<string, unknown>): Promise<string> {
@@ -269,5 +269,18 @@ describe('STATUS_KEY_UNKNOWN (E6)', () => {
     expect(issues[0]!.message).toContain('blocks[0].props.action.statusKeys.mesage')
     expect(issues[1]!.message).toContain('statusKeys.message')
     expect(issues[1]!.message).toContain('bind reason')
+  })
+})
+
+describe('PLAN_TITLE_TEMPLATE_INVALID', () => {
+  it('accepts exactly one %s with %% for a %, and no template at all', async () => {
+    expect(checkTitleTemplate(await project({ 'app/plan.json': { titleTemplate: '%s · 100%% Acme' } }))).toEqual([])
+    expect(checkTitleTemplate(await project({ 'app/plan.json': { title: 'Acme' } }))).toEqual([])
+  })
+
+  it('refuses any other', async () => {
+    for (const bad of ['Acme', '%s %s', '%s at 5%', 7]) {
+      expect(codes(checkTitleTemplate(await project({ 'app/plan.json': { titleTemplate: bad } }))), String(bad)).toEqual(['PLAN_TITLE_TEMPLATE_INVALID'])
+    }
   })
 })

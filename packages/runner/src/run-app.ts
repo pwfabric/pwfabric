@@ -737,7 +737,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // reports the resolved page title through `onTitle` (receipt §1).
     const titleTemplate = typeof receipt.title === 'string' ? receipt.title : undefined
     const titleIsExpression = titleTemplate?.includes('{{') === true
-    const title = composeTitle(project.title, titleIsExpression ? undefined : titleTemplate)
+    // The app's template and the page's say-so (receipt §1.1).
+    const titleOptions = { template: project.titleTemplate, own: receipt.titleTemplate === false }
+    const title = composeTitle(project.title, titleIsExpression ? undefined : titleTemplate, titleOptions)
     if (title) document.title = title
     // The description the same way: a template is never shown, the app's
     // stands in until the renderer reports it resolved (`onDescription`).
@@ -838,7 +840,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       onNavigateAction: (url: string) => router.follow(url),
       onTitle: (resolved: string | undefined) => {
         if (seq !== routeSeq) return
-        const next = composeTitle(project.title, resolved)
+        const next = composeTitle(project.title, resolved, titleOptions)
         if (next) document.title = next
       },
       onDescription: (resolved: string | undefined) => {
