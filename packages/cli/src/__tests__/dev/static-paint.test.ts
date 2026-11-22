@@ -45,6 +45,29 @@ describe('the static first paint (pwapp-format §2.5)', () => {
     expect(codes(r).filter((c) => c.startsWith('STATIC_PAINT'))).toEqual([])
   })
 
+  it('a <style> every page writes the same is sent once: one hashed stylesheet each document links, an empty marker in each frame', async () => {
+    const root = await app()
+    await writeFile(join(root, 'app', 'surfaces', 'about.receipt.json'), JSON.stringify({ title: 'About', blocks: [{ id: 't', type: 'title', props: { text: 'About us' } }] }))
+    const identity = JSON.parse(await readFile(join(root, 'pwpack.json'), 'utf8')) as { app: { surfaceOrder: string[] } }
+    identity.app.surfaceOrder = ['home', 'about']
+    await writeFile(join(root, 'pwpack.json'), JSON.stringify(identity))
+    const r = await assemblePwapp(root, { cacheDir: null, router: 'path' })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const frameCss = [...r.files.keys()].find((f) => /^assets\/frame\.[0-9a-f]{8}\.css$/.test(f)) as string
+    expect(frameCss).toBeDefined()
+    const css = text(r.files.get(frameCss))
+    // The renderer's base rules are the same on every page.
+    expect(css).toMatch(/^\/\*pw-shared:0\*\/\[data-pw-surface\]/)
+    for (const doc of ['index.html', 'about/index.html']) {
+      const html = text(r.files.get(doc))
+      expect(html).toContain(`<link rel="stylesheet" href="./${frameCss}" data-pw-frame-css />`)
+      expect(html).toMatch(/<style data-pw-base-css="true" data-pw-shared="0"><\/style>/)
+      expect(html).not.toContain('box-sizing:border-box}')
+    }
+    // A page's own frame file is the same frame.
+    expect(text(r.files.get('pwpack/surfaces/about.html'))).toContain('data-pw-shared="0"></style>')
+  })
+
   it('a container with direction { xs: column, md: row } is a row at desktop width with no script', async () => {
     const root = await app()
     const block = join(root, 'atoms', 'blocks', 'layout', 'row')

@@ -116,9 +116,9 @@ describe('assemblePwapp', () => {
     // The shell names the hashed files and starts the renderer without holding the page.
     expect(html).toContain(`<script type="module" src="./${asset(r, 'boot')}"></script>`)
     expect(html).toContain(`<script async src="./${asset(r, 'embed')}"></script>`)
-    // The theme is written into the head: the first paint waits on no stylesheet.
-    expect(html).not.toContain('rel="stylesheet"')
-    expect(html).toContain(`<style>${text(r.files.get(asset(r, 'theme')))}</style>`)
+    // The theme is one cached stylesheet every document links, not text each document repeats.
+    expect(html).toContain(`<link rel="stylesheet" href="./${asset(r, 'theme')}" />`)
+    expect(html).not.toContain(text(r.files.get(asset(r, 'theme'))))
     // What each page needs is named once; the shell asks for the opened page's (page-hints.dom.test.ts).
     const hints = JSON.parse(html.match(/<script type="application\/json" id="pw-page-hints">(.*?)<\/script>/)?.[1] ?? '{}')
     const manifest = parse(r.files.get('blocks/manifest.json')) as { moduleUrl: string }[]

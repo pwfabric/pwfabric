@@ -39,7 +39,7 @@ import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
 import { deriveCsp, headersFile } from './csp.js'
 import { documentHead, isRecordPage, pageDocuments, publicOriginOf, robotsTxt, SERVED_FOLDERS, sitemapXml } from './documents.js'
 import { llmsFullTxt, llmsTxt, type LlmsPage } from './llms.js'
-import { firstPaintData, paintPages, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
+import { firstPaintData, paintPages, shareFrameStyles, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
 import { canonicalOf, hashHref, pathHref } from '@pwfabric/runner'
 import {
   BOOT_FILES,
@@ -678,6 +678,8 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref, router })
   const assets: ShellAssets = { ...assets0, boot: hashedName('assets/boot.js', bootJs) }
   let painted: readonly PaintedPage[] = []
+  // The rules every painted page writes the same, linked from every document (static-paint.ts shareFrameStyles).
+  let frameAsset: string | undefined
   let firstPaintJson: Record<string, unknown> | undefined
   const documents = pageDocuments({
     byPath,
@@ -713,10 +715,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         webfontHref,
         ...(options.shellExtra !== undefined ? { bodyExtra: options.shellExtra } : {}),
         ...(csp !== undefined ? { csp } : {}),
-        assets,
+        assets: frameAsset ? { ...assets, frame: frameAsset } : assets,
         preloadRenderer: !gated,
         bootFiles: BOOT_FILES.filter((f) => files.has(f)),
-        themeCss: new TextDecoder().decode(themeCss),
         pageHints: { ...pageHints, ...(doc.key !== undefined ? { page: doc.key } : {}) },
         ...(firstPaintJson
           ? { firstPaint: { rootHtml: own ? staticRootHtml(own) : '', layoutCss: own?.layoutCss ?? '', data: firstPaintJson } }
@@ -827,7 +828,14 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         })
       : { pages: [] as PaintedPage[], diagnostics: [] }
     diagnostics.push(...result.diagnostics)
-    painted = result.pages
+    // A <style> text two or more pages write, sent once.
+    const shared = shareFrameStyles(result.pages)
+    painted = shared.pages
+    if (shared.css !== '') {
+      const bytes = enc.encode(shared.css)
+      frameAsset = hashedName('assets/frame.css', bytes)
+      files.set(frameAsset, bytes)
+    }
     // Every painted page's frame is also a file of its own, for a document
     // that holds another page's (a hash address, a host's SPA fallback).
     for (const page of painted) files.set(staticPageFile(page.key), enc.encode(staticPageFragment(page)))

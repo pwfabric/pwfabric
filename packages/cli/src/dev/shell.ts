@@ -24,7 +24,7 @@ import {
   blockShimFiles,
   shimSource,
 } from '@pwfabric/core/host-imports'
-import { STATIC_LAYOUT_ID } from '@pwfabric/runner'
+import { FRAME_CSS_ATTR, STATIC_LAYOUT_ID } from '@pwfabric/runner'
 
 const require = createRequire(import.meta.url)
 
@@ -193,6 +193,8 @@ export interface ShellAssets {
   readonly boot: string
   /** The token stylesheet, `assets/theme.<hash>.css`. */
   readonly theme: string
+  /** The rules the app's first frames share, `assets/frame.<hash>.css`; absent when none are. */
+  readonly frame?: string
 }
 
 /** The names a build without hashes would use (tests, and a shell built before its files). */
@@ -611,6 +613,12 @@ export function buildShellHtml(options: ShellOptions): string {
     <script type="application/json" id="pw-first-paint">${scriptJson(options.firstPaint.data)}</script>
     <script>${FIRST_PAINT_SCRIPT}</script>`
     : ''
+  // The rules every page's frame shares (static-paint.ts `shareFrameStyles`),
+  // before the frame's own layout, whose rules outweigh them.
+  const frameCss = assets.frame
+    ? `
+    <link rel="stylesheet" href="./${escapeHtml(assets.frame)}" ${FRAME_CSS_ATTR} />`
+    : ''
   const layout = options.firstPaint?.layoutCss
     ? `
     <style id="${STATIC_LAYOUT_ID}">${options.firstPaint.layoutCss.replace(/<\//g, '<\\/')}</style>`
@@ -627,7 +635,7 @@ export function buildShellHtml(options: ShellOptions): string {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(options.title)}</title>${description}${meta}
     <link rel="icon" href="data:," />
-    ${options.themeCss !== undefined ? `<style>${options.themeCss.replace(/<\//g, '<\\/')}</style>` : `<link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />`}${layout}${fonts}
+    ${options.themeCss !== undefined ? `<style>${options.themeCss.replace(/<\//g, '<\\/')}</style>` : `<link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />`}${frameCss}${layout}${fonts}
     <script type="importmap">${importMapText()}</script>
     <link rel="modulepreload" href="./${escapeHtml(assets.runner)}" />${renderer}${shims}${boot}${hints}
   </head>
