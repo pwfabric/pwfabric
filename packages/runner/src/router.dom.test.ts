@@ -465,11 +465,14 @@ describe('path router start()', () => {
     expect(onChange).toHaveBeenCalledWith()
   })
 
-  it('an unknown page under the base is pushed too, so it renders not-found in place', () => {
+  it('a path under the base that names no page is the browser’s: a sibling app or a file', () => {
     const { onChange } = started(`${BASE}/people`)
-    click(link(`${BASE}/services`))
-    expect(location.pathname).toBe(`${BASE}/services`)
-    expect(onChange).toHaveBeenCalledWith()
+    for (const href of [`${BASE}/services`, `${BASE}/pwpack/media/report.pdf`, 'pwpack/media/report.pdf']) {
+      click(link(href))
+      expect(lastClickPrevented, href).toBe(false)
+    }
+    expect(location.pathname).toBe(`${BASE}/people`)
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('the same page with a new query is reported as query-only', () => {
@@ -494,9 +497,11 @@ describe('path router start()', () => {
     expect(scrollTo).toHaveBeenCalledWith(0, 0)
   })
 
-  it('a not-found page is never "the same surface"', () => {
+  it('from a not-found page, a link to one of our pages is pushed and renders it', () => {
     const { onChange } = started(`${BASE}/services`)
-    click(link(`${BASE}/services`))
+    click(link(`${BASE}/people`))
+    expect(lastClickPrevented).toBe(true)
+    expect(location.pathname).toBe(`${BASE}/people`)
     expect(onChange).toHaveBeenCalledWith()
   })
 
@@ -588,6 +593,64 @@ describe('path router start()', () => {
     click(link(`${BASE}/`))
     expect(location.pathname).toBe(`${BASE}/`)
     expect(onChange).toHaveBeenCalledWith()
+  })
+})
+
+/**
+ * An app served at the origin root (`/`) shares that origin with whatever
+ * else the site serves: a blog, another app, a file. Only an address naming
+ * one of the app's own pages is the router's; everything else is a document
+ * the browser loads.
+ */
+describe.each([
+  ['at the origin root', '/'],
+  ['under /docs/', '/docs/'],
+])('path router start() — sibling links, app %s', (_label, basePath) => {
+  const root = basePath.replace(/\/$/, '')
+
+  function started(path: string) {
+    goTo(path)
+    const router = createRouter('path', PAGES, 'home', { basePath })
+    router.current()
+    const onChange = vi.fn<(change?: RouteChange) => void>()
+    router.start(onChange)
+    return { router, onChange }
+  }
+
+  it('a link to one of our pages is pushed, not loaded', () => {
+    const { onChange } = started(`${root}/people/`)
+    click(link(`${root}/product/?id=1`))
+    expect(lastClickPrevented).toBe(true)
+    expect(location.pathname + location.search).toBe(`${root}/product/?id=1`)
+    expect(onChange).toHaveBeenCalledWith()
+  })
+
+  it('a link to the base itself is the entry page', () => {
+    const { onChange } = started(`${root}/people/`)
+    click(link(basePath))
+    expect(lastClickPrevented).toBe(true)
+    expect(location.pathname).toBe(basePath)
+    expect(onChange).toHaveBeenCalledWith()
+  })
+
+  it.each(['/blog/', '/blog/first-post', '/other-app/people/', '/files/report.pdf', '/docs/missing/'])(
+    'a same-origin path naming none of our pages (%s) is the browser’s',
+    (href) => {
+      const { onChange } = started(`${root}/people/`)
+      click(link(href))
+      expect(lastClickPrevented).toBe(false)
+      expect(location.pathname).toBe(`${root}/people/`)
+      expect(onChange).not.toHaveBeenCalled()
+    }
+  )
+
+  it('a root-relative link naming one of our pages is still ours', () => {
+    const { onChange } = started(`${root}/home/`)
+    click(link('/people'))
+    expect(lastClickPrevented).toBe(true)
+    expect(location.pathname).toBe(`${root}/people`)
+    expect(onChange).toHaveBeenCalledOnce()
+    expect(onChange.mock.calls[0]?.[0]).toBeUndefined()
   })
 })
 
