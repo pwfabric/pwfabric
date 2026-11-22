@@ -92,6 +92,10 @@ export const RUNNER_MESSAGE_IDS = [
   'notFound.title',
   'notFound.body',
   'notFound.home',
+  // The visitor's language, offered in an app with locales (envelope §2.3).
+  'locale.suggestion',
+  'locale.switch',
+  'locale.dismiss',
   'session.unreachable',
   'session.unexpected',
   'session.failed',

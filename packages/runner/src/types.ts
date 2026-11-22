@@ -56,6 +56,14 @@ export interface PwappProject {
    * page is drawn in. Absent: the app has none, and the runner asks for none.
    */
   readonly layoutReceiptFile?: string
+  /** The app's languages (envelope §2.3), from `app/plan.json`. Absent: one language, `locale`. */
+  readonly locales?: readonly string[]
+  /** The language at the app's root; one of `locales`. */
+  readonly defaultLocale?: string
+  /** The address table: `{ <lang>: { <key>: address } }`, each from the base (envelope §2.3). */
+  readonly addresses?: Readonly<Record<string, Readonly<Record<string, string>>>>
+  /** The per-locale receipts the app has: `{ <lang>: { <key>: path } }`, relative to the envelope. */
+  readonly localeReceiptFiles?: Readonly<Record<string, Readonly<Record<string, string>>>>
   /**
    * The app's public origin (`https://example.com`), from `app/plan.json`
    * `origin`: a page's canonical address is this origin and the page's path

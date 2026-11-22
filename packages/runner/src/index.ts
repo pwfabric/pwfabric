@@ -37,6 +37,7 @@ export {
 } from './first-frame.js'
 export type { PageContext, PageSurface } from './first-frame.js'
 export { assemblePage, currentPageHref, marksCurrentPage } from './layout.js'
+export { localeStorageKey, mountLocaleSuggestion, preferredLocale } from './locale-suggestion.js'
 export { colorSchemeScript, colorSchemeStorageKey, createColorScheme, THEME_ATTR } from './color-scheme.js'
 export type { ColorScheme, ColorSchemeStore } from './color-scheme.js'
 export { projectAppearanceRef } from './run-app.js'
@@ -60,7 +61,7 @@ export type {
   PreviewSurface,
   PreviewSurfaceUpdate,
 } from './preview-bridge.js'
-export type { RouterHandle, RouterOptions } from './router.js'
+export type { RouterHandle, RouterLocales, RouterOptions } from './router.js'
 
 // Auth (PKCE)
 export {
