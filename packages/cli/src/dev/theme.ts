@@ -232,10 +232,14 @@ function pageScope(key: string): PaletteScope {
 function modeBlocks(
   scope: PaletteScope,
   policy: 'light' | 'dark' | 'system',
-  light: string,
-  dark: string,
-  darkOverLight: string
+  lightVars: string,
+  darkVars: string,
+  darkOverLightVars: string
 ): string {
+  // Native controls (date pickers, checkboxes, select popups, scrollbars) draw in the scheme worn.
+  const light = `  color-scheme: light;\n${lightVars}`
+  const dark = `  color-scheme: dark;\n${darkVars}`
+  const darkOverLight = `  color-scheme: dark;\n${darkOverLightVars}`
   const lightSel = scope.light.join(', ')
   if (policy === 'light') return `${lightSel} {\n${light}\n}`
   if (policy === 'dark') return `${lightSel} {\n${darkOverLight}\n}`

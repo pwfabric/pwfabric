@@ -188,3 +188,14 @@ describe('resolveAppearanceDarkVars — an explicit dark theme OVERRIDES the der
     expect(darkVars['--pw-color-background']).not.toBe('#ffffff')
   })
 })
+
+describe('color-scheme follows the dark palette', () => {
+  it('sets color-scheme: dark wherever the dark palette applies, so native controls draw dark', () => {
+    const vars = { '--pw-color-background': '#000000' }
+    const system = buildDarkThemeCss(vars, 's1')
+    expect(system).toContain('color-scheme:dark !important')
+    expect(system.split('color-scheme:dark !important').length - 1).toBe(2)
+    expect(buildDarkThemeCss(vars, 's1', 'dark')).toContain('color-scheme:dark !important')
+    expect(buildDarkThemeCss(vars, 's1', 'light')).toBe('')
+  })
+})

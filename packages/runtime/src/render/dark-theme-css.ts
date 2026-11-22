@@ -61,8 +61,10 @@ export function buildDarkThemeCss(
   // dark rule at all, so a dark device keeps it light; a dark-only app wears the
   // dark palette unconditionally. `system` follows the device.
   if (policy === 'light') return ''
-  const body = varsToCss(darkVars)
-  if (!body) return ''
+  const vars = varsToCss(darkVars)
+  if (!vars) return ''
+  // Native controls (date pickers, checkboxes, select popups, scrollbars) draw in the scheme worn.
+  const body = `${vars};color-scheme:dark !important`
   const scope = surfaceScope(surfaceId)
   if (policy === 'dark') return `${scope}{${body}}`
   // 1. Manual force-dark: `data-pw-theme="dark"` on the surface root, or on
