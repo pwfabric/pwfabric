@@ -6,7 +6,7 @@ import { sha256Hex } from '@pwfabric/pack'
 import { main } from '../../index.js'
 import { runMedia } from '../../commands/media.js'
 import { parseArgs } from '../../args.js'
-import { sniffImage, svgProblem } from '../../commands/lib/image-type.js'
+import { sniffImage } from '../../commands/lib/image-type.js'
 import { capture, FIXTURE_FOUNDATION, tempDir } from './helpers.js'
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52])
@@ -30,15 +30,6 @@ describe('image types', () => {
     expect(sniffImage(new TextEncoder().encode('<?xml version="1.0"?>\n<!-- x -->\n<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBe('svg')
     expect(sniffImage(new TextEncoder().encode('<html><svg/></html>'))).toBeUndefined()
     expect(sniffImage(new TextEncoder().encode('%PDF-1.7'))).toBeUndefined()
-  })
-
-  it('finds script in an SVG', () => {
-    const svg = (s: string): Uint8Array => new TextEncoder().encode(s)
-    expect(svgProblem(svg('<svg><circle r="1"/></svg>'))).toBeUndefined()
-    expect(svgProblem(svg('<svg><SCRIPT>x</SCRIPT></svg>'))).toMatch(/script/)
-    expect(svgProblem(svg('<svg onload="x()"/>'))).toMatch(/on…/)
-    expect(svgProblem(svg('<svg><a href="javascript:x()"/></svg>'))).toMatch(/javascript/)
-    expect(svgProblem(svg('<svg><foreignObject/></svg>'))).toMatch(/foreignObject/)
   })
 })
 
@@ -102,7 +93,7 @@ describe('pwf media add', () => {
     expect(pdfText).toMatch(/not a PNG, JPEG, GIF, WebP, AVIF or SVG/)
     const [svg, svgText] = await run('../bad.svg')
     expect(svg).toBe(1)
-    expect(svgText).toMatch(/on… event attribute/)
+    expect(svgText).toMatch(/is not a plain SVG picture: <svg> has the event attribute onload/)
     expect(existsSync(join(root, 'media', 'bad.svg'))).toBe(false)
     expect((await run('../hero.png'))[0]).toBe(0)
     const [taken, takenText] = await run('../other.png', '--name', 'hero.png')
@@ -122,5 +113,40 @@ describe('pwf media add', () => {
     expect(await main(['media', 'add', '../logo.png', '--source', 'provided'], capture(root).io)).toBe(0)
     expect(existsSync(join(root, 'app'))).toBe(false)
     expect(((await json(join(root, 'media', 'provenance.json')))['items'] as unknown[])[0]).toMatchObject({ source: 'provided' })
+  })
+  it('records and prints a downloaded address without its query or fragment, and refuses credentials in it', async () => {
+    const { root } = await app()
+    const asked: string[] = []
+    const fetchStub = (async (url: string) => {
+      asked.push(url)
+      return new Response(JPEG, { status: 200 })
+    }) as unknown as typeof fetch
+    const c = capture(root)
+    const signed = 'https://cdn.example.com/p/loaf.jpg?X-Amz-Signature=secret-token&X-Amz-Credential=abc#frag'
+    expect(await runMedia(parseArgs(['media', 'add', signed]).args, c.io, { fetch: fetchStub })).toBe(0)
+    expect(asked).toEqual([signed])
+    const text = await readFile(join(root, 'media', 'provenance.json'), 'utf8')
+    expect(JSON.parse(text).items[0].origin).toBe('https://cdn.example.com/p/loaf.jpg')
+    expect(text).not.toMatch(/secret-token|Credential|frag/)
+    expect(c.text()).not.toMatch(/secret-token/)
+
+    const failing = (async () => new Response('no', { status: 403 })) as unknown as typeof fetch
+    await expect(runMedia(parseArgs(['media', 'add', 'https://cdn.example.com/x.jpg?token=secret-token']).args, capture(root).io, { fetch: failing })).rejects.toThrow(
+      /^https:\/\/cdn\.example\.com\/x\.jpg answered HTTP 403$/
+    )
+
+    const creds = capture(root)
+    expect(await main(['media', 'add', 'https://user:pass@cdn.example.com/x.jpg'], creds.io)).toBe(2)
+    expect(creds.text()).toMatch(/user name or password/)
+    expect(creds.text()).not.toMatch(/pass@/)
+    const source = capture(root)
+    expect(await main(['media', 'add', '../nothing.png', '--source', 'https://u:p@example.com/x'], source.io)).toBe(2)
+    expect(source.text()).toMatch(/--source carries a user name or password/)
+
+    const credited = capture(root)
+    await writeFile(join(root, '..', 'k.png'), PNG)
+    expect(await main(['media', 'add', '../k.png', '--source', 'https://example.com/photos/k?session=abc'], credited.io)).toBe(0)
+    const items = JSON.parse(await readFile(join(root, 'media', 'provenance.json'), 'utf8')).items as { path: string; origin?: string }[]
+    expect(items.find((i) => i.path === 'media/k.png')?.origin).toBe('https://example.com/photos/k')
   })
 })

@@ -44,6 +44,7 @@ export {
 } from './archive.js'
 export { DIR_MODE, FILE_MODE, FIXED_MTIME } from './tar.js'
 export { hashPack, legacyContentHash, sha256Hex } from './hash.js'
+export { SVG_ELEMENTS, SVG_NAMESPACE, svgUnsafeReason, XLINK_NAMESPACE } from './svg.js'
 export {
   deriveAtoms,
   deriveManifest,

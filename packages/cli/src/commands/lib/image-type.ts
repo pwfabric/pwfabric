@@ -51,19 +51,3 @@ export function formatOfExtension(ext: string): string | undefined {
   const lower = ext.toLowerCase()
   return Object.keys(EXTENSIONS).find((f) => (EXTENSIONS[f] as readonly string[]).includes(lower))
 }
-
-/**
- * What makes an SVG unsafe to serve as the app's own file — the rule
- * pwpack-format §1.4 gives every markup file an app serves: a `<script>`
- * element, an `on…` attribute in any tag, or a `javascript:` URL, compared
- * in lower case. Also refused: `<foreignObject>`, which embeds HTML (and
- * so the same three) where no image needs it. Undefined when none is there.
- */
-export function svgProblem(bytes: Uint8Array): string | undefined {
-  const text = new TextDecoder().decode(bytes).toLowerCase()
-  if (text.includes('<script')) return 'it holds a <script> element'
-  if (/<[^>]*\son[a-z0-9_-]*\s*=/.test(text)) return 'it holds an on… event attribute'
-  if (/javascript\s*:/.test(text)) return 'it holds a javascript: URL'
-  if (text.includes('<foreignobject')) return 'it holds a <foreignObject>, which embeds HTML'
-  return undefined
-}
