@@ -901,7 +901,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // The appearance, the loading strategy (paint first, fill in after),
       // the link writer, the app's locale and words: the options the first
       // frame is drawn with, the same in the build (first-frame.ts).
-      ...firstFrameOptions({ project: projectNow(), appearanceRef, receipt, entry, toHref: router.toHref }),
+      ...firstFrameOptions({ project: projectNow(), appearanceRef, receipt, entry, toHref: router.toHref, pageKey: key }),
       // The app's languages and this page in each (envelope §2.3).
       ...(localeDeclaration ? { locales: localeDeclaration.locales, alternates: alternatesOf(key, notFoundPage) } : {}),
       // And a page the visitor has already seen shows yesterday's rows
@@ -1107,7 +1107,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
         return {
           blocks: pageBlocks(receipt.blocks, key),
           ...(pushed.appearance !== undefined ? { appearance: pushed.appearance } : {}),
-          capabilities: rewriteHrefs(seeded.capabilities ?? [], entry, router.toHref),
+          capabilities: rewriteHrefs(seeded.capabilities ?? [], entry, router.toHref, key),
         }
       },
       // THE TOKEN PATH. The pushed theme is resolved exactly as

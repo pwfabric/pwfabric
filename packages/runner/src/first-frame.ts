@@ -87,7 +87,7 @@ export function pageBlocksOf(
   pageKey: string,
   ctx: PageContext
 ): SurfaceReceipt['blocks'] {
-  let blocks = rewriteHrefs(raw, ctx.entry, ctx.toHref)
+  let blocks = rewriteHrefs(raw, ctx.entry, ctx.toHref, pageKey)
   blocks = assembleNav(blocks, ctx.navigation, ctx.entry, ctx.toHref)
   blocks = assembleFooter(blocks, ctx.navigation, pageKey, ctx.entry, ctx.toHref)
   // The declared slot is drawn only when the app has a door; an app without
@@ -128,7 +128,7 @@ export function pageSurfaceOf(
   return {
     blocks: pageBlocksOf(receipt.blocks, pageKey, ctx),
     appearance: receipt.appearance,
-    capabilities: rewriteHrefs(seeded.capabilities, ctx.entry, ctx.toHref) ?? [],
+    capabilities: rewriteHrefs(seeded.capabilities, ctx.entry, ctx.toHref, pageKey) ?? [],
     ...(typeof receipt.title === 'string' ? { title: receipt.title } : {}),
     ...(typeof receipt.description === 'string' ? { description: receipt.description } : {}),
   }
@@ -208,6 +208,8 @@ export function firstFrameOptions(input: {
   readonly receipt: SurfaceReceipt
   readonly entry: string
   readonly toHref: ToHref
+  /** The page drawn: a fragment-only link is written as its address with the fragment. */
+  readonly pageKey?: string
 }): Record<string, unknown> {
   const { project } = input
   return {
@@ -220,7 +222,7 @@ export function firstFrameOptions(input: {
     loadingStrategy: 'immediate',
     // A link whose page is an expression is written for the router once its
     // value is known (rewriteHrefs left it as written).
-    linkHref: linkHrefFor(input.entry, input.toHref),
+    linkHref: linkHrefFor(input.entry, input.toHref, input.pageKey),
     ...(typeof project.locale === 'string' && project.locale ? { locale: project.locale } : {}),
     // ...and its words, for the words a block draws itself (`ui.*`).
     ...(project.messages ? { messages: project.messages } : {}),

@@ -235,7 +235,7 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
       renderer.renderStatic(pageSurfaceOf(receipt, page.key, params, ctx), {
         mode: 'fat',
         blocks: input.blockManifest,
-        ...firstFrameOptions({ project: runnerProject, appearanceRef, receipt, entry, toHref: input.toHref }),
+        ...firstFrameOptions({ project: runnerProject, appearanceRef, receipt, entry, toHref: input.toHref, pageKey: page.key }),
         identity: { state: firstFrameAuthState(firstDoor), onAction: () => undefined },
         viewport,
         locale: firstFrameLocale(runnerProject),
