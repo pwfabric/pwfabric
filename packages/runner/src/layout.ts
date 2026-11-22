@@ -7,7 +7,8 @@
  *
  * @module @pwfabric/runner/layout
  */
-import { assembleIntoLayout, type LayoutAssemblyProblem } from '@pwfabric/contracts'
+// A subpath, so it is bundled: the runner imports no host specifier at load.
+import { assembleIntoLayout, type LayoutAssemblyProblem } from '@pwfabric/contracts/app-layout'
 import type { BlockManifest, SurfaceReceipt } from './types.js'
 
 /**

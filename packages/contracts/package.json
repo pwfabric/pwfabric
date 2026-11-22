@@ -32,6 +32,11 @@
       "import": "./dist/fabric/record-write.js",
       "default": "./dist/fabric/record-write.js"
     },
+    "./app-layout": {
+      "types": "./dist/fabric/app-layout.d.ts",
+      "import": "./dist/fabric/app-layout.js",
+      "default": "./dist/fabric/app-layout.js"
+    },
     "./webfonts": {
       "types": "./dist/fabric/webfonts.d.ts",
       "import": "./dist/fabric/webfonts.js",
