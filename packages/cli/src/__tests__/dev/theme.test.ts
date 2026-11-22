@@ -171,6 +171,14 @@ describe('buildThemeCss', () => {
     expect(dark).not.toContain('data-pw-theme')
     expect(buildThemeCss(undefined)).toContain('--pw-color-primary')
   })
+  it('sets color-scheme for the scheme worn, so native controls follow it', () => {
+    const system = buildThemeCss({})
+    expect(system).toMatch(/:root, \[data-pw-surface\] \{\n {2}color-scheme: light;/)
+    expect(system).toMatch(/:root\[data-pw-theme="dark"\],\n\[data-pw-surface\]\[data-pw-theme="dark"\] \{\n {2}color-scheme: dark;/)
+    expect(system).toMatch(/@media \(prefers-color-scheme: dark\) \{\n {2}:root:not\(\[data-pw-theme="light"\]\)[^{]*\{\n {2}color-scheme: dark;/)
+    expect(buildThemeCss({ mode: { policy: 'dark' } })).toMatch(/:root, \[data-pw-surface\] \{\n {2}color-scheme: dark;/)
+    expect(buildThemeCss({ mode: { policy: 'light' } })).toMatch(/:root, \[data-pw-surface\] \{\n {2}color-scheme: light;/)
+  })
 })
 
 describe('font fallbacks (fonts.ts)', () => {
