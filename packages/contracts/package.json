@@ -37,6 +37,11 @@
       "import": "./dist/fabric/app-layout.js",
       "default": "./dist/fabric/app-layout.js"
     },
+    "./app-locales": {
+      "types": "./dist/fabric/app-locales.d.ts",
+      "import": "./dist/fabric/app-locales.js",
+      "default": "./dist/fabric/app-locales.js"
+    },
     "./webfonts": {
       "types": "./dist/fabric/webfonts.d.ts",
       "import": "./dist/fabric/webfonts.js",

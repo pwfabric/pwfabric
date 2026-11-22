@@ -275,6 +275,53 @@ describe('validatePack — app', () => {
     })
   })
 
+  describe('locales (envelope §2.3)', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'pricing'] } }
+    const plan = { title: 'x', locales: ['en', 'de'], defaultLocale: 'en' }
+    const base = {
+      'app/plan.json': JSON.stringify(plan),
+      'app/surfaces/home.receipt.json': '{"blocks":[]}',
+      'app/surfaces/pricing.receipt.json': JSON.stringify({ path: { de: 'preise' }, blocks: [] }),
+      'app/messages/en.json': JSON.stringify({ a: 'A', b: 'B' }),
+      'app/messages/de.json': JSON.stringify({ a: 'Ä', b: 'Bé' }),
+    }
+    const all = (extra: Record<string, string> = {}): PackValidation => withIdentity(identity, { ...base, ...extra })
+
+    it('accepts catalogues and a per-locale receipt of a declared locale', () => {
+      expect(codes(all({ 'app/surfaces/home.de.receipt.json': '{"blocks":[]}' }))).toEqual([])
+    })
+
+    it('refuses incoherent locales (APP_LOCALES_INVALID)', () => {
+      expect(codes(all({ 'app/plan.json': JSON.stringify({ ...plan, defaultLocale: 'fr' }) }), 'error')).toContain('APP_LOCALES_INVALID')
+      expect(codes(all({ 'app/plan.json': JSON.stringify({ ...plan, messages: { a: 'x' } }) }), 'error')).toContain('APP_LOCALES_INVALID')
+    })
+
+    it('refuses an address conflict (APP_ADDRESS_CONFLICT)', () => {
+      expect(codes(all({ 'app/surfaces/pricing.receipt.json': JSON.stringify({ path: { de: 'home' }, blocks: [] }) }), 'error')).toEqual(['APP_ADDRESS_CONFLICT'])
+    })
+
+    it('warns about each id a locale lacks (MESSAGES_LOCALE_MISSING), and about a catalogue of no declared locale', () => {
+      const v = all({ 'app/messages/de.json': JSON.stringify({ a: 'Ä' }), 'app/messages/fr.json': '{}' })
+      expect(codes(v, 'warning').sort()).toEqual(['APP_UNEXPECTED_FILE', 'MESSAGES_LOCALE_MISSING'])
+      expect(v.issues.find((i) => i.code === 'MESSAGES_LOCALE_MISSING')?.message).toContain('"b"')
+    })
+
+    it('reads nothing of this for a single-language app', () => {
+      const single = withIdentity(identity, { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/pricing.receipt.json': '{"blocks":[]}' })
+      expect(codes(single)).toEqual([])
+    })
+  })
+
+  describe('the layout members (receipt §4)', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home'] } }
+    it('refuses a title, description, appearance, titleTemplate, layout or path on the layout', () => {
+      for (const member of ['title', 'titleTemplate', 'description', 'appearance', 'layout', 'path']) {
+        const v = withIdentity(identity, { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/layout.receipt.json': JSON.stringify({ blocks: [{ type: 'pw:page' }], [member]: 'x' }) })
+        expect(codes(v), member).toEqual(['APP_LAYOUT_INVALID'])
+      }
+    })
+  })
+
   describe('the plan pages (app/plan.json surfaces)', () => {
     const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'about'] } }
     const receipts = { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/about.receipt.json': '{"blocks":[]}' }

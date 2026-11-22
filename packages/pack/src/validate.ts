@@ -4,7 +4,19 @@
  *
  * @module @pwfabric/pack/validate
  */
-import { checkPropValue, layoutSlotProblems, propShapeProblems, type AtomRef, type PropShape, type PwpackIdentity } from '@pwfabric/contracts'
+import {
+  addressTable,
+  checkPropValue,
+  layoutSlotProblems,
+  localesOf,
+  localesProblems,
+  missingCatalogueIds,
+  propShapeProblems,
+  receiptPathOf,
+  type AtomRef,
+  type PropShape,
+  type PwpackIdentity,
+} from '@pwfabric/contracts'
 import { classifyPackPath } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins, safeParsePwpackIdentity } from '@pwfabric/contracts/schemas'
 import type { PackFolder, PackIssue } from './types.js'
@@ -65,6 +77,10 @@ export interface PackValidation {
 const APP_SURFACES = 'app/surfaces/'
 /** The app's layout, the receipt every page is drawn in (receipt §4). */
 export const LAYOUT_FILE = 'app/layout.receipt.json'
+/** The members a layout does not carry: a page's own (receipt §4). */
+const LAYOUT_FORBIDDEN = ['title', 'titleTemplate', 'description', 'appearance', 'layout', 'path'] as const
+/** The catalogues of an app in several languages (envelope §2.3). */
+const APP_MESSAGES = 'app/messages/'
 /** A page key: a name, or names joined by `/` for a page in a folder of `app/surfaces/`. */
 const PAGE_PATH = /^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.-]*)*$/
 const PLAN_FILE = 'app/plan.json'
@@ -375,6 +391,48 @@ export function validatePack(pack: PackFolder): PackValidation {
   if (layoutDoc?.ok) {
     const problems = layoutSlotProblems(layoutDoc.value)
     if (problems.length > 0) add('error', 'APP_LAYOUT_SLOT', `${LAYOUT_FILE}: ${problems.join('; ')}`, LAYOUT_FILE)
+    // The page's own members: the layout's blocks wear the page's.
+    const layoutValue = layoutDoc.value
+    const own = isRecord(layoutValue) ? LAYOUT_FORBIDDEN.filter((m) => layoutValue[m] !== undefined) : []
+    if (own.length > 0) add('error', 'APP_LAYOUT_INVALID', `${LAYOUT_FILE} carries ${own.join(', ')}, which belong to a page, not to the layout`, LAYOUT_FILE)
+  }
+  // ---- locales (envelope §2.3) ----
+  const planDoc = pack.files.get(PLAN_FILE) ? parseJson(pack.files.get(PLAN_FILE) as Uint8Array) : undefined
+  const planValue = planDoc?.ok ? planDoc.value : undefined
+  const localeProblems = localesProblems(planValue)
+  if (localeProblems.length > 0) add('error', 'APP_LOCALES_INVALID', `${PLAN_FILE}: ${localeProblems.join('; ')}`, PLAN_FILE)
+  const localeDecl = localesOf(planValue)
+  if (localeDecl && identity?.app) {
+    const { entry, surfaceOrder } = identity.app
+    const pathOf = (key: string): Readonly<Record<string, string>> | undefined => {
+      const bytes = pack.files.get(`${APP_SURFACES}${key}${RECEIPT_SUFFIX}`)
+      const doc = bytes ? parseJson(bytes) : undefined
+      return doc?.ok ? receiptPathOf(doc.value) : undefined
+    }
+    const table = addressTable(localeDecl, [...new Set(surfaceOrder)], entry, pathOf)
+    for (const problem of table.problems) add('error', 'APP_ADDRESS_CONFLICT', problem, PLAN_FILE)
+  }
+  // The catalogues: one per declared locale, each with the default's ids.
+  const catalogues = new Map<string, Record<string, unknown>>()
+  for (const path of paths) {
+    if (!path.startsWith(APP_MESSAGES)) continue
+    const lang = path.slice(APP_MESSAGES.length).replace(/\.json$/, '')
+    if (!localeDecl || !path.endsWith('.json') || !localeDecl.locales.includes(lang)) {
+      add('warning', 'APP_UNEXPECTED_FILE', `${path} is not an ${APP_MESSAGES}<lang>.json of a locale app/plan.json declares`, path)
+      continue
+    }
+    const doc = parseJson(pack.files.get(path) as Uint8Array)
+    if (doc.ok && isRecord(doc.value)) catalogues.set(lang, doc.value)
+  }
+  if (localeDecl) {
+    const defaults = catalogues.get(localeDecl.defaultLocale) ?? {}
+    for (const lang of localeDecl.locales) {
+      if (lang === localeDecl.defaultLocale) continue
+      const path = `${APP_MESSAGES}${lang}.json`
+      for (const id of missingCatalogueIds(defaults, catalogues.get(lang) ?? {})) {
+        add('warning', 'MESSAGES_LOCALE_MISSING', `${path} does not set "${id}", which ${APP_MESSAGES}${localeDecl.defaultLocale}.json sets: "${lang}" reads the default's word`, path)
+      }
+    }
   }
   // ---- public files (copied, as they are, to the served app's root) ----
   // None may land on a path the build writes, and none may be script:
@@ -402,7 +460,10 @@ export function validatePack(pack: PackFolder): PackValidation {
     // The pages an app serves are app.surfaceOrder. A receipt written without
     // its key there is a page nobody can reach — every link to it lands on
     // not-found — and the pack still validated clean.
-    const key = rest.slice(0, -RECEIPT_SUFFIX.length)
+    let key = rest.slice(0, -RECEIPT_SUFFIX.length)
+    // A page's receipt for one declared locale (`home.de`) is that page's.
+    const ofLocale = localeDecl?.locales.find((l) => key.endsWith(`.${l}`))
+    if (ofLocale !== undefined) key = key.slice(0, -(ofLocale.length + 1))
     if (identity?.app && !identity.app.surfaceOrder.includes(key) && identity.app.entry !== key && identity.app.notFound !== key && identity.app.signIn !== key) {
       add('warning', 'APP_SURFACE_NOT_SERVED', `${path} is not in pwpack.json app.surfaceOrder, so the app does not serve it — add "${key}" there`, path)
     }
