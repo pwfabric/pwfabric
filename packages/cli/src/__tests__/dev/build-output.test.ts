@@ -3,6 +3,7 @@
  * the consent loader that adds them, the plan's response headers and
  * redirects, the `public/` folder, and pages in folders of `app/surfaces/`.
  */
+import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -223,5 +224,29 @@ describe('a page in a folder of app/surfaces/', () => {
     await editJson(root, 'pwpack.json', (d) => ({ ...d, app: { entry: 'home', surfaceOrder: ['home', 'assets/intro'] } }))
     const r = await assemblePwapp(root, { cacheDir: null, router: 'path' })
     expect(errors(r).map((d) => d.code)).toContain('PAGE_KEY_RESERVED')
+  })
+})
+
+describe('the colour-scheme script (appearance §4.1)', () => {
+  const scriptOf = (html: string): string | undefined => /<script>(try\{var s=localStorage\.getItem\("pwapp_color_scheme:[^<]*)<\/script>/.exec(html)?.[1]
+
+  it('applies a stored choice before the theme stylesheet, allowed by its hash', async () => {
+    const root = await app()
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const html = text(r.files.get('index.html'))
+    const script = scriptOf(html)
+    expect(script).toContain('"pwapp_color_scheme:@pwpack/k/demo"')
+    expect(html.indexOf(script as string)).toBeLessThan(html.indexOf('rel="stylesheet" href="./assets/theme.'))
+    const hash = `'sha256-${createHash('sha256').update(script as string).digest('base64')}'`
+    expect(directive(cspOf(r), 'script-src')).toContain(hash)
+  })
+
+  it('is left out when the app and every page wear light or dark only', async () => {
+    const root = await app()
+    await editJson(root, 'app/definitions/appearance.json', (d) => ({ ...d, mode: { policy: 'light' } }))
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    expect(scriptOf(text(r.files.get('index.html')))).toBeUndefined()
   })
 })

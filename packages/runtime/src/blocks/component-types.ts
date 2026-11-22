@@ -62,6 +62,10 @@ export interface BlockComponentContext {
   readonly consent?: Readonly<Record<string, boolean>>
   /** Records consent answers; see the runtime's `BlockContext.setConsent`. */
   readonly setConsent?: (answers: Readonly<Record<string, boolean>>) => void
+  /** The visitor's colour scheme; see the runtime's `BlockContext.colorScheme`. */
+  readonly colorScheme?: 'light' | 'dark' | 'system'
+  /** Records the visitor's colour scheme; see the runtime's `BlockContext.setColorScheme`. */
+  readonly setColorScheme?: (scheme: 'light' | 'dark' | 'system') => void
 }
 
 // ============================================================

@@ -75,6 +75,7 @@ import { ownRecordsReceipt } from './own-records.js'
 import { receiptSurfaceId, startPreviewSession, type PreviewPage, type PreviewSession } from './preview-session.js'
 import type { PreviewSurface } from './preview-bridge.js'
 import { createConsent } from './consent.js'
+import { createColorScheme } from './color-scheme.js'
 import { assemblePage } from './layout.js'
 
 export { projectAppearanceRef } from './appearance-ref.js'
@@ -123,6 +124,20 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     })(),
     win: window,
     doc: document,
+  })
+  // THE VISITOR'S COLOUR SCHEME (appearance §4.1): handed to every block as
+  // `context.colorScheme` / `setColorScheme`, kept in storage by the runner
+  // alone and set as `data-pw-theme` on the document element.
+  const colorScheme = createColorScheme({
+    appId,
+    storage: (() => {
+      try {
+        return window.localStorage
+      } catch {
+        return undefined
+      }
+    })(),
+    root: document.documentElement,
   })
   const boot = await bootSession({ project, auth, storage: sessionStorage, appId })
   let appSession: AppSession | null = boot.session
@@ -835,6 +850,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // while today's load, so going back and forth costs nothing visible.
       dataCache,
       consent,
+      colorScheme,
       // A `navigate` action is followed as a link to its address would be
       // (router.follow): `location.assign('#rsvp')` replaced the hash route.
       onNavigateAction: (url: string) => router.follow(url),

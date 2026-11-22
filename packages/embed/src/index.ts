@@ -41,6 +41,7 @@ import type {
   DataServiceConfig,
   SurfaceDataCache,
   ConsentStore,
+  ColorSchemeStore,
   LinkHref,
   SurfaceAddress,
   AppMessages,
@@ -129,6 +130,8 @@ export interface EmbedOptions {
   readonly locale?: string
   /** The visitor's consent and the categories the app's scripts wait for (envelope §2.2): `context.consent*` of every block. */
   readonly consent?: ConsentStore
+  /** The visitor's colour scheme (appearance §4.1): `context.colorScheme` / `setColorScheme` of every block. */
+  readonly colorScheme?: ColorSchemeStore
   /** The page this surface is: a change between renders of one mount resets the page's state, the blocks that stay stay mounted. */
   readonly pageKey?: string
   /** The app's words (`plan.json` `messages`) the blocks' own words read first. */
@@ -206,6 +209,7 @@ function passthrough(options?: EmbedOptions): Partial<RenderCoreOptions> {
     ...(o.onDescription !== undefined ? { onDescription: o.onDescription } : {}),
     ...(o.locale !== undefined ? { locale: o.locale } : {}),
     ...(o.consent !== undefined ? { consent: o.consent } : {}),
+    ...(o.colorScheme !== undefined ? { colorScheme: o.colorScheme } : {}),
     ...(o.pageKey !== undefined ? { pageKey: o.pageKey } : {}),
     ...(o.messages !== undefined ? { messages: o.messages } : {}),
     ...(o.address !== undefined ? { address: o.address } : {}),
