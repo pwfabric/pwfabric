@@ -25,6 +25,11 @@ export interface LocalHostOptions {
    * FORBIDDEN`, `404`), so a visitor who must sign in is told so first.
    */
   readonly readOnly?: boolean
+  /**
+   * The roles the development user signs in with (pwf dev --as); default:
+   * every role auth.json declares. Anyone else signs in with none.
+   */
+  readonly roles?: readonly string[]
 }
 
 export interface LocalHost {

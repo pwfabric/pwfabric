@@ -219,6 +219,17 @@ describe('the app door', () => {
     }
   })
 
+  it('signs the development user in with only the roles it is given (pwf dev --as)', async () => {
+    const plain = await start('l-shop', { roles: [] })
+    const token = await signIn(plain.base)
+    const session = (await (await fetch(`${plain.base}/session`, withSession(token))).json()) as { data: { principal: { roles: string[] } } }
+    expect(session.data.principal.roles).toEqual([])
+    // Booking: staff read it; a plain member may not.
+    expect((await fetch(`${plain.base}/records/Booking`, withSession(token))).status).toBe(403)
+    const staff = await start('l-shop', { roles: ['staff'] })
+    expect((await fetch(`${staff.base}/records/Booking`, withSession(await signIn(staff.base)))).status).toBe(200)
+  })
+
   it('signs any other e-mail in as a plain member', async () => {
     const s = await start('l-shop')
     const res = await fetch(`${s.base}/login`, json({ email: ' N@E.w ', password: 'x' }))

@@ -185,6 +185,8 @@ export interface RecordStoreOptions {
   readonly relationReadable?: (targetTypeId: string, id: string, caller: Caller) => boolean
   /** Refuse every write the caller could make with `403 READ_ONLY` (after every other refusal). */
   readonly readOnly?: boolean
+  /** The roles the development user carries; default: every role auth.json declares. */
+  readonly devRoles?: readonly string[]
 }
 
 export class RecordStore {
@@ -257,7 +259,7 @@ export class RecordStore {
     if (auth?.required && !caller.principal) {
       throw new HostError(401, 'SIGN_IN_REQUIRED', 'Sign in to use this app.')
     }
-    const roles = caller.principal?.id === this.devUser.id ? (auth?.access.roles ?? []) : []
+    const roles = caller.principal?.id === this.devUser.id ? (this.options.devRoles ?? auth?.access.roles ?? []) : []
     return accessOf(entity, auth, { principal: caller.principal, roles })
   }
 
