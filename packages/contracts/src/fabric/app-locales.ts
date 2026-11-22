@@ -155,14 +155,23 @@ export function isTableAddress(table: AddressTable, rest: string): boolean {
 
 /**
  * The words of `locale` (envelope §2.3): its catalogue over the default
- * locale's, so an id it does not set reads the default's.
+ * locale's, so an id it does not set reads the default's. An empty string is
+ * not a word (an untranslated placeholder, as `pwf locale add` writes them):
+ * the default's word stands.
  */
 export function catalogueFor(
   catalogues: Readonly<Record<string, Readonly<Record<string, string>>>>,
   declaration: LocaleDeclaration,
   locale: string
 ): Record<string, string> {
-  return { ...(catalogues[declaration.defaultLocale] ?? {}), ...(catalogues[locale] ?? {}) }
+  return mergeCatalogues(catalogues[declaration.defaultLocale] ?? {}, catalogues[locale] ?? {})
+}
+
+/** `own` over `defaults`, an empty word in `own` leaving the default's. */
+export function mergeCatalogues(defaults: Readonly<Record<string, string>>, own: Readonly<Record<string, string>>): Record<string, string> {
+  const out: Record<string, string> = { ...defaults }
+  for (const [id, word] of Object.entries(own)) if (typeof word === 'string' && word !== '') out[id] = word
+  return out
 }
 
 /** The ids the default locale's catalogue sets and `catalogue` does not (`MESSAGES_LOCALE_MISSING`). */

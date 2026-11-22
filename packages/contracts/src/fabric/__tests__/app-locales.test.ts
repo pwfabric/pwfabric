@@ -75,4 +75,10 @@ describe('catalogues', () => {
     expect(catalogueFor(catalogues, DECL, 'de')).toEqual({ a: 'Ä', b: 'B' })
     expect(missingCatalogueIds(catalogues.en, catalogues.de)).toEqual(['b'])
   })
+
+  it("reads an empty word as untranslated: the default locale's word stands", () => {
+    const catalogues = { en: { a: 'A', b: 'B' }, de: { a: '', b: 'Bé' } }
+    expect(catalogueFor(catalogues, DECL, 'de')).toEqual({ a: 'A', b: 'Bé' })
+    expect(missingCatalogueIds(catalogues.en, catalogues.de)).toEqual(['a'])
+  })
 })
