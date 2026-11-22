@@ -1,8 +1,8 @@
 /**
  * THE VISITOR'S LANGUAGE (envelope §2.3). A runner never sends a visitor to
  * another locale on its own. When the browser's languages prefer a declared
- * locale other than the one drawn, it offers it: a strip at the top of the
- * document, in the page's flow and in the app's theme, drawn by
+ * locale other than the one drawn, it offers it: a strip fixed at the bottom
+ * of the viewport, in the app's theme, drawn by
  * script after hydration (never in the first frame), with a link to the
  * current page in that locale and a way to dismiss it, its words read from
  * that locale's catalogue — `locale.suggestion` (`{language}` is the
@@ -106,9 +106,11 @@ export async function mountLocaleSuggestion(options: LocaleSuggestionOptions): P
   go.hreflang = lang
   go.setAttribute('data-pw-locale-switch', '')
   go.textContent = words['locale.switch'] || 'locale.switch'
+  const root = doc.documentElement
   const close = (answer: Record<string, unknown>): void => {
     keep(answer)
     box.remove()
+    root.style.removeProperty('scroll-padding-bottom')
   }
   go.addEventListener('click', () => close({ locale: lang }))
   const no = doc.createElement('button')
@@ -127,9 +129,13 @@ export async function mountLocaleSuggestion(options: LocaleSuggestionOptions): P
     style.textContent = LOCALE_SUGGESTION_CSS
     doc.head.appendChild(style)
   }
-  // IN THE FLOW, at the top of the document: it pushes the page down and
-  // covers nothing — not the navbar, not a language bar.
-  doc.body.prepend(box)
+  // FIXED AT THE BOTTOM of the viewport, like a cookie bar: drawn after the
+  // first paint, it moves nothing (no layout shift) and covers neither the
+  // navbar nor a language bar. It takes no focus. While it is shown, an
+  // element scrolled into view (a focused field) stops above it.
+  doc.body.appendChild(box)
+  const height = box.getBoundingClientRect().height
+  root.style.setProperty('scroll-padding-bottom', `${Math.ceil(height) || 64}px`)
   return box
 }
 
@@ -143,10 +149,10 @@ export const LOCALE_SUGGESTION_STYLE_ID = 'pw-locale-suggestion-css'
  * (safe area); a slide in only for a reader who does not ask for less motion.
  */
 const LOCALE_SUGGESTION_CSS = [
-  `[${LOCALE_SUGGESTION_ATTR}]{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:.5rem .75rem;box-sizing:border-box;width:100%;` +
-    'padding:max(.5rem,env(safe-area-inset-top)) max(1rem,env(safe-area-inset-right)) .5rem max(1rem,env(safe-area-inset-left));' +
+  `[${LOCALE_SUGGESTION_ATTR}]{position:fixed;inset-inline:0;bottom:0;z-index:500;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:.5rem .75rem;box-sizing:border-box;` +
+    'padding:.5rem max(1rem,env(safe-area-inset-right)) max(.5rem,env(safe-area-inset-bottom)) max(1rem,env(safe-area-inset-left));' +
     'font-family:var(--pw-font-family,system-ui,sans-serif);font-size:var(--pw-font-size-sm,.875rem);line-height:1.4;' +
-    'background:var(--pw-color-card,#f8fafc);color:var(--pw-color-text,#1e293b);border-bottom:1px solid var(--pw-color-border,#e2e8f0)}',
+    'background:var(--pw-color-card,#f8fafc);color:var(--pw-color-text,#1e293b);border-top:1px solid var(--pw-color-border,#e2e8f0);box-shadow:0 -2px 8px rgb(0 0 0 / .08)}',
   `[${LOCALE_SUGGESTION_ATTR}] a,[${LOCALE_SUGGESTION_ATTR}] button{display:inline-flex;align-items:center;min-height:2rem;padding:.25rem .875rem;` +
     'border-radius:var(--pw-radius,.375rem);font:inherit;font-weight:600;line-height:1.2;text-decoration:none;cursor:pointer;' +
     'border:1px solid var(--pw-color-primary,#4f46e5)}',
@@ -154,5 +160,5 @@ const LOCALE_SUGGESTION_CSS = [
   `[${LOCALE_SUGGESTION_ATTR}] button{background:transparent;color:var(--pw-color-text,#1e293b);border-color:var(--pw-color-border,#e2e8f0)}`,
   `[${LOCALE_SUGGESTION_ATTR}] a:focus-visible,[${LOCALE_SUGGESTION_ATTR}] button:focus-visible{outline:2px solid var(--pw-color-primary,#4f46e5);outline-offset:2px}`,
   `@media (prefers-reduced-motion:no-preference){[${LOCALE_SUGGESTION_ATTR}]{animation:pw-locale-suggestion-in .2s ease-out}}`,
-  '@keyframes pw-locale-suggestion-in{from{opacity:0;transform:translateY(-100%)}to{opacity:1;transform:none}}',
+  '@keyframes pw-locale-suggestion-in{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:none}}',
 ].join('')

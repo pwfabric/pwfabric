@@ -69,22 +69,27 @@ describe('the locale the visitor prefers (envelope §2.3)', () => {
 })
 
 describe('the suggestion strip', () => {
-  it('sits in the flow at the top of the document, named by its sentence, styled once from the theme', async () => {
+  it('is fixed at the bottom of the viewport, takes no focus, keeps a focused element above it, named by its sentence, styled once from the theme', async () => {
     const page = document.createElement('div')
     page.id = 'root'
     document.body.appendChild(page)
+    const before = document.activeElement
     const box = await offer(['de'])
-    expect(document.body.firstElementChild).toBe(box)
-    expect(box?.getAttribute('style')).toBeNull()
+    // After the page, not before it: nothing moves (no layout shift).
+    expect(document.body.firstElementChild).toBe(page)
+    expect(document.body.lastElementChild).toBe(box)
+    expect(document.activeElement).toBe(before)
+    expect(document.documentElement.style.getPropertyValue('scroll-padding-bottom')).toMatch(/^\d+px$/)
     expect(box?.getAttribute('role')).toBe('region')
     expect(box?.getAttribute('aria-label')).toBe('Diese Seite gibt es auf Deutsch')
     const css = document.getElementById('pw-locale-suggestion-css')?.textContent ?? ''
-    expect(css).not.toMatch(/position:\s*fixed/)
+    expect(css).toMatch(/position:fixed;inset-inline:0;bottom:0/)
+    expect(css).toContain('safe-area-inset-bottom')
     expect(css).toContain('var(--pw-color-primary')
-    expect(css).toContain('safe-area-inset-top')
     expect(css).toContain('prefers-reduced-motion:no-preference')
     expect(css).toContain(':focus-visible')
-    box?.remove()
+    box?.querySelector('button')?.click()
+    expect(document.documentElement.style.getPropertyValue('scroll-padding-bottom')).toBe('')
     await offer(['de'])
     expect(document.querySelectorAll('#pw-locale-suggestion-css')).toHaveLength(1)
   })
