@@ -24,14 +24,14 @@ describe('pwf validate', () => {
     expect(result.issues).toEqual([expect.objectContaining({ severity: 'info', code: 'DOC_FILE', path: 'atoms/README.md' })])
   })
 
-  it('warns about a pinned build that is not cached', async () => {
+  it('refuses a pinned build that is not cached, as pwf build does, with the same fix', async () => {
     const { root } = await created()
     await rm(join(root, '.pwf'), { recursive: true })
     const c = capture(root)
-    expect(await main(['validate'], c.io)).toBe(0)
-    expect(c.out[0]).toBe('Warnings (1):')
-    expect(c.out[1]).toContain('PIN_NOT_CACHED .pwf/packs/@pwpack/fixture/foundation@1.2.0')
-    expect(c.out.at(-1)).toContain('valid (0 errors, 1 warning;')
+    expect(await main(['validate'], c.io)).toBe(1)
+    const line = c.err.find((l) => l.includes('PIN_NOT_CACHED')) ?? ''
+    expect(line).toContain('.pwf/packs/@pwpack/fixture/foundation@1.2.0')
+    expect(line).toContain('run `pwf add @pwpack/fixture/foundation@1.2.0`')
   })
 
   it('refuses an unknown block type and a block id used twice on a page, with the code and words pwf build uses', async () => {
@@ -96,6 +96,23 @@ describe('pwf validate', () => {
     const s = capture(root)
     expect(await main(['validate'], s.io)).toBe(1)
     expect(s.err.join(' ')).toContain('APP_LAYOUT_SLOT')
+  })
+
+  it('refuses an icon the app does not have, as pwf build does, and names the media file to write for its served address', async () => {
+    const { root } = await created()
+    const path = join(root, 'app', 'definitions', 'appearance.json')
+    const appearance = JSON.parse(await readFile(path, 'utf8').catch(() => '{}')) as Record<string, unknown>
+    await mkdir(join(root, 'media'), { recursive: true })
+    await writeFile(join(root, 'media', 'icon.png'), 'x')
+    await writeFile(path, JSON.stringify({ ...appearance, brand: { favicon: 'pwpack/media/icon.png' } }))
+    const v = capture(root)
+    expect(await main(['validate'], v.io)).toBe(1)
+    expect(v.err.find((l) => l.includes('FAVICON_INVALID'))).toContain('write media/icon.png')
+    const b = capture(root)
+    expect(await main(['build'], b.io)).toBe(1)
+    expect(b.err.join(' ')).toContain('write media/icon.png')
+    await writeFile(path, JSON.stringify({ ...appearance, brand: { favicon: 'media/icon.png' } }))
+    expect(await main(['validate'], capture(root).io)).toBe(0)
   })
 
   it('groups errors, warnings and notes and exits 1 on errors', async () => {

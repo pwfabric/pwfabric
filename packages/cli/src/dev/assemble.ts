@@ -45,6 +45,7 @@ import {
   type Page,
 } from './envelope.js'
 import { collectMedia, fillMediaSlots } from './media.js'
+import { faviconOf } from './favicon.js'
 import { declaredRecordFields, withRecordFields } from '../host/record-fields.js'
 import { withSessionSources } from '../host/session-sources.js'
 import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
@@ -481,33 +482,12 @@ function withoutAuthoring(receipt: Record<string, unknown>): Record<string, unkn
   return served
 }
 
-/**
- * The app's icon (`appearance` `brand.favicon`) as the documents link it: an
- * absolute https address as written (an http icon on an https page is mixed
- * content, which the browser blocks); a media file of the app
- * (`media/<file>`) as served, `pwpack/media/<file>`; a public file
- * (`public/favicon.ico`, or `favicon.ico`) at the app's root. A file the app does not have, or any other
- * form, is an error (FAVICON_INVALID) and the documents keep the empty icon.
- */
-function faviconOf(config: Record<string, unknown> | undefined, files: ReadonlyMap<string, Uint8Array>, diagnostics: AssembleDiagnostic[]): string | undefined {
+/** The app's icon (`appearance` `brand.favicon`), as the documents link it (favicon.ts); a problem is FAVICON_INVALID. */
+function faviconFor(config: Record<string, unknown> | undefined, files: ReadonlyMap<string, Uint8Array>, diagnostics: AssembleDiagnostic[]): string | undefined {
   const brand = isRecord(config) ? config['brand'] : undefined
-  const raw = isRecord(brand) ? brand['favicon'] : undefined
-  if (raw === undefined) return undefined
-  const value = typeof raw === 'string' ? raw.trim() : ''
-  // An address the head carries: visible ASCII, no whitespace or control character.
-  if (/^https:\/\/[\x21-\x7e]+$/i.test(value)) return value
-  const file = value.replace(/^\.?\//, '')
-  if (/^media\/(?!.*(?:^|\/)\.\.?(?:\/|$))[^\s?#]+$/.test(file) && files.has(file)) return `pwpack/${file}`
-  // A public file (`public/favicon.ico`, or as served: `favicon.ico`) is served at the app's root.
-  const served = file.replace(/^public\//, '')
-  if (/^[^\s?#]+$/.test(served) && !served.split('/').some((seg) => seg === '..' || seg === '.') && files.has(`public/${served}`)) return served
-  diagnostics.push({
-    severity: 'error',
-    code: 'FAVICON_INVALID',
-    message: `brand.favicon is "${value}": it is an https address or a file of the app (media/<file>, or a file of public/), and the app has no such file`,
-    path: 'app/definitions/appearance.json',
-  })
-  return undefined
+  const { href, problem } = faviconOf(isRecord(brand) ? brand['favicon'] : undefined, files)
+  if (problem) diagnostics.push({ severity: 'error', code: 'FAVICON_INVALID', message: problem, path: 'app/definitions/appearance.json' })
+  return href
 }
 
 /** The folder whose files a build copies, as they are, to the root of the served folder. */
@@ -901,7 +881,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // The app's public files, as served: listed in project.json, copied last.
   const publicFiles = publicFilesOf(app.folder.files, keys, locales ? locales.locales.filter((l) => l !== locales.defaultLocale).map(localePrefix) : [])
   // The app's icon: every document links it.
-  const favicon = faviconOf(config, app.folder.files, diagnostics)
+  const favicon = faviconFor(config, app.folder.files, diagnostics)
   // The visitor's colour-scheme choice, applied before the first paint
   // (appearance §4.1) — only where there is one to make: the app, or one of
   // its pages, wears the `system` policy. Keyed like the runner keys storage

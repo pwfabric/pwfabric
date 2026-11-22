@@ -26,13 +26,14 @@ import { assemblePage, isTitleTemplate, pluralProblems, PROVIDER_LABEL_METHODS, 
 import { layoutSlotProblems, localesOf, PAGE_SLOT_TYPE } from '@pwfabric/contracts'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { engineVersion, pinsOf } from './identity.js'
+import { faviconOf } from '../../dev/favicon.js'
 import { engineRangeDiagnostics, isRecord, jsonOf, loadSources, type LoadedSources } from '../../dev/sources.js'
 import { servedPageKeys } from '../../dev/envelope.js'
 import { readAuth, readEntities, readReceipt, readSeed, surfaceKeys, type AuthDeclaration } from '../../host/definitions.js'
 
 /**
  * Checks every `packs[]` pin against `.pwf/packs/<id>@<version>/`.
- * A build that is not cached is a warning (`PIN_NOT_CACHED`: `pwf add` it);
+ * A build that is not cached is an error (`PIN_NOT_CACHED`: `pwf add` it), as `pwf build` makes it;
  * a cached build whose content hash differs from the pin is an error
  * (`PIN_HASH_MISMATCH`).
  */
@@ -48,11 +49,12 @@ export async function checkPins(root: string, identity: PackValidation['identity
     }
     const rel = cacheRelDir(pin.id, pin.version)
     if (!existsSync(dir)) {
+      // An error, as `pwf build` makes it (PACK_NOT_CACHED), with the same fix.
       issues.push({
-        severity: 'warning',
+        severity: 'error',
         code: 'PIN_NOT_CACHED',
         path: rel,
-        message: `${pin.id}@${pin.version} is pinned but not in ${rel}; run \`pwf add <its .pwpack or folder>\``,
+        message: `${pin.id}@${pin.version} is pinned in pwpack.json but is not in ${rel}/ — run \`pwf add ${pin.id}@${pin.version}\` (or recreate the app with \`pwf create\`) to put it there`,
       })
       continue
     }
@@ -393,6 +395,17 @@ export function checkMessages(root: string): PackIssue[] {
 }
 
 /**
+ * The app's icon (`app/definitions/appearance.json` `brand.favicon`): the
+ * build's rule and words (`FAVICON_INVALID`, dev/favicon.ts).
+ */
+export function checkFavicon(root: string, pack: PackFolder): PackIssue[] {
+  const appearance = readJsonFile(join(root, 'app', 'definitions', 'appearance.json'))
+  const brand = isObj(appearance) ? appearance['brand'] : undefined
+  const { problem } = faviconOf(isObj(brand) ? brand['favicon'] : undefined, pack.files)
+  return problem ? [{ severity: 'error', code: 'FAVICON_INVALID', path: 'app/definitions/appearance.json', message: problem }] : []
+}
+
+/**
  * The app's title template (`app/plan.json` `titleTemplate`, receipt §1.1):
  * exactly one `%s`, and `%%` for a `%` (`PLAN_TITLE_TEMPLATE_INVALID`, the
  * build's code and words).
@@ -514,7 +527,7 @@ export async function validateProject(root: string, pack: PackFolder): Promise<P
   const engineIssues: PackIssue[] = loaded
     ? engineRangeDiagnostics(loaded, engineVersion()).map((d) => ({ severity: 'error', code: d.code, message: d.message, ...(d.path ? { path: d.path } : {}) }))
     : []
-  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkTitleTemplate(root), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
+  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkTitleTemplate(root), ...checkFavicon(root, pack), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 
