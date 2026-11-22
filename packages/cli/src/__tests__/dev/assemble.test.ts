@@ -75,13 +75,13 @@ describe('assemblePwapp', () => {
     expect(parse(r.files.get('pwpack/project.json'))).toMatchObject({ id: '@pwpack/k/demo', title: 'K Demo', entrySurfaceId: 'home', surfaceOrder: ['home'] })
     expect(parse(r.files.get('pwpack/navigation.json'))).toEqual({ navbar: { links: [{ label: 'Home', href: '/' }] } })
     expect(parse(r.files.get('pwpack/appearance.json'))).toEqual({
-      // The webfont's metric-matched stand-in is named right after it (pwapp-format §2.3).
-      theme: { colors: { primary: '#7c2d12', background: '#fffbeb', text: '#1c1917', accent: '#b45309' }, typography: { fontFamily: 'Inter, "Inter Fallback", system-ui, sans-serif' } },
+      // A family the app ships no files for is named as written: no font service, no stand-in (pwapp-format §2.3).
+      theme: { colors: { primary: '#7c2d12', background: '#fffbeb', text: '#1c1917', accent: '#b45309' }, typography: { fontFamily: 'Inter, system-ui, sans-serif' } },
     })
     expect(text(r.files.get('pwpack/connections.json'))).not.toContain('do-not-ship')
     expect(codes(r)).toContain('CREDENTIAL_DROPPED')
     expect(text(r.files.get(asset(r, 'theme')))).toContain('--pw-color-primary: #7c2d12')
-    expect(text(r.files.get(asset(r, 'theme')))).toContain('font-family: "Inter Fallback";')
+    expect(text(r.files.get(asset(r, 'theme')))).not.toContain('@font-face')
     const publish = parse(r.files.get('publish.json')) as Record<string, unknown>
     expect(publish).toMatchObject({
       formatVersion: '1.0',
@@ -100,8 +100,8 @@ describe('assemblePwapp', () => {
     // One policy, three places: the shell's meta (no frame-ancestors), `_headers`, publish.json.
     const csp = publish['csp'] as { policy: string; unresolved?: { source: string }[] }
     // The import map, the page hints, the first paint and the colour-scheme script (appearance §4.1).
-    expect(csp.policy).toMatch(/^default-src 'none'; script-src 'self' blob: 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*'; style-src 'self' 'unsafe-inline' https:\/\/fonts\.googleapis\.com;/)
-    expect(csp.policy).toContain("font-src 'self' https://fonts.gstatic.com")
+    expect(csp.policy).toMatch(/^default-src 'none'; script-src 'self' blob: 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*'; style-src 'self' 'unsafe-inline';/)
+    expect(csp.policy).toContain("font-src 'self';")
     expect(csp.policy).toContain("frame-ancestors 'none'")
     // The compiled engine's reach is not declared, so it is listed, not guessed.
     expect(csp.unresolved?.map((u) => u.source)).toEqual(['engine:Echo'])
@@ -137,7 +137,7 @@ describe('assemblePwapp', () => {
     expect(runner).toContain(createHash('sha256').update(r.files.get(runner) as Uint8Array).digest('hex').slice(0, 8))
   })
 
-  it('a page that names its own theme wears it: served receipt, page palette, webfonts, first frame (N-E3)', async () => {
+  it('a page that names its own theme wears it: served receipt, page palette, first frame (N-E3)', async () => {
     const root = await app()
     // A second theme, the app's own: a dark ground, a webfont, its own dark variant.
     const night = join(root, 'atoms', 'appearance', 'theme-night')
@@ -170,7 +170,7 @@ describe('assemblePwapp', () => {
     // Its theme's tokens and dark variant, resolved; its webfont's stand-in named.
     expect(served('night')['appearance']).toEqual({
       config: {
-        theme: { colors: { primary: '#93c5fd', background: '#0b1020', text: '#e2e8f0' }, typography: { fontFamily: 'Nunito, "Nunito Fallback", sans-serif' } },
+        theme: { colors: { primary: '#93c5fd', background: '#0b1020', text: '#e2e8f0' }, typography: { fontFamily: 'Nunito, sans-serif' } },
         darkTheme: { colors: { background: '#000000' } },
       },
     })
@@ -188,11 +188,10 @@ describe('assemblePwapp', () => {
     expect(css).toMatch(/:root\[data-pw-page="night"\] \{[^}]*--pw-color-background: #0b1020;/)
     expect(css).toMatch(/:root\[data-pw-page="night"\]\[data-pw-theme="dark"\] \{[^}]*--pw-color-background: #000000;/)
     expect(css).not.toContain('data-pw-page="same"')
-    expect(css).toContain('font-family: "Nunito Fallback";')
-    expect(css).toContain('font-family: "Inter Fallback";')
-    // One webfont stylesheet for both themes.
-    const boot = text(r.files.get(asset(r, 'boot')))
-    expect(boot).toMatch(/fonts\.googleapis\.com\/css2\?family=Inter[^"]*&family=Nunito/)
+    // A family without files gets no stand-in: there is no font service to wait for.
+    expect(css).not.toContain('Nunito Fallback')
+    // No font service: the boot module links no font stylesheet.
+    expect(text(r.files.get(asset(r, 'boot')))).not.toMatch(/googleapis|stylesheet/)
     // The page's first frame is painted in its theme, not the app's.
     const frame = text(r.files.get('pwpack/surfaces/night.html'))
     expect(frame).toContain('--pw-color-background:#0b1020')

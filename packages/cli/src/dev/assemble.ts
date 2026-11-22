@@ -46,6 +46,7 @@ import {
 } from './envelope.js'
 import { collectMedia, fillMediaSlots } from './media.js'
 import { faviconOf } from './favicon.js'
+import { bodyFontOf, fontAssetsOf, fontsOf, withFontFallbacks } from './fonts.js'
 import { declaredRecordFields, withRecordFields } from '../host/record-fields.js'
 import { withSessionSources } from '../host/session-sources.js'
 import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
@@ -84,9 +85,6 @@ import {
   resolveAppearance,
   resolvePageAppearance,
   themeAtomOf,
-  webfontsOf,
-  webfontStylesheetHref,
-  withWebfontFallbacks,
   type PageAppearance,
   type PageTheme,
   type ThemeAtom,
@@ -311,13 +309,13 @@ function messagesOf(plan: unknown, diagnostics: AssembleDiagnostic[]): Record<st
 }
 
 /**
- * The app's resolved appearance with each webfont's metric-matched stand-in
- * named in its stacks (theme.ts `withWebfontFallbacks`), in whichever of the
- * shapes it came.
+ * The app's resolved appearance with each of its fonts' metric-matched
+ * stand-in named in its stacks (fonts.ts `withFontFallbacks`), in whichever
+ * of the shapes it came.
  */
 function withFallbackStacks(doc: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
   if (!doc) return doc
-  return isRecord(doc['config']) ? { ...doc, config: withWebfontFallbacks(doc['config']) } : withWebfontFallbacks(doc)
+  return isRecord(doc['config']) ? { ...doc, config: withFontFallbacks(doc['config']) } : withFontFallbacks(doc)
 }
 
 /**
@@ -945,9 +943,10 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const gated = isRecord(authDoc) && authDoc['required'] === true
 
   // ── the runtime files, content-hashed (cached as immutable: _headers) ──
-  // One stylesheet for the webfonts of the app's theme and of every page's own.
-  const webfontHref = webfontStylesheetHref(webfontsOf([config, ...pageThemes.map((p) => p.config)]))
-  const themeCss = enc.encode(buildThemeCss(config, pageThemes))
+  // The app's own fonts, of its theme and of every page's own (pwapp-format §2.3):
+  // served hashed under assets/fonts/, declared in the theme stylesheet.
+  const fontAssets = fontAssetsOf(fontsOf([config, ...pageThemes.map((p) => p.config)]), app.folder.files, bodyFontOf(config))
+  const themeCss = enc.encode(buildThemeCss(config, pageThemes, fontAssets.css))
   const assets0 = {
     embed: hashedName('assets/embed.js', runtime.embedJs),
     runner: hashedName('assets/runner.js', runtime.runnerJs),
@@ -1013,7 +1012,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     if (!gated) for (const page of [...routes, ...(notFoundPage ? [notFoundPage] : [])]) own[page.key] = hintsOf(page, lang)
     editions.set(lang, { hinted: own, painted: [] })
   }
-  const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref, router })
+  const bootJs = bootScript({ assets: { ...assets0, boot: '' }, router })
   const assets: ShellAssets = { ...assets0, boot: hashedName('assets/boot.js', bootJs) }
   let painted: readonly PaintedPage[] = []
   // The rules every painted page writes the same, linked from every document (static-paint.ts shareFrameStyles).
@@ -1081,7 +1080,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
           : locale !== undefined
             ? { ogLocale: { locale } }
             : {}),
-        webfontHref,
+        ...(fontAssets.preload !== undefined ? { fontPreload: fontAssets.preload } : {}),
         ...(options.shellExtra !== undefined ? { bodyExtra: options.shellExtra } : {}),
         ...(csp !== undefined ? { csp } : {}),
         ...(favicon !== undefined ? { favicon } : {}),
@@ -1102,6 +1101,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   files.set(assets.runner, enc.encode(runtime.runnerJs))
   files.set(assets.embed, enc.encode(runtime.embedJs))
   files.set(assets.theme, themeCss)
+  for (const [path, bytes] of fontAssets.files) files.set(path, bytes)
   for (const [name, source] of await shimsFor(runtime.embedJs)) files.set(`shims/${name}`, enc.encode(source))
   for (const [file, bytes] of [...modules].sort((a, b) => (a[0] < b[0] ? -1 : 1))) files.set(file, bytes)
   files.set('blocks/manifest.json', json(blockManifest))
@@ -1340,7 +1340,6 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     envelopeAuth: envelopeAuthBytes ? JSON.parse(new TextDecoder().decode(envelopeAuthBytes)) : undefined,
     authDefinition: authDoc,
     media: media.records,
-    webfontHref,
     blocks: placedBlocks,
     scripts: planScriptOrigins(planScripts),
     ...(favicon !== undefined ? { favicon } : {}),

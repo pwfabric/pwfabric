@@ -3,18 +3,14 @@ import type { AssembleDiagnostic } from '../../dev/diagnostics.js'
 import {
   appearanceConfigOf,
   buildThemeCss,
-  fallbackFontFaces,
   findTheme,
   mergeGroups,
   resolveAppearance,
   resolvePageAppearance,
   themeAtomOf,
-  webfontsOf,
-  themeWebfonts,
-  webfontStylesheetHref,
-  withWebfontFallbacks,
   type ThemeAtom,
 } from '../../dev/theme.js'
+import { fontsOf, withFontFallbacks } from '../../dev/fonts.js'
 
 const zinc = themeAtomOf('theme-zinc', { id: 'theme-zinc', theme: { colors: { primary: '#18181b', text: '#09090b' } } }, 'pack') as ThemeAtom
 const dusk = themeAtomOf(
@@ -93,8 +89,12 @@ describe('resolvePageAppearance (a page names its own theme)', () => {
     expect(resolvePageAppearance('zinc', app, [zinc], [], path)).toEqual({ wears: 'as-written' })
   })
 
-  it('names the stand-in of the page theme’s webfont', () => {
-    const serif = themeAtomOf('serif', { theme: { typography: { fontFamily: 'Nunito, sans-serif' } } }, 'pack') as ThemeAtom
+  it('names the stand-in of the page theme’s own font', () => {
+    const serif = themeAtomOf(
+      'serif',
+      { theme: { typography: { fontFamily: 'Nunito, sans-serif' }, fonts: [{ family: 'Nunito', files: [{ src: 'media/fonts/nunito.woff2', weight: 400 }] }] } },
+      'pack'
+    ) as ThemeAtom
     const r = resolvePageAppearance({ use: 'serif' }, app, [zinc, serif], [], path)
     expect(r.wears === 'own' && (r.config['theme'] as { typography: { fontFamily: string } }).typography.fontFamily).toBe('Nunito, "Nunito Fallback", sans-serif')
   })
@@ -117,14 +117,9 @@ describe('the theme stylesheet with pages of their own', () => {
     expect(buildThemeCss({ theme: { colors: { background: '#fff' } } })).not.toContain('data-pw-page')
   })
 
-  it('declares each webfont’s stand-in once, and one stylesheet carries every family', () => {
-    const a = { theme: { typography: { fontFamily: 'Nunito, sans-serif' } } }
-    const b = { theme: { typography: { fontFamily: 'Nunito, sans-serif', headingFontFamily: 'Inter' } } }
-    const css = buildThemeCss(a, [{ key: 'b', config: b }])
-    expect(css.split('font-family: "Nunito Fallback";').length).toBe(2)
-    expect(css).toContain('font-family: "Inter Fallback";')
-    expect(webfontsOf([a, b]).map((f) => f.family)).toEqual(['Nunito', 'Inter'])
-    expect(webfontsOf([a, undefined])).toEqual(themeWebfonts(a))
+  it('carries the font rules it is given first, and none without', () => {
+    expect(buildThemeCss(undefined, [], '@font-face { font-family: "X"; }').startsWith('@font-face { font-family: "X"; }')).toBe(true)
+    expect(buildThemeCss(undefined)).not.toContain('@font-face')
   })
 })
 
@@ -178,81 +173,31 @@ describe('buildThemeCss', () => {
   })
 })
 
-describe('webfonts', () => {
-  it('links only allow-listed first families', () => {
-    const fonts = themeWebfonts({
-      theme: { typography: { fontFamily: 'Inter, system-ui', headingFontFamily: '"My Paid Font", Roboto', monoFontFamily: 'Inter' } },
-    })
-    expect(fonts.map((f) => f.family)).toEqual(['Inter'])
-    expect(webfontStylesheetHref(fonts)).toMatch(/^https:\/\/fonts\.googleapis\.com\/css2\?family=Inter.*&display=swap$/)
-    expect(webfontStylesheetHref([])).toBeNull()
-    expect(themeWebfonts(undefined)).toEqual([])
-  })
-  it('requests italics only for families that ship them, and bare families without weights', () => {
-    expect(webfontStylesheetHref([{ family: 'A B', category: 'serif', weights: [700, 400], italic: true }])).toBe(
-      'https://fonts.googleapis.com/css2?family=A+B:ital,wght@0,400;0,700;1,400;1,700&display=swap'
-    )
-    expect(webfontStylesheetHref([{ family: 'C', category: 'serif', weights: [], italic: false }])).toBe(
-      'https://fonts.googleapis.com/css2?family=C&display=swap'
-    )
-  })
-  it('loads a newly allow-listed family from the list, not a hardcoded set', () => {
-    const fonts = themeWebfonts({
-      theme: {
-        typography: {
-          fontFamily: 'Inter, sans-serif',
-          headingFontFamily: 'Newsreader, Georgia, serif',
-          monoFontFamily: '"Source Code Pro", monospace',
-        },
-      },
-    })
-    expect(fonts.map((f) => f.family)).toEqual(['Inter', 'Newsreader', 'Source Code Pro'])
-    const href = webfontStylesheetHref(fonts)
-    expect(href).toContain('family=Newsreader:wght@700')
-    expect(href).toContain('family=Source+Code+Pro:wght@400')
-    expect(webfontStylesheetHref(themeWebfonts({ theme: { typography: { monoFontFamily: 'Fira Code' } } }))).toBe(
-      'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400&display=swap'
-    )
-  })
-  it('asks only for the styles the theme draws — one app asked for fourteen', () => {
-    // The café theme: Nunito body, Lora headings at 700. It used to load every
-    // weight of both, upright and italic: 6 + 8 styles.
-    const fonts = themeWebfonts({
-      theme: { typography: { fontFamily: 'Nunito, ui-sans-serif, sans-serif', headingFontFamily: 'Lora, Georgia, serif', headingWeight: '700', bodyWeight: '400' } },
-    })
-    expect(webfontStylesheetHref(fonts)).toBe(
-      'https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Lora:wght@700&display=swap'
-    )
-    // A heading weight the family lacks is the nearest it has; one family in two roles is asked for once.
-    const one = themeWebfonts({ theme: { typography: { fontFamily: 'Lato', headingFontFamily: 'Lato', headingWeight: '800' } } })
-    expect(one).toHaveLength(1)
-    expect(one[0]?.weights).toEqual([400, 700])
-    expect(one[0]?.italic).toBe(false)
-  })
-})
+describe('font fallbacks (fonts.ts)', () => {
+  const font = (family: string) => ({ family, files: [{ src: `media/fonts/${family.toLowerCase().replace(/ /g, '-')}.woff2`, weight: 400 }] })
 
-describe('webfont fallbacks', () => {
-  it('names a metric-matched stand-in right after each webfont in its stack', () => {
-    const config = withWebfontFallbacks({
-      theme: { typography: { fontFamily: 'Nunito, ui-sans-serif, sans-serif', headingFontFamily: '"Playfair Display", Georgia, serif', monoFontFamily: 'Menlo, monospace' } },
+  it("names a shipped family's stand-in right after it in its stack, and leaves any other stack as it is", () => {
+    const config = withFontFallbacks({
+      theme: {
+        typography: { fontFamily: 'Nunito, ui-sans-serif, sans-serif', headingFontFamily: '"Playfair Display", Georgia, serif', monoFontFamily: 'Menlo, monospace' },
+        fonts: [font('Nunito'), font('Playfair Display')],
+      },
       darkTheme: { colors: {} },
     }) as { theme: { typography: Record<string, string> }; darkTheme: unknown }
     expect(config.theme.typography['fontFamily']).toBe('Nunito, "Nunito Fallback", ui-sans-serif, sans-serif')
     expect(config.theme.typography['headingFontFamily']).toBe('"Playfair Display", "Playfair Display Fallback", Georgia, serif')
-    // Not an allow-listed webfont: left as it is.
     expect(config.theme.typography['monoFontFamily']).toBe('Menlo, monospace')
     expect(config.darkTheme).toEqual({ colors: {} })
     // Idempotent.
-    expect(withWebfontFallbacks(config)).toEqual(config)
+    expect(withFontFallbacks(config)).toEqual(config)
   })
-  it('declares the stand-ins in the theme stylesheet', () => {
-    const config = { theme: { typography: { fontFamily: 'Nunito, sans-serif' } } }
-    const faces = fallbackFontFaces(themeWebfonts(config))
-    expect(faces).toContain('font-family: "Nunito Fallback";')
-    expect(faces).toContain('src: local("Arial");')
-    expect(faces).toMatch(/size-adjust: [\d.]+%;/)
-    expect(faces).toMatch(/ascent-override: [\d.]+%;/)
-    expect(buildThemeCss(config)).toContain('font-family: "Nunito Fallback";')
-    expect(buildThemeCss(undefined)).not.toContain('@font-face')
+
+  it('names nothing for a family the theme does not ship (no font service)', () => {
+    const plain = { theme: { typography: { fontFamily: 'Inter, sans-serif' } } }
+    expect(withFontFallbacks(plain)).toEqual(plain)
+  })
+
+  it("takes each family once across the app's and its pages' configurations", () => {
+    expect(fontsOf([{ theme: { fonts: [font('Nunito')] } }, { theme: { fonts: [font('nunito'), font('Inter')] } }]).map((f) => f.family)).toEqual(['Nunito', 'Inter'])
   })
 })

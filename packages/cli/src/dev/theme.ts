@@ -11,7 +11,7 @@ import {
   surfaceThemeToCSS,
   type SurfaceTheme,
 } from '@pwfabric/contracts'
-import { findAllowedWebfont, parseFontStack, type AllowedWebfont } from '@pwfabric/contracts/webfonts'
+import { withFontFallbacks } from './fonts.js'
 import type { AssembleDiagnostic } from './diagnostics.js'
 import { isRecord } from './sources.js'
 
@@ -161,7 +161,7 @@ function canonicalJson(value: unknown): string {
  *  - the page's own members then apply over that: `theme` and `darkTheme`
  *    per group, an object member per key, anything else replaced.
  *
- * The result carries the webfont stand-ins in its stacks, as the app's does.
+ * The result carries its fonts' stand-ins in its stacks, as the app's does (fonts.ts).
  * A page that comes out wearing exactly the app's configuration — no
  * `appearance`, or one that changes nothing — wears the app's (`'app'`). A
  * theme name neither the app nor its packs carry is THEME_NOT_FOUND, as for
@@ -201,7 +201,7 @@ export function resolvePageAppearance(
           ? { ...prev, ...value }
           : value
   }
-  const resolved = withWebfontFallbacks(config) as Record<string, unknown>
+  const resolved = withFontFallbacks(config) as Record<string, unknown>
   return canonicalJson(resolved) === canonicalJson(appConfig) ? { wears: 'app' } : { wears: 'own', config: resolved }
 }
 
@@ -283,11 +283,11 @@ export interface PageTheme {
  * body font and colours — so the app wears its identity before hydration.
  * Each page that wears its own appearance (`pages`) has its palette under
  * `:root[data-pw-page="<key>"]`, after the app's, so the document's ground is
- * the page's from the first paint. The stand-ins of every webfont the app and
- * those pages load are declared once.
+ * the page's from the first paint. The app's fonts — an `@font-face` per file
+ * and each family's stand-in (fonts.ts `fontAssetsOf`) — come first.
  */
-export function buildThemeCss(config: Record<string, unknown> | undefined, pages: readonly PageTheme[] = []): string {
-  const faces = fallbackFontFaces(webfontsOf([config, ...pages.map((p) => p.config)]))
+export function buildThemeCss(config: Record<string, unknown> | undefined, pages: readonly PageTheme[] = [], fontCss = ''): string {
+  const faces = fontCss
   const palettes = [paletteCss(config, APP_SCOPE), ...pages.map((p) => paletteCss(p.config, pageScope(p.key)))].join('\n\n')
   return `${faces ? `${faces}\n` : ''}${palettes}
 
@@ -307,135 +307,3 @@ code, pre, kbd {
 `
 }
 
-/** The typography group of a config's light theme, or undefined. */
-function typographyOf(config: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  const theme = config?.['theme']
-  return isRecord(theme) && isRecord(theme['typography']) ? theme['typography'] : undefined
-}
-
-/** The allowed weight nearest `wanted` (a CSS weight as the theme writes it). */
-function nearestWeight(font: AllowedWebfont, wanted: unknown): number {
-  const w = Number.parseInt(String(wanted ?? ''), 10)
-  const target = Number.isFinite(w) ? w : 400
-  return [...font.weights].sort((a, b) => Math.abs(a - target) - Math.abs(b - target) || a - b)[0] ?? 400
-}
-
-/** Weights the pack's blocks draw body text in besides the body weight (medium, semibold, bold labels). */
-const BODY_EMPHASIS = [500, 600, 700]
-
-/**
- * The webfonts a theme names and may load: the first family of the body,
- * heading and mono stacks, and only when it is on the engine's allow-list. A
- * free-text family never becomes a URL.
- *
- * Only the styles the theme draws are asked for — every webfont style is a
- * download on the first visit, and a theme asking for all of them (italics
- * included) cost one app fourteen. A heading family gets the heading weight;
- * a body family its body weight and the emphasis weights blocks use; a mono
- * family regular. No italics: a browser slants the upright face itself.
- */
-export function themeWebfonts(config: Record<string, unknown> | undefined): AllowedWebfont[] {
-  const typography = typographyOf(config)
-  const out: { font: AllowedWebfont; weights: Set<number> }[] = []
-  const roles: readonly [string, (font: AllowedWebfont) => number[]][] = [
-    ['fontFamily', (font) => [nearestWeight(font, typography?.['bodyWeight'] ?? '400'), ...BODY_EMPHASIS.filter((w) => font.weights.includes(w))]],
-    ['headingFontFamily', (font) => [nearestWeight(font, typography?.['headingWeight'] ?? '700')]],
-    ['monoFontFamily', (font) => [nearestWeight(font, '400')]],
-  ]
-  for (const [key, weights] of roles) {
-    const stack = typography?.[key]
-    const first = parseFontStack(typeof stack === 'string' ? stack : undefined)[0]
-    const font = first === undefined ? undefined : findAllowedWebfont(first)
-    if (!font) continue
-    let entry = out.find((e) => e.font.family === font.family)
-    if (!entry) out.push((entry = { font, weights: new Set() }))
-    for (const w of weights(font)) entry.weights.add(w)
-  }
-  return out.map(({ font, weights }) => ({ ...font, italic: false, weights: [...weights].sort((a, b) => a - b) }))
-}
-
-/**
- * The webfonts of several configurations (the app's and its pages' own), one
- * entry per family with the weights any of them draws, in the order first
- * named. One stylesheet asks for all of them: a browser downloads a face only
- * when a page draws text in it.
- */
-export function webfontsOf(configs: readonly (Record<string, unknown> | undefined)[]): AllowedWebfont[] {
-  const out: AllowedWebfont[] = []
-  for (const config of configs) {
-    for (const font of themeWebfonts(config)) {
-      const at = out.findIndex((f) => f.family === font.family)
-      if (at < 0) {
-        out.push(font)
-        continue
-      }
-      const prev = out[at] as AllowedWebfont
-      out[at] = { ...prev, weights: [...new Set([...prev.weights, ...font.weights])].sort((a, b) => a - b) }
-    }
-  }
-  return out
-}
-
-/** The name of a webfont's metric-matched stand-in (see {@link fallbackFontFaces}). */
-export function fallbackFamilyName(family: string): string {
-  return `${family} Fallback`
-}
-
-/**
- * The config with each allow-listed webfont's stand-in named right after it
- * in its stack: `Nunito, sans-serif` → `Nunito, "Nunito Fallback", sans-serif`.
- * The page draws the stand-in until the webfont arrives, so the text keeps
- * its place when it does. Every stack in the light and dark themes; anything
- * else is left as it is.
- */
-export function withWebfontFallbacks(config: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  if (!config) return config
-  const fix = (group: unknown): unknown => {
-    if (!isRecord(group) || !isRecord(group['typography'])) return group
-    const typography = { ...group['typography'] }
-    for (const key of ['fontFamily', 'headingFontFamily', 'monoFontFamily']) {
-      const stack = typography[key]
-      if (typeof stack !== 'string') continue
-      const families = parseFontStack(stack)
-      const font = families[0] === undefined ? undefined : findAllowedWebfont(families[0])
-      if (!font) continue
-      const name = fallbackFamilyName(font.family)
-      if (families.includes(name)) continue
-      const quote = (f: string): string => (/^[A-Za-z-]+$/.test(f) ? f : `"${f.replace(/"/g, '')}"`)
-      typography[key] = [families[0] as string, name, ...families.slice(1)].map(quote).join(', ')
-    }
-    return { ...group, typography }
-  }
-  return { ...config, theme: fix(config['theme']), ...(config['darkTheme'] !== undefined ? { darkTheme: fix(config['darkTheme']) } : {}) }
-}
-
-/** `@font-face` rules for the stand-ins of the webfonts the theme loads. */
-export function fallbackFontFaces(fonts: readonly AllowedWebfont[]): string {
-  return fonts
-    .map(
-      (f) => `@font-face {
-  font-family: "${fallbackFamilyName(f.family)}";
-  src: local("${f.fallback.local}");
-  size-adjust: ${f.fallback.sizeAdjust}%;
-  ascent-override: ${f.fallback.ascent}%;
-  descent-override: ${f.fallback.descent}%;
-  line-gap-override: ${f.fallback.lineGap}%;
-}
-`
-    )
-    .join('\n')
-}
-
-/** One stylesheet address for the families, or null when there are none. */
-export function webfontStylesheetHref(fonts: readonly AllowedWebfont[]): string | null {
-  if (fonts.length === 0) return null
-  const families = fonts.map((f) => {
-    const weights = [...new Set(f.weights)].sort((a, b) => a - b)
-    const name = encodeURIComponent(f.family).replace(/%20/g, '+')
-    if (weights.length === 0) return `family=${name}`
-    if (!f.italic) return `family=${name}:wght@${weights.join(';')}`
-    const tuples = [...weights.map((w) => `0,${w}`), ...weights.map((w) => `1,${w}`)]
-    return `family=${name}:ital,wght@${tuples.join(';')}`
-  })
-  return `https://fonts.googleapis.com/css2?${families.join('&')}&display=swap`
-}

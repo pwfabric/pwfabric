@@ -18,7 +18,6 @@ import {
   shimGlobal,
   shimsFor,
 } from '../../dev/shell.js'
-import { themeWebfonts, webfontStylesheetHref } from '../../dev/theme.js'
 
 /** `export const { a, b } = m` → ['a', 'b'] */
 function exportsOf(source: string): string[] {
@@ -108,7 +107,7 @@ describe('shims', () => {
 
 describe('shell', () => {
   it('declares the import map, starts what the first page needs at once, and boots; nothing holds the first paint', () => {
-    const html = buildShellHtml({ title: 'A <b>', description: 'A "café".', bodyExtra: '<!--dev-->', webfontHref: webfontStylesheetHref(themeWebfonts({ theme: { typography: { fontFamily: 'Inter' } } })) })
+    const html = buildShellHtml({ title: 'A <b>', description: 'A "café".', bodyExtra: '<!--dev-->', fontPreload: 'assets/fonts/inter.1a2b3c4d.woff2' })
     const map = html.indexOf('type="importmap"')
     const runner = html.indexOf('<link rel="modulepreload" href="./assets/runner.js" />')
     const renderer = html.indexOf('<script async src="./assets/embed.js"></script>')
@@ -126,15 +125,15 @@ describe('shell', () => {
     for (const f of BOOT_FILES) expect(html).toContain(`<link rel="preload" as="fetch" href="./${f}" crossorigin />`)
     expect(html).toContain('<title>A &lt;b&gt;</title>')
     expect(html).toContain('<meta name="description" content="A &quot;café&quot;." />')
-    // The webfont stylesheet is preloaded, not linked: it must not hold the first paint.
-    expect(html).toMatch(/<link rel="preload" as="style" href="https:\/\/fonts\.googleapis\.com[^"]*" \/>/)
-    expect(html).not.toMatch(/<link rel="stylesheet" href="https:\/\/fonts/)
+    // The body text's own font file is preloaded; no font service is named.
+    expect(html).toContain('<link rel="preload" as="font" type="font/woff2" href="./assets/fonts/inter.1a2b3c4d.woff2" crossorigin />')
+    expect(html).not.toMatch(/fonts\.googleapis|fonts\.gstatic|preconnect/)
     expect(html).toContain('<!--dev-->')
     // No locale stated: no language guessed.
     expect(html).toContain('<html>')
     expect(html).not.toContain('Content-Security-Policy')
     const plain = buildShellHtml({ title: 'x', lang: 'tr-TR', csp: "default-src 'none'", preloadRenderer: false, bootFiles: ['pwpack/project.json'] })
-    expect(plain).not.toContain('fonts.googleapis.com')
+    expect(plain).not.toContain('as="font"')
     expect(plain).not.toContain('name="description"')
     expect(plain).toContain('<html lang="tr-TR">')
     // A gated app's visitor may never need the renderer: not named.
@@ -151,13 +150,12 @@ describe('shell', () => {
     expect(hashedName('assets/embed.js', 'abc')).toBe(hashedName('assets/embed.js', 'abc'))
     expect(hashedName('assets/embed.js', 'abd')).not.toBe(hashedName('assets/embed.js', 'abc'))
     const assets = { embed: 'assets/embed.1.js', runner: 'assets/runner.2.js', boot: 'assets/boot.3.js', theme: 'assets/theme.4.css' }
-    const boot = bootScript({ assets, webfontHref: 'https://fonts.googleapis.com/css2?family=Inter&display=swap' })
+    const boot = bootScript({ assets })
     expect(boot).toContain('import { runApp } from "./runner.2.js"')
     expect(boot).toContain('renderer: "./assets/embed.1.js"')
     expect(boot).not.toContain('locale')
-    // The boot module links the webfonts, so they never block the first paint.
-    expect(boot).toContain("fonts.rel = 'stylesheet'")
-    expect(bootScript()).not.toContain('stylesheet')
+    // The boot module links no stylesheet: there is no font service.
+    expect(boot).not.toContain('stylesheet')
   })
   it('escapes and normalises', () => {
     expect(escapeHtml('<a href="x">&</a>')).toBe('&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;')

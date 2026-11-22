@@ -72,7 +72,8 @@ export function collectMedia(folder: PackFolder, diagnostics: AssembleDiagnostic
   const records: { key: string; url: string }[] = []
   const slots = new Map<string, MediaSlot[]>()
 
-  const mediaPaths = [...folder.files.keys()].filter((p) => p !== MEDIA_PROVENANCE_FILE && isSafeMediaPath(p)).sort()
+  // A font file is served hashed under assets/fonts/ (fonts.ts), not again here.
+  const mediaPaths = [...folder.files.keys()].filter((p) => p !== MEDIA_PROVENANCE_FILE && isSafeMediaPath(p) && !/^media\/fonts\/[^/]+\.woff2$/i.test(p)).sort()
   for (const path of mediaPaths) files.set(path, folder.files.get(path) as Uint8Array)
 
   for (const { key, path, declaration, filePath } of mediaDeclarations(folder).declarations) {

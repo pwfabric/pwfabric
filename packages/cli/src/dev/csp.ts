@@ -15,7 +15,7 @@
  *                third-party scripts (`plan.json` `scripts`) and the scripts a
  *                placed block declares (`definition.origins.script`) add their
  *                exact origins — never a wildcard.
- *   style-src    'self' 'unsafe-inline' [+ the webfont stylesheet origin]
+ *   style-src    'self' 'unsafe-inline'
  *                The renderer draws `<style>` elements at run time (the
  *                surface base, visibility, state, responsive and dark-theme
  *                rules, computed per page), and blocks set `style`
@@ -26,7 +26,7 @@
  *                'self' when a page frames a document of the app's OWN media
  *                (a block prop holding `pwpack/media/<file>.pdf|.txt`),
  *                so a receipt or a report can be shown in place
- *   font-src     'self' [+ the webfont file origin]
+ *   font-src     'self' — fonts are the app's own files (appearance §3.3)
  *   connect-src  'self' [+ every origin the app's data and sign-in reach]
  *   base-uri     'self'  — a host that serves the app under a sub-path
  *                injects `<base href>` (pwapp-format §2); 'none' would make
@@ -94,8 +94,6 @@ export interface CspInputs {
   readonly authDefinition?: unknown
   /** `publish.json` `media[]`. */
   readonly media: readonly { readonly url: string }[]
-  /** The webfont stylesheet the shell links, when any. */
-  readonly webfontHref?: string | null
   /** The block types the pages place, with their manifest's validated `definition.origins`. */
   readonly blocks?: readonly { readonly atomId: string; readonly origins?: BlockOrigins }[]
   /**
@@ -238,7 +236,6 @@ export function deriveCsp(input: CspInputs): AppCsp {
   const connect = new Set<string>()
   const media = new Set<string>()
   const style = new Set<string>()
-  const font = new Set<string>()
   const img = new Set<string>()
   const mediaOnly = new Set<string>()
   const frame = new Set<string>()
@@ -312,19 +309,13 @@ export function deriveCsp(input: CspInputs): AppCsp {
     if (o) media.add(o)
   }
 
-  // Webfonts: the stylesheet and the files it points at.
-  if (input.webfontHref) {
-    const o = originOf(input.webfontHref)
-    if (o) style.add(o)
-    if (o === 'https://fonts.googleapis.com') font.add('https://fonts.gstatic.com')
-  }
-
   // Placed blocks: what their own code reaches, by the directive it names.
-  const byDirective = { connect, frame, img, media: mediaOnly, font, style, script }
+  // There is no font directive: a font is never another origin's.
+  const byDirective: Record<string, Set<string>> = { connect, frame, img, media: mediaOnly, style, script }
   // The app's own scripts, the same way: where each loads from, and what it reaches.
   for (const declared of [...(input.blocks ?? []), ...(input.scripts ?? [])]) {
     for (const [directive, origins] of Object.entries(declared.origins ?? {})) {
-      for (const o of origins ?? []) byDirective[directive as keyof typeof byDirective].add(o)
+      for (const o of origins ?? []) byDirective[directive]?.add(o)
     }
   }
 
@@ -343,7 +334,7 @@ export function deriveCsp(input: CspInputs): AppCsp {
     'img-src': ["'self'", 'data:', 'blob:', ...sorted(media, img)],
     'media-src': ["'self'", 'data:', 'blob:', ...sorted(media, mediaOnly)],
     ...(frames.length > 0 ? { 'frame-src': frames } : {}),
-    'font-src': ["'self'", ...sorted(font)],
+    'font-src': ["'self'"],
     'connect-src': ["'self'", ...sorted(connect)],
     'base-uri': ["'self'"],
     'object-src': ["'none'"],
