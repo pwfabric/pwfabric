@@ -120,7 +120,7 @@ if (go) {
   location.hash = go
   const shown = () => (document.body.textContent ?? '').includes(until ?? '')
   while (Date.now() < deadline && !shown()) await new Promise((r) => setTimeout(r, 100))
-  navigation = { shown: shown(), kept: before !== null && document.querySelector('[data-k="stack"]') === before, title: document.title }
+  navigation = { shown: shown(), kept: before !== null && document.querySelector('[data-k="stack"]') === before, title: document.title, lang: document.documentElement.lang }
 }
 process.stdout.write(
   JSON.stringify({

@@ -286,6 +286,7 @@ describe('blockPropsCatalog + checkBlockProps', () => {
       'app/surfaces/about.receipt.json': '﻿' + JSON.stringify(receipt([{ type: 'text', props: { tone: 1 } }])),
       'app/surfaces/broken.receipt.json': '{',
       'app/surfaces/nested/x.receipt.json': JSON.stringify(receipt([{ type: 'button', props: { size: 'sm' } }])),
+      'app/layout.receipt.json': JSON.stringify(receipt([{ type: 'text', props: { shade: 1 } }, { type: 'pw:page' }])),
     })
     const foundation = packFromRecord({
       'atoms/blocks/control/button/component.tsx': 'x',
@@ -317,6 +318,8 @@ describe('blockPropsCatalog + checkBlockProps', () => {
     expect(catalog.has('plain')).toBe(false)
     const issues = checkBlockProps(app, catalog)
     expect(issues.map((i) => [i.path, i.code])).toEqual([
+      // The layout's blocks are judged like a page's (receipt §4).
+      ['app/layout.receipt.json', 'BLOCK_PROP_UNKNOWN'],
       ['app/surfaces/about.receipt.json', 'BLOCK_PROP_UNKNOWN'],
       ['app/surfaces/home.receipt.json', 'BLOCK_PROP_TYPE'],
       ['app/surfaces/home.receipt.json', 'BLOCK_PROP_ENUM'],

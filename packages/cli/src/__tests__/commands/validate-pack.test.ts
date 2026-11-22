@@ -85,6 +85,13 @@ describe('pwf validate', () => {
     expect(v.err.find((l) => l.includes('UNKNOWN_BLOCK_TYPE'))).toContain('app/layout.receipt.json')
     expect(v.err.find((l) => l.includes('BLOCK_ID_DUPLICATE'))).toContain(`block id "${first}" is used twice on this page`)
 
+    // A page's own members on the layout are refused; its blocks' props are judged like a page's.
+    await writeFile(layoutPath, JSON.stringify({ title: 'Site', blocks: [{ id: 'chrome', type: 'text', props: { content: 'x', shade: 1 } }, { type: 'pw:page' }] }))
+    const m = capture(root)
+    expect(await main(['validate'], m.io)).toBe(1)
+    expect(m.err.join(' ')).toContain('APP_LAYOUT_INVALID')
+    expect([...m.out, ...m.err].join(' ')).toMatch(/BLOCK_PROP_UNKNOWN app\/layout\.receipt\.json/)
+
     await writeFile(layoutPath, JSON.stringify({ blocks: [{ id: 'chrome', type: 'text', props: { content: 'x' } }] }))
     const s = capture(root)
     expect(await main(['validate'], s.io)).toBe(1)

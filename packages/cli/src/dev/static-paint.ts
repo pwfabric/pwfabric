@@ -76,6 +76,8 @@ export interface StaticPage {
   readonly key: string
   /** The receipt as the build serves it (media filled, record fields declared). */
   readonly receipt: Record<string, unknown>
+  /** More render options, as the runner hands them for this page (an app's locales and the page in each). */
+  readonly extra?: Readonly<Record<string, unknown>>
 }
 
 export interface StaticPaintInput {
@@ -238,6 +240,7 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
         viewport,
         locale: firstFrameLocale(runnerProject),
         address,
+        ...(page.extra ?? {}),
       })
     try {
       const result = render(new URLSearchParams())
@@ -306,8 +309,8 @@ export function staticRootHtml(page: PaintedPage): string {
 }
 
 /** The served file holding a page's first frame, for a document that holds another page's. */
-export function staticPageFile(key: string): string {
-  return `pwpack/surfaces/${key}.html`
+export function staticPageFile(key: string, locale?: string): string {
+  return locale === undefined ? `pwpack/surfaces/${key}.html` : `pwpack/surfaces/${key}.${locale}.html`
 }
 
 /** That file's content: the frame's stylesheet (`#pw-static-layout`), then its `#pw-root`. */
@@ -329,14 +332,17 @@ export function firstPaintData(input: {
   readonly routes: readonly string[]
   readonly notFound?: string
   readonly pages: readonly PaintedPage[]
+  /** An app with locales: the locale the frames are drawn in, and every address to the page it names in it (envelope §2.3). */
+  readonly locale?: { readonly lang: string; readonly addresses: Readonly<Record<string, string>> }
 }): Record<string, unknown> {
   const pages: Record<string, { keys: readonly string[]; file: string }> = {}
-  for (const p of input.pages) pages[p.key] = { keys: p.addressKeys, file: staticPageFile(p.key) }
+  for (const p of input.pages) pages[p.key] = { keys: p.addressKeys, file: staticPageFile(p.key, input.locale?.lang) }
   return {
     ...(input.router ? { router: input.router } : {}),
     entry: input.entry,
     routes: input.routes,
     ...(input.notFound ? { notFound: input.notFound } : {}),
+    ...(input.locale ? { addresses: input.locale.addresses } : {}),
     pages,
   }
 }

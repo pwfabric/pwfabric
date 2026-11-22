@@ -23,7 +23,7 @@ import {
   type PageReceipt,
 } from '@pwfabric/pack'
 import { assemblePage, isTitleTemplate, pluralProblems, PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
-import { layoutSlotProblems, PAGE_SLOT_TYPE } from '@pwfabric/contracts'
+import { layoutSlotProblems, localesOf, PAGE_SLOT_TYPE } from '@pwfabric/contracts'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { engineVersion, pinsOf } from './identity.js'
 import { engineRangeDiagnostics, isRecord, jsonOf, loadSources, type LoadedSources } from '../../dev/sources.js'
@@ -358,12 +358,24 @@ export function checkMessages(root: string): PackIssue[] {
   if (!isObj(pwpack) || !isObj(pwpack['app'])) return []
   // An app with no plan sets no words: every id it can reach is missing.
   const plan = readJsonFile(join(root, 'app', 'plan.json'))
-  const messages = isObj(plan) && isObj(plan['messages']) ? plan['messages'] : {}
+  // An app with locales keeps its words per locale (envelope §2.3): the
+  // default locale's catalogue is the one every id must be in.
+  const locales = localesOf(plan)
+  const catalogueOf = (lang: string): Record<string, unknown> => {
+    const doc = readJsonFile(join(root, 'app', 'messages', `${lang}.json`))
+    return isObj(doc) ? doc : {}
+  }
+  const messages = locales ? catalogueOf(locales.defaultLocale) : isObj(plan) && isObj(plan['messages']) ? plan['messages'] : {}
+  const wordFiles: [string, Record<string, unknown>][] = locales
+    ? locales.locales.map((l) => [`app/messages/${l}.json`, catalogueOf(l)])
+    : [['app/plan.json', messages]]
   // A plural the runner cannot pick is written as its text (envelope §2.1): the build's code and words.
   const plurals: PackIssue[] = []
-  for (const [id, text] of Object.entries(messages)) {
-    if (typeof text !== 'string') continue
-    for (const problem of pluralProblems(text)) plurals.push({ severity: 'error', code: 'MESSAGES_INVALID', path: 'app/plan.json', message: `messages["${id}"]: ${problem}` })
+  for (const [path, words] of wordFiles) {
+    for (const [id, text] of Object.entries(words)) {
+      if (typeof text !== 'string') continue
+      for (const problem of pluralProblems(text)) plurals.push({ severity: 'error', code: 'MESSAGES_INVALID', path, message: `messages["${id}"]: ${problem}` })
+    }
   }
   const missing = reachableMessageIds(root).filter((id) => !(typeof messages[id] === 'string' && messages[id] !== ''))
   if (missing.length === 0) return plurals
@@ -372,7 +384,7 @@ export function checkMessages(root: string): PackIssue[] {
     {
       severity: 'error',
       code: 'MESSAGES_MISSING',
-      path: 'app/plan.json',
+      path: locales ? `app/messages/${locales.defaultLocale}.json` : 'app/plan.json',
       message:
         `the app can show ${missing.length} runner message${missing.length === 1 ? '' : 's'} it does not set in messages, ` +
         `and the engine writes no words of its own, so the visitor reads nothing there: ${missing.join(', ')}`,
@@ -455,6 +467,12 @@ export function checkPages(loaded: LoadedSources): PackIssue[] {
     const receipt = jsonOf(app.folder, path)
     // A missing or unreadable receipt is the pack validation's finding.
     if (isRecord(receipt) && Array.isArray(receipt['blocks'])) pages.push({ key, path, receipt })
+    // ...and its receipt for each locale that has one (envelope §2.3), judged the same way.
+    for (const lang of localesOf(jsonOf(app.folder, 'app/plan.json'))?.locales ?? []) {
+      const own = `app/surfaces/${key}.${lang}.receipt.json`
+      const doc = jsonOf(app.folder, own)
+      if (isRecord(doc) && Array.isArray(doc['blocks'])) pages.push({ key, path: own, receipt: doc })
+    }
   }
   // The layout (receipt §4), when it is one: each page is judged as drawn in it.
   const layoutPath = 'app/layout.receipt.json'

@@ -80,7 +80,8 @@ export interface BlockSource {
   readonly label?: string
 }
 
-const RECEIPT = /^app\/surfaces\/[^/]+\.receipt\.json$/
+/** A page's receipt, a page's receipt for one locale, and the app's layout (receipt §4): the props of each are checked. */
+const RECEIPT = /^app\/(?:surfaces\/[^/]+|layout)\.receipt\.json$/
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)

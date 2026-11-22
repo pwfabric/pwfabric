@@ -226,6 +226,17 @@ export interface ShellOptions {
   readonly description?: string
   /** `<link rel="canonical">` and `og:url`: the page's address on the app's public origin, when the app declares one. */
   readonly canonical?: string
+  /**
+   * In an app with locales (pwapp-format §2.4): one `<link rel="alternate"
+   * hreflang>` per locale and `x-default`, each the page's address on the
+   * app's public origin.
+   */
+  readonly alternates?: readonly { readonly hreflang: string; readonly href: string }[]
+  /**
+   * An app with locales: the inline scripts read a page off the address
+   * table (`addresses` in their data, envelope §2.3) rather than off its key.
+   */
+  readonly localized?: boolean
   /** `og:image`: the app's preview picture, as an absolute address. */
   readonly image?: string
   /** The document answers an address that names no page (`404.html`): it asks search engines not to index it. */
@@ -329,6 +340,18 @@ const ADDRESS_KEY = String.raw`var own = function (o, k) { return Object.prototy
     if (d.routes.indexOf(key) < 0 && d.notFound) key = d.notFound`
 
 /**
+ * {@link ADDRESS_KEY} for an app with locales (envelope §3): the address
+ * below the base (or the route) is read against the document's own
+ * `addresses` (`{ <address>: <key> }`, every locale's addresses, a locale the
+ * document is not drawn in naming no page), the not-found page for any other.
+ */
+const ADDRESS_KEY_LOCALES = ADDRESS_KEY.replace(
+  String.raw`    if (key === '') key = d.entry
+    if (d.routes.indexOf(key) < 0 && d.notFound) key = d.notFound`,
+  String.raw`    key = own(d.addresses || {}, key) ? d.addresses[key] : d.notFound || ''`
+)
+
+/**
  * The shell's inline script in `<head>`: asks for what the OPENED page needs
  * — its receipt, its block modules, its first image, its first frame — and nothing of any
  * other page's (pwapp-format §2.1). It reads `<script type="application/json"
@@ -339,10 +362,16 @@ const ADDRESS_KEY = String.raw`var own = function (o, k) { return Object.prototy
  * A hint is only a head start: nothing here can stop the app from starting.
  * Constant text, so the Content Security Policy allows it by one hash.
  */
-export const PAGE_HINTS_SCRIPT = String.raw`(function () {
+export const PAGE_HINTS_SCRIPT = pageHintsScript(ADDRESS_KEY)
+
+/** {@link PAGE_HINTS_SCRIPT} of an app with locales. */
+export const PAGE_HINTS_SCRIPT_LOCALES = pageHintsScript(ADDRESS_KEY_LOCALES)
+
+function pageHintsScript(addressKey: string): string {
+  return String.raw`(function () {
   try {
     var d = JSON.parse(document.getElementById('pw-page-hints').textContent || '{}')
-    ${ADDRESS_KEY}
+    ${addressKey}
     var page = own(d.pages, key) ? d.pages[key] : null
     if (!page) return
     document.documentElement.setAttribute('data-pw-page', key)
@@ -369,6 +398,7 @@ export const PAGE_HINTS_SCRIPT = String.raw`(function () {
     if (painted) add(page.frame, 'fetch')
   } catch (e) {}
 })()`
+}
 
 /**
  * The shell's inline script after `#root`, run where it stands — before the
@@ -384,13 +414,19 @@ export const PAGE_HINTS_SCRIPT = String.raw`(function () {
  * drawn into the root by then.
  * Constant text, so the Content Security Policy allows it by one hash.
  */
-export const FIRST_PAINT_SCRIPT = String.raw`(function () {
+export const FIRST_PAINT_SCRIPT = firstPaintScript(ADDRESS_KEY)
+
+/** {@link FIRST_PAINT_SCRIPT} of an app with locales. */
+export const FIRST_PAINT_SCRIPT_LOCALES = firstPaintScript(ADDRESS_KEY_LOCALES)
+
+function firstPaintScript(addressKey: string): string {
+  return String.raw`(function () {
   var root = document.getElementById('root')
   var data = document.getElementById('pw-first-paint')
   if (!root || !data) return
   try {
     var d = JSON.parse(data.textContent || '{}')
-    ${ADDRESS_KEY}
+    ${addressKey}
     var page = own(d.pages, key) ? d.pages[key] : null
     if (page && m && m[2]) {
       var query = new URLSearchParams(m[2])
@@ -414,6 +450,7 @@ export const FIRST_PAINT_SCRIPT = String.raw`(function () {
     }).catch(function () {})
   } catch (e) {}
 })()`
+}
 
 /**
  * What a page needs before it can draw, so the shell (or boot.js) can ask for
@@ -582,6 +619,7 @@ export function buildShellHtml(options: ShellOptions): string {
   const meta = [
     options.noindex ? '<meta name="robots" content="noindex" />' : '',
     options.canonical ? `<link rel="canonical" href="${escapeHtml(options.canonical)}" />` : '',
+    ...(options.alternates ?? []).map((a) => `<link rel="alternate" hreflang="${escapeHtml(a.hreflang)}" href="${escapeHtml(a.href)}" />`),
     '<meta property="og:type" content="website" />',
     options.title ? `<meta property="og:title" content="${escapeHtml(options.title)}" />` : '',
     options.description?.trim() ? `<meta property="og:description" content="${escapeHtml(options.description.trim())}" />` : '',
@@ -624,7 +662,7 @@ export function buildShellHtml(options: ShellOptions): string {
   const firstPaint = options.firstPaint
     ? `
     <script type="application/json" id="pw-first-paint">${scriptJson(options.firstPaint.data)}</script>
-    <script>${FIRST_PAINT_SCRIPT}</script>`
+    <script>${options.localized ? FIRST_PAINT_SCRIPT_LOCALES : FIRST_PAINT_SCRIPT}</script>`
     : ''
   // The rules every page's frame shares (static-paint.ts `shareFrameStyles`),
   // before the frame's own layout, whose rules outweigh them.
@@ -639,7 +677,7 @@ export function buildShellHtml(options: ShellOptions): string {
   const hints = options.pageHints && Object.keys(options.pageHints.pages).length > 0
     ? `
     <script type="application/json" id="pw-page-hints">${scriptJson(options.pageHints)}</script>
-    <script>${PAGE_HINTS_SCRIPT}</script>`
+    <script>${options.localized ? PAGE_HINTS_SCRIPT_LOCALES : PAGE_HINTS_SCRIPT}</script>`
     : ''
   return `<!doctype html>
 <html${lang ? ` lang="${escapeHtml(lang)}"` : ''}>
