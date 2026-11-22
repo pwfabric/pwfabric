@@ -318,9 +318,19 @@ export interface ShellOptions {
   readonly firstPaint?: { readonly rootHtml: string; readonly layoutCss: string; readonly data: Record<string, unknown> }
 }
 
-/** A BCP 47 tag as Open Graph writes a locale: `en-GB` → `en_GB`. */
+/**
+ * A BCP 47 tag as Open Graph writes a locale, `language_TERRITORY`: the tag's
+ * own region when it has one (`en-GB` → `en_GB`), else the likeliest
+ * (`tr` → `tr_TR`, `en` → `en_US`, by `Intl.Locale#maximize`).
+ */
 export function ogLocaleOf(tag: string): string {
-  return tag.replace(/-/g, '_')
+  try {
+    const own = new Intl.Locale(tag)
+    const region = own.region ?? own.maximize().region
+    return region ? `${own.language}_${region}` : own.language
+  } catch {
+    return tag.replace(/-/g, '_')
+  }
 }
 
 /**

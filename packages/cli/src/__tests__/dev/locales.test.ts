@@ -191,8 +191,8 @@ describe('the tags a link preview reads', () => {
     const d = doc(text(r.files.get('de/preise/index.html')))
     const meta = (p: string): string[] => [...d.querySelectorAll(`meta[property="${p}"], meta[name="${p}"]`)].map((m) => m.getAttribute('content') ?? '')
     expect(meta('og:site_name')).toEqual(['K Demo'])
-    expect(meta('og:locale')).toEqual(['de'])
-    expect(meta('og:locale:alternate')).toEqual(['en'])
+    expect(meta('og:locale')).toEqual(['de_DE'])
+    expect(meta('og:locale:alternate')).toEqual(['en_US'])
     expect(meta('twitter:card')).toEqual(['summary_large_image'])
     expect(d.querySelector('link[rel="icon"]')?.getAttribute('type')).toBe('image/svg+xml')
   })
@@ -238,5 +238,16 @@ describe("each page's words", () => {
     await put(root, 'app/surfaces/pricing.receipt.json', page('Pricing', { path: { de: 'preise' }, blocks: [{ id: 'x', type: 'title', props: { text: '{{t(state.word)}}' } }] }))
     const r = await assemblePwapp(root, { cacheDir: null, router: 'path' })
     expect((parse(r.files.get('pwpack/project.json')) as { pageMessagesDynamic?: string[] }).pageMessagesDynamic).toEqual(['pricing'])
+  })
+})
+
+describe('og:locale (language_TERRITORY)', () => {
+  it("uses the tag's own region, else its likeliest", async () => {
+    const { ogLocaleOf } = await import('../../dev/shell.js')
+    expect(ogLocaleOf('tr')).toBe('tr_TR')
+    expect(ogLocaleOf('en')).toBe('en_US')
+    expect(ogLocaleOf('en-GB')).toBe('en_GB')
+    expect(ogLocaleOf('pt-BR')).toBe('pt_BR')
+    expect(ogLocaleOf('zh-Hant')).toBe('zh_TW')
   })
 })
