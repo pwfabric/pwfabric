@@ -11,14 +11,15 @@
  * Playwright when it is installed. Without a flag: links and weight.
  */
 import { gzipSync } from 'node:zlib'
-import { resolve } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import type { Command, CommandIO, ParsedArgs } from './types.js'
 import { boolFlag, guard, stringFlag, UsageError } from './lib/flags.js'
 import { resolveFrom } from './lib/project.js'
 import { documentAddress, pageDocuments, readBuiltOutput, resolveServed, type BuiltOutput } from './lib/built-output.js'
 import { checkPage, loadPlaywright, PLAYWRIGHT_MISSING, recordPageInfo, type PlaywrightLoader } from './lib/hydration.js'
 import { startStaticServer } from './lib/static-server.js'
-import { appFolderOf, openRunSource, readOnlyHostFor } from './run.js'
+import { appFolderOf, isAppFolder, openRunSource, readOnlyHostFor } from './run.js'
 import { HOST_PREFIX } from '../dev/server.js'
 
 /** The default weight budget of one page: its document and what it references, gzipped. */
@@ -186,14 +187,46 @@ export interface CheckDeps {
   readonly loadPlaywright?: PlaywrightLoader
 }
 
-async function runHydration(io: CommandIO, target: string, out: BuiltOutput, widths: number[], loader: PlaywrightLoader): Promise<{ ok: boolean; lines: string[]; missing?: boolean }> {
+/**
+ * The app folder a build was made from, so its records and sign-in can be
+ * served: `--app` when given; the build's own folder (`<app>/.pwf/out`); else
+ * the folder pwf runs in or the one around the build, when its pwpack.json id
+ * is the build's (`pwpack/project.json` id). Null when none is.
+ */
+export async function appForBuild(target: string, out: BuiltOutput, cwd: string, explicit?: string): Promise<{ app: string | null }> {
+  if (explicit !== undefined) {
+    const app = resolveFrom(cwd, explicit)
+    if (!(await isAppFolder(app))) throw new UsageError(`--app ${explicit} is not an app folder (no pwpack.json with an "app")`)
+    return { app }
+  }
+  const own = await appFolderOf(target)
+  if (own) return { app: own }
+  if (out.id === undefined) return { app: null }
+  for (const dir of [cwd, dirname(target)]) {
+    if (!(await isAppFolder(dir))) continue
+    try {
+      const identity = JSON.parse(await readFile(join(dir, 'pwpack.json'), 'utf8')) as { id?: unknown }
+      if (identity.id === out.id) return { app: dir }
+    } catch {
+      // not readable: not this build's
+    }
+  }
+  return { app: null }
+}
+
+/** What --hydration says when the build's app folder is not known. */
+const NO_APP_NOTE =
+  'records: the app folder of this build is not known (built with --out into another folder?), so a page that reads records or signs in is served none: pass --app <dir>'
+
+async function runHydration(io: CommandIO, target: string, out: BuiltOutput, widths: number[], loader: PlaywrightLoader, appFlag?: string): Promise<{ ok: boolean; lines: string[]; missing?: boolean }> {
   const chromium = await loader(io.cwd)
   if (!chromium) return { ok: false, lines: [PLAYWRIGHT_MISSING], missing: true }
   const html = new TextDecoder().decode(out.files.get('index.html'))
   const data = /<script type="application\/json" id="pw-first-paint">(.*?)<\/script>/s.exec(html)?.[1]
   if (!data) return { ok: true, lines: ['hydration: no static first paint (an app that requires sign-in): nothing to check'] }
   const first = JSON.parse(data) as { pages: Record<string, unknown>; entry?: string; notFound?: string }
-  const app = await appFolderOf(target)
+  const { app } = await appForBuild(target, out, io.cwd, appFlag)
+  if (!app) io.err(NO_APP_NOTE)
   const host = app ? await readOnlyHostFor(app) : undefined
   const server = await startStaticServer({ source: await openRunSource(target), port: 0, hostname: '127.0.0.1', hostPrefix: HOST_PREFIX, ...(host ? { host } : {}) })
   const lines: string[] = []
@@ -204,7 +237,7 @@ async function runHydration(io: CommandIO, target: string, out: BuiltOutput, wid
     const addressOf = (key: string): string =>
       out.router === 'path' ? (key === first.notFound ? '/pw-check-no-such-page' : key === first.entry ? '/' : `/${key}/`) : `/#/${key}`
     for (const key of Object.keys(first.pages)) {
-      const info = recordPageInfo(out.label, key, app)
+      const info = { ...recordPageInfo(out.label, key, app), ...(first.notFound ? { notFoundKey: first.notFound } : {}) }
       for (const width of widths) {
         const { problems, skipped } = await checkPage(browser, origin, key, info, width, addressOf(key))
         if (problems.length > 0) ok = false
@@ -248,7 +281,7 @@ export async function runCheck(args: ParsedArgs, io: CommandIO, deps: CheckDeps 
   let hydrationLines: string[] = []
   let playwrightMissing = false
   if (hydration) {
-    const h = await runHydration(io, resolve(target), out, widths, deps.loadPlaywright ?? loadPlaywright)
+    const h = await runHydration(io, resolve(target), out, widths, deps.loadPlaywright ?? loadPlaywright, stringFlag(args, 'app'))
     hydrationLines = h.lines
     playwrightMissing = h.missing === true
     report['hydration'] = { ok: h.ok, lines: h.lines }
@@ -284,7 +317,7 @@ export async function runCheck(args: ParsedArgs, io: CommandIO, deps: CheckDeps 
 export const check: Command = {
   name: 'check',
   summary: 'Check a built pwapp: broken internal links, page weight, hydration of the first paint',
-  usage: `pwf check [out] [--links] [--weight] [--hydration] [--budget <KB>] [--widths <px,…>] [--origin <url>] [--json]
+  usage: `pwf check [out] [--links] [--weight] [--hydration] [--budget <KB>] [--app <dir>] [--widths <px,…>] [--origin <url>] [--json]
 
   out            the built pwapp: a folder with index.html, an app folder (its
                  .pwf/out) or a .pwapp (default: the current folder)
@@ -300,7 +333,11 @@ export const check: Command = {
   --hydration    open every painted page in Chromium and check that hydration
                  adopts the first frame (the engine's hydration check). Needs
                  Playwright beside the app or pwf (an optional peer); without
-                 it pwf says how to install it and exits 1
+                 it pwf says how to install it and exits 1. A page that
+                 draws the not-found page where it was expected fails
+  --app <dir>    the app folder the build was made from, for --hydration to
+                 serve its records and sign-in (found by itself for .pwf/out,
+                 and for the folder pwf runs in when its id is the build's)
   --widths <px>  window widths for --hydration (default 390)
   --origin <url> the app's public origin: absolute links on it count as internal
   --json         the result as data

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { main } from '../../index.js'
-import { runCheck, documentLinks } from '../../commands/check.js'
+import { appForBuild, runCheck, documentLinks } from '../../commands/check.js'
+import { readBuiltOutput } from '../../commands/lib/built-output.js'
 import { parseArgs } from '../../args.js'
 import { recordPageInfo } from '../../commands/lib/hydration.js'
 import { capture, FIXTURE_FOUNDATION, tempDir } from './helpers.js'
@@ -115,6 +116,27 @@ describe('pwf check', () => {
     expect(await main(['check', out, '--links'], c.io), c.text()).toBe(1)
     expect(c.err.join('\n')).toMatch(/#\/de\/nope/)
     expect(c.err.join('\n')).not.toMatch(/#\/(?:de\/)?home\b/)
+  })
+
+  it('finds the app of a build written elsewhere by its id, takes --app, and says when it cannot', async () => {
+    const { cwd, root } = await app()
+    const out = join(cwd, 'elsewhere', 'site')
+    await build(root, out)
+    const built = await readBuiltOutput(out)
+    expect(await appForBuild(out, built, cwd)).toEqual({ app: null })
+    expect(await appForBuild(out, built, root)).toEqual({ app: root })
+    expect(await appForBuild(out, built, cwd, 'demo')).toEqual({ app: root })
+    await expect(appForBuild(out, built, cwd, 'elsewhere')).rejects.toThrow(/--app elsewhere is not an app folder/)
+    // Another app (another id) in the folder pwf runs in is not this build's.
+    const other = join(cwd, 'other')
+    await mkdir(other, { recursive: true })
+    await writeFile(join(other, 'pwpack.json'), JSON.stringify({ id: '@pwpack/someone/else', app: {} }))
+    expect(await appForBuild(out, built, other)).toEqual({ app: null })
+
+    const c = capture(cwd)
+    const fakeChromium = { launch: async () => ({ newPage: async () => { throw new Error('no page expected') }, close: async () => {} }) }
+    await runCheck(parseArgs(['check', out, '--hydration']).args, c.io, { loadPlaywright: async () => fakeChromium as never }).catch(() => 1)
+    expect(c.text()).toMatch(/records: the app folder of this build is not known .*pass --app <dir>/)
   })
 
   it('--hydration says how to install Playwright when it is not there', async () => {

@@ -75,6 +75,8 @@ interface PageInfo {
   readonly isRecord: boolean
   readonly hasFallbackId?: boolean
   readonly sessionBlocks?: Set<string>
+  /** The app's not-found page: drawn where another page was expected, the check fails. */
+  readonly notFoundKey?: string
 }
 
 type Json = Record<string, unknown>
@@ -149,6 +151,8 @@ export function recordPageInfo(out: string, key: string, app: string | null): Pa
 }
 
 interface Seen {
+  /** The page the document shows (`<html data-pw-page>`). */
+  shown?: string | null
   layoutLeft: boolean
   painted: number
   kept: boolean
@@ -168,7 +172,10 @@ export async function checkPage(browser: Browser, origin: string, key: string, i
   page.on('pageerror', ((e: Error) => problems.push(`page error: ${e.message.slice(0, 200)}`)) as (x: never) => void)
   let notFound = false
   page.on('request', ((r: { url(): string }) => {
-    if (/\/surfaces\/[^/]+\.receipt\.json/.test(r.url()) && !r.url().includes(`/surfaces/${key}.receipt.json`)) notFound = true
+    const url = r.url()
+    if (info.notFoundKey !== undefined) {
+      if (key !== info.notFoundKey && url.includes(`/surfaces/${info.notFoundKey}.receipt.json`)) notFound = true
+    } else if (/\/surfaces\/[^/]+\.receipt\.json/.test(url) && !url.includes(`/surfaces/${key}.receipt.json`)) notFound = true
   }) as (x: never) => void)
   let requested = false
   let answered = false
@@ -199,6 +206,7 @@ export async function checkPage(browser: Browser, origin: string, key: string, i
     }
     const adopted = (e) => Object.keys(e).some((k) => k.startsWith('__reactFiber'))
     return {
+      shown: document.documentElement.getAttribute('data-pw-page'),
       layoutLeft: Boolean(document.getElementById('pw-static-layout')),
       painted: painted.length,
       kept: root?.isConnected === true,
@@ -208,6 +216,7 @@ export async function checkPage(browser: Browser, origin: string, key: string, i
     }
   })()`)
   await page.close()
+  if (info.notFoundKey !== undefined && key !== info.notFoundKey && seen.shown === info.notFoundKey) notFound = true
   if (seen.painted === 0) return { skipped: 'the runner drew before the frame arrived', problems }
   if (info.isRecord) {
     if (!seen.kept && notFound) {
@@ -220,7 +229,7 @@ export async function checkPage(browser: Browser, origin: string, key: string, i
     else if (!answered) problems.push('record page: the record did not arrive within the check window')
     return { problems }
   }
-  if (!seen.kept && notFound) return { skipped: 'the not-found page replaced it', problems }
+  if (notFound) return { problems: [...problems, `the page drew the not-found page where ${key} was expected`] }
   if (seen.layoutLeft) problems.push('the frame’s stylesheet (#pw-static-layout) is still in the document after the update')
   if (!seen.kept && !notFound) problems.push('the painted root was replaced')
   else if (seen.kept && !seen.hydrated) problems.push('the painted root was not hydrated')
