@@ -359,6 +359,14 @@ describe('validatePack — app', () => {
     const receipts = { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/about.receipt.json': '{"blocks":[]}' }
     const withPlan = (plan: unknown): string[] => codes(withIdentity(identity, { ...receipts, 'app/plan.json': JSON.stringify(plan) }))
 
+    it('need not list the not-found or sign-in screen, and may (they are pages, never addresses)', () => {
+      const id = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'about'], notFound: 'missing', signIn: 'login' } }
+      const files = { ...receipts, 'app/surfaces/missing.receipt.json': '{"blocks":[]}', 'app/surfaces/login.receipt.json': '{"blocks":[]}' }
+      const plan = (surfaces: unknown[]): string[] => codes(withIdentity(id, { ...files, 'app/plan.json': JSON.stringify({ surfaces }) }))
+      expect(plan([{ key: 'home', isEntry: true }, { key: 'about' }])).toEqual([])
+      expect(plan([{ key: 'home', isEntry: true }, { key: 'about' }, { key: 'missing', status: 'applied' }, { key: 'login', status: 'applied' }])).toEqual([])
+    })
+
     it('are optional: absent, they are app.surfaceOrder', () => {
       expect(withPlan({ title: 'x' })).toEqual([])
     })
