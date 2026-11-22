@@ -166,4 +166,29 @@ describe('plan redirects', () => {
     expect(redirectFor(rules, '/blog/2026/hello')).toEqual({ location: 'https://blog.example.com/2026/hello', status: 302 })
     expect(redirectFor(rules, '/other')).toBeUndefined()
   })
+
+  it('never sends a visitor off the site through the splat', () => {
+    const rules = parseRedirectsFile('/go/* /:splat 301\n/docs/* /docs/:splat 302\n/away/* https://blog.example.com/:splat 302\n')
+    // A splat that begins like another host is read as a path of this one.
+    expect(redirectFor(rules, '/go//evil.com')).toEqual({ location: '/evil.com', status: 301 })
+    expect(redirectFor(rules, '/go/\\evil.com')).toEqual({ location: '/evil.com', status: 301 })
+    expect(redirectFor(rules, '/go/\\/\\evil.com/x')).toEqual({ location: '/evil.com/x', status: 301 })
+    expect(redirectFor(rules, '/go/%2F%2Fevil.com')).toEqual({ location: '/%2F%2Fevil.com', status: 301 })
+    expect(redirectFor(rules, '/docs//evil.com')).toEqual({ location: '/docs/evil.com', status: 302 })
+    // A control character in the splat: no redirect.
+    for (const c of ['\n', '\r', '\t', '\u0000', '\u007f']) expect(redirectFor(rules, `/go/a${c}b`), JSON.stringify(c)).toBeUndefined()
+    // An absolute target keeps its own host.
+    expect(redirectFor(rules, '/away//evil.com')).toEqual({ location: 'https://blog.example.com/evil.com', status: 302 })
+    // A hand-written target that is not this site's, root-relative in name only: no redirect.
+    for (const to of ['/\\evil.com', '//evil.com/:splat', '/\\:splat']) expect(redirectFor(parseRedirectsFile(`/x/* ${to} 301\n`), '/x/y'), to).toBeUndefined()
+    expect(redirectFor(parseRedirectsFile('/x /\\evil.com 301\n'), '/x')).toBeUndefined()
+  })
+
+  it('refuses a plan redirect whose site path a browser reads as another host', () => {
+    for (const to of ['/\\evil.com', '/\\/evil.com', '/:splat']) {
+      expect(check(planRedirectsOf, { redirects: [{ from: '/go/*', to }] }).codes, to).toEqual(['PLAN_REDIRECT_INVALID'])
+    }
+    expect(check(planRedirectsOf, { redirects: [{ from: '/a\\b', to: '/' }] }).codes).toEqual(['PLAN_REDIRECT_INVALID'])
+    expect(check(planRedirectsOf, { redirects: [{ from: '/old/*', to: '/new/:splat' }] }).codes).toEqual([])
+  })
 })
