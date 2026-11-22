@@ -7,6 +7,7 @@
 import {
   addressTable,
   checkPropValue,
+  FONT_FALLBACKS,
   layoutSlotProblems,
   localePrefix,
   localesOf,
@@ -80,6 +81,29 @@ const APP_SURFACES = 'app/surfaces/'
 export const LAYOUT_FILE = 'app/layout.receipt.json'
 /** The members a layout does not carry: a page's own (receipt §4). */
 const LAYOUT_FORBIDDEN = ['title', 'titleTemplate', 'description', 'appearance', 'layout', 'path'] as const
+/** The app's appearance, whose theme names its fonts. */
+const APPEARANCE_FILE = 'app/definitions/appearance.json'
+/** The generic families a font stack may name without files (appearance §3.3). */
+const GENERIC_FAMILIES: ReadonlySet<string> = new Set(FONT_FALLBACKS)
+/** A font file: at most 500 KB (appearance §3.3). */
+const FONT_FILE_MAX = 512_000
+
+/** Why a font file cannot be served, or undefined: missing, not WOFF2 (by name or bytes), larger than 500 KB. */
+function fontFileProblem(src: string, bytes: Uint8Array | undefined): string | undefined {
+  if (!bytes) return 'the pack does not have'
+  if (!src.endsWith('.woff2')) return 'is not a .woff2 file'
+  if (bytes.byteLength < 4 || bytes[0] !== 0x77 || bytes[1] !== 0x4f || bytes[2] !== 0x46 || bytes[3] !== 0x32) return 'is not WOFF2 (its bytes do not start with wOF2)'
+  if (bytes.byteLength > FONT_FILE_MAX) return `is ${bytes.byteLength} bytes, more than the 500 KB a font file may be`
+  return undefined
+}
+
+/** The first family of a font stack, unquoted; undefined for none. */
+function firstFamily(stack: unknown): string | undefined {
+  if (typeof stack !== 'string') return undefined
+  const first = stack.split(',')[0]?.trim().replace(/^["']|["']$/g, '').trim()
+  return first ? first : undefined
+}
+
 /** The catalogues of an app in several languages (envelope §2.3). */
 const APP_MESSAGES = 'app/messages/'
 /** A page key: a name, or names joined by `/` for a page in a folder of `app/surfaces/`. */
@@ -399,6 +423,43 @@ export function validatePack(pack: PackFolder): PackValidation {
     const own = isRecord(layoutValue) ? LAYOUT_FORBIDDEN.filter((m) => layoutValue[m] !== undefined) : []
     if (own.length > 0) add('error', 'APP_LAYOUT_INVALID', `${LAYOUT_FILE} carries ${own.join(', ')}, which belong to a page, not to the layout`, LAYOUT_FILE)
   }
+  // ---- fonts (appearance §3.3): the app's own woff2 files ----
+  const appearanceBytes = pack.files.get(APPEARANCE_FILE)
+  const appearanceDoc = appearanceBytes ? parseJson(appearanceBytes) : undefined
+  if (appearanceDoc?.ok && isRecord(appearanceDoc.value)) {
+    const root = isRecord(appearanceDoc.value['config']) ? appearanceDoc.value['config'] : appearanceDoc.value
+    const tokenSets = [root['theme'], root['darkTheme']].filter(isRecord)
+    const shipped = new Set<string>()
+    const judged = new Set<string>()
+    for (const set of tokenSets) {
+      for (const font of Array.isArray(set['fonts']) ? set['fonts'] : []) {
+        if (!isRecord(font)) continue
+        if (typeof font['family'] === 'string') shipped.add(font['family'].trim().toLowerCase())
+        for (const file of Array.isArray(font['files']) ? font['files'] : []) {
+          const src = isRecord(file) && typeof file['src'] === 'string' ? file['src'] : undefined
+          if (src === undefined || judged.has(src)) continue
+          judged.add(src)
+          const problem = fontFileProblem(src, pack.files.get(src))
+          if (problem) add('error', 'FONT_FILE_INVALID', `${APPEARANCE_FILE} names the font file ${src}, which ${problem}`, src.startsWith('media/') ? src : APPEARANCE_FILE)
+        }
+      }
+    }
+    const missing = new Set<string>()
+    for (const set of tokenSets) {
+      const typography = isRecord(set['typography']) ? set['typography'] : {}
+      for (const token of ['fontFamily', 'headingFontFamily', 'monoFontFamily']) {
+        const first = firstFamily(typography[token])
+        if (first === undefined || GENERIC_FAMILIES.has(first.toLowerCase()) || shipped.has(first.toLowerCase()) || missing.has(first)) continue
+        missing.add(first)
+        add(
+          'warning',
+          'FONT_FILES_MISSING',
+          `${APPEARANCE_FILE} names the family "${first}" (${token}) but ships no files for it, so it is drawn in its fallback: add its woff2 files under media/fonts/ and list them in the theme's fonts (pwf font add "${first}" --from …)`,
+          APPEARANCE_FILE
+        )
+      }
+    }
+  }
   // ---- locales (envelope §2.3) ----
   const planDoc = pack.files.get(PLAN_FILE) ? parseJson(pack.files.get(PLAN_FILE) as Uint8Array) : undefined
   const planValue = planDoc?.ok ? planDoc.value : undefined
@@ -642,7 +703,8 @@ export function validatePack(pack: PackFolder): PackValidation {
     }
   }
   for (const path of provenance.state === 'invalid' ? [] : mediaFiles) {
-    if (!declared.has(path)) add('warning', 'MEDIA_UNDECLARED', `${path} has no entry in media/provenance.json`, path)
+    // A font's licence text beside it need not be recorded (pwpack-format §1.3).
+    if (!declared.has(path) && !/^media\/fonts\/[^/]+\.txt$/i.test(path)) add('warning', 'MEDIA_UNDECLARED', `${path} has no entry in media/provenance.json`, path)
   }
   // Declarations: which layout, and whether the bytes they name are there.
   issues.push(...mediaDeclarations(pack).issues)

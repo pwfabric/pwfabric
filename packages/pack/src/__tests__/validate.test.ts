@@ -327,6 +327,33 @@ describe('validatePack — app', () => {
     })
   })
 
+  describe('fonts (appearance §3.3)', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home'] } }
+    const WOFF2 = 'wOF2' + 'x'.repeat(60)
+    const theme = (typography: Record<string, string>, fonts?: unknown) => JSON.stringify({ theme: { typography, ...(fonts ? { fonts } : {}) } })
+    const app = (extra: Record<string, string>) =>
+      withIdentity(identity, { 'app/surfaces/home.receipt.json': '{"blocks":[]}', ...extra })
+    const inter = [{ family: 'Inter', fallback: 'sans-serif', files: [{ src: 'media/fonts/inter.woff2', weight: 400 }] }]
+
+    it('accepts a family with its woff2 files, and generic and system families with none', () => {
+      expect(codes(app({ 'app/definitions/appearance.json': theme({ fontFamily: 'Inter, sans-serif', monoFontFamily: 'ui-monospace, monospace' }, inter), 'media/fonts/inter.woff2': WOFF2 }), 'error')).toEqual([])
+      expect(codes(app({ 'app/definitions/appearance.json': theme({ fontFamily: 'system-ui, sans-serif' }) }))).toEqual([])
+    })
+
+    it('warns about a family the typography names first without files (FONT_FILES_MISSING)', () => {
+      const v = app({ 'app/definitions/appearance.json': theme({ fontFamily: 'Inter, sans-serif', headingFontFamily: '"Fraunces", serif' }, inter), 'media/fonts/inter.woff2': WOFF2 })
+      expect(codes(v, 'warning').filter((c) => c === 'FONT_FILES_MISSING')).toEqual(['FONT_FILES_MISSING'])
+      expect(v.issues.find((i) => i.code === 'FONT_FILES_MISSING')?.message).toContain('Fraunces')
+    })
+
+    it('refuses a missing file, one that is not woff2 by its bytes, and one over 500 KB (FONT_FILE_INVALID)', () => {
+      const doc = theme({ fontFamily: 'Inter' }, inter)
+      expect(codes(app({ 'app/definitions/appearance.json': doc }), 'error')).toEqual(['FONT_FILE_INVALID'])
+      expect(codes(app({ 'app/definitions/appearance.json': doc, 'media/fonts/inter.woff2': 'not a font' }), 'error')).toEqual(['FONT_FILE_INVALID'])
+      expect(codes(app({ 'app/definitions/appearance.json': doc, 'media/fonts/inter.woff2': 'wOF2' + 'x'.repeat(512_001) }), 'error')).toEqual(['FONT_FILE_INVALID'])
+    })
+  })
+
   describe('the plan pages (app/plan.json surfaces)', () => {
     const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'about'] } }
     const receipts = { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/about.receipt.json': '{"blocks":[]}' }
