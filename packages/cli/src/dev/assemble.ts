@@ -50,7 +50,7 @@ import { declaredRecordFields, withRecordFields } from '../host/record-fields.js
 import { withSessionSources } from '../host/session-sources.js'
 import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
 import { deriveCsp, headersFile } from './csp.js'
-import { documentHead, isRecordPage, pageDocuments, publicOriginOf, robotsTxt, SERVED_FOLDERS, sitemapXml, sitemapXmlLocales, type PageDocument } from './documents.js'
+import { documentHead, isRecordPage, pageDocuments, wordedText, publicOriginOf, robotsTxt, SERVED_FOLDERS, sitemapXml, sitemapXmlLocales, type PageDocument } from './documents.js'
 import { llmsFullTxt, llmsFullTxtLocales, llmsTxt, llmsTxtLocales, type LlmsPage } from './llms.js'
 import { planHeadersOf, planRedirectsOf, planScriptOrigins, planScriptsOf, redirectsFile } from './plan-site.js'
 import { parseHeadersFile } from '../commands/lib/static-server.js'
@@ -1320,9 +1320,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       const doc = listedDocs.find((d) => d.key === key) as { key: string; url: string }
       const receipt = servedReceipts.get(key)
       const own = painted.find((p) => p.key === key)
-      const description = literalText(isRecord(receipt) ? receipt['description'] : undefined)
+      const description = literalText(wordedText(isRecord(receipt) ? receipt['description'] : undefined, messages, locale))
       return {
-        title: literalText(isRecord(receipt) ? receipt['title'] : undefined) ?? (title || key),
+        title: literalText(wordedText(isRecord(receipt) ? receipt['title'] : undefined, messages, locale)) ?? (title || key),
         url: doc.url,
         ...(description !== undefined ? { description } : {}),
         ...(own ? { html: own.html } : {}),
@@ -1349,9 +1349,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
           if (!doc) return []
           const receipt = servedHere.get(key)
           const frame = own.find((p) => p.key === key)
-          const description = literalText(isRecord(receipt) ? receipt['description'] : undefined)
+          const description = literalText(wordedText(isRecord(receipt) ? receipt['description'] : undefined, catalogueFor(localed.catalogues, locales, lang), lang))
           return [{
-            title: literalText(isRecord(receipt) ? receipt['title'] : undefined) ?? (title || key),
+            title: literalText(wordedText(isRecord(receipt) ? receipt['title'] : undefined, catalogueFor(localed.catalogues, locales, lang), lang)) ?? (title || key),
             url: doc.url,
             ...(description !== undefined ? { description } : {}),
             ...(frame ? { html: frame.html } : {}),
