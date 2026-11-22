@@ -211,3 +211,32 @@ describe('the tags a link preview reads', () => {
     expect(d.querySelector('link[rel="icon"]')?.hasAttribute('type')).toBe(false)
   })
 })
+
+describe("each page's words", () => {
+  it('writes, per page and locale, only the ids it, its layout and the engine read, over the default’s', async () => {
+    const root = await bakery()
+    // Words of other pages, which this page never reads.
+    const extra = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`other.word${i}`, `Some other page's sentence number ${i}`]))
+    await put(root, 'app/messages/en.json', { intro: 'Fresh bread every morning', 'notFound.title': 'Not found', 'ui.close': 'Close', ...extra })
+    await put(root, 'app/messages/de.json', { intro: 'Jeden Morgen frisches Brot', 'notFound.title': 'Nicht gefunden', ...extra })
+    const r = await assemblePwapp(root, { cacheDir: null, router: 'path' })
+    expect(r.ok, errors(r).join(' | ')).toBe(true)
+    const project = parse(r.files.get('pwpack/project.json')) as { pageMessages: Record<string, Record<string, string>>; pageMessagesDynamic?: string[] }
+    expect(project.pageMessages['de']?.['pricing']).toBe('messages/de/pricing.json')
+    expect(project.pageMessagesDynamic).toBeUndefined()
+    const words = parse(r.files.get('pwpack/messages/de/pricing.json')) as Record<string, string>
+    // Its own word, the runner's, a block's own (the default's where German sets none) — nothing else.
+    expect(words).toEqual({ intro: 'Jeden Morgen frisches Brot', 'notFound.title': 'Nicht gefunden', 'ui.close': 'Close' })
+    const before = (r.files.get('pwpack/messages/de.json')?.byteLength ?? 0) + (r.files.get('pwpack/messages/en.json')?.byteLength ?? 0)
+    const after = r.files.get('pwpack/messages/de/pricing.json')?.byteLength ?? 0
+    console.info(`[words per page] de/pricing: ${before} bytes before (de.json + en.json), ${after} bytes after`)
+    expect(after).toBeLessThan(before / 5)
+  })
+
+  it('lists a page that reads a word by an id it computes: it fetches the catalogues too', async () => {
+    const root = await bakery()
+    await put(root, 'app/surfaces/pricing.receipt.json', page('Pricing', { path: { de: 'preise' }, blocks: [{ id: 'x', type: 'title', props: { text: '{{t(state.word)}}' } }] }))
+    const r = await assemblePwapp(root, { cacheDir: null, router: 'path' })
+    expect((parse(r.files.get('pwpack/project.json')) as { pageMessagesDynamic?: string[] }).pageMessagesDynamic).toEqual(['pricing'])
+  })
+})

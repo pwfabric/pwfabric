@@ -65,6 +65,14 @@ export interface PwappProject {
   /** The per-locale receipts the app has: `{ <lang>: { <key>: path } }`, relative to the envelope. */
   readonly localeReceiptFiles?: Readonly<Record<string, Readonly<Record<string, string>>>>
   /**
+   * Each page's words per locale: `{ <lang>: { <key>: path } }`, the ids the
+   * page, its layout and the runner read, the locale's over the default's.
+   * A page fetches its own file instead of the catalogues.
+   */
+  readonly pageMessages?: Readonly<Record<string, Readonly<Record<string, string>>>>
+  /** The pages that read a word by an id they compute: they fetch the catalogues too. */
+  readonly pageMessagesDynamic?: readonly string[]
+  /**
    * The app's public origin (`https://example.com`), from `app/plan.json`
    * `origin`: a page's canonical address is this origin and the page's path
    * (envelope §4). Absent: the app names no canonical address.

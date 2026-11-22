@@ -55,7 +55,7 @@ import { llmsFullTxt, llmsFullTxtLocales, llmsTxt, llmsTxtLocales, type LlmsPage
 import { planHeadersOf, planRedirectsOf, planScriptOrigins, planScriptsOf, redirectsFile } from './plan-site.js'
 import { parseHeadersFile } from '../commands/lib/static-server.js'
 import { firstPaintData, onPageFragmentLinks, paintPages, shareFrameStyles, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
-import { assemblePage, canonicalOf, colorSchemeScript, hashHref, isTitleTemplate, pathHref, pluralProblems } from '@pwfabric/runner'
+import { assemblePage, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS, canonicalOf, colorSchemeScript, hashHref, isTitleTemplate, pathHref, pluralProblems } from '@pwfabric/runner'
 import {
   BOOT_FILES,
   FIRST_PAINT_SCRIPT,
@@ -397,6 +397,48 @@ function localeInputsOf(
   const pathOf = (key: string): Readonly<Record<string, string>> | undefined => receiptPathOf(pages.find((p) => p.key === key)?.receipt)
   return { ...out, addresses: addressTable(locales, [...new Set(surfaceOrder)], entry, pathOf).addresses }
 }
+
+/** The ids the runner and the renderer read (their own words), and the prefix of a block's own (`ui.*`). */
+const ENGINE_WORDS: ReadonlySet<string> = new Set<string>([...RUNNER_MESSAGE_IDS, ...RENDERER_MESSAGE_IDS])
+
+/**
+ * The words of every page in every locale (envelope §2.3): per page, the ids
+ * its receipt (in that locale, as drawn in the layout) reads by a literal
+ * `t('<id>')`, the engine's own ids and a block's own (`ui.*`), from the
+ * locale's catalogue over the default's. `dynamic` lists the pages that read
+ * a word by an id they compute: those fetch the whole catalogue as well.
+ */
+function pageWordsOf(
+  localed: LocaleInputs,
+  locales: LocaleDeclaration | undefined,
+  pages: readonly Page[],
+  drawn: (key: string, receipt: unknown) => unknown
+): { files: Record<string, Record<string, string>>; bodies: Map<string, Record<string, string>>; dynamic: string[] } {
+  const out = { files: {} as Record<string, Record<string, string>>, bodies: new Map<string, Record<string, string>>(), dynamic: [] as string[] }
+  if (!locales) return out
+  const dynamic = new Set<string>()
+  for (const lang of locales.locales) {
+    const words = catalogueFor(localed.catalogues, locales, lang)
+    for (const page of pages) {
+      const receipt = localed.receipts.get(lang)?.get(page.key)?.receipt ?? page.receipt
+      const text = JSON.stringify(drawn(page.key, receipt) ?? receipt)
+      const literal = new Set([...text.matchAll(LITERAL_T)].map((m) => m[2] as string))
+      if (COMPUTED_T.test(text)) dynamic.add(page.key)
+      const own: Record<string, string> = {}
+      for (const [id, word] of Object.entries(words)) if (literal.has(id) || ENGINE_WORDS.has(id) || id.startsWith('ui.')) own[id] = word
+      const path = `messages/${lang}/${page.key}.json`
+      ;(out.files[lang] ??= {})[page.key] = path
+      out.bodies.set(path, own)
+    }
+  }
+  out.dynamic = [...dynamic].sort()
+  return out
+}
+
+/** `t('<id>')` / `t("<id>")` in a receipt's JSON text (its quotes escaped as JSON writes them). */
+const LITERAL_T = /\bt\(\s*(\\?['"])([^'"\\]+)\1/g
+/** A `t(` whose id is not a literal. */
+const COMPUTED_T = /\{\{[^}]*\bt\(\s*(?![\s\\]*['"])/
 
 /** The locales in the order their sections are written: the default first, then `locales` order. */
 function orderedLocales(locales: LocaleDeclaration): string[] {
@@ -1055,6 +1097,10 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   files.set('blocks/manifest.json', json(blockManifest))
   files.set('engines/manifest.json', json(engineManifest))
 
+  // ── each page's words per locale (envelope §2.3): a page fetches only the
+  // ids it, its layout and the runner read, its locale's over the default's;
+  // a page that reads a word by an id it computes fetches the catalogue too.
+  const pageWords = pageWordsOf(localed, locales, [...pages], (key, receipt) => inLayout(key, receipt, layoutPage?.receipt).receipt)
   files.set(
     'pwpack/project.json',
     json({
@@ -1084,11 +1130,15 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
             defaultLocale: locales.defaultLocale,
             addresses: localed.addresses,
             ...(localed.pages.length > 0 ? { localeReceiptFiles: localed.receiptFiles } : {}),
+            // Each page's words in each locale: what it, its layout and the runner read.
+            pageMessages: pageWords.files,
+            ...(pageWords.dynamic.length > 0 ? { pageMessagesDynamic: pageWords.dynamic } : {}),
           }
         : {}),
     })
   )
   for (const [lang, words] of Object.entries(localed.catalogues)) files.set(`pwpack/messages/${lang}.json`, json(words))
+  for (const [path, words] of pageWords.bodies) files.set(`pwpack/${path}`, json(words))
   for (const page of localed.pages) {
     const base = page.key.slice(0, page.key.lastIndexOf('.'))
     const declared = withoutAuthoring(
