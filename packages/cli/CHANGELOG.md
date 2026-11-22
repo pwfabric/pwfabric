@@ -1,6 +1,6 @@
 # @pwfabric/cli
 
-## Unreleased (3.5.0)
+## 3.5.0
 
 - Changed (upgrade note): `brand.favicon` is a media file (`media/<file>`), a file of `public/` or an `https://` address; anything else is `FAVICON_INVALID` in `pwf validate` and `pwf build`. The served form `pwpack/media/<file>` is refused with the file to write instead.
 - Changed: `pwf validate` refuses a pinned pack that is not cached (`PIN_NOT_CACHED`, an error), as `pwf build` does, with the same fix.

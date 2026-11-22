@@ -1,6 +1,6 @@
 # @pwfabric/runtime
 
-## Unreleased (3.5.0)
+## 3.5.0
 
 - Changed (upgrade note): `position`, `top`, `right`, `bottom`, `left`, `inset`, `zIndex` and `alignSelf` in a block's `style` apply to the block's wrapper, not to its root. A sticky block in a row whose items stretch needs `alignSelf: "start"` to stick; see the site's "Upgrading to 3.5".
 - Added: `{{t('<id>', vars?)}}`, plurals in messages, `context.locales` and `context.alternates`, `context.colorScheme` and `context.setColorScheme`, and the `pageKey` render option (a layout's blocks stay mounted from page to page).
