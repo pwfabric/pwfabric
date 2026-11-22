@@ -63,6 +63,58 @@ export interface PackValidation {
 }
 
 const APP_SURFACES = 'app/surfaces/'
+/** A page key: a name, or names joined by `/` for a page in a folder of `app/surfaces/`. */
+const PAGE_PATH = /^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.-]*)*$/
+const PLAN_FILE = 'app/plan.json'
+const PUBLIC_DIR = 'public/'
+
+/** Files the build writes at the root of the served app (pwpack-format §1.4). */
+export const PUBLIC_RESERVED_FILES: ReadonlySet<string> = new Set([
+  'index.html',
+  '404.html',
+  '_headers',
+  '_redirects',
+  'robots.txt',
+  'sitemap.xml',
+  'llms.txt',
+  'llms-full.txt',
+])
+/** Folders of the served app the build owns (pwapp-format §1). */
+export const PUBLIC_RESERVED_DIRS: readonly string[] = ['assets', 'shims', 'blocks', 'engines', 'pwpack']
+
+/**
+ * Why a public file at `rel` (its path in the served app) is on a path the
+ * build writes, or `undefined`: a fixed file, a runtime folder, or a page's
+ * own document (`<key>/index.html`, under either routing).
+ */
+export function publicReservedReason(rel: string, pageKeys: readonly string[]): string | undefined {
+  if (PUBLIC_RESERVED_FILES.has(rel)) return 'the build writes itself'
+  const top = rel.split('/')[0] as string
+  if (PUBLIC_RESERVED_DIRS.includes(top)) return `is in ${top}/, a folder of the build's own`
+  if (rel.endsWith('/index.html') && pageKeys.includes(rel.slice(0, -'/index.html'.length))) {
+    return `is the document of page "${rel.slice(0, -'/index.html'.length)}"`
+  }
+  return undefined
+}
+
+const SCRIPT_FILE = /\.(?:js|mjs|cjs|wasm)$/
+const MARKUP_FILE = /\.(?:html|htm|xhtml|svg|xml)$/
+
+/**
+ * Why a public file is script, or `undefined`: a script or WebAssembly file,
+ * or markup holding a `<script` element, an `on…` attribute or a
+ * `javascript:` URL (compared in lower case, over the text as written).
+ */
+export function publicScriptReason(rel: string, bytes: Uint8Array): string | undefined {
+  const name = rel.toLowerCase()
+  if (SCRIPT_FILE.test(name)) return 'is a script file'
+  if (!MARKUP_FILE.test(name)) return undefined
+  const text = new TextDecoder().decode(bytes).toLowerCase()
+  if (text.includes('<script')) return 'holds a <script> element'
+  if (/<[^>]*\son[a-z0-9_-]*\s*=/.test(text)) return 'holds an on… event attribute'
+  if (/javascript\s*:/.test(text)) return 'holds a javascript: URL'
+  return undefined
+}
 const RECEIPT_SUFFIX = '.receipt.json'
 const APP_CONTENT = 'app/content/'
 const ENTITIES_FILE = 'app/definitions/entities.json'
@@ -197,6 +249,8 @@ export function validatePack(pack: PackFolder): PackValidation {
     }
     if (PACK_DOC_FILES.has(path)) continue
     if (top === 'media' && parts.length > 1) continue
+    // Files a build copies, as they are, to the root of the served app.
+    if (top === 'public' && parts.length > 1) continue
     if (top === 'atoms' && parts.length > 1) {
       canonical = true
       const family = parts[1] as string
@@ -218,7 +272,7 @@ export function validatePack(pack: PackFolder): PackValidation {
     unknownTop.add(parts.length > 1 ? `${top}/` : top)
   }
   for (const name of unknownTop) {
-    add('warning', 'UNKNOWN_TOP_LEVEL', `${name} is not part of the pwpack folder (pwpack.json, app/, atoms/, media/)`, name)
+    add('warning', 'UNKNOWN_TOP_LEVEL', `${name} is not part of the pwpack folder (pwpack.json, app/, atoms/, media/, public/)`, name)
   }
   for (const family of unknownFamily) {
     add('warning', 'UNKNOWN_ATOM_FAMILY', `atoms/${family} is not a known atom family`, `atoms/${family}`)
@@ -285,12 +339,55 @@ export function validatePack(pack: PackFolder): PackValidation {
       if (seen.has(key)) add('warning', 'APP_SURFACE_DUPLICATE', `app.surfaceOrder lists "${key}" more than once`, IDENTITY_FILE)
       seen.add(key)
     }
+    // The plan's pages (`app/plan.json` `surfaces`) are optional: absent, they
+    // are app.surfaceOrder. Present, they agree with app (plan §3.1): every
+    // served page is planned, an `applied` plan page is served, and the plan's
+    // entry is app.entry.
+    const planBytes = pack.files.get(PLAN_FILE)
+    const plan = planBytes ? parseJson(planBytes) : undefined
+    const planned = plan?.ok && isRecord(plan.value) ? plan.value['surfaces'] : undefined
+    if (planned !== undefined) {
+      const mismatch = (message: string): void => add('error', 'APP_PLAN_SURFACE_MISMATCH', message, PLAN_FILE)
+      const served = [...new Set([entry, ...surfaceOrder, ...(notFound ? [notFound] : []), ...(signIn ? [signIn] : [])])]
+      const pages = Array.isArray(planned) ? planned.filter(isRecord) : []
+      if (!Array.isArray(planned) || pages.length !== planned.length || pages.some((p) => typeof p['key'] !== 'string')) {
+        mismatch(`${PLAN_FILE} surfaces must be a list of pages, each with a "key"`)
+      } else {
+        const keys = pages.map((p) => p['key'] as string)
+        for (const key of served) {
+          if (!keys.includes(key)) mismatch(`pwpack.json app serves "${key}", which ${PLAN_FILE} surfaces does not list — add it there, or leave surfaces out`)
+        }
+        for (const page of pages) {
+          const key = page['key'] as string
+          if (page['status'] === 'applied' && !served.includes(key)) {
+            mismatch(`${PLAN_FILE} surfaces has "${key}" applied, but pwpack.json app does not serve it — add it to app.surfaceOrder, or mark it as not built yet`)
+          }
+          if (page['isEntry'] === true && key !== entry) mismatch(`${PLAN_FILE} surfaces marks "${key}" as the entry, but app.entry is "${entry}"`)
+        }
+      }
+    }
+  }
+  // ---- public files (copied, as they are, to the served app's root) ----
+  // None may land on a path the build writes, and none may be script:
+  // script code enters an app through its blocks only, compiled and pinned.
+  const pageKeys = identity?.app
+    ? [identity.app.entry, ...identity.app.surfaceOrder, ...(identity.app.notFound ? [identity.app.notFound] : []), ...(identity.app.signIn ? [identity.app.signIn] : [])]
+    : []
+  for (const path of paths) {
+    if (!path.startsWith(PUBLIC_DIR) || path === PUBLIC_DIR) continue
+    const rel = path.slice(PUBLIC_DIR.length)
+    const reason = publicReservedReason(rel, pageKeys)
+    if (reason) add('error', 'APP_PUBLIC_RESERVED', `${path} would be served at /${rel}, which ${reason}; rename or move it`, path)
+    const script = publicScriptReason(rel, pack.files.get(path) as Uint8Array)
+    if (script) add('error', 'APP_PUBLIC_SCRIPT', `${path} ${script}; script code enters an app only through its blocks`, path)
   }
   for (const path of paths) {
     if (!path.startsWith(APP_SURFACES)) continue
     const rest = path.slice(APP_SURFACES.length)
-    if (rest.includes('/') || !rest.endsWith(RECEIPT_SUFFIX)) {
-      add('warning', 'APP_UNEXPECTED_FILE', `${path} is not an app/surfaces/<key>.receipt.json`, path)
+    // A page may sit in a folder: app/surfaces/docs/intro.receipt.json is
+    // page `docs/intro` (served at docs/intro/ under path routing).
+    if (!rest.endsWith(RECEIPT_SUFFIX) || !PAGE_PATH.test(rest.slice(0, -RECEIPT_SUFFIX.length))) {
+      add('warning', 'APP_UNEXPECTED_FILE', `${path} is not an app/surfaces/<key>.receipt.json (or app/surfaces/<folder>/<key>.receipt.json)`, path)
       continue
     }
     // The pages an app serves are app.surfaceOrder. A receipt written without

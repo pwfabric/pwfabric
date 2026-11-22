@@ -63,6 +63,10 @@ export {
 } from './media.js'
 export {
   ATOM_FAMILIES,
+  PUBLIC_RESERVED_DIRS,
+  PUBLIC_RESERVED_FILES,
+  publicReservedReason,
+  publicScriptReason,
   SUPPORTED_FORMAT_MAJOR,
   validatePack,
   zodImportLine,

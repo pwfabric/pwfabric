@@ -202,8 +202,76 @@ describe('validatePack — app', () => {
   })
 
   it('warns on files under app/surfaces that are not receipts', () => {
-    const v = withIdentity({ id: 'x', version: '1' }, { 'app/surfaces/notes.md': 'x', 'app/surfaces/a/b.receipt.json': '{}' })
-    expect(codes(v)).toEqual(['APP_UNEXPECTED_FILE', 'APP_UNEXPECTED_FILE'])
+    const v = withIdentity({ id: 'x', version: '1' }, { 'app/surfaces/notes.md': 'x', 'app/surfaces/a/notes.json': '{}', 'app/surfaces/a/.b.receipt.json': '{}' })
+    expect(codes(v)).toEqual(['APP_UNEXPECTED_FILE', 'APP_UNEXPECTED_FILE', 'APP_UNEXPECTED_FILE'])
+  })
+
+  it('reads a receipt in a folder of app/surfaces as page folder/key', () => {
+    const files = { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/docs/intro.receipt.json': '{"blocks":[]}' }
+    expect(codes(withIdentity({ id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'docs/intro'] } }, files))).toEqual([])
+    // Not in the order: the same warning as a page at the top.
+    const v = withIdentity({ id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home'] } }, files)
+    expect(codes(v)).toEqual(['APP_SURFACE_NOT_SERVED'])
+    expect(v.issues[0]?.message).toContain('"docs/intro"')
+    // Named in the order without its receipt.
+    expect(codes(withIdentity({ id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'docs/gone'] } }, files), 'error')).toEqual(['APP_SURFACE_MISSING'])
+  })
+
+  it('accepts a public/ folder: files copied, as they are, to the served app', () => {
+    const v = validatePack(packFromRecord({ ...CANONICAL_APP, 'public/google123.html': 'x', 'public/.well-known/security.txt': 'x' }))
+    expect(v.issues).toEqual([])
+  })
+
+  describe('public files', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'docs'] } }
+    const receipts = { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/docs.receipt.json': '{"blocks":[]}' }
+    const withPublic = (files: Record<string, string>, severity = 'error'): string[] => codes(withIdentity(identity, { ...receipts, ...files }), severity)
+
+    it('refuses a path the build writes: a fixed file, a runtime folder, a page document', () => {
+      for (const path of ['index.html', '404.html', '_headers', '_redirects', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'assets/a.css', 'pwpack/x.json', 'shims/y.json', 'docs/index.html']) {
+        expect(withPublic({ [`public/${path}`]: 'x' }), path).toEqual(['APP_PUBLIC_RESERVED'])
+      }
+    })
+
+    it('accepts a file beside a page document, and paths that only look alike', () => {
+      expect(withPublic({ 'public/docs/diagram.png': 'x', 'public/Index.html': 'x', 'public/about/index.html': 'x' })).toEqual([])
+    })
+
+    it('refuses script: a script file, or markup with a script element, an on attribute or a javascript: URL', () => {
+      for (const [path, body] of [
+        ['public/widget.js', 'x'],
+        ['public/a.MJS', 'x'],
+        ['public/calc.wasm', 'x'],
+        ['public/page.html', '<p>hi</p><SCRIPT>alert(1)</SCRIPT>'],
+        ['public/logo.svg', '<svg onLoad="x()"></svg>'],
+        ['public/link.htm', '<a href="JavaScript:alert(1)">x</a>'],
+        ['public/feed.xml', '<x><script/></x>'],
+      ]) {
+        expect(withPublic({ [path as string]: body as string }), path).toEqual(['APP_PUBLIC_SCRIPT'])
+      }
+      expect(withPublic({ 'public/verify.html': '<html><body>google-site-verification: verify.html</body></html>' })).toEqual([])
+    })
+  })
+
+  describe('the plan pages (app/plan.json surfaces)', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'about'] } }
+    const receipts = { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/about.receipt.json': '{"blocks":[]}' }
+    const withPlan = (plan: unknown): string[] => codes(withIdentity(identity, { ...receipts, 'app/plan.json': JSON.stringify(plan) }))
+
+    it('are optional: absent, they are app.surfaceOrder', () => {
+      expect(withPlan({ title: 'x' })).toEqual([])
+    })
+
+    it('agree with app when they list every served page and mark the entry; a page not built yet may be planned', () => {
+      expect(withPlan({ surfaces: [{ key: 'home', isEntry: true, status: 'applied' }, { key: 'about', status: 'applied' }, { key: 'pricing', status: 'pending' }] })).toEqual([])
+    })
+
+    it('are an error when a served page is missing, an applied page is not served, or the entry is another page', () => {
+      expect(withPlan({ surfaces: [{ key: 'home' }] })).toEqual(['APP_PLAN_SURFACE_MISMATCH'])
+      expect(withPlan({ surfaces: [{ key: 'home' }, { key: 'about' }, { key: 'pricing', status: 'applied' }] })).toEqual(['APP_PLAN_SURFACE_MISMATCH'])
+      expect(withPlan({ surfaces: [{ key: 'home' }, { key: 'about', isEntry: true }] })).toEqual(['APP_PLAN_SURFACE_MISMATCH'])
+      expect(withPlan({ surfaces: 'home' })).toEqual(['APP_PLAN_SURFACE_MISMATCH'])
+    })
   })
 
   it('errors on app JSON that does not parse, warns elsewhere', () => {
