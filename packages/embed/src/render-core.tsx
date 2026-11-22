@@ -110,6 +110,10 @@ export interface RenderCoreOptions {
   readonly onDescription?: (description: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
+  /** The app's languages (envelope §2.3): `context.locales` of every block. */
+  readonly locales?: readonly string[]
+  /** The current page in every locale: `context.alternates` of every block. */
+  readonly alternates?: Readonly<Record<string, string>>
   /** The visitor's consent and the categories the app's scripts wait for (envelope §2.2): `context.consent*` of every block. */
   readonly consent?: ConsentStore
   /** The visitor's colour scheme (appearance §4.1): `context.colorScheme` / `setColorScheme` of every block. */
@@ -247,6 +251,8 @@ function buildRendererProps(opts: RenderCoreOptions): Record<string, unknown> {
   if (opts.onTitle !== undefined) props.onTitle = opts.onTitle
   if (opts.onDescription !== undefined) props.onDescription = opts.onDescription
   if (opts.locale !== undefined) props.locale = opts.locale
+  if (opts.locales !== undefined) props.locales = opts.locales
+  if (opts.alternates !== undefined) props.alternates = opts.alternates
   if (opts.consent !== undefined) props.consent = opts.consent
   if (opts.colorScheme !== undefined) props.colorScheme = opts.colorScheme
   if (opts.pageKey !== undefined) props.pageKey = opts.pageKey

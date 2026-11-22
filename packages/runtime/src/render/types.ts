@@ -201,6 +201,19 @@ export interface BlockContext {
    */
   readonly locale?: string
   /**
+   * The app's languages, in order (envelope §2.3): `locales` of an app in
+   * several languages, `[locale]` of a single-language one. Absent without a
+   * locale.
+   */
+  readonly locales?: readonly string[]
+  /**
+   * The current page's address in every locale, from the app's base, as a
+   * link to it is written (`{ en: '/pricing/', de: '/de/preise/' }`): what a
+   * language switch draws. Only in an app with `locales`; on the not-found
+   * page, each locale's entry page.
+   */
+  readonly alternates?: Readonly<Record<string, string>>
+  /**
    * An app page's address, written the way this host routes (envelope §3):
    * `appHref('/webhooks?x=1')` is `#/webhooks?x=1` under a hash router,
    * `<base>/webhooks?x=1` under a path router. A block that draws a link of
@@ -331,6 +344,10 @@ export interface SurfaceRendererProps {
   readonly surface: RenderableSurface
   /** The app's locale, handed to every block as `context.locale`. */
   readonly locale?: string
+  /** The app's languages (envelope §2.3), handed to every block as `context.locales`. */
+  readonly locales?: readonly string[]
+  /** The current page in every locale, handed to every block as `context.alternates`. */
+  readonly alternates?: Readonly<Record<string, string>>
   /** The visitor's consent (envelope §2.2), handed to every block as `context.consentCategories`, `consent` and `setConsent`. */
   readonly consent?: ConsentStore
   /** The visitor's colour scheme (appearance §4.1), handed to every block as `context.colorScheme` and `setColorScheme`. */

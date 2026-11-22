@@ -63,7 +63,7 @@ import { applyEntityQuery } from '../entity/apply-query.js'
 import { documentAddress, type SurfaceAddress } from './address.js'
 import { useNotFoundReport, useUrlStateSync, withRecordFrameHeld } from './address-sync.js'
 import { useAppMessages } from './app-messages.js'
-import { messageOf } from './messages.js'
+import { messageHelpers, messageOf, readsMessages } from './messages.js'
 
 // ============================================================
 // extract dataSources + initialState from persistence config
@@ -259,6 +259,12 @@ function blockTreeReadsAuth(blocks: readonly Block[] | undefined): boolean {
   return READS_AUTH.test(JSON.stringify(blocks))
 }
 
+/** Does any block read the app's words (`{{t('…')}}`, expressions §6)? Only the data-bound path resolves them. */
+function blockTreeReadsMessages(blocks: readonly Block[] | undefined): boolean {
+  if (!blocks || blocks.length === 0) return false
+  return readsMessages(JSON.stringify(blocks))
+}
+
 function blockTreeHasAction(blocks: readonly Block[] | undefined): boolean {
   if (!blocks) return false
   for (const block of blocks) {
@@ -318,7 +324,8 @@ export function surfaceNeedsDataBinding(surface: {
     hasEntityFormBindings(surface) ||
     blockTreeHasAction(surface.blocks) ||
     blockTreeHasCondition(surface.blocks) ||
-    blockTreeReadsAuth(surface.blocks)
+    blockTreeReadsAuth(surface.blocks) ||
+    blockTreeReadsMessages(surface.blocks)
   )
 }
 
@@ -1418,7 +1425,7 @@ export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): 
     return [...declaredBehaviors.filter((b) => !hostIds.has(b.id)), ...hostBehaviors]
   }, [declaredBehaviors, hostBehaviors])
   const hasBehaviors = Boolean(behaviors && behaviors.length > 0)
-  const dataBound = hasBehaviors || surfaceNeedsDataBinding(surface)
+  const dataBound = hasBehaviors || surfaceNeedsDataBinding(surface) || readsMessages(title) || readsMessages(description)
 
   // A page with nothing dynamic still has a title; one with expressions in it
   // is resolved by DataBoundInner, against what has loaded.
@@ -1614,6 +1621,10 @@ function DataBoundInner({
   const expressionDataRef = React.useRef(expressionData)
   expressionDataRef.current = expressionData
 
+  // The app's words, read by `{{t('…')}}` (expressions §6), in the locale drawn.
+  const appWords = useAppMessages()
+  const wordHelpers = React.useMemo(() => messageHelpers(appWords, locale), [appWords, locale])
+
   // THE TITLE OF THIS RECORD'S PAGE. `{{dish.0.name}}` is the dish once it
   // has loaded; until then (or when it resolves to nothing) the host shows
   // its own. A title an expression could not resolve stays unreported rather
@@ -1621,12 +1632,12 @@ function DataBoundInner({
   const resolveText = React.useCallback(
     (template: string | undefined): string | undefined => {
       if (typeof template !== 'string' || !template.trim()) return undefined
-      const value = resolveValueIn(template, expressionData, locale ? { locale } : {})
+      const value = resolveValueIn(template, expressionData, { ...(locale ? { locale } : {}), helpers: wordHelpers })
       if (value === undefined || value === null) return undefined
       const text = String(value).trim()
       return text === '' || text.includes('{{') ? undefined : text
     },
-    [expressionData, locale]
+    [expressionData, locale, wordHelpers]
   )
   const resolvedTitle = React.useMemo(() => resolveText(title), [resolveText, title])
   React.useEffect(() => {
@@ -1708,12 +1719,12 @@ function DataBoundInner({
   // Resolve expressions in blocks
   const resolvedBlocks = React.useMemo(
     () =>
-      resolveBlockExpressions(blocks as Block[], expressionData, undefined, {
+      resolveBlockExpressions(blocks as Block[], expressionData, wordHelpers, {
         literalProps,
         ...(linkHref ? { linkHref } : {}),
         ...(locale ? { locale } : {}),
       }),
-    [blocks, expressionData, linkHref, literalProps, locale]
+    [blocks, expressionData, linkHref, literalProps, locale, wordHelpers]
   )
 
   // Shared action dispatcher. `values` are the fields of the form whose
@@ -1780,9 +1791,10 @@ function DataBoundInner({
         {
           ...(linkHref ? { linkHref } : {}),
           ...(locale ? { locale } : {}),
+          helpers: wordHelpers,
         }
       ) as SurfaceAction,
-    [linkHref, locale]
+    [linkHref, locale, wordHelpers]
   )
 
   // Event interceptor

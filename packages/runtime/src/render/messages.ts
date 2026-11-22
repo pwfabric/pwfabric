@@ -213,6 +213,27 @@ export function messageOf(
 }
 
 /**
+ * The expression helper that reads the app's words (expressions §6):
+ * `t(id, vars?)` is the message for `id` — in the locale drawn, the host
+ * having merged the default locale's under it (envelope §2.3) — with its
+ * placeholders and plurals filled from `vars`; `""` when no catalogue sets it.
+ */
+export function messageHelpers(
+  messages: AppMessages | null | undefined,
+  locale?: string
+): Record<string, (...args: unknown[]) => unknown> {
+  return {
+    t: (id: unknown, vars?: unknown) =>
+      messageOf(messages, String(id ?? ''), undefined, typeof vars === 'object' && vars !== null && !Array.isArray(vars) ? (vars as MessageVars) : undefined, locale),
+  }
+}
+
+/** Whether a text carries an expression that reads the app's words (`{{t('…')}}`). */
+export function readsMessages(text: unknown): boolean {
+  return typeof text === 'string' && /\{\{[^}]*\bt\s*\(/.test(text)
+}
+
+/**
  * The app's messages as a plain map: string values only, from `project.json`
  * or `plan.json` `messages`. Anything else is `{}`.
  */

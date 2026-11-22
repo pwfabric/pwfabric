@@ -899,6 +899,8 @@ export function SurfaceRenderer({
   address,
   onSelection,
   locale,
+  locales,
+  alternates,
   linkHref: linkHrefProp,
   consent: consentStore,
   colorScheme: colorSchemeStore,
@@ -985,6 +987,8 @@ export function SurfaceRenderer({
       viewport,
       interactionMode,
       ...(locale ? { locale } : {}),
+      ...(locales ? { locales } : locale ? { locales: [locale] } : {}),
+      ...(alternates ? { alternates } : {}),
       appHref,
       consentCategories,
       consent: consentAnswers,
@@ -992,7 +996,7 @@ export function SurfaceRenderer({
       colorScheme,
       setColorScheme,
     }),
-    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode, locale, appHref, consentCategories, consentAnswers, setConsent, colorScheme, setColorScheme]
+    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode, locale, locales, alternates, appHref, consentCategories, consentAnswers, setConsent, colorScheme, setColorScheme]
   )
 
   // Create image component override if adapter is provided
