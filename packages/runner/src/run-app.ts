@@ -34,6 +34,7 @@ import {
   STATIC_LAYOUT_ID,
   STATIC_PAGE_ATTR,
   STATIC_VIEWPORT,
+  fillSharedStyles,
   firstFrameAuthState,
   firstFrameDoorOf,
   firstFrameLocale,
@@ -734,7 +735,13 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // address's seed, the links in its capabilities' config. capabilities
     // MUST travel: DataBound derives its dataSources from them.
     const surface = pageSurfaceOf(receipt, key, params, pageContext())
+    // The first frame's shared rules, put back while the modules load (only
+    // the first page drawn can have a frame to hydrate).
+    const sharedFilled = staticTaken
+      ? Promise.resolve(true)
+      : fillSharedStyles(container, document, (href) => fetch(href).then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status))))))
     await fabric.loadBlocks(surface.blocks, blockManifest)
+    const frameWhole = await sharedFilled
     if (seq !== routeSeq) return
     // The page the document shows: a page with a theme of its own has its
     // ground under `:root[data-pw-page]` in the theme stylesheet (the shell's
@@ -743,7 +750,10 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
 
     // The build's first frame of this page, when the shell holds it: hydrated,
     // not drawn again.
-    const staticRoot = staticRootFor(key)
+    // A frame whose shared rules could not be had is not the build's markup:
+    // drawn anew rather than hydrated.
+    const taken = staticRootFor(key)
+    const staticRoot = frameWhole ? taken : null
     if (!staticRoot) {
       dropStaticLayout()
       container.replaceChildren()

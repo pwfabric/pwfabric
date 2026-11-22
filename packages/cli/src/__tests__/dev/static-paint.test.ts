@@ -45,6 +45,78 @@ describe('the static first paint (pwapp-format §2.5)', () => {
     expect(codes(r).filter((c) => c.startsWith('STATIC_PAINT'))).toEqual([])
   })
 
+  it('a <style> every page writes the same is sent once: one hashed stylesheet each document links, an empty marker in each frame', async () => {
+    const root = await app()
+    await writeFile(join(root, 'app', 'surfaces', 'about.receipt.json'), JSON.stringify({ title: 'About', blocks: [{ id: 't', type: 'title', props: { text: 'About us' } }] }))
+    const identity = JSON.parse(await readFile(join(root, 'pwpack.json'), 'utf8')) as { app: { surfaceOrder: string[] } }
+    identity.app.surfaceOrder = ['home', 'about']
+    await writeFile(join(root, 'pwpack.json'), JSON.stringify(identity))
+    const r = await assemblePwapp(root, { cacheDir: null, router: 'path' })
+    expect(r.ok, codes(r).join()).toBe(true)
+    const frameCss = [...r.files.keys()].find((f) => /^assets\/frame\.[0-9a-f]{8}\.css$/.test(f)) as string
+    expect(frameCss).toBeDefined()
+    const css = text(r.files.get(frameCss))
+    // The renderer's base rules are the same on every page.
+    expect(css).toMatch(/^\/\*pw-shared:0\*\/\[data-pw-surface\]/)
+    for (const doc of ['index.html', 'about/index.html']) {
+      const html = text(r.files.get(doc))
+      expect(html).toContain(`<link rel="stylesheet" href="./${frameCss}" data-pw-frame-css />`)
+      expect(html).toMatch(/<style data-pw-base-css="true" data-pw-shared="0"><\/style>/)
+      expect(html).not.toContain('box-sizing:border-box}')
+    }
+    // A page's own frame file is the same frame.
+    expect(text(r.files.get('pwpack/surfaces/about.html'))).toContain('data-pw-shared="0"></style>')
+  })
+
+  it('a container with direction { xs: column, md: row } is a row at desktop width with no script', async () => {
+    const root = await app()
+    const block = join(root, 'atoms', 'blocks', 'layout', 'row')
+    await mkdir(block, { recursive: true })
+    await writeFile(
+      join(block, 'component.tsx'),
+      `import * as React from 'react'
+export default function Row(p: { props?: { direction?: 'row' | 'column' }; children?: React.ReactNode }): React.ReactElement {
+  return <div data-k="row" style={{ display: 'flex', flexDirection: p.props?.direction ?? 'column' }}>{p.children}</div>
+}
+`
+    )
+    const manifest = JSON.parse(await readFile(join(root, ...PACK_REL, 'atoms', 'blocks', 'text', 'title', 'manifest.json'), 'utf8')) as Record<string, unknown>
+    await writeFile(
+      join(block, 'manifest.json'),
+      JSON.stringify({
+        ...manifest,
+        id: 'layout.row',
+        category: 'layout',
+        name: 'row',
+        definition: { props: [{ name: 'direction', jsonSchema: { type: 'string', enum: ['row', 'column'] } }], defaultProps: {}, canHaveChildren: true },
+      })
+    )
+    const receipt = join(root, 'app', 'surfaces', 'home.receipt.json')
+    const home = JSON.parse(await readFile(receipt, 'utf8')) as { blocks: unknown[] }
+    home.blocks.push({
+      id: 'cols',
+      type: 'row',
+      props: { direction: { xs: 'column', md: 'row' } },
+      children: [
+        { id: 'one', type: 'title', props: { text: 'One' } },
+        { id: 'two', type: 'title', props: { text: 'Two' } },
+      ],
+    })
+    await writeFile(receipt, JSON.stringify(home))
+
+    const r = await assemblePwapp(root, { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    expect(codes(r)).not.toContain('BLOCK_PROP_TYPE')
+    const html = text(r.files.get('index.html'))
+    // The markup is the phone's: a column.
+    expect(html).toMatch(/data-k="row" style="display:flex;flex-direction:column"/)
+    // The frame's stylesheet makes it a row from md up, before any script runs.
+    const layout = html.match(/<style id="pw-static-layout">([\s\S]*?)<\/style>/)?.[1] ?? ''
+    const md = layout.split('\n').find((rule) => rule.startsWith('@media (min-width:768px)')) ?? ''
+    expect(md).toContain('flex-direction:row!important')
+    expect(codes(r).filter((c) => c.startsWith('STATIC_PAINT'))).toEqual([])
+  })
+
   it('the first-paint script is allowed by its hash, and the data it reads is beside it', async () => {
     const r = await assemblePwapp(await app(), { cacheDir: null })
     const html = text(r.files.get('index.html'))

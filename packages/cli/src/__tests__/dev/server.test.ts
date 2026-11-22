@@ -90,7 +90,7 @@ describe('dev server', () => {
     expect(block.status).toBe(200)
     expect(block.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
     expect((await get('/pwpack/project.json')).headers.get('content-type')).toBe('application/json; charset=utf-8')
-    expect(html).toContain('<style>')
+    expect(html).toMatch(/<link rel="stylesheet" href="\.\/assets\/theme\.[0-9a-f]{8}\.css" \/>/)
 
     // Edit a page: the watcher rebuilds, the page hears `reload`, the envelope changed.
     const events = sse(new URL('/_pwf/events', server.url).href)

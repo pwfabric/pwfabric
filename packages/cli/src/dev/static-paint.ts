@@ -38,6 +38,8 @@ import {
   STATIC_PAGE_ATTR,
   STATIC_VIEWPORT,
   STATIC_LAYOUT_ID,
+  SHARED_STYLE_ATTR,
+  sharedStyleMarker,
   addressStateKeys,
   firstFrameAuthState,
   firstFrameDoorOf,
@@ -337,4 +339,40 @@ export function firstPaintData(input: {
     ...(input.notFound ? { notFound: input.notFound } : {}),
     pages,
   }
+}
+
+/**
+ * THE RULES EVERY PAGE WRITES THE SAME, SENT ONCE (pwapp-format §2.5). The
+ * renderer draws its base rules, a theme's dark rules and a block's own
+ * `<style>` into every page's frame; on a site of many pages each document
+ * carried them again. A `<style>` text found in two or more painted pages
+ * moves to one stylesheet, `css`, which every document links; each frame
+ * keeps an empty `<style data-pw-shared="<n>">` in its place, and the runner
+ * puts the text back before it hydrates (`@pwfabric/runner`
+ * `fillSharedStyles`), so React adopts the markup it renders. Without
+ * scripts the linked stylesheet is the rules.
+ *
+ * Texts keep their order of first appearance; `css` is empty when no text is
+ * shared.
+ */
+export function shareFrameStyles(pages: readonly PaintedPage[]): { pages: PaintedPage[]; css: string } {
+  const STYLE = /<style([^>]*)>([\s\S]*?)<\/style>/g
+  const seen = new Map<string, number>()
+  for (const page of pages) {
+    for (const text of new Set([...page.html.matchAll(STYLE)].map((m) => m[2] as string))) {
+      if (text !== '') seen.set(text, (seen.get(text) ?? 0) + 1)
+    }
+  }
+  const shared = new Map<string, number>()
+  for (const [text, n] of seen) if (n > 1) shared.set(text, shared.size)
+  if (shared.size === 0) return { pages: [...pages], css: '' }
+  const css = [...shared].map(([text, n]) => `${sharedStyleMarker(n)}${text}`).join('')
+  const out = pages.map((page) => ({
+    ...page,
+    html: page.html.replace(STYLE, (all, attrs: string, text: string) => {
+      const n = shared.get(text)
+      return n === undefined ? all : `<style${attrs} ${SHARED_STYLE_ATTR}="${n}"></style>`
+    }),
+  }))
+  return { pages: out, css }
 }
