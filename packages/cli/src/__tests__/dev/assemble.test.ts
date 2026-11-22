@@ -99,7 +99,8 @@ describe('assemblePwapp', () => {
 
     // One policy, three places: the shell's meta (no frame-ancestors), `_headers`, publish.json.
     const csp = publish['csp'] as { policy: string; unresolved?: { source: string }[] }
-    expect(csp.policy).toMatch(/^default-src 'none'; script-src 'self' blob: 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*'; style-src 'self' 'unsafe-inline' https:\/\/fonts\.googleapis\.com;/)
+    // The import map, the page hints, the first paint and the colour-scheme script (appearance §4.1).
+    expect(csp.policy).toMatch(/^default-src 'none'; script-src 'self' blob: 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*' 'sha256-[A-Za-z0-9+/]+=*'; style-src 'self' 'unsafe-inline' https:\/\/fonts\.googleapis\.com;/)
     expect(csp.policy).toContain("font-src 'self' https://fonts.gstatic.com")
     expect(csp.policy).toContain("frame-ancestors 'none'")
     // The compiled engine's reach is not declared, so it is listed, not guessed.
