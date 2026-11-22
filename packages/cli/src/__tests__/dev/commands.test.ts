@@ -9,6 +9,7 @@ import { runDev, untilInterrupted } from '../../commands/dev.js'
 import type { CommandIO } from '../../commands/types.js'
 import { makeApp } from './helpers.js'
 import { writePwapp } from '../../dev/output.js'
+import { createLocalHost } from '../../host/index.js'
 
 vi.setConfig({ testTimeout: 90_000 })
 
@@ -183,6 +184,34 @@ describe('pwf dev', () => {
     expect(await runDev({ positionals: [], flags: { router: 'path', base: 'shop' } }, c.io)).toBe(2)
     expect(c.err).toHaveLength(3)
     expect(c.err[1]).toContain('--base is for path routing')
+  })
+
+  it('--as signs the development user in with only the roles named, of those the app declares', async () => {
+    const root = await app()
+    await mkdir(join(root, 'app', 'definitions'), { recursive: true })
+    await writeFile(join(root, 'app', 'definitions', 'auth.json'), JSON.stringify({ methods: ['password'], access: { roles: ['manager', 'staff'], rules: [] } }))
+    const bad = capture(root)
+    expect(await runDev({ positionals: [], flags: { as: 'boss' } }, bad.io)).toBe(2)
+    expect(bad.err.join('\n')).toContain('--as boss: the app declares the roles manager, staff (or "member", for none)')
+    const seen: (readonly string[] | undefined)[] = []
+    for (const as of ['staff', 'member', 'manager,staff']) {
+      const c = capture(root)
+      const code = await runDev({ positionals: [], flags: { port: '0', as } }, c.io, {
+        internals: {
+          watch: false,
+          createHost: (options) => {
+            seen.push(options.roles)
+            return createLocalHost(options)
+          },
+        },
+        until: async () => {
+          await fetch(devUrl(c.out))
+        },
+      })
+      expect(code, c.err.join(' / ')).toBe(0)
+      expect(c.out.join('\n')).toContain(`dev@localhost signs in as ${as === 'member' ? 'a plain member (no role)' : as.split(',').join(', ')}`)
+    }
+    expect(seen).toEqual([['staff'], [], ['manager', 'staff']])
   })
 
   it('validates its flags', async () => {

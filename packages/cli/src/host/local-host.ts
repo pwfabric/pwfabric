@@ -178,7 +178,7 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
   /** Accounts made with an invitation (`registration: "invite"`), by principal id. */
   const invited = new Set<string>()
   const transactions = new TokenStore<{ readonly returnTo: string; readonly method: string; readonly expiresAt: number }>()
-  const records = new RecordStore(root, user, { readOnly: options.readOnly === true })
+  const records = new RecordStore(root, user, { readOnly: options.readOnly === true, ...(options.roles ? { devRoles: options.roles } : {}) })
   const issuer = new DevIssuer(bearer, user)
 
   const originOf = (req: IncomingMessage): string => `http://${req.headers.host ?? 'localhost'}`
@@ -192,7 +192,7 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
    */
   const answered = (principal: Principal): Principal & { readonly roles: readonly string[] } => ({
     ...principal,
-    roles: principal.id === user.id ? [...(readAuth(root)?.access.roles ?? [])] : [],
+    roles: principal.id === user.id ? [...(options.roles ?? readAuth(root)?.access.roles ?? [])] : [],
   })
 
   function startSession(principal: Principal = user): { token: string; expiresAt: string; principal: Principal } {

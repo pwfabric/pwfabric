@@ -163,7 +163,7 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
     const needs = await hostNeeds(root)
     const wanted = options.localHost === true || needs.length > 0
     if (wanted && internals.createHost) {
-      host = internals.createHost({ root, prefix: HOST_PREFIX })
+      host = internals.createHost({ root, prefix: HOST_PREFIX, ...(options.roles ? { roles: options.roles } : {}) })
       if (origin) log(`local host mounted at ${origin}${HOST_PREFIX} — development only: records in memory, no password checked`)
     } else if (wanted && !hostNoted) {
       hostNoted = true

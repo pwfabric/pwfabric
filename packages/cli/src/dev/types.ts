@@ -19,6 +19,8 @@ export interface DevServerOptions {
   readonly hostname?: string
   /** Mount a local host for data and sign-in. Default: only when the app declares them. */
   readonly localHost?: boolean | LocalHost
+  /** The roles the local host signs the development user in with (pwf dev --as). Default: every declared role. */
+  readonly roles?: readonly string[]
   /** Called with human-readable progress lines. */
   readonly log?: (line: string) => void
   /** Print an engine failure with its stack trace. Default false: its message only. */
