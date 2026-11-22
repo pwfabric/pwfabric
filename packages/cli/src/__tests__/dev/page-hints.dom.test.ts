@@ -8,7 +8,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { PAGE_HINTS_SCRIPT } from '../../dev/shell.js'
+import { PAGE_HINTS_SCRIPT, PAGE_HINTS_SCRIPT_LOCALES } from '../../dev/shell.js'
 
 const hints = {
   entry: 'menu',
@@ -91,5 +91,28 @@ describe('the page-hints script', () => {
     document.head.innerHTML = `<script type="application/json" id="pw-page-hints">{not json</script>`
     expect(() => new Function(PAGE_HINTS_SCRIPT)()).not.toThrow()
     expect(document.head.querySelectorAll('link')).toHaveLength(0)
+  })
+})
+
+describe('the page-hints script of an app with locales', () => {
+  // The default locale's document: its addresses name its pages, another locale's name none ('').
+  const localed = { ...hints, addresses: { '': 'menu', dish: 'dish', de: '', 'de/gericht': '' } }
+  const runLocales = (hash: string): string[] => {
+    history.replaceState(null, '', `/${hash}`)
+    document.head.innerHTML = `<script type="application/json" id="pw-page-hints">${JSON.stringify(localed)}</script>`
+    new Function(PAGE_HINTS_SCRIPT_LOCALES)()
+    return [...document.head.querySelectorAll('link')].map((l) => l.getAttribute('href') ?? '')
+  }
+
+  it('reads the entry at its key as the entry, and asks for nothing of the not-found page', () => {
+    for (const hash of ['#/menu', '#/']) {
+      const asked = runLocales(hash)
+      expect(asked, hash).toContain('./pwpack/surfaces/menu.receipt.json')
+      expect(asked.join(' '), hash).not.toMatch(/notfound/)
+      expect(document.documentElement.getAttribute('data-pw-page')).toBe('menu')
+    }
+    // The entry at its key in another locale: that locale's document has it, this one names nothing.
+    expect(runLocales('#/de/menu')).toEqual([])
+    expect(runLocales('#/nope')).toContain('./pwpack/surfaces/notfound.receipt.json')
   })
 })

@@ -248,7 +248,8 @@ export async function checkPage(browser: Browser, origin: string, key: string, i
     }
   })()`)
   await done()
-  if (info.notFoundKey !== undefined && key !== info.notFoundKey && seen.shown === info.notFoundKey) notFound = true
+  // The page finally drawn decides: a stray request for the not-found receipt on the way to the right page is not not-found.
+  if (info.notFoundKey !== undefined && typeof seen.shown === 'string' && seen.shown !== '') notFound = key !== info.notFoundKey && seen.shown === info.notFoundKey
   if (seen.painted === 0) return { skipped: 'the runner drew before the frame arrived', problems }
   if (info.isRecord) {
     if (!seen.kept && notFound) {
