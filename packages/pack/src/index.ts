@@ -45,6 +45,7 @@ export {
 export { DIR_MODE, FILE_MODE, FIXED_MTIME, readTar, writeTar } from './tar.js'
 export type { TarEntry, TarReadLimits } from './tar.js'
 export { hashPack, legacyContentHash, sha256Hex } from './hash.js'
+export { SVG_ELEMENTS, SVG_NAMESPACE, svgUnsafeReason, XLINK_NAMESPACE } from './svg.js'
 export {
   deriveAtoms,
   deriveManifest,

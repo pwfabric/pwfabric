@@ -1,5 +1,10 @@
 # @pwfabric/pack
 
+## Unreleased (3.5.0)
+
+- Added: `svgUnsafeReason(bytes)`, one SVG screen by a strict parse and an allowlist: no DOCTYPE or entity, no processing instruction past the XML declaration, only SVG picture elements (no `script`, `foreignObject`, `image`, `feImage`, no prefixed element), no `on…` attribute, `href` only `#id`, `url()` only `url(#id)` in any attribute or style, no CSS escape, comment, loading function or `@import`, no animation of `href` or `on…`, no element inside `<style>`.
+- Changed: a `public/*.svg` is judged by that screen (`APP_PUBLIC_SCRIPT`), and an SVG under `media/` that fails it is an error (`MEDIA_SVG_UNSAFE`, new) in `validatePack`, so `pwf validate`, `pwf add` and `pwf media add` agree.
+
 ## 3.4.0
 
 - No changes; released with the other packages at 3.4.0.

@@ -26,6 +26,7 @@ import { findCaseConflicts, findPathConflict, sortedPaths, unsafePathReason } fr
 import { PACK_DOC_FILES } from './content.js'
 import { atomOccurrences, deriveAtoms, IDENTITY_FILE, stripBom } from './manifest.js'
 import { sha256Hex } from './hash.js'
+import { svgUnsafeReason } from './svg.js'
 import { blockPropDescriptors } from './block-props.js'
 import { MEDIA_PROVENANCE_FILE as MEDIA_PROVENANCE, mediaDeclarations, readMediaProvenance } from './media.js'
 
@@ -154,6 +155,9 @@ export function publicScriptReason(rel: string, bytes: Uint8Array): string | und
   const name = rel.toLowerCase()
   if (SCRIPT_FILE.test(name)) return 'is a script file'
   if (!MARKUP_FILE.test(name)) return undefined
+  // An SVG is screened by a parse and an allowlist (./svg.ts), the one screen
+  // pwf media add, validation and installing a pack share.
+  if (name.endsWith('.svg')) return svgUnsafeReason(bytes)
   const text = new TextDecoder().decode(bytes).toLowerCase()
   if (text.includes('<script')) return 'holds a <script> element'
   if (/<[^>]*\son[a-z0-9_-]*\s*=/.test(text)) return 'holds an on… event attribute'
@@ -710,6 +714,13 @@ export function validatePack(pack: PackFolder): PackValidation {
     // A font's licence text beside it need not be recorded (pwpack-format §1.3).
     if (!declared.has(path) && !/^media\/fonts\/[^/]+\.txt$/i.test(path)) add('warning', 'MEDIA_UNDECLARED', `${path} has no entry in media/provenance.json`, path)
   }
+  // An SVG among the media is served as the app's own file: a plain picture only (./svg.ts).
+  for (const path of mediaFiles) {
+    if (!path.toLowerCase().endsWith('.svg')) continue
+    const reason = svgUnsafeReason(pack.files.get(path) as Uint8Array)
+    if (reason) add('error', 'MEDIA_SVG_UNSAFE', `${path} ${reason}`, path)
+  }
+
   // Declarations: which layout, and whether the bytes they name are there.
   issues.push(...mediaDeclarations(pack).issues)
 
