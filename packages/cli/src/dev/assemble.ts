@@ -518,12 +518,12 @@ export const PUBLIC_DIR = 'public/'
  * each with its bytes: those `pwf validate` does not already refuse (a path
  * the build writes, a file that is script — pwpack-format §1.4).
  */
-function publicFilesOf(appFiles: ReadonlyMap<string, Uint8Array>, pageKeys: readonly string[]): [string, Uint8Array][] {
+function publicFilesOf(appFiles: ReadonlyMap<string, Uint8Array>, pageKeys: readonly string[], localePrefixes: readonly string[] = []): [string, Uint8Array][] {
   const out: [string, Uint8Array][] = []
   for (const path of [...appFiles.keys()].filter((p) => p.startsWith(PUBLIC_DIR)).sort()) {
     const rel = path.slice(PUBLIC_DIR.length)
     const bytes = appFiles.get(path) as Uint8Array
-    if (rel === '' || publicReservedReason(rel, pageKeys) || publicScriptReason(rel, bytes)) continue
+    if (rel === '' || publicReservedReason(rel, pageKeys, localePrefixes) || publicScriptReason(rel, bytes)) continue
     out.push([rel, bytes])
   }
   return out
@@ -899,7 +899,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // response headers, redirects. Each is checked; a malformed one is an error.
   const planScripts = planScriptsOf(plan, diagnostics)
   // The app's public files, as served: listed in project.json, copied last.
-  const publicFiles = publicFilesOf(app.folder.files, keys)
+  const publicFiles = publicFilesOf(app.folder.files, keys, locales ? locales.locales.filter((l) => l !== locales.defaultLocale).map(localePrefix) : [])
   // The app's icon: every document links it.
   const favicon = faviconOf(config, app.folder.files, diagnostics)
   // The visitor's colour-scheme choice, applied before the first paint
@@ -1020,6 +1020,12 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       receipt: page ? (servedIn(doc.locale).get(page.key) ?? page.receipt) : undefined,
       appTitle: title,
       ...(titleTemplate !== undefined ? { titleTemplate } : {}),
+      // The document's words, for a title written with t() (envelope §2.3).
+      ...(locales && doc.locale !== undefined
+        ? { words: catalogueFor(localed.catalogues, locales, doc.locale), locale: doc.locale }
+        : messages !== undefined
+          ? { words: messages, ...(locale !== undefined ? { locale } : {}) }
+          : {}),
       ...(appDescription !== undefined ? { appDescription } : {}),
       ...(origin !== undefined ? { origin } : {}),
       ...(image !== undefined ? { image } : {}),
