@@ -24,6 +24,10 @@ export const STUDIO_PATHS = {
    * approves the publish in the studio first.
    */
   publish: (id: string) => `/s/p/${encodeURIComponent(id)}/publish`,
+  /** A project's open (or last) publish approval request and its log: `{ request, log }`. */
+  approval: (id: string) => `/s/p/${encodeURIComponent(id)}/approval`,
+  /** What a project has online: `{ published, version, url }`. */
+  published: (id: string) => `/s/p/${encodeURIComponent(id)}/published`,
   /** The remote MCP endpoint (stateless Streamable HTTP, JSON answers). */
   mcp: '/mcp',
 } as const
@@ -286,4 +290,51 @@ export async function mcpRequest(options: Omit<StudioClientOptions, 'url'>, meth
   if (res.status === 401) throw studioFailure('SESSION_REFUSED', 'the studio no longer accepts the saved session')
   if (body && typeof body === 'object' && (body.result || body.error)) return body
   throw studioFailure('STUDIO_REFUSED', `${url} answered HTTP ${res.status} without a JSON-RPC answer`)
+}
+
+/** Where a project's publishing stands, as `pwf publish --status` shows it. */
+export type PublishState =
+  | {
+      readonly state: 'awaiting_approval'
+      readonly approveUrl: string
+      readonly version?: string
+      readonly url?: string
+      readonly expiresAt?: string
+      /** What is online meanwhile, when anything is. */
+      readonly live?: { readonly version?: string; readonly url: string }
+    }
+  | { readonly state: 'live'; readonly version?: string; readonly url: string }
+  | { readonly state: 'none' }
+
+/**
+ * Reads a project's publishing: its open approval request (a publish a
+ * person has yet to approve in the studio) and what it has online. A studio
+ * that does not answer one of the two (an older studio: 404) is read as
+ * having nothing there.
+ */
+export async function publishState(options: StudioClientOptions, projectId: string): Promise<PublishState> {
+  const read = async (path: string): Promise<Record<string, unknown>> => {
+    try {
+      const body = await call(options, 'GET', path, {})
+      return body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+    } catch (e) {
+      if (e instanceof CommandFailure && e.code === 'NOT_FOUND') return {}
+      throw e
+    }
+  }
+  const [approval, published] = await Promise.all([read(STUDIO_PATHS.approval(projectId)), read(STUDIO_PATHS.published(projectId))])
+  const liveUrl = published['published'] === true ? webAddress(published['url']) : undefined
+  const liveVersion = plain(published['version'])
+  const live = liveUrl ? { url: liveUrl, ...(liveVersion ? { version: liveVersion } : {}) } : undefined
+  const request = approval['request'] && typeof approval['request'] === 'object' ? (approval['request'] as Record<string, unknown>) : undefined
+  if (request && request['status'] === 'awaiting' && (request['action'] === undefined || request['action'] === 'publish')) {
+    const approveUrl = webAddress(request['approveUrl'])
+    if (approveUrl) {
+      const version = plain(request['version'])
+      const url = webAddress(request['url'])
+      const expiresAt = plain(request['expiresAt'])
+      return { state: 'awaiting_approval', approveUrl, ...(version ? { version } : {}), ...(url ? { url } : {}), ...(expiresAt ? { expiresAt } : {}), ...(live ? { live } : {}) }
+    }
+  }
+  return live ? { state: 'live', ...live } : { state: 'none' }
 }
