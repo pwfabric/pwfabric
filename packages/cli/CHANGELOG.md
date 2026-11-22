@@ -5,6 +5,7 @@
 - Changed (upgrade note): `brand.favicon` is a media file (`media/<file>`), a file of `public/` or an `https://` address; anything else is `FAVICON_INVALID` in `pwf validate` and `pwf build`. The served form `pwpack/media/<file>` is refused with the file to write instead.
 - Changed: `pwf validate` refuses a pinned pack that is not cached (`PIN_NOT_CACHED`, an error), as `pwf build` does, with the same fix.
 - Added: app layouts, apps in several languages (per-locale documents, `hreflang`, one sitemap, llms sections, per-page words), `titleTemplate`, the colour-scheme script, `og:site_name`, `og:locale`, `twitter:card` and the icon link's `type`.
+- Changed (upgrade note): fonts must be the app's own files: the webfont service is gone. Declare each family's WOFF2 files in the theme's `fonts`, most simply with the new `pwf font add <family> --from <path|https-url|npm:<package>>`; a family without files is drawn in its fallback (`FONT_FILES_MISSING`). The build serves them as `assets/fonts/<name>.<hash>.woff2`, with an `@font-face` per file, the body font preloaded and a metric-matched `"<Family> Fallback"`; `font-src` is `'self'` only.
 - Note for apps on Foundation 2.0: the navbar has no `sticky` prop; use its block style (`position: sticky`, `top`, `zIndex`), and `alignSelf: "start"` in a stretched row.
 
 ## 3.4.0

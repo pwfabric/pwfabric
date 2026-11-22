@@ -57,6 +57,24 @@ top with its block style:
 
 Inside a stretched row, add `alignSelf: "start"` (section 1).
 
+## 4. Fonts are the app's own files
+
+The engine knows no font service: a family a theme names is loaded only from
+the app's own WOFF2 files, listed in the theme's `fonts`
+(`media/fonts/<file>.woff2`). A family named with no files is drawn in its
+fallback, and `pwf validate` warns (`FONT_FILES_MISSING`). Migrate each family
+once, for example from its Fontsource package:
+
+```sh
+pwf font add Inter --from npm:@fontsource/inter --weight 400 --weight 700
+```
+
+`--from` also takes a local `.woff2` file or folder, or an `https://` address.
+The command copies the files and their licence into `media/fonts/`, records
+them in `media/provenance.json` and declares them in the theme; the build then
+serves them hashed, preloads the body font and draws a metric-matched stand-in
+until it arrives. A block can no longer declare a `font` origin.
+
 ## Also new in 3.5
 
 Nothing here needs a change; each is described in the specification.
