@@ -2,6 +2,7 @@
  * The zod schemas of `surface-schema.ts` (tooling only: `@pwfabric/<pkg>/schemas`).
  * The package root is zod-free, so the visitor bundle never loads zod.
  */
+import { FONT_FALLBACKS } from './surface-theme.js'
 import { z } from 'zod'
 import { SurfaceAppearanceRefSchema } from './surface-appearance.schema.js'
 import { findDuplicateBlockIds } from './surface-schema.js'
@@ -97,8 +98,47 @@ export const blockSnapshotSchema: z.ZodType<any> = z.lazy(() =>
  * Retired surface root usage — no longer directly attached to
  * `surfaceDocumentSchema`.
  */
+/** A font file of the app: `media/fonts/<file>.woff2` (appearance §3.3). */
+const fontFileSchema = z
+  .object({
+    src: z.string().regex(/^media\/fonts\/(?!\.)[A-Za-z0-9._-]+\.woff2$/),
+    weight: z.union([z.number().int().min(100).max(900), z.string().regex(/^[1-9]00 [1-9]00$/)]),
+    style: z.enum(['normal', 'italic']).optional(),
+    unicodeRange: z
+      .string()
+      .regex(/^U\+[0-9A-Fa-f?]{1,6}(?:-[0-9A-Fa-f]{1,6})?(?:, ?U\+[0-9A-Fa-f?]{1,6}(?:-[0-9A-Fa-f]{1,6})?)*$/)
+      .optional(),
+  })
+  .strict()
+
+/** The font families the app ships, each once, each file once (appearance §3.3). */
+const fontsSchema = z
+  .array(
+    z
+      .object({
+        family: z.string().min(1).max(100).regex(/^[^"';{}<>\\,]+$/),
+        files: z.array(fontFileSchema).min(1),
+        fallback: z.enum(FONT_FALLBACKS).optional(),
+      })
+      .strict()
+  )
+  .superRefine((fonts, ctx) => {
+    const families = new Set<string>()
+    const files = new Set<string>()
+    fonts.forEach((f, i) => {
+      const name = f.family.trim().toLowerCase()
+      if (families.has(name)) ctx.addIssue({ code: 'custom', message: `fonts[${i}].family "${f.family}" is listed twice`, path: [i, 'family'] })
+      families.add(name)
+      for (const file of f.files) {
+        if (files.has(file.src)) ctx.addIssue({ code: 'custom', message: `fonts[${i}] names ${file.src}, which another face names too`, path: [i, 'files'] })
+        files.add(file.src)
+      }
+    })
+  })
+
 export const surfaceThemeSchema = z
   .object({
+    fonts: fontsSchema.optional(),
     // `card` is the container colour's one name; the old `surface` key is
     // refused rather than ignored, so a theme written for it fails loudly.
     colors: z

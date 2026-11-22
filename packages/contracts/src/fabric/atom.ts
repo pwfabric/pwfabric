@@ -833,8 +833,10 @@ export interface AtomBlockDefinitionMetadata {
  * third-party script the block's own code adds to the page (a widget's
  * loader): the block's module itself is still verified and loaded by the
  * runtime, and the origin is exact like every other — never a wildcard.
+ * There is no `font`: fonts are the app's own files and `font-src` is
+ * `'self'` only (appearance §3.3).
  */
-export const BLOCK_ORIGIN_DIRECTIVES = ['connect', 'frame', 'img', 'media', 'font', 'style', 'script'] as const
+export const BLOCK_ORIGIN_DIRECTIVES = ['connect', 'frame', 'img', 'media', 'style', 'script'] as const
 export type BlockOriginDirective = (typeof BLOCK_ORIGIN_DIRECTIVES)[number]
 
 /**

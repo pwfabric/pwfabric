@@ -822,11 +822,15 @@ describe('block definition origins', () => {
         img: ['https://tile.openstreetmap.org'],
         connect: ['https://api.example.com:8443'],
         media: ['https://cdn.example.com'],
-        font: ['https://fonts.example.com'],
         style: ['https://css.example.com'],
       },
     })
     expect(r.success).toBe(true)
+  })
+
+  it('refuses a font origin: fonts are the app\'s own files, font-src is self only', () => {
+    const r = AtomBlockDefinitionMetadataSchema.safeParse({ ...valid, origins: { font: ['https://fonts.example.com'] } })
+    expect(r.success).toBe(false)
   })
 
   it('rejects an address that is not an exact origin, with the BLOCK_ORIGIN_INVALID code', () => {
