@@ -53,6 +53,8 @@ export function brokenLinks(out: BuiltOutput, origin?: string): { checked: numbe
   const broken: BrokenLink[] = []
   let checked = 0
   const routes = new Set(out.addresses.map((a) => a.replace(/\/+$/, '')))
+  // The entry's key opens the entry in every locale (`#/menu`, `#/de/menu`).
+  if (out.entry) for (const a of out.entry.addresses) routes.add(`${a.replace(/\/*$/, '/')}${out.entry.key}`.replace(/^\/+/, ''))
   for (const doc of pageDocuments(out)) {
     const html = new TextDecoder().decode(out.files.get(doc))
     for (const raw of documentLinks(html)) {
