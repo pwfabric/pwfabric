@@ -77,7 +77,7 @@ import type { PreviewSurface } from './preview-bridge.js'
 import { createConsent } from './consent.js'
 import { createColorScheme } from './color-scheme.js'
 import { assemblePage } from './layout.js'
-import { localesOf } from '@pwfabric/contracts/app-locales'
+import { localesOf, mergeCatalogues } from '@pwfabric/contracts/app-locales'
 import { mountLocaleSuggestion } from './locale-suggestion.js'
 import type { RunnerMessages } from './messages.js'
 
@@ -158,7 +158,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   async function wordsOf(lang: string, key: string | undefined): Promise<Readonly<Record<string, string>>> {
     const declaration = localeDeclaration as NonNullable<typeof localeDeclaration>
     const file = key !== undefined ? project.pageMessages?.[lang]?.[key] : undefined
-    const full = async (): Promise<Record<string, string>> => ({ ...(await catalogue(declaration.defaultLocale)), ...(await catalogue(lang)) })
+    const full = async (): Promise<Record<string, string>> => mergeCatalogues(await catalogue(declaration.defaultLocale), await catalogue(lang))
     if (!file) return full()
     const own = await pageWordFile(file)
     return key !== undefined && project.pageMessagesDynamic?.includes(key) ? { ...(await full()), ...own } : own
