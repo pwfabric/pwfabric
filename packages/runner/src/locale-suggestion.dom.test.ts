@@ -102,3 +102,27 @@ describe('the suggestion strip', () => {
     expect(JSON.parse(store.items.get('pwapp_locale:cafe') ?? '{}')).toEqual({ dismissed: true })
   })
 })
+
+describe('the strip and an app’s own bar at the bottom', () => {
+  it('sits above a fixed bottom bar, and again after a resize', async () => {
+    const bar = document.createElement('nav')
+    bar.style.position = 'fixed'
+    bar.style.bottom = '0'
+    document.body.appendChild(bar)
+    let barHeight = 56
+    bar.getBoundingClientRect = () => ({ top: window.innerHeight - barHeight, bottom: window.innerHeight, height: barHeight, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
+    const box = await offer(['de'])
+    expect(box?.style.bottom).toBe('56px')
+    barHeight = 72
+    window.dispatchEvent(new Event('resize'))
+    expect(box?.style.bottom).toBe('72px')
+    expect(Number.parseInt(document.documentElement.style.getPropertyValue('scroll-padding-bottom'), 10)).toBeGreaterThanOrEqual(72)
+    box?.querySelector('button')?.click()
+  })
+
+  it('sits at the bottom edge when nothing is there', async () => {
+    const box = await offer(['de'])
+    expect(box?.style.bottom).toBe('0px')
+    box?.querySelector('button')?.click()
+  })
+})

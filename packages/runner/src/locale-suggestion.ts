@@ -107,10 +107,21 @@ export async function mountLocaleSuggestion(options: LocaleSuggestionOptions): P
   go.setAttribute('data-pw-locale-switch', '')
   go.textContent = words['locale.switch'] || 'locale.switch'
   const root = doc.documentElement
+  const view = doc.defaultView
+  const place = (): void => {
+    // Above the app's own bar at the bottom of the viewport (a fixed tab bar,
+    // a sticky footer), never over it; and the page scrolls a focused element
+    // above both.
+    const below = bottomBarHeight(doc, box)
+    box.style.bottom = `${below}px`
+    const height = box.getBoundingClientRect().height
+    root.style.setProperty('scroll-padding-bottom', `${Math.ceil(below + (height || 64))}px`)
+  }
   const close = (answer: Record<string, unknown>): void => {
     keep(answer)
     box.remove()
     root.style.removeProperty('scroll-padding-bottom')
+    view?.removeEventListener('resize', place)
   }
   go.addEventListener('click', () => close({ locale: lang }))
   const no = doc.createElement('button')
@@ -134,9 +145,31 @@ export async function mountLocaleSuggestion(options: LocaleSuggestionOptions): P
   // navbar nor a language bar. It takes no focus. While it is shown, an
   // element scrolled into view (a focused field) stops above it.
   doc.body.appendChild(box)
-  const height = box.getBoundingClientRect().height
-  root.style.setProperty('scroll-padding-bottom', `${Math.ceil(height) || 64}px`)
+  place()
+  view?.addEventListener('resize', place)
   return box
+}
+
+/**
+ * How much of the viewport's bottom the app's own fixed or sticky elements
+ * take (a tab bar, a sticky footer): the strip sits above them. Measured when
+ * the strip is shown — after hydration — and again on a resize.
+ */
+export function bottomBarHeight(doc: Document, except: Element): number {
+  const view = doc.defaultView
+  if (!view) return 0
+  const height = view.innerHeight
+  let taken = 0
+  for (const el of doc.body.querySelectorAll('*')) {
+    if (el === except || except.contains(el)) continue
+    const position = view.getComputedStyle(el).position
+    if (position !== 'fixed' && position !== 'sticky') continue
+    const rect = el.getBoundingClientRect()
+    // Anchored at the bottom: it reaches the viewport's bottom edge and is no taller than half of it.
+    if (rect.height <= 0 || rect.bottom < height - 1 || rect.height > height / 2) continue
+    taken = Math.max(taken, height - rect.top)
+  }
+  return Math.max(0, Math.ceil(taken))
 }
 
 /** The id of the strip's stylesheet, written once. */
