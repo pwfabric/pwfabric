@@ -29,6 +29,12 @@ import { messageOf, type AppMessages, type MessageVars } from './messages.js'
 
 export const AppMessagesContext = createContext<AppMessages | null>(null)
 
+/**
+ * The app's locale (BCP 47), whose plural rules and numbers a message's
+ * plural is written in (envelope §2.1). Absent: `en`.
+ */
+export const AppLocaleContext = createContext<string | undefined>(undefined)
+
 /** The app's whole message map, or null outside a provider. */
 export function useAppMessages(): AppMessages | null {
   return useContext(AppMessagesContext)
@@ -39,5 +45,5 @@ export function useAppMessages(): AppMessages | null {
  * filled from `vars`. See the module note for the order.
  */
 export function useAppMessage(id: string, fallback?: string, vars?: MessageVars): string {
-  return messageOf(useContext(AppMessagesContext), id, fallback, vars)
+  return messageOf(useContext(AppMessagesContext), id, fallback, vars, useContext(AppLocaleContext))
 }

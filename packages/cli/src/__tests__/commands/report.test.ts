@@ -284,3 +284,13 @@ describe('PLAN_TITLE_TEMPLATE_INVALID', () => {
     }
   })
 })
+
+describe('MESSAGES_INVALID — plurals (envelope §2.1)', () => {
+  it('refuses a plural the runner cannot pick, and accepts a good one', async () => {
+    const own = { 'pwpack.json': { app: { notFound: 'missing' } } }
+    expect(checkMessages(await project({ ...own, 'app/plan.json': { messages: { 'cart.n': '{n, plural, one {# item} other {# items}}' } } }))).toEqual([])
+    const bad = checkMessages(await project({ ...own, 'app/plan.json': { messages: { 'cart.n': '{n, plural, one {# item}}' } } }))
+    expect(codes(bad)).toEqual(['MESSAGES_INVALID'])
+    expect(bad[0]?.message).toContain('messages["cart.n"]')
+  })
+})

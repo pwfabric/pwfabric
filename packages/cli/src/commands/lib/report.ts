@@ -22,7 +22,7 @@ import {
   type PackValidation,
   type PageReceipt,
 } from '@pwfabric/pack'
-import { assemblePage, isTitleTemplate, PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
+import { assemblePage, isTitleTemplate, pluralProblems, PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
 import { layoutSlotProblems, PAGE_SLOT_TYPE } from '@pwfabric/contracts'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { engineVersion, pinsOf } from './identity.js'
@@ -359,9 +359,16 @@ export function checkMessages(root: string): PackIssue[] {
   // An app with no plan sets no words: every id it can reach is missing.
   const plan = readJsonFile(join(root, 'app', 'plan.json'))
   const messages = isObj(plan) && isObj(plan['messages']) ? plan['messages'] : {}
+  // A plural the runner cannot pick is written as its text (envelope §2.1): the build's code and words.
+  const plurals: PackIssue[] = []
+  for (const [id, text] of Object.entries(messages)) {
+    if (typeof text !== 'string') continue
+    for (const problem of pluralProblems(text)) plurals.push({ severity: 'error', code: 'MESSAGES_INVALID', path: 'app/plan.json', message: `messages["${id}"]: ${problem}` })
+  }
   const missing = reachableMessageIds(root).filter((id) => !(typeof messages[id] === 'string' && messages[id] !== ''))
-  if (missing.length === 0) return []
+  if (missing.length === 0) return plurals
   return [
+    ...plurals,
     {
       severity: 'error',
       code: 'MESSAGES_MISSING',

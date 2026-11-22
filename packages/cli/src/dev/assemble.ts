@@ -42,7 +42,7 @@ import { llmsFullTxt, llmsTxt, type LlmsPage } from './llms.js'
 import { planHeadersOf, planRedirectsOf, planScriptOrigins, planScriptsOf, redirectsFile } from './plan-site.js'
 import { parseHeadersFile } from '../commands/lib/static-server.js'
 import { firstPaintData, onPageFragmentLinks, paintPages, shareFrameStyles, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
-import { assemblePage, canonicalOf, hashHref, isTitleTemplate, pathHref } from '@pwfabric/runner'
+import { assemblePage, canonicalOf, hashHref, isTitleTemplate, pathHref, pluralProblems } from '@pwfabric/runner'
 import {
   BOOT_FILES,
   FIRST_PAINT_SCRIPT,
@@ -279,6 +279,10 @@ function messagesOf(plan: unknown, diagnostics: AssembleDiagnostic[]): Record<st
   for (const [id, value] of Object.entries(raw)) {
     if (typeof value === 'string') {
       out[id] = value
+      // A plural the runner cannot pick is written as its text (envelope §2.1).
+      for (const problem of pluralProblems(value)) {
+        diagnostics.push({ severity: 'error', code: 'MESSAGES_INVALID', message: `messages["${id}"]: ${problem}`, path: 'app/plan.json' })
+      }
       continue
     }
     diagnostics.push({

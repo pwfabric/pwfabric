@@ -170,8 +170,8 @@ export { SurfaceDataContext, useSurfaceData } from './surface-data-context.js'
 export type { SurfaceData } from './surface-data-context.js'
 
 // The app's words (`plan.json` `messages`), for the words a block draws itself
-export { AppMessagesContext, useAppMessage, useAppMessages } from './app-messages.js'
-export { formatMessage, messageOf, appMessagesOf } from './messages.js'
+export { AppLocaleContext, AppMessagesContext, useAppMessage, useAppMessages } from './app-messages.js'
+export { formatMessage, messageOf, appMessagesOf, pluralProblems } from './messages.js'
 export type { AppMessages, MessageVars } from './messages.js'
 
 // Connections context (world connections + engine registry)

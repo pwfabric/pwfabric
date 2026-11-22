@@ -43,6 +43,12 @@ describe('RUNNER_MESSAGE_IDS', () => {
 })
 
 describe('runnerMessages', () => {
+  it('writes a plural in the app’s locale', () => {
+    const say = runnerMessages({ 'pill.signedIn': '{n, plural, one {# Sitzung} other {# Sitzungen}}' }, 'de')
+    expect(say('pill.signedIn', { n: 1 })).toBe('1 Sitzung')
+    expect(say('pill.signedIn', { n: 2000 })).toBe('2.000 Sitzungen')
+  })
+
   it('reads the app’s message; an id it does not set is nothing', () => {
     const say = runnerMessages({ 'gate.title': 'Oturum açın' })
     expect(say('gate.title')).toBe('Oturum açın')
