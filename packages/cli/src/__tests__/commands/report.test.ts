@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { checkAccess, checkEntities, checkMessages, checkReservedSources, checkSeeds, checkStatusKeys, checkTitleTemplate, reachableMessageIds } from '../../commands/lib/report.js'
+import { checkAccess, checkEntities, checkMessages, checkReservedSources, checkSeeds, checkFontMetrics, checkStatusKeys, checkTitleTemplate, reachableMessageIds } from '../../commands/lib/report.js'
 import { tempDir } from './helpers.js'
 
 async function project(files: Record<string, unknown>): Promise<string> {
@@ -317,5 +317,16 @@ describe('the words of an app with locales (envelope §2.3)', () => {
     })
     const issues = checkMessages(root)
     expect(issues.map((i) => [i.code, i.path])).toEqual([['MESSAGES_INVALID', 'app/messages/de.json']])
+  })
+})
+
+describe('FONT_METRICS_UNREADABLE', () => {
+  it("warns for a font file whose metrics cannot be read, as pwf build does", async () => {
+    const { packFromRecord } = await import('@pwfabric/pack')
+    const theme = { theme: { typography: { fontFamily: 'X, sans-serif' }, fonts: [{ family: 'X', files: [{ src: 'media/fonts/x.woff2', weight: 400 }] }] } }
+    const root = await project({ 'app/definitions/appearance.json': theme })
+    const bad = packFromRecord({ 'media/fonts/x.woff2': 'wOF2' + 'x'.repeat(60) })
+    expect(codes(checkFontMetrics(root, bad))).toEqual(['FONT_METRICS_UNREADABLE'])
+    expect(checkFontMetrics(root, packFromRecord({}))).toEqual([])
   })
 })

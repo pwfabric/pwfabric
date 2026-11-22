@@ -73,7 +73,11 @@ pwf font add Inter --from npm:@fontsource/inter --weight 400 --weight 700
 The command copies the files and their licence into `media/fonts/`, records
 them in `media/provenance.json` and declares them in the theme; the build then
 serves them hashed, preloads the body font and draws a metric-matched stand-in
-until it arrives. A block can no longer declare a `font` origin.
+until it arrives. A block can no longer declare a `font` origin, and
+`@pwfabric/contracts/webfonts` (the old webfont allow-list) is removed. When a
+font file's metrics cannot be read, its stand-in is the plain local font and
+`pwf validate` warns (`FONT_METRICS_UNREADABLE`): the text may move when the
+font arrives.
 
 ## Also new in 3.5
 

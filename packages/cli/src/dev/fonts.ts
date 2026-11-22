@@ -139,6 +139,8 @@ export interface FontAssets {
   readonly files: ReadonlyMap<string, Uint8Array>
   /** The body family's regular file, as served, to preload; undefined without one. */
   readonly preload?: string
+  /** The families whose stand-in is plain (`local()` alone): their file's metrics could not be read, and why. */
+  readonly unreadable: readonly { readonly family: string; readonly src?: string; readonly reason: string }[]
 }
 
 /**
@@ -158,6 +160,7 @@ export function fontAssetsOf(
   const served = new Map<string, string>()
   const rules: string[] = []
   const stands: string[] = []
+  const unreadable: { family: string; src?: string; reason: string }[] = []
   for (const font of fonts) {
     for (const file of font.files) {
       const bytes = pack.get(file.src)
@@ -183,6 +186,7 @@ export function fontAssetsOf(
     const metrics = bytes ? woff2Metrics(bytes) : 'none'
     const kind = fallbackKind(font.fallback)
     const face = typeof metrics === 'string' ? undefined : fallbackFaceOf(metrics, kind)
+    if (typeof metrics === 'string' && bytes) unreadable.push({ family: font.family, ...(regular ? { src: regular.src } : {}), reason: metrics })
     const local = face?.local ?? { 'sans-serif': 'Arial', serif: 'Times New Roman', monospace: 'Courier New' }[kind]
     stands.push(
       [
@@ -200,7 +204,12 @@ export function fontAssetsOf(
   const weight = Number.parseInt(String(body.weight ?? '400'), 10)
   const regular = bodyFont ? regularFile(bodyFont, Number.isFinite(weight) ? weight : 400) : undefined
   const preload = regular ? served.get(regular.src) : undefined
-  return { css: [...rules, ...stands].join('\n\n'), files, ...(preload ? { preload } : {}) }
+  return { css: [...rules, ...stands].join('\n\n'), files, unreadable, ...(preload ? { preload } : {}) }
+}
+
+/** The FONT_METRICS_UNREADABLE finding's words: the family drawn with a plain stand-in, and what that costs. */
+export function unreadableMetricsMessage(u: { readonly family: string; readonly src?: string; readonly reason: string }): string {
+  return `the metrics of ${u.src ?? `"${u.family}"`} cannot be read (${u.reason}): "${u.family} Fallback" is the plain local font, not matched to it, so the text may move when the font arrives`
 }
 
 /** The body family and weight of a configuration's light token set. */

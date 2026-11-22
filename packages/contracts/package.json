@@ -42,11 +42,6 @@
       "import": "./dist/fabric/app-locales.js",
       "default": "./dist/fabric/app-locales.js"
     },
-    "./webfonts": {
-      "types": "./dist/fabric/webfonts.d.ts",
-      "import": "./dist/fabric/webfonts.js",
-      "default": "./dist/fabric/webfonts.js"
-    },
     "./schemas": {
       "types": "./dist/schemas.d.ts",
       "import": "./dist/schemas.js",

@@ -28,6 +28,8 @@ import { layoutSlotProblems, localesOf, PAGE_SLOT_TYPE } from '@pwfabric/contrac
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { engineVersion, pinsOf } from './identity.js'
 import { faviconOf } from '../../dev/favicon.js'
+import { appearanceConfigOf } from '../../dev/theme.js'
+import { bodyFontOf, fontAssetsOf, themeFontsOf, unreadableMetricsMessage } from '../../dev/fonts.js'
 import { engineRangeDiagnostics, isRecord, jsonOf, loadSources, type LoadedSources } from '../../dev/sources.js'
 import { servedPageKeys } from '../../dev/envelope.js'
 import { readAuth, readEntities, readReceipt, readSeed, surfaceKeys, type AuthDeclaration } from '../../host/definitions.js'
@@ -407,6 +409,23 @@ export function checkFavicon(root: string, pack: PackFolder): PackIssue[] {
 }
 
 /**
+ * The app's font files whose metrics cannot be read (`FONT_METRICS_UNREADABLE`,
+ * a warning, as `pwf build` gives it): their family is drawn with a plain
+ * stand-in, and the text may move when the font arrives.
+ */
+export function checkFontMetrics(root: string, pack: PackFolder): PackIssue[] {
+  const doc = readJsonFile(join(root, 'app', 'definitions', 'appearance.json'))
+  if (!isObj(doc)) return []
+  const config = appearanceConfigOf(doc) as Record<string, unknown> | undefined
+  return fontAssetsOf(themeFontsOf(config), pack.files, bodyFontOf(config)).unreadable.map((u) => ({
+    severity: 'warning',
+    code: 'FONT_METRICS_UNREADABLE',
+    path: u.src ?? 'app/definitions/appearance.json',
+    message: unreadableMetricsMessage(u),
+  }))
+}
+
+/**
  * The app's title template (`app/plan.json` `titleTemplate`, receipt §1.1):
  * exactly one `%s`, and `%%` for a `%` (`PLAN_TITLE_TEMPLATE_INVALID`, the
  * build's code and words).
@@ -530,7 +549,7 @@ export async function validateProject(root: string, pack: PackFolder): Promise<P
   const engineIssues: PackIssue[] = loaded
     ? engineRangeDiagnostics(loaded, engineVersion()).map((d) => ({ severity: 'error', code: d.code, message: d.message, ...(d.path ? { path: d.path } : {}) }))
     : []
-  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkTitleTemplate(root), ...checkFavicon(root, pack), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
+  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkTitleTemplate(root), ...checkFavicon(root, pack), ...checkFontMetrics(root, pack), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 
