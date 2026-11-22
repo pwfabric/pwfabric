@@ -47,7 +47,7 @@ describe('the app icon (appearance brand.favicon)', () => {
     await editJson(root, 'app/definitions/appearance.json', (d) => ({ ...d, brand: { favicon: 'favicon.ico' } }))
     const r = await assemblePwapp(root, { cacheDir: null })
     expect(r.ok, codes(r).join()).toBe(true)
-    expect(text(r.files.get('index.html'))).toContain('<link rel="icon" href="./favicon.ico" />')
+    expect(text(r.files.get('index.html'))).toContain('<link rel="icon" type="image/x-icon" href="./favicon.ico" />')
     expect(r.files.has('favicon.ico')).toBe(true)
   })
 
@@ -57,7 +57,7 @@ describe('the app icon (appearance brand.favicon)', () => {
     await editJson(root, 'app/definitions/appearance.json', (d) => ({ ...d, brand: { favicon: 'media/icon.png' } }))
     const r = await assemblePwapp(root, { cacheDir: null })
     expect(r.ok, codes(r).join()).toBe(true)
-    expect(text(r.files.get('index.html'))).toContain('<link rel="icon" href="./pwpack/media/icon.png" />')
+    expect(text(r.files.get('index.html'))).toContain('<link rel="icon" type="image/png" href="./pwpack/media/icon.png" />')
     expect(r.files.has('pwpack/media/icon.png')).toBe(true)
   })
 
@@ -66,7 +66,7 @@ describe('the app icon (appearance brand.favicon)', () => {
     await editJson(root, 'app/definitions/appearance.json', (d) => ({ ...d, brand: { favicon: 'https://cdn.example.com/icon.svg' } }))
     const r = await assemblePwapp(root, { cacheDir: null })
     expect(r.ok, codes(r).join()).toBe(true)
-    expect(text(r.files.get('index.html'))).toContain('<link rel="icon" href="https://cdn.example.com/icon.svg" />')
+    expect(text(r.files.get('index.html'))).toContain('<link rel="icon" type="image/svg+xml" href="https://cdn.example.com/icon.svg" />')
     expect(directive(cspOf(r), 'img-src')).toContain('https://cdn.example.com')
   })
 
