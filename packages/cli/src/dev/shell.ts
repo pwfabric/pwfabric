@@ -14,6 +14,7 @@
  * time, so the list has to be complete — and reading it from the bundle that
  * serves it is the only way it stays complete.
  */
+import { faviconTypeOf } from './favicon.js'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -232,6 +233,10 @@ export interface ShellOptions {
    * app's public origin.
    */
   readonly alternates?: readonly { readonly hreflang: string; readonly href: string }[]
+  /** `og:site_name`: the app's title. */
+  readonly siteName?: string
+  /** `og:locale` (the document's language, `en_GB`), and an `og:locale:alternate` per other locale of the app. */
+  readonly ogLocale?: { readonly locale: string; readonly alternates?: readonly string[] }
   /**
    * An app with locales: the inline scripts read a page off the address
    * table (`addresses` in their data, envelope §2.3) rather than off its key.
@@ -311,6 +316,11 @@ export interface ShellOptions {
    * the script is not written.
    */
   readonly firstPaint?: { readonly rootHtml: string; readonly layoutCss: string; readonly data: Record<string, unknown> }
+}
+
+/** A BCP 47 tag as Open Graph writes a locale: `en-GB` → `en_GB`. */
+export function ogLocaleOf(tag: string): string {
+  return tag.replace(/-/g, '_')
 }
 
 /**
@@ -621,10 +631,15 @@ export function buildShellHtml(options: ShellOptions): string {
     options.canonical ? `<link rel="canonical" href="${escapeHtml(options.canonical)}" />` : '',
     ...(options.alternates ?? []).map((a) => `<link rel="alternate" hreflang="${escapeHtml(a.hreflang)}" href="${escapeHtml(a.href)}" />`),
     '<meta property="og:type" content="website" />',
+    options.siteName ? `<meta property="og:site_name" content="${escapeHtml(options.siteName)}" />` : '',
+    options.ogLocale ? `<meta property="og:locale" content="${escapeHtml(ogLocaleOf(options.ogLocale.locale))}" />` : '',
+    ...(options.ogLocale?.alternates ?? []).map((l) => `<meta property="og:locale:alternate" content="${escapeHtml(ogLocaleOf(l))}" />`),
     options.title ? `<meta property="og:title" content="${escapeHtml(options.title)}" />` : '',
     options.description?.trim() ? `<meta property="og:description" content="${escapeHtml(options.description.trim())}" />` : '',
     options.canonical ? `<meta property="og:url" content="${escapeHtml(options.canonical)}" />` : '',
     options.image ? `<meta property="og:image" content="${escapeHtml(options.image)}" />` : '',
+    // A large card for a page that has a picture to show.
+    `<meta name="twitter:card" content="${options.image ? 'summary_large_image' : 'summary'}" />`,
   ]
     .filter((l) => l !== '')
     .map((l) => `
@@ -685,7 +700,7 @@ export function buildShellHtml(options: ShellOptions): string {
     <meta charset="UTF-8" />${base}${csp}
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(options.title)}</title>${description}${meta}
-    <link rel="icon" href="${options.favicon ? escapeHtml(servedHref(options.favicon)) : 'data:,'}" />${options.colorSchemeScript ? `
+    <link rel="icon"${options.favicon && faviconTypeOf(options.favicon) ? ` type="${faviconTypeOf(options.favicon) as string}"` : ''} href="${options.favicon ? escapeHtml(servedHref(options.favicon)) : 'data:,'}" />${options.colorSchemeScript ? `
     <script>${options.colorSchemeScript}</script>` : ''}
     ${options.themeCss !== undefined ? `<style>${options.themeCss.replace(/<\//g, '<\\/')}</style>` : `<link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />`}${frameCss}${layout}${fonts}
     <script type="importmap">${importMapText()}</script>
