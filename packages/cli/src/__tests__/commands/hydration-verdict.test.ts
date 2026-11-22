@@ -43,6 +43,12 @@ describe('a page the check expected, drawn as not-found', () => {
     expect(r.problems).toContain('the page drew the not-found page where menu was expected')
   })
 
+  it('judges by the page finally drawn: a not-found receipt fetched on the way to the right page is no failure', async () => {
+    const r = await checkPage(browserShowing('menu', ['http://x/pwpack/surfaces/not-found.receipt.json', 'http://x/pwpack/surfaces/menu.receipt.json'], true), 'http://x', 'menu', { ...page, notFoundKey: 'not-found' }, 390, '/#/menu')
+    expect(r.problems).toEqual([])
+    expect(r.skipped).toBeUndefined()
+  })
+
   it('passes the not-found page itself', async () => {
     const r = await checkPage(browserShowing('not-found', [], true), 'http://x', 'not-found', { ...page, notFoundKey: 'not-found' }, 390, '/pw-check-no-such-page')
     expect(r.problems).toEqual([])

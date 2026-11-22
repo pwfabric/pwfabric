@@ -364,11 +364,18 @@ const ADDRESS_KEY = String.raw`var own = function (o, k) { return Object.prototy
  * below the base (or the route) is read against the document's own
  * `addresses` (`{ <address>: <key> }`, every locale's addresses, a locale the
  * document is not drawn in naming no page), the not-found page for any other.
+ * The entry's key below a locale's entry address (`menu`, `de/menu`) is read
+ * as that entry address, as the runner's router reads it.
  */
 const ADDRESS_KEY_LOCALES = ADDRESS_KEY.replace(
   String.raw`    if (key === '') key = d.entry
     if (d.routes.indexOf(key) < 0 && d.notFound) key = d.notFound`,
-  String.raw`    key = own(d.addresses || {}, key) ? d.addresses[key] : d.notFound || ''`
+  String.raw`    var at = function (k) { return own(d.addresses || {}, k) ? d.addresses[k] : null }
+    var tail = '/' + d.entry
+    var e = key === d.entry ? '' : key.slice(-tail.length) === tail ? key.slice(0, -tail.length) : null
+    if (at(key) !== null) key = at(key)
+    else if (e !== null && (at(e) === d.entry || at(e) === '')) key = at(e)
+    else key = d.notFound || ''`
 )
 
 /**
