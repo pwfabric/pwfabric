@@ -32,13 +32,34 @@ describe('a WOFF2 file’s metrics', () => {
     expect(m.unitsPerEm).toBe(1000)
     expect(m.ascent).toBeGreaterThan(0)
     expect(m.descent).toBeGreaterThan(0)
-    expect(m.xAvgCharWidth).toBeGreaterThan(0)
+    expect(m.avgWidth).toBeGreaterThan(0)
     const face = fallbackFaceOf(m, 'sans-serif')
     expect(face.local).toBe('Arial')
     // The stand-in is the local font resized to the family's average advance.
-    expect(face.sizeAdjust).toBeCloseTo((m.xAvgCharWidth / m.unitsPerEm / (904 / 2048)) * 100, 1)
+    expect(face.sizeAdjust).toBeCloseTo((m.avgWidth / m.unitsPerEm / (913 / 2048)) * 100, 1)
     expect(face.ascent).toBeCloseTo((m.ascent / (m.unitsPerEm * face.sizeAdjust / 100)) * 100, 1)
   })
+
+  // The stand-in a text-weighted average advance gives, as capsize and
+  // fontaine compute it against the same local fonts: within ±0.5%.
+  const reference = [
+    { file: 'inter-latin-400-normal.woff2', kind: 'sans-serif', sizeAdjust: 107.12, ascent: 90.44, descent: 22.52, lineGap: 0 },
+    { file: 'inter-latin-wght-normal.woff2', kind: 'sans-serif', sizeAdjust: 107.12, ascent: 90.44, descent: 22.52, lineGap: 0 },
+    { file: 'newsreader-latin-400-normal.woff2', kind: 'serif', sizeAdjust: 105.48, ascent: 69.68, descent: 25.12, lineGap: 0 },
+  ] as const
+  for (const r of reference) {
+    it(`matches the reference stand-in for ${r.file}`, async () => {
+      const bytes = new Uint8Array(await readFile(fileURLToPath(new URL(`../../__fixtures__/fonts/${r.file}`, import.meta.url))))
+      const m = woff2Metrics(bytes)
+      if (typeof m === 'string') throw new Error(m)
+      const face = fallbackFaceOf(m, r.kind)
+      expect(face.local).toBe(r.kind === 'serif' ? 'Times New Roman' : 'Arial')
+      for (const key of ['sizeAdjust', 'ascent', 'descent'] as const) {
+        expect(Math.abs(face[key] / r[key] - 1), `${key} ${face[key]} vs ${r[key]}`).toBeLessThan(0.005)
+      }
+      expect(face.lineGap).toBe(r.lineGap)
+    })
+  }
 
   it('says why a file is not one', () => {
     expect(woff2Metrics(new TextEncoder().encode('not a font at all, just some bytes here, more than fifty of them'))).toBe('it is not a WOFF2 file')
