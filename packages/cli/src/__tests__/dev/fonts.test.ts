@@ -96,6 +96,21 @@ describe('an app’s own fonts in a build', () => {
     expect(policy).not.toContain('googleapis')
   })
 
+  it("warns when a file's metrics cannot be read (FONT_METRICS_UNREADABLE), and keeps a plain stand-in", async () => {
+    const root = await withFont()
+    // WOFF2 by its signature, but no tables to read.
+    await writeFile(join(root, 'media', 'fonts', 'caligraphic.woff2'), new Uint8Array([0x77, 0x4f, 0x46, 0x32, ...new Array(60).fill(0)]))
+    const r = await assemblePwapp(root, { cacheDir: null })
+    const warning = r.diagnostics.find((d) => d.code === 'FONT_METRICS_UNREADABLE')
+    expect(warning?.severity).toBe('warning')
+    expect(warning?.message).toContain('the text may move')
+    const theme = text(r.files.get([...r.files.keys()].find((f) => /^assets\/theme\.[0-9a-f]{8}\.css$/.test(f)) as string))
+    expect(theme).toMatch(/font-family: "Caligraphic Fallback";\n {2}src: local\("Arial"\);\n\}/)
+    // A file that can be read gets no such warning.
+    const fine = await assemblePwapp(await withFont(), { cacheDir: null })
+    expect(fine.diagnostics.some((d) => d.code === 'FONT_METRICS_UNREADABLE')).toBe(false)
+  })
+
   it('warns about a family named with no files, and draws its fallback', async () => {
     const r = await assemblePwapp(await withFont({ fontFamily: 'Caligraphic, sans-serif', headingFontFamily: 'Nunito, serif' }), { cacheDir: null })
     expect(r.diagnostics.filter((d) => d.code === 'FONT_FILES_MISSING').map((d) => d.message).join()).toContain('Nunito')

@@ -60,9 +60,6 @@ export * from './surface-theme.js'
 // Appearance cascade — the single theme→CSS implementation.
 // Consumed by the renderer, the theme exporter and the composer.
 export * from './appearance-cascade.js'
-// The webfont allow-list is data the publish path and an editor's font picker
-// read, not a visitor's page: its values are `@pwfabric/contracts/webfonts`.
-export type * from './webfonts.js'
 
 // Canonical block type
 export * from './block.js'

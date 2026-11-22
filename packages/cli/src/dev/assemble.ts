@@ -46,7 +46,7 @@ import {
 } from './envelope.js'
 import { collectMedia, fillMediaSlots } from './media.js'
 import { faviconOf } from './favicon.js'
-import { bodyFontOf, fontAssetsOf, fontsOf, withFontFallbacks } from './fonts.js'
+import { bodyFontOf, fontAssetsOf, fontsOf, unreadableMetricsMessage, withFontFallbacks } from './fonts.js'
 import { declaredRecordFields, withRecordFields } from '../host/record-fields.js'
 import { withSessionSources } from '../host/session-sources.js'
 import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
@@ -946,6 +946,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // The app's own fonts, of its theme and of every page's own (pwapp-format §2.3):
   // served hashed under assets/fonts/, declared in the theme stylesheet.
   const fontAssets = fontAssetsOf(fontsOf([config, ...pageThemes.map((p) => p.config)]), app.folder.files, bodyFontOf(config))
+  for (const u of fontAssets.unreadable) {
+    diagnostics.push({ severity: 'warning', code: 'FONT_METRICS_UNREADABLE', message: unreadableMetricsMessage(u), path: u.src ?? 'app/definitions/appearance.json' })
+  }
   const themeCss = enc.encode(buildThemeCss(config, pageThemes, fontAssets.css))
   const assets0 = {
     embed: hashedName('assets/embed.js', runtime.embedJs),
