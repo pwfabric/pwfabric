@@ -350,7 +350,7 @@ the component. A type the folder already has, in any category, is refused.
 ## `pwf font add`
 
 ```text
-pwf font add <family> --from <path|https-url|npm:<package>[@<version>]> [--weight <w>]… [--style normal|italic]… [--fallback <generic>] [--dir <project>]
+pwf font add <family> --from <path|https-url|npm:<package>[@<version>]> [--weight <w>[,<w>]]… [--style <s>[,<s>]]… [--subset <name>[,<name>]|all]… [--fallback <generic>] [--dir <project>]
 ```
 
 | Argument / option | Meaning |
@@ -358,13 +358,14 @@ pwf font add <family> --from <path|https-url|npm:<package>[@<version>]> [--weigh
 | `<family>` | The family name the typography tokens use (`Inter`). |
 | `--from <path>` | A `.woff2` file, or a folder of them; a licence text beside them (`LICENSE`, `OFL.txt`) is copied too. In a folder, a file's name gives its weight and style when it says them (`inter-700-italic.woff2`). |
 | `--from <https://…>` | One `.woff2` file to download. |
-| `--from npm:<package>` | A font package from the npm registry, such as a Fontsource package: its latin and latin-ext files of the weights and styles asked for, each with its `unicode-range`, and the package's licence. |
-| `--weight <w>` | `400` (default), `700`, … or a variable range `"100 900"`. Repeatable. |
-| `--style <s>` | `normal` (default) or `italic`. Repeatable. |
+| `--from npm:<package>` | A font package from the npm registry, such as a Fontsource package: its files of the subsets, weights and styles asked for, each with its `unicode-range`, and the package's licence. Without `--fallback`, the package's category gives it (a serif family stands in as `serif`), and a variable file takes the package's own weight range. |
+| `--weight <w>` | `400` (default), `700`, … (1 to 1000) or a variable range `"100 900"`. Several: comma-separated (`--weight 400,700`) or the flag repeated. |
+| `--style <s>` | `normal` (default) or `italic`. Several: `--style normal,italic` or the flag repeated. |
+| `--subset <name>` | For `npm:`: the subsets taken (`latin`, `latin-ext`, `greek`, `cyrillic`, `vietnamese`, …, or `all`); default `latin` and `latin-ext`. Several: `--subset latin,greek` or the flag repeated. Each file keeps its `unicode-range`, so a page fetches only the files for the characters it draws. |
 | `--fallback <generic>` | The generic family drawn until a file arrives (`sans-serif`, `serif`, `monospace`, …). |
 
 Copies the files into `media/fonts/`, records them in `media/provenance.json`
-and declares them in `app/definitions/appearance.json` `theme.fonts`. A file
+and declares them in the theme's `fonts`: in the app's own theme atom (`atoms/appearance/<theme>/manifest.json`) when `app/definitions/appearance.json` uses it, else in `appearance.json` `theme.fonts`. A file
 that is not WOFF2 or is larger than 500 KB is refused (`FONT_FILE_INVALID`).
 Nothing is downloaded when the app builds: fonts are the app's own files.
 Running the command again changes nothing that is already there. Then name

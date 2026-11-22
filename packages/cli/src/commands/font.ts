@@ -370,7 +370,15 @@ async function runFont(args: ParsedArgs, io: CommandIO): Promise<number> {
   const [sub, family, extra] = args.positionals
   if (sub !== 'add') throw new UsageError(sub === undefined ? 'missing "add"' : `unknown subcommand "${sub}"`)
   if (!family) throw new UsageError('missing <family>')
-  if (extra !== undefined) throw new UsageError(`unexpected argument "${extra}" (quote a family name with spaces)`)
+  if (extra !== undefined) {
+    // A space-separated list after a list flag (`--subset latin latin-ext`): say how a list is given.
+    const list = /^\d/.test(extra) ? 'weight' : /^(?:normal|italic)$/.test(extra) ? 'style' : 'subset'
+    const given = args.flags[list]
+    if (typeof given === 'string') {
+      throw new UsageError(`unexpected argument "${extra}": give a list with commas (--${list} ${given},${extra}) or the flag again (--${list} ${given} --${list} ${extra})`)
+    }
+    throw new UsageError(`unexpected argument "${extra}" (quote a family name with spaces)`)
+  }
   const from = stringFlag(args, 'from')
   if (!from) throw new UsageError('missing --from <path|https-url|npm:<package>>')
   const fallback = stringFlag(args, 'fallback')
@@ -395,17 +403,19 @@ async function runFont(args: ParsedArgs, io: CommandIO): Promise<number> {
 export const fontCommand: Command = {
   name: 'font',
   summary: "Add a font family's woff2 files to the app and declare them in its theme",
-  usage: `pwf font add <family> --from <path|https-url|npm:<package>[@<version>]> [--weight <w>]… [--style normal|italic]… [--subset <name>|all]… [--fallback <generic>] [--dir <project>]
+  usage: `pwf font add <family> --from <path|https-url|npm:<package>[@<version>]> [--weight <w>[,<w>]]… [--style <s>[,<s>]]… [--subset <name>[,<name>]|all]… [--fallback <generic>] [--dir <project>]
 
   <family>          the family name the typography tokens use ("Inter")
   --from <path>     a .woff2 file, or a folder of them (a licence text beside them is copied too)
   --from <https>    one .woff2 file to download
   --from npm:<pkg>  a font package from the npm registry (a Fontsource package):
                     its files of the subsets, weights and styles asked for
-  --weight <w>      400 (default), 700, … (1 to 1000) or a variable range "100 900"; repeatable
-  --style <s>       normal (default) or italic; repeatable
+  --weight <w>      400 (default), 700, … (1 to 1000) or a variable range "100 900";
+                    several: comma-separated (400,700) or the flag repeated
+  --style <s>       normal (default) or italic; several: normal,italic or the flag repeated
   --subset <name>   for npm:, the subsets taken (latin, latin-ext, greek, cyrillic,
-                    vietnamese, …, or all); default latin and latin-ext; repeatable.
+                    vietnamese, …, or all); default latin and latin-ext; several:
+                    comma-separated (latin,greek) or the flag repeated.
                     Each file keeps its unicode-range: a page fetches only what it draws
   --fallback <g>    the generic family drawn until the file arrives (sans-serif, serif, monospace, …);
                     without it, the package's category when it names one
