@@ -23,9 +23,14 @@
  *   `url(#id)`;
  * - an `animate`, `set`, `animateTransform` or `animateMotion` whose
  *   `attributeName` is an `href` or an `on…` attribute;
- * - CSS (a `style` attribute or element) holding `expression(`, `@import`,
- *   `-moz-binding`, `behavior`, `javascript:` or a backslash (a CSS escape
- *   can spell any of them);
+ * - in any attribute value (a presentation attribute is CSS) and any style:
+ *   a backslash (a CSS escape can spell anything), a comment, a function that
+ *   loads something (`image-set(`, `image(`, `cross-fade(`, `src(`,
+ *   `element(`, `expression(`, `attr(`), `@import`; in a `style` attribute
+ *   or element also a quoted string, `-moz-binding`, `behavior` and
+ *   `javascript:`;
+ * - an element inside `<style>` (a style holds text only; its text is
+ *   checked whole);
  * - anything that does not parse: an unclosed tag, a stray `<`, mismatched
  *   tags, a duplicate attribute, a root that is not `<svg>`.
  *
@@ -76,23 +81,36 @@ function decode(text: string): string {
   })
 }
 
-/** Every `url(…)` in `value` names a fragment of this document. */
-function checkUrls(value: string, where: string): void {
-  const squeezed = value.replace(/\s+/g, '')
-  for (const m of squeezed.matchAll(/url\(([^)]*)\)?/gi)) {
-    const target = (m[1] ?? '').replace(/^['"]|['"]$/g, '')
-    if (!target.startsWith('#')) throw new Unsafe(`${where} has url(${target}), which reaches outside the file (only url(#id) is allowed)`)
-  }
+/** CSS functions that load or name something outside the file (url( is checked on its own). */
+const LOADING_FUNCTIONS = /(?:^|[^a-z0-9_-])((?:-webkit-)?image-set|image|(?:-webkit-)?cross-fade|src|(?:-moz-)?element|expression|attr)\s*\(/i
+/** A url() naming a fragment of this document, quoted or not. */
+const FRAGMENT_URL = /url\(\s*(?:"#[^"()\s]*"|'#[^'()\s]*'|#[^'"()\s]*)\s*\)/gi
+
+/**
+ * A value CSS may read: every attribute value (a presentation attribute is
+ * CSS) and every style. No backslash (a CSS escape can spell anything), no
+ * comment (it can split a token), no function that loads something, no
+ * at-rule import, no url() but url(#id).
+ */
+function checkCssValue(value: string, where: string): void {
+  if (value.includes(String.fromCharCode(92))) throw new Unsafe(`${where} holds a CSS escape (a backslash)`)
+  if (value.includes('/*')) throw new Unsafe(`${where} holds a CSS comment`)
+  const fn = LOADING_FUNCTIONS.exec(value)
+  if (fn) throw new Unsafe(`${where} holds ${fn[1]}(`)
+  if (/@import/i.test(value)) throw new Unsafe(`${where} holds @import`)
+  const rest = value.replace(FRAGMENT_URL, '')
+  const url = /url\s*\(\s*([^)]*)/i.exec(rest)
+  if (url) throw new Unsafe(`${where} has url(${(url[1] ?? '').trim()}), which reaches outside the file (only url(#id) is allowed)`)
 }
 
-/** CSS of a `style` attribute or element. */
+/** CSS of a `style` attribute or element: a CSS value, and no quoted string, -moz-binding, behavior or javascript:. */
 function checkCss(css: string, where: string): void {
-  if (css.includes('\\')) throw new Unsafe(`${where} holds a CSS escape (a backslash)`)
+  checkCssValue(css, where)
+  if (/["']/.test(css.replace(FRAGMENT_URL, ''))) throw new Unsafe(`${where} holds a quoted string`)
   const lower = css.toLowerCase().replace(/\s+/g, '')
-  for (const bad of ['expression(', '@import', '-moz-binding', 'behavior:', 'javascript:']) {
+  for (const bad of ['-moz-binding', 'behavior:', 'javascript:']) {
     if (lower.includes(bad)) throw new Unsafe(`${where} holds ${bad}`)
   }
-  checkUrls(css, where)
 }
 
 function checkAttribute(element: string, name: string, value: string): void {
@@ -114,7 +132,7 @@ function checkAttribute(element: string, name: string, value: string): void {
     return
   }
   if (lower === 'style') checkCss(value, `<${element}> style`)
-  else checkUrls(value, `<${element}> ${name}`)
+  else checkCssValue(value, `<${element}> ${name}`)
   if (ANIMATION.has(element.toLowerCase()) && lower === 'attributename') {
     const target = value.trim().toLowerCase().replace(/^xlink:/, '')
     if (target === 'href' || target.startsWith('on')) throw new Unsafe(`<${element}> animates ${value.trim()}`)
@@ -178,6 +196,7 @@ function screen(text: string): void {
     const m = /^([^\s/>]+)/.exec(inner)
     const name = m?.[1] ?? ''
     if (!NAME.test(name)) throw new Unsafe(`a tag that does not parse ("<${inner.slice(0, 20)}")`)
+    if (styleText !== null) throw new Unsafe(`<${name}> inside <style>: a style holds text only`)
     if (name.includes(':')) throw new Unsafe(`the element <${name}> has a namespace prefix`)
     if (!SVG_ELEMENTS.has(name.toLowerCase())) throw new Unsafe(`the element <${name}> is not part of a plain SVG picture`)
     if (stack.length === 0) {
