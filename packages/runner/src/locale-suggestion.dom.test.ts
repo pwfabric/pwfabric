@@ -67,3 +67,33 @@ describe('the locale the visitor prefers (envelope §2.3)', () => {
     expect(none).toBeNull()
   })
 })
+
+describe('the suggestion strip', () => {
+  it('sits in the flow at the top of the document, named by its sentence, styled once from the theme', async () => {
+    const page = document.createElement('div')
+    page.id = 'root'
+    document.body.appendChild(page)
+    const box = await offer(['de'])
+    expect(document.body.firstElementChild).toBe(box)
+    expect(box?.getAttribute('style')).toBeNull()
+    expect(box?.getAttribute('role')).toBe('region')
+    expect(box?.getAttribute('aria-label')).toBe('Diese Seite gibt es auf Deutsch')
+    const css = document.getElementById('pw-locale-suggestion-css')?.textContent ?? ''
+    expect(css).not.toMatch(/position:\s*fixed/)
+    expect(css).toContain('var(--pw-color-primary')
+    expect(css).toContain('safe-area-inset-top')
+    expect(css).toContain('prefers-reduced-motion:no-preference')
+    expect(css).toContain(':focus-visible')
+    box?.remove()
+    await offer(['de'])
+    expect(document.querySelectorAll('#pw-locale-suggestion-css')).toHaveLength(1)
+  })
+
+  it('is dismissed by its button and by Escape', async () => {
+    const store = storage()
+    const box = await offer(['de'], store)
+    box?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.querySelector('[data-pw-locale-suggestion]')).toBeNull()
+    expect(JSON.parse(store.items.get('pwapp_locale:cafe') ?? '{}')).toEqual({ dismissed: true })
+  })
+})

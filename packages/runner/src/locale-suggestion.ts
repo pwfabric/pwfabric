@@ -1,7 +1,8 @@
 /**
  * THE VISITOR'S LANGUAGE (envelope §2.3). A runner never sends a visitor to
  * another locale on its own. When the browser's languages prefer a declared
- * locale other than the one drawn, it offers it: a small notice, drawn by
+ * locale other than the one drawn, it offers it: a strip at the top of the
+ * document, in the page's flow and in the app's theme, drawn by
  * script after hydration (never in the first frame), with a link to the
  * current page in that locale and a way to dismiss it, its words read from
  * that locale's catalogue — `locale.suggestion` (`{language}` is the
@@ -91,34 +92,67 @@ export async function mountLocaleSuggestion(options: LocaleSuggestionOptions): P
     }
   }
   const doc = options.doc
+  const sentence = formatMessage(text, { language: languageName(lang) }, lang)
   const box = doc.createElement('div')
   box.setAttribute(LOCALE_SUGGESTION_ATTR, lang)
   box.setAttribute('role', 'region')
   box.setAttribute('lang', lang)
-  box.setAttribute('aria-label', words['locale.switch'] || 'locale.switch')
-  box.setAttribute(
-    'style',
-    'position:fixed;inset-inline:1rem;bottom:1rem;z-index:500;display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;padding:.75rem 1rem;' +
-      'background:var(--pw-color-card,#fff);color:var(--pw-color-text,#111);border:1px solid var(--pw-color-border,#ddd);border-radius:var(--pw-radius,.375rem)'
-  )
+  // The region is named by the app's own sentence, in the language it offers.
+  box.setAttribute('aria-label', sentence)
   const say = doc.createElement('span')
-  say.textContent = formatMessage(text, { language: languageName(lang) }, lang)
+  say.textContent = sentence
   const go = doc.createElement('a')
   go.href = options.hrefOf(lang)
   go.hreflang = lang
+  go.setAttribute('data-pw-locale-switch', '')
   go.textContent = words['locale.switch'] || 'locale.switch'
-  go.addEventListener('click', () => {
-    keep({ locale: lang })
+  const close = (answer: Record<string, unknown>): void => {
+    keep(answer)
     box.remove()
-  })
+  }
+  go.addEventListener('click', () => close({ locale: lang }))
   const no = doc.createElement('button')
   no.type = 'button'
+  no.setAttribute('data-pw-locale-dismiss', '')
   no.textContent = words['locale.dismiss'] || 'locale.dismiss'
-  no.addEventListener('click', () => {
-    keep({ dismissed: true })
-    box.remove()
+  no.addEventListener('click', () => close({ dismissed: true }))
+  // Escape inside the strip dismisses it, as its button does.
+  box.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') close({ dismissed: true })
   })
   box.append(say, go, no)
-  doc.body.appendChild(box)
+  if (!doc.getElementById(LOCALE_SUGGESTION_STYLE_ID)) {
+    const style = doc.createElement('style')
+    style.id = LOCALE_SUGGESTION_STYLE_ID
+    style.textContent = LOCALE_SUGGESTION_CSS
+    doc.head.appendChild(style)
+  }
+  // IN THE FLOW, at the top of the document: it pushes the page down and
+  // covers nothing — not the navbar, not a language bar.
+  doc.body.prepend(box)
   return box
 }
+
+/** The id of the strip's stylesheet, written once. */
+export const LOCALE_SUGGESTION_STYLE_ID = 'pw-locale-suggestion-css'
+
+/**
+ * The strip's look, from the app's theme tokens: its font, its card and text
+ * colours, its border, radius and primary colour; the switch a filled button,
+ * dismiss an outlined one, both with a visible focus ring; room for a notch
+ * (safe area); a slide in only for a reader who does not ask for less motion.
+ */
+const LOCALE_SUGGESTION_CSS = [
+  `[${LOCALE_SUGGESTION_ATTR}]{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:.5rem .75rem;box-sizing:border-box;width:100%;` +
+    'padding:max(.5rem,env(safe-area-inset-top)) max(1rem,env(safe-area-inset-right)) .5rem max(1rem,env(safe-area-inset-left));' +
+    'font-family:var(--pw-font-family,system-ui,sans-serif);font-size:var(--pw-font-size-sm,.875rem);line-height:1.4;' +
+    'background:var(--pw-color-card,#f8fafc);color:var(--pw-color-text,#1e293b);border-bottom:1px solid var(--pw-color-border,#e2e8f0)}',
+  `[${LOCALE_SUGGESTION_ATTR}] a,[${LOCALE_SUGGESTION_ATTR}] button{display:inline-flex;align-items:center;min-height:2rem;padding:.25rem .875rem;` +
+    'border-radius:var(--pw-radius,.375rem);font:inherit;font-weight:600;line-height:1.2;text-decoration:none;cursor:pointer;' +
+    'border:1px solid var(--pw-color-primary,#4f46e5)}',
+  `[${LOCALE_SUGGESTION_ATTR}] a{background:var(--pw-color-primary,#4f46e5);color:var(--pw-color-text-on-primary,#fff)}`,
+  `[${LOCALE_SUGGESTION_ATTR}] button{background:transparent;color:var(--pw-color-text,#1e293b);border-color:var(--pw-color-border,#e2e8f0)}`,
+  `[${LOCALE_SUGGESTION_ATTR}] a:focus-visible,[${LOCALE_SUGGESTION_ATTR}] button:focus-visible{outline:2px solid var(--pw-color-primary,#4f46e5);outline-offset:2px}`,
+  `@media (prefers-reduced-motion:no-preference){[${LOCALE_SUGGESTION_ATTR}]{animation:pw-locale-suggestion-in .2s ease-out}}`,
+  '@keyframes pw-locale-suggestion-in{from{opacity:0;transform:translateY(-100%)}to{opacity:1;transform:none}}',
+].join('')
