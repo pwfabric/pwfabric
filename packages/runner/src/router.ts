@@ -236,7 +236,14 @@ function pageAddresses(pages: readonly string[], entry: string, locales: RouterL
   }
   const { declaration, addresses } = locales
   return {
-    lookup: (rest) => addressedPage(addresses, declaration, rest),
+    lookup: (rest) => {
+      const found = addressedPage(addresses, declaration, rest)
+      if (found.key !== null) return found
+      // The entry's key opens the entry in every locale (`#/menu`, `#/de/menu`), as in a single-language app.
+      const trimmed = rest.replace(/^\/+|\/+$/g, '')
+      const own = found.locale === declaration.defaultLocale ? trimmed : trimmed.replace(/^[^/]+\/?/, '')
+      return own === entry ? { ...found, key: entry } : found
+    },
     addressOf: (key, locale) => {
       const row = addresses[locale ?? declaration.defaultLocale] ?? {}
       const own = row[key]
