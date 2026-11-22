@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { cp, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { main } from '../../index.js'
 import { appForBuild, runCheck, documentLinks } from '../../commands/check.js'
 import { readBuiltOutput } from '../../commands/lib/built-output.js'
 import { parseArgs } from '../../args.js'
-import { recordPageInfo } from '../../commands/lib/hydration.js'
+import { OFF_MACHINE, recordPageInfo } from '../../commands/lib/hydration.js'
 import { capture, FIXTURE_FOUNDATION, tempDir } from './helpers.js'
 
 async function app(): Promise<{ cwd: string; root: string }> {
@@ -118,25 +118,30 @@ describe('pwf check', () => {
     expect(c.err.join('\n')).not.toMatch(/#\/(?:de\/)?home\b/)
   })
 
-  it('finds the app of a build written elsewhere by its id, takes --app, and says when it cannot', async () => {
+  it('serves a build the records of the app folder it lies inside, of another only with --app — never by the id it names', async () => {
     const { cwd, root } = await app()
-    const out = join(cwd, 'elsewhere', 'site')
-    await build(root, out)
-    const built = await readBuiltOutput(out)
-    expect(await appForBuild(out, built, cwd)).toEqual({ app: null })
-    expect(await appForBuild(out, built, root)).toEqual({ app: root })
-    expect(await appForBuild(out, built, cwd, 'demo')).toEqual({ app: root })
-    await expect(appForBuild(out, built, cwd, 'elsewhere')).rejects.toThrow(/--app elsewhere is not an app folder/)
-    // Another app (another id) in the folder pwf runs in is not this build's.
-    const other = join(cwd, 'other')
-    await mkdir(other, { recursive: true })
-    await writeFile(join(other, 'pwpack.json'), JSON.stringify({ id: '@pwpack/someone/else', app: {} }))
-    expect(await appForBuild(out, built, other)).toEqual({ app: null })
+    // Outside the app, naming the app's own id (pwpack/project.json): no records, wherever pwf runs.
+    const outside = join(cwd, 'elsewhere', 'site')
+    await build(root, outside)
+    expect((await readBuiltOutput(outside)).label).toBe(outside)
+    expect(await appForBuild(outside, cwd)).toEqual({ app: null })
+    expect(await appForBuild(outside, root)).toEqual({ app: null })
+    expect(await appForBuild(outside, cwd, 'demo')).toEqual({ app: root })
+    await expect(appForBuild(outside, cwd, 'elsewhere')).rejects.toThrow(/--app elsewhere is not an app folder/)
+    // Inside the app (any folder below it, not only .pwf/out): attached.
+    const inside = join(root, 'dist', 'site')
+    await build(root, inside)
+    expect(await appForBuild(inside, cwd)).toEqual({ app: await realpath(root) })
 
     const c = capture(cwd)
     const fakeChromium = { launch: async () => ({ newPage: async () => { throw new Error('no page expected') }, close: async () => {} }) }
-    await runCheck(parseArgs(['check', out, '--hydration']).args, c.io, { loadPlaywright: async () => fakeChromium as never }).catch(() => 1)
-    expect(c.text()).toMatch(/records: the app folder of this build is not known .*pass --app <dir>/)
+    await runCheck(parseArgs(['check', outside, '--hydration']).args, c.io, { loadPlaywright: async () => fakeChromium as never }).catch(() => 1)
+    expect(c.text()).toMatch(/records: this build is not inside an app folder.*pass --app <dir>/)
+  })
+
+  it('--hydration refuses every request off this machine', () => {
+    for (const url of ['https://example.com/x.js', 'http://10.0.0.5:4700/', 'wss://example.com/', 'http://localhost.example.com/', 'http://127.0.0.1.nip.io/']) expect(OFF_MACHINE.test(url), url).toBe(true)
+    for (const url of ['http://127.0.0.1:51234/#/menu', 'http://localhost:4700/assets/a.js', 'http://[::1]:80/', 'data:text/plain,x']) expect(OFF_MACHINE.test(url), url).toBe(false)
   })
 
   it('--hydration says how to install Playwright when it is not there', async () => {
