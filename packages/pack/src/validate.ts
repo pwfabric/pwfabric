@@ -393,7 +393,11 @@ export function validatePack(pack: PackFolder): PackValidation {
     const planned = plan?.ok && isRecord(plan.value) ? plan.value['surfaces'] : undefined
     if (planned !== undefined) {
       const mismatch = (message: string): void => add('error', 'APP_PLAN_SURFACE_MISMATCH', message, PLAN_FILE)
-      const served = [...new Set([entry, ...surfaceOrder, ...(notFound ? [notFound] : []), ...(signIn ? [signIn] : [])])]
+      // The page addresses: the entry and app.surfaceOrder. The not-found and
+      // sign-in screens are pages but never addresses, so the plan may list
+      // them or not.
+      const served = [...new Set([entry, ...surfaceOrder])]
+      const screens = [...(notFound ? [notFound] : []), ...(signIn ? [signIn] : [])]
       const pages = Array.isArray(planned) ? planned.filter(isRecord) : []
       if (!Array.isArray(planned) || pages.length !== planned.length || pages.some((p) => typeof p['key'] !== 'string')) {
         mismatch(`${PLAN_FILE} surfaces must be a list of pages, each with a "key"`)
@@ -404,7 +408,7 @@ export function validatePack(pack: PackFolder): PackValidation {
         }
         for (const page of pages) {
           const key = page['key'] as string
-          if (page['status'] === 'applied' && !served.includes(key)) {
+          if (page['status'] === 'applied' && !served.includes(key) && !screens.includes(key)) {
             mismatch(`${PLAN_FILE} surfaces has "${key}" applied, but pwpack.json app does not serve it — add it to app.surfaceOrder, or mark it as not built yet`)
           }
           if (page['isEntry'] === true && key !== entry) mismatch(`${PLAN_FILE} surfaces marks "${key}" as the entry, but app.entry is "${entry}"`)
