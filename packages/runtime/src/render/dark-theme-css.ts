@@ -5,10 +5,12 @@
  * module emits the scoped rules that override them under TWO conditions:
  *
  *   1. Manual force-dark — `[data-pw-surface="<sid>"][data-pw-theme="dark"]{…}`
- *      (host toggles `data-pw-theme="dark"` on the root regardless of OS).
+ *      (host toggles `data-pw-theme="dark"` on the root regardless of OS), or
+ *      the same attribute on an element around it: the document element,
+ *      where the visitor's choice is set (appearance §4.1).
  *   2. Auto (OS preference) — `@media (prefers-color-scheme:dark){
- *      [data-pw-surface="<sid>"]:not([data-pw-theme="light"]){…}}` (applies
- *      unless the host has force-toggled light).
+ *      [data-pw-surface="<sid>"]:not([data-pw-theme="light"]):not([data-pw-theme="light"] *){…}}`
+ *      (applies unless light is force-toggled on the root or around it).
  *
  * The selector carries the surface ID by VALUE. It used to match on the mere
  * PRESENCE of `[data-pw-surface]`, which was a real bug: the embed autoloader
@@ -63,9 +65,12 @@ export function buildDarkThemeCss(
   if (!body) return ''
   const scope = surfaceScope(surfaceId)
   if (policy === 'dark') return `${scope}{${body}}`
-  // 1. Manual force-dark (host sets data-pw-theme="dark").
-  const manual = `${scope}[data-pw-theme="dark"]{${body}}`
-  // 2. Auto via OS preference, unless force-light (data-pw-theme="light").
-  const auto = `@media (prefers-color-scheme:dark){${scope}:not([data-pw-theme="light"]){${body}}}`
+  // 1. Manual force-dark: `data-pw-theme="dark"` on the surface root, or on
+  // an element around it — the document element, where the visitor's
+  // colour-scheme choice is set (appearance §4.1).
+  const manual = `[data-pw-theme="dark"] ${scope},${scope}[data-pw-theme="dark"]{${body}}`
+  // 2. Auto via OS preference, unless force-light (data-pw-theme="light") on
+  // the root or around it.
+  const auto = `@media (prefers-color-scheme:dark){${scope}:not([data-pw-theme="light"]):not([data-pw-theme="light"] *){${body}}}`
   return manual + auto
 }

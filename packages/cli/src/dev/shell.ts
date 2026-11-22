@@ -245,6 +245,13 @@ export interface ShellOptions {
    */
   readonly favicon?: string
   /**
+   * The colour-scheme script (appearance §4.1), inline before the theme
+   * stylesheet: it applies the visitor's stored light or dark before the first
+   * paint. Absent: the app and its pages wear light or dark only. Written
+   * as given — the policy allows it by the hash of this exact text.
+   */
+  readonly colorSchemeScript?: string
+  /**
    * How the app routes (`runApp`'s `router`). `path` and `auto` put the app's
    * base in `<head>` (`<base href>`, see {@link ShellOptions.base}); `auto`
    * also declares the host's fallback with `<meta name="pw-router"
@@ -640,7 +647,8 @@ export function buildShellHtml(options: ShellOptions): string {
     <meta charset="UTF-8" />${base}${csp}
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(options.title)}</title>${description}${meta}
-    <link rel="icon" href="${options.favicon ? escapeHtml(servedHref(options.favicon)) : 'data:,'}" />
+    <link rel="icon" href="${options.favicon ? escapeHtml(servedHref(options.favicon)) : 'data:,'}" />${options.colorSchemeScript ? `
+    <script>${options.colorSchemeScript}</script>` : ''}
     ${options.themeCss !== undefined ? `<style>${options.themeCss.replace(/<\//g, '<\\/')}</style>` : `<link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />`}${frameCss}${layout}${fonts}
     <script type="importmap">${importMapText()}</script>
     <link rel="modulepreload" href="./${escapeHtml(assets.runner)}" />${renderer}${shims}${boot}${hints}

@@ -52,7 +52,7 @@ import type {
   DynamicBlockDescriptor,
   SurfaceEventDescriptor,
 } from '@pwfabric/contracts'
-import type { SurfaceEvent } from './types.js'
+import type { ColorScheme, SurfaceEvent } from './types.js'
 // `defaultBlockComponents` retired. Production render
 // path goes exclusively through the install pipeline — `customComponents`
 // (typically wired from `useDynamicArtifacts`) supplies the runtime
@@ -875,6 +875,8 @@ const noSubscribe = (): (() => void) => () => undefined
 const NO_ANSWERS: Readonly<Record<string, boolean>> = Object.freeze({})
 const noAnswers = (): Readonly<Record<string, boolean>> => NO_ANSWERS
 const NO_CATEGORIES: readonly string[] = Object.freeze([])
+/** No colour-scheme store: no choice is made, the device decides. */
+const systemScheme = (): ColorScheme => 'system'
 
 export function SurfaceRenderer({
   surface,
@@ -899,6 +901,7 @@ export function SurfaceRenderer({
   locale,
   linkHref: linkHrefProp,
   consent: consentStore,
+  colorScheme: colorSchemeStore,
 }: SurfaceRendererProps): React.ReactElement {
   // The root, so focus is kept inside the surface when the focused block is
   // hidden (focus-keeper.ts). Only a live surface moves focus.
@@ -963,6 +966,14 @@ export function SurfaceRenderer({
   )
   const consentCategories = consentStore?.categories ?? NO_CATEGORIES
   const setConsent = React.useCallback((answers: Readonly<Record<string, boolean>>) => consentStore?.set(answers), [consentStore])
+  // The visitor's colour scheme (appearance §4.1): "system" while hydrating
+  // (the first frame is the same for every visitor), then the host's choice.
+  const colorScheme = React.useSyncExternalStore(
+    colorSchemeStore ? colorSchemeStore.subscribe : noSubscribe,
+    colorSchemeStore ? colorSchemeStore.scheme : systemScheme,
+    systemScheme
+  )
+  const setColorScheme = React.useCallback((scheme: ColorScheme) => colorSchemeStore?.set(scheme), [colorSchemeStore])
 
   // Build block context (theme removed from BlockContext)
   const context: BlockContext = React.useMemo(
@@ -978,8 +989,10 @@ export function SurfaceRenderer({
       consentCategories,
       consent: consentAnswers,
       setConsent,
+      colorScheme,
+      setColorScheme,
     }),
-    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode, locale, appHref, consentCategories, consentAnswers, setConsent]
+    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode, locale, appHref, consentCategories, consentAnswers, setConsent, colorScheme, setColorScheme]
   )
 
   // Create image component override if adapter is provided

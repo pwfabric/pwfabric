@@ -15,6 +15,8 @@ export type {
   BlockContext,
   ConsentAnswers,
   ConsentStore,
+  ColorScheme,
+  ColorSchemeStore,
   SurfaceEventType,
   SurfaceEvent,
   SurfaceRendererProps,

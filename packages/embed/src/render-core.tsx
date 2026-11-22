@@ -39,6 +39,7 @@ import type {
   DataServiceConfig,
   SurfaceDataCache,
   ConsentStore,
+  ColorSchemeStore,
   LinkHref,
   SurfaceAddress,
   SurfaceAuthHost,
@@ -111,6 +112,8 @@ export interface RenderCoreOptions {
   readonly locale?: string
   /** The visitor's consent and the categories the app's scripts wait for (envelope §2.2): `context.consent*` of every block. */
   readonly consent?: ConsentStore
+  /** The visitor's colour scheme (appearance §4.1): `context.colorScheme` / `setColorScheme` of every block. */
+  readonly colorScheme?: ColorSchemeStore
   /** The page this surface is: a change between renders of one mount resets the page's state, the blocks that stay stay mounted. */
   readonly pageKey?: string
   /**
@@ -245,6 +248,7 @@ function buildRendererProps(opts: RenderCoreOptions): Record<string, unknown> {
   if (opts.onDescription !== undefined) props.onDescription = opts.onDescription
   if (opts.locale !== undefined) props.locale = opts.locale
   if (opts.consent !== undefined) props.consent = opts.consent
+  if (opts.colorScheme !== undefined) props.colorScheme = opts.colorScheme
   if (opts.pageKey !== undefined) props.pageKey = opts.pageKey
   if (opts.address !== undefined) props.address = opts.address
   if (opts.identity !== undefined) props.identity = opts.identity

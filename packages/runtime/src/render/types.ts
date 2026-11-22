@@ -153,6 +153,23 @@ export interface ConsentStore {
   subscribe(listener: () => void): () => void
 }
 
+/** The visitor's colour scheme (appearance §4.1): `"system"` while none is chosen, the device then decides. */
+export type ColorScheme = 'light' | 'dark' | 'system'
+
+/**
+ * The visitor's colour-scheme choice, as a host keeps it (appearance §4.1).
+ * The runner's is backed by browser storage and sets `data-pw-theme` on the
+ * document element.
+ */
+export interface ColorSchemeStore {
+  /** The choice so far; `"system"` when none is made. */
+  scheme(): ColorScheme
+  /** Records a choice; any value but `"light"`, `"dark"` or `"system"` is ignored. */
+  set(scheme: ColorScheme): void
+  /** Called after every change of the choice; returns the unsubscribe. */
+  subscribe(listener: () => void): () => void
+}
+
 /**
  * Block rendering context
  */
@@ -217,6 +234,18 @@ export interface BlockContext {
    * ignores the call.
    */
   readonly setConsent?: (answers: ConsentAnswers) => void
+  /**
+   * The visitor's colour scheme (appearance §4.1): `"light"`, `"dark"`, or
+   * `"system"` when none is chosen. `"system"` in the first frame and the
+   * hydrating render (the build knows no visitor); the stored choice arrives
+   * in the update right after. A block reads it here, never from storage.
+   */
+  readonly colorScheme?: ColorScheme
+  /**
+   * Records the visitor's colour scheme; any other value is ignored. A host
+   * without a colour-scheme store ignores the call.
+   */
+  readonly setColorScheme?: (scheme: ColorScheme) => void
 }
 
 // ============================================================
@@ -304,6 +333,8 @@ export interface SurfaceRendererProps {
   readonly locale?: string
   /** The visitor's consent (envelope §2.2), handed to every block as `context.consentCategories`, `consent` and `setConsent`. */
   readonly consent?: ConsentStore
+  /** The visitor's colour scheme (appearance §4.1), handed to every block as `context.colorScheme` and `setColorScheme`. */
+  readonly colorScheme?: ColorSchemeStore
   /**
    * The page this surface is (the runner's page key). When it changes between
    * two renders of the same mount, the page's state and the data of the

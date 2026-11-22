@@ -13,7 +13,7 @@
  */
 import { join } from 'node:path'
 import { blockPropDescriptors, blockTypeFirstUses, blockTypeNames, checkBlockIds, checkReceiptBlockProps, hashPack, publicReservedReason, publicScriptReason, unknownBlockTypeIssue } from '@pwfabric/pack'
-import { layoutSlotProblems, PAGE_SLOT_TYPE, type BlockOrigins } from '@pwfabric/contracts'
+import { layoutSlotProblems, PAGE_SLOT_TYPE, resolveAppearanceMode, type BlockOrigins } from '@pwfabric/contracts'
 import { atomKindMeta } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins } from '@pwfabric/contracts/schemas'
 import { compileProviderBundle, compileSources, createCompileCache, providerFacetOf, type CompileCache, type CompiledAtom } from './compile.js'
@@ -42,7 +42,7 @@ import { llmsFullTxt, llmsTxt, type LlmsPage } from './llms.js'
 import { planHeadersOf, planRedirectsOf, planScriptOrigins, planScriptsOf, redirectsFile } from './plan-site.js'
 import { parseHeadersFile } from '../commands/lib/static-server.js'
 import { firstPaintData, onPageFragmentLinks, paintPages, shareFrameStyles, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
-import { assemblePage, canonicalOf, hashHref, isTitleTemplate, pathHref, pluralProblems } from '@pwfabric/runner'
+import { assemblePage, canonicalOf, colorSchemeScript, hashHref, isTitleTemplate, pathHref, pluralProblems } from '@pwfabric/runner'
 import {
   BOOT_FILES,
   FIRST_PAINT_SCRIPT,
@@ -781,6 +781,12 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const publicFiles = publicFilesOf(app.folder.files, keys)
   // The app's icon: every document links it.
   const favicon = faviconOf(config, app.folder.files, diagnostics)
+  // The visitor's colour-scheme choice, applied before the first paint
+  // (appearance §4.1) — only where there is one to make: the app, or one of
+  // its pages, wears the `system` policy. Keyed like the runner keys storage
+  // (envelope §4): `project.json` `id`.
+  const wearsSystem = [config, ...pageThemes.map((p) => p.config)].some((c) => resolveAppearanceMode(c).policy === 'system')
+  const schemeScript = wearsSystem ? colorSchemeScript(identity.id) : undefined
   // An app that requires sign-in shows a visitor the gate first; whether the
   // renderer is ever needed is up to the visitor, so it is not preloaded.
   const gated = isRecord(authDoc) && authDoc['required'] === true
@@ -879,6 +885,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         ...(options.shellExtra !== undefined ? { bodyExtra: options.shellExtra } : {}),
         ...(csp !== undefined ? { csp } : {}),
         ...(favicon !== undefined ? { favicon } : {}),
+        ...(schemeScript !== undefined ? { colorSchemeScript: schemeScript } : {}),
         assets: frameAsset ? { ...assets, frame: frameAsset } : assets,
         preloadRenderer: !gated,
         bootFiles: BOOT_FILES.filter((f) => files.has(f)),
@@ -1043,7 +1050,11 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
 
   const csp = deriveCsp({
     importMapText: importMapText(),
-    inlineScripts: [...(Object.keys(hinted).length > 0 ? [PAGE_HINTS_SCRIPT] : []), ...(firstPaintJson ? [FIRST_PAINT_SCRIPT] : [])],
+    inlineScripts: [
+      ...(Object.keys(hinted).length > 0 ? [PAGE_HINTS_SCRIPT] : []),
+      ...(firstPaintJson ? [FIRST_PAINT_SCRIPT] : []),
+      ...(schemeScript !== undefined ? [schemeScript] : []),
+    ],
     receipts: drawnReceipts,
     connections,
     engines: engineManifest,
