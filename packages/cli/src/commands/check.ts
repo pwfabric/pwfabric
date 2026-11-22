@@ -102,9 +102,38 @@ export interface DocumentWeight {
   /** The files it references that the build serves, counted once each. */
   readonly files: number
   readonly overBudget: boolean
+  /** Video and audio the browser loads only when it plays (not counted): each file, raw. */
+  readonly deferred: readonly { readonly file: string; readonly raw: number }[]
 }
 
-/** Each page document with the files it names, raw and gzipped. */
+/** A `<video>` or `<audio>` element: its attributes and what it holds. */
+const MEDIA_ELEMENT = /<(video|audio)\b([^>]*)>([\s\S]*?)<\/\1\s*>/gi
+
+/**
+ * The media URLs of `<video>` and `<audio>` elements the browser does not
+ * load up front: no `autoplay`, and `preload` `none`, `metadata` or absent
+ * (browsers fetch metadata at most, a few KB). Their `poster` is not among
+ * them: that image is drawn at once.
+ */
+export function deferredMediaLinks(html: string): string[] {
+  const out: string[] = []
+  for (const m of html.matchAll(MEDIA_ELEMENT)) {
+    const attrs = m[2] as string
+    if (/\sautoplay(?:[\s=>]|$)/i.test(` ${attrs}`)) continue
+    const preload = /\spreload\s*(?:=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/i.exec(` ${attrs}`)
+    if (preload) {
+      const value = (preload[1] ?? preload[2] ?? preload[3] ?? '').trim().toLowerCase()
+      if (value === '' || value === 'auto') continue
+    }
+    for (const s of [`<${m[1]}${attrs}>`, ...((m[3] as string).match(/<source\b[^>]*>/gi) ?? [])]) {
+      const src = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(s)
+      if (src) out.push((src[1] ?? src[2] ?? '').replace(/&amp;/g, '&'))
+    }
+  }
+  return out
+}
+
+/** Each page document with the files it names, raw and gzipped; video and audio it does not load up front are listed apart. */
 export function documentWeights(out: BuiltOutput, budgetKb: number): DocumentWeight[] {
   const gz = new Map<string, number>()
   const gzipped = (rel: string): number => {
@@ -115,28 +144,37 @@ export function documentWeights(out: BuiltOutput, budgetKb: number): DocumentWei
     }
     return n
   }
-  return pageDocuments(out).map((doc) => {
-    const refs = new Set<string>([doc])
-    for (const link of documentLinks(new TextDecoder().decode(out.files.get(doc)))) {
-      if (EXTERNAL.test(link) || link.startsWith('#')) continue
-      try {
-        const path = decodeURIComponent(new URL(link.split('#')[0] as string, `http://pwf.check${out.base}`).pathname)
-        if (!path.startsWith(out.base)) continue
-        const rel = path.slice(out.base.length)
-        if (rel === '' || rel.endsWith('/') || !out.files.has(rel)) continue // another page, not a part of this one
-        if (rel.endsWith('.html')) continue
-        refs.add(rel)
-      } catch {
-        // not an address
-      }
+  /** The served file a link names, when it is a part of the page (not another page). */
+  const partOf = (link: string): string | undefined => {
+    if (EXTERNAL.test(link) || link.startsWith('#')) return undefined
+    try {
+      const path = decodeURIComponent(new URL(link.split('#')[0] as string, `http://pwf.check${out.base}`).pathname)
+      if (!path.startsWith(out.base)) return undefined
+      const rel = path.slice(out.base.length)
+      if (rel === '' || rel.endsWith('/') || !out.files.has(rel)) return undefined // another page, not a part of this one
+      return rel.endsWith('.html') ? undefined : rel
+    } catch {
+      return undefined // not an address
     }
+  }
+  return pageDocuments(out).map((doc) => {
+    const html = new TextDecoder().decode(out.files.get(doc))
+    // What the page loads up front: its links, each video or audio it does not load up front reduced to its poster.
+    const shown = html.replace(MEDIA_ELEMENT, (m) => (deferredMediaLinks(m).length === 0 ? m : `<img${/\sposter\s*=\s*(?:"[^"]*"|'[^']*')/i.exec(m)?.[0].replace(/^\s*poster/i, ' src') ?? ''}>`))
+    const refs = new Set<string>([doc])
+    for (const link of documentLinks(shown)) {
+      const rel = partOf(link)
+      if (rel) refs.add(rel)
+    }
+    const later = new Set(deferredMediaLinks(html).map(partOf).filter((rel): rel is string => rel !== undefined && !refs.has(rel)))
+    const deferred = [...later].map((file) => ({ file, raw: (out.files.get(file) as Uint8Array).length }))
     let raw = 0
     let gzip = 0
     for (const rel of refs) {
       raw += (out.files.get(rel) as Uint8Array).length
       gzip += gzipped(rel)
     }
-    return { document: doc, address: `${out.base}${documentAddress(doc)}`, raw, gzip, files: refs.size - 1, overBudget: gzip > budgetKb * 1024 }
+    return { document: doc, address: `${out.base}${documentAddress(doc)}`, raw, gzip, files: refs.size - 1, overBudget: gzip > budgetKb * 1024, deferred }
   })
 }
 
@@ -230,6 +268,7 @@ export async function runCheck(args: ParsedArgs, io: CommandIO, deps: CheckDeps 
       const line = `  ${d.address.padEnd(24)} ${kb(d.raw).padStart(10)} raw ${kb(d.gzip).padStart(10)} gzip  (${d.files} file${d.files === 1 ? '' : 's'})${d.overBudget ? '  OVER BUDGET' : ''}`
       if (d.overBudget) io.err(line)
       else io.out(line)
+      for (const m of d.deferred) io.out(`    ${m.file.padEnd(22)} ${kb(m.raw).padStart(10)} raw, not counted: the browser loads it when it plays`)
     }
     io.out('  counts the document and the files it names; block modules a page loads later are not in it')
   }
@@ -252,7 +291,9 @@ export const check: Command = {
                  hash route or per-locale address of the app, or a _redirects
                  rule landing on one; relative links resolve against <base href>
   --weight       each page document with the scripts, styles, preloads and
-                 images it names, raw and gzipped, against --budget
+                 images it names, raw and gzipped, against --budget; a
+                 video or audio file it does not autoplay or preload is
+                 listed apart, not counted (its poster is)
   --budget <KB>  the gzipped weight a page may have (default ${DEFAULT_BUDGET_KB})
   --hydration    open every painted page in Chromium and check that hydration
                  adopts the first frame (the engine's hydration check). Needs

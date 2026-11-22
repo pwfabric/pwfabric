@@ -55,6 +55,39 @@ describe('pwf check', () => {
     expect(report.links.broken).toHaveLength(2)
   })
 
+  it('--weight counts a video\'s poster up front and lists the video apart unless the page plays or preloads it', async () => {
+    const { cwd, root } = await app()
+    const out = join(cwd, 'out')
+    await build(root, out)
+    await mkdir(join(out, 'media'), { recursive: true })
+    await writeFile(join(out, 'media', 'clip.mp4'), new Uint8Array(400 * 1024).map((_, i) => (i * 7919) % 251))
+    await writeFile(join(out, 'media', 'loop.webm'), new Uint8Array(300 * 1024).map((_, i) => (i * 104729) % 241))
+    await writeFile(join(out, 'media', 'poster.jpg'), new Uint8Array(2048).fill(7))
+    const index = join(out, 'index.html')
+    const html = await readFile(index, 'utf8')
+    const page = (video: string) => writeFile(index, html.replace('</body>', `${video}</body>`))
+    const weigh = async () => {
+      const c = capture(cwd)
+      await main(['check', out, '--weight', '--json'], c.io)
+      return (JSON.parse(c.out.join('\n')).weight.documents as { document: string; raw: number; files: number; deferred: { file: string; raw: number }[] }[]).find((d) => d.document === 'index.html')!
+    }
+    const bare = await weigh()
+
+    await page('<video preload="metadata" poster="media/poster.jpg"><source src="media/clip.mp4" type="video/mp4"></video><video src="media/loop.webm" preload="none"></video>')
+    const deferred = await weigh()
+    expect(deferred.raw - bare.raw).toBeLessThan(8 * 1024)
+    expect(deferred.files).toBe(bare.files + 1)
+    expect(deferred.deferred.map((d) => d.file).sort()).toEqual(['media/clip.mp4', 'media/loop.webm'])
+    const lines = capture(cwd)
+    await main(['check', out, '--weight'], lines.io)
+    expect(lines.text()).toMatch(/media\/clip\.mp4\s+[\d.]+ KB raw, not counted: the browser loads it when it plays/)
+
+    await page('<video autoplay muted src="media/clip.mp4"></video><video preload="auto" src="media/loop.webm"></video>')
+    const upfront = await weigh()
+    expect(upfront.raw - bare.raw).toBeGreaterThan(700 * 1024)
+    expect(upfront.deferred).toEqual([])
+  })
+
   it('follows _redirects and accepts hash routes of the app', async () => {
     const { cwd, root } = await app()
     const plan = JSON.parse(await readFile(join(root, 'app', 'plan.json'), 'utf8'))
