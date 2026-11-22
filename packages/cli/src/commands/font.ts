@@ -27,7 +27,7 @@ const FONT_FILE_MAX = 512_000
 /** The npm registry a `npm:` source is resolved through. */
 export const NPM_REGISTRY = 'https://registry.npmjs.org'
 /** The subsets taken from a package that splits a family by script. */
-const SUBSETS = ['latin', 'latin-ext']
+const DEFAULT_SUBSETS = ['latin', 'latin-ext']
 
 /** One file to put into the app. */
 interface FontFace {
@@ -59,6 +59,8 @@ export interface FontAddOptions {
   readonly weights?: readonly string[]
   /** The styles to take; default normal. */
   readonly styles?: readonly ('normal' | 'italic')[]
+  /** The subsets an npm package's files are taken in (`latin`, `greek`, …, or `all`); default latin and latin-ext. */
+  readonly subsets?: readonly string[]
   readonly fallback?: string
   readonly fetch?: Fetch
   /** The clock provenance records (`createdAt`). */
@@ -159,7 +161,7 @@ function unicodeRangesOf(files: ReadonlyMap<string, Uint8Array>): Map<string, st
  * The faces of an npm font package (a Fontsource package, which ships its
  * files as `files/<id>-<subset>-<weight>-<style>.woff2`, or
  * `<id>-<subset>-wght-<style>.woff2` for a variable family): the requested
- * weights and styles, in the latin and latin-ext subsets, each with the
+ * weights and styles, in the subsets asked for (default latin and latin-ext), each with the
  * `unicode-range` its CSS gives, and the package's licence text.
  */
 async function fromNpm(
@@ -167,6 +169,8 @@ async function fromNpm(
   family: string,
   weights: readonly (number | string)[],
   styles: readonly ('normal' | 'italic')[],
+  /** The subsets asked for; undefined: latin and latin-ext, those of them the package has. */
+  asked: readonly string[] | undefined,
   fetchFn: Fetch
 ): Promise<FontSource> {
   const at = spec.lastIndexOf('@')
@@ -194,20 +198,35 @@ async function fromNpm(
   const wght = (metadata['variable'] as { wght?: { min?: unknown; max?: unknown } } | undefined)?.wght
   const variableRange = wght && /^\d+$/.test(String(wght.min)) && /^\d+$/.test(String(wght.max)) ? `${String(wght.min)} ${String(wght.max)}` : '100 900'
   const category = typeof metadata['category'] === 'string' ? metadata['category'] : undefined
+  // The package's subsets (metadata.json), else what its file names say.
+  const declared = Array.isArray(metadata['subsets']) ? (metadata['subsets'] as unknown[]).filter((s): s is string => typeof s === 'string' && /^[a-z0-9-]+$/.test(s)) : []
+  const subsetPattern = declared.length > 0 ? [...declared].sort((a, b) => b.length - a.length).join('|') : '[a-z]+(?:-ext)?'
+  const fileOf = new RegExp(`(?:^|/)([a-z0-9-]+?)-(${subsetPattern})-(\\d+|wght)-(normal|italic)\\.woff2$`)
+  const present = new Set<string>(declared)
+  for (const path of files.keys()) {
+    const m = fileOf.exec(path)
+    if (m) present.add(m[2] as string)
+  }
+  const subsets = asked ?? DEFAULT_SUBSETS
+  const all = subsets.includes('all')
+  const unknown = all || asked === undefined ? [] : subsets.filter((s) => !present.has(s))
+  if (unknown.length > 0) {
+    throw new UsageError(`--subset ${unknown.join(', ')}: ${pkg} has the subsets ${[...present].sort().join(', ') || '(none)'} (or "all")`)
+  }
   const faces: FontFace[] = []
   const wanted = new Set(weights.map((w) => String(w)))
   for (const [path, bytes] of [...files].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
-    const m = /(?:^|\/)([a-z0-9-]+?)-(latin-ext|latin)-(\d00|wght)-(normal|italic)\.woff2$/.exec(path)
+    const m = fileOf.exec(path)
     if (!m) continue
     const [, , subset, w, style] = m as unknown as [string, string, string, string, 'normal' | 'italic']
-    if (!SUBSETS.includes(subset) || !styles.includes(style)) continue
+    if ((!all && !subsets.includes(subset)) || !styles.includes(style)) continue
     const weight: number | string = w === 'wght' ? variableRange : Number(w)
     if (w !== 'wght' && !wanted.has(w)) continue
     const name = basename(path)
     faces.push({ name: `${slug(family)}-${subset}-${w}-${style}.woff2`, bytes, weight, style, ...(ranges.has(name) ? { unicodeRange: ranges.get(name) as string } : {}) })
   }
   if (faces.length === 0) {
-    throw new CommandFailure('FONT_SOURCE_EMPTY', `${pkg}@${doc.version ?? version} has no latin or latin-ext .woff2 file of weight ${[...wanted].join(', ')} and style ${styles.join(', ')}`)
+    throw new CommandFailure('FONT_SOURCE_EMPTY', `${pkg}@${doc.version ?? version} has no .woff2 file in the subsets ${subsets.join(', ')} of weight ${[...wanted].join(', ')} and style ${styles.join(', ')}`)
   }
   const licencePath = [...files.keys()].find((p) => !p.includes('/') && LICENCE_NAME.test(p))
   return {
@@ -262,7 +281,7 @@ export async function fontAdd(options: FontAddOptions): Promise<FontAddResult> {
   const fetchFn = options.fetch ?? fetch
   const from = options.from
   let source: FontSource
-  if (from.startsWith('npm:')) source = await fromNpm(from.slice(4), family, weights, styles, fetchFn)
+  if (from.startsWith('npm:')) source = await fromNpm(from.slice(4), family, weights, styles, options.subsets?.length ? options.subsets : undefined, fetchFn)
   else if (/^https?:\/\//i.test(from)) source = await fromUrl(from, family, weights[0] as number | string, styles[0] as 'normal' | 'italic', fetchFn)
   else source = await fromPath(resolve(options.root, from), family, weights[0] as number | string, styles[0] as 'normal' | 'italic')
 
@@ -361,6 +380,7 @@ async function runFont(args: ParsedArgs, io: CommandIO): Promise<number> {
     from,
     weights: stringFlags(args, 'weight').flatMap((w) => w.split(',')),
     styles: stringFlags(args, 'style').flatMap((s) => s.split(',')).map(styleOf),
+    subsets: stringFlags(args, 'subset').flatMap((s) => s.split(',')).map((s) => s.trim()).filter(Boolean),
     ...(fallback ? { fallback } : {}),
   })
   for (const f of result.written) io.out(`  wrote ${f}`)
@@ -375,15 +395,18 @@ async function runFont(args: ParsedArgs, io: CommandIO): Promise<number> {
 export const fontCommand: Command = {
   name: 'font',
   summary: "Add a font family's woff2 files to the app and declare them in its theme",
-  usage: `pwf font add <family> --from <path|https-url|npm:<package>[@<version>]> [--weight <w>]… [--style normal|italic]… [--fallback <generic>] [--dir <project>]
+  usage: `pwf font add <family> --from <path|https-url|npm:<package>[@<version>]> [--weight <w>]… [--style normal|italic]… [--subset <name>|all]… [--fallback <generic>] [--dir <project>]
 
   <family>          the family name the typography tokens use ("Inter")
   --from <path>     a .woff2 file, or a folder of them (a licence text beside them is copied too)
   --from <https>    one .woff2 file to download
   --from npm:<pkg>  a font package from the npm registry (a Fontsource package):
-                    its latin and latin-ext files of the weights and styles asked for
+                    its files of the subsets, weights and styles asked for
   --weight <w>      400 (default), 700, … (1 to 1000) or a variable range "100 900"; repeatable
   --style <s>       normal (default) or italic; repeatable
+  --subset <name>   for npm:, the subsets taken (latin, latin-ext, greek, cyrillic,
+                    vietnamese, …, or all); default latin and latin-ext; repeatable.
+                    Each file keeps its unicode-range: a page fetches only what it draws
   --fallback <g>    the generic family drawn until the file arrives (sans-serif, serif, monospace, …);
                     without it, the package's category when it names one
 

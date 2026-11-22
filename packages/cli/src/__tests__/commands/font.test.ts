@@ -186,3 +186,47 @@ describe('pwf font add: weights, the family’s category and where the theme is'
     expect(manifest['theme']).toEqual({ colors: { primary: '#123456' }, fonts: [{ family: 'Caligraphic', files: [{ src: 'media/fonts/caligraphic-cal.woff2', weight: 400 }] }] })
   })
 })
+
+describe('pwf font add --subset', () => {
+  async function fontsource(root: string) {
+    const font = new Uint8Array(await readFile(FONT))
+    const enc = new TextEncoder()
+    const css = ['latin', 'latin-ext', 'greek', 'cyrillic-ext']
+      .map((s, i) => `@font-face{font-family:'Inter';src:url(./files/inter-${s}-400-normal.woff2) format('woff2');unicode-range:U+0${i}00-0${i}FF;}`)
+      .join('\n')
+    const tgz = gzipSync(
+      writeTar(
+        new Map<string, Uint8Array>([
+          ['package/metadata.json', enc.encode(JSON.stringify({ id: 'inter', category: 'sans-serif', subsets: ['cyrillic-ext', 'greek', 'latin', 'latin-ext'] }))],
+          ['package/400.css', enc.encode(css)],
+          ...['latin', 'latin-ext', 'greek', 'cyrillic-ext'].map((s) => [`package/files/inter-${s}-400-normal.woff2`, font] as [string, Uint8Array]),
+        ])
+      )
+    )
+    const fetchStub = (async (url: string) => {
+      if (url.startsWith('https://registry.npmjs.org/@fontsource%2finter/')) return Response.json({ version: '5.3.0', dist: { tarball: 'https://registry.npmjs.org/@fontsource/inter/-/inter-5.3.0.tgz' } })
+      if (url.endsWith('inter-5.3.0.tgz')) return new Response(tgz)
+      return new Response('', { status: 404 })
+    }) as unknown as typeof fetch
+    void root
+    return fetchStub
+  }
+  const srcs = async (root: string) => ((await fontsOf(root))[0]?.files ?? []).map((f) => `${String(f['src'])} ${String(f['unicodeRange'])}`)
+
+  it('takes latin and latin-ext by default, the subsets named, or all — each with its unicode-range', async () => {
+    const plain = await appFolder()
+    await fontAdd({ root: plain, family: 'Inter', from: 'npm:@fontsource/inter', fetch: await fontsource(plain) })
+    expect(await srcs(plain)).toEqual(['media/fonts/inter-latin-400-normal.woff2 U+0000-00FF', 'media/fonts/inter-latin-ext-400-normal.woff2 U+0100-01FF'])
+
+    const greek = await appFolder()
+    await fontAdd({ root: greek, family: 'Inter', from: 'npm:@fontsource/inter', subsets: ['latin', 'greek'], fetch: await fontsource(greek) })
+    expect(await srcs(greek)).toEqual(['media/fonts/inter-greek-400-normal.woff2 U+0200-02FF', 'media/fonts/inter-latin-400-normal.woff2 U+0000-00FF'])
+
+    const all = await appFolder()
+    await fontAdd({ root: all, family: 'Inter', from: 'npm:@fontsource/inter', subsets: ['all'], fetch: await fontsource(all) })
+    expect(await srcs(all)).toHaveLength(4)
+
+    const none = await appFolder()
+    await expect(fontAdd({ root: none, family: 'Inter', from: 'npm:@fontsource/inter', subsets: ['klingon'], fetch: await fontsource(none) })).rejects.toThrow(/klingon.*cyrillic-ext, greek, latin, latin-ext/)
+  })
+})
