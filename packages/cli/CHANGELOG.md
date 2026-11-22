@@ -1,5 +1,12 @@
 # @pwfabric/cli
 
+## Unreleased (3.5.0)
+
+- Changed (upgrade note): `brand.favicon` is a media file (`media/<file>`), a file of `public/` or an `https://` address; anything else is `FAVICON_INVALID` in `pwf validate` and `pwf build`. The served form `pwpack/media/<file>` is refused with the file to write instead.
+- Changed: `pwf validate` refuses a pinned pack that is not cached (`PIN_NOT_CACHED`, an error), as `pwf build` does, with the same fix.
+- Added: app layouts, apps in several languages (per-locale documents, `hreflang`, one sitemap, llms sections, per-page words), `titleTemplate`, the colour-scheme script, `og:site_name`, `og:locale`, `twitter:card` and the icon link's `type`.
+- Note for apps on Foundation 2.0: the navbar has no `sticky` prop; use its block style (`position: sticky`, `top`, `zIndex`), and `alignSelf: "start"` in a stretched row.
+
 ## 3.4.0
 
 - Added: `pwf build --router path|auto` writes one HTML document per page: `index.html` for the entry page, `<key>/index.html` for every other page, and `404.html` from the app's not-found page. Page links are written as `<base><key>/`. Page keys that name a served folder (`assets`, `blocks`, `engines`, `shims`, `pwpack`) are refused (`PAGE_KEY_RESERVED`).

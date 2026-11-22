@@ -6,6 +6,7 @@ export default {
   packs: 'Packs',
   authoring: 'Authoring',
   'self-host': 'Self-hosting',
+  'upgrading-to-3-5': 'Upgrading to 3.5',
   'upgrading-to-3': 'Upgrading to 3.0',
   specification: 'Specification',
   licence: 'Licensing',
