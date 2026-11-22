@@ -363,6 +363,22 @@ function valueIssue(
   }
 }
 
+const BREAKPOINT_NAMES = new Set(['xs', 'sm', 'md', 'lg', 'xl', '2xl'])
+
+/**
+ * The values a prop is judged by: each breakpoint's (`prop.md`) when it is
+ * written as a breakpoint map (an object whose every key is a breakpoint
+ * name) and its declared shape does not take an object; else the value.
+ */
+function breakpointValues(prop: string, value: unknown, schema: unknown): [string, unknown][] {
+  const type = isRecord(schema) ? schema['type'] : undefined
+  const takesObject = type === 'object' || (Array.isArray(type) && type.includes('object'))
+  if (takesObject || !isRecord(value)) return [[prop, value]]
+  const keys = Object.keys(value)
+  if (keys.length === 0 || !keys.every((k) => BREAKPOINT_NAMES.has(k))) return [[prop, value]]
+  return keys.map((k) => [`${prop}.${k}`, value[k]])
+}
+
 /**
  * The prop findings for one receipt. `path` is the receipt's pack path, used
  * as each issue's `path`. Block types the catalogue does not know are skipped
@@ -378,56 +394,60 @@ export function checkReceiptBlockProps(receipt: unknown, catalog: BlockPropsCata
       const id = typeof node['id'] === 'string' && node['id'] ? ` "${node['id']}"` : ''
       const where = `${at} (${type as string}${id})`
       const byName = new Map(entry.props.map((p) => [p.name, p]))
-      for (const [prop, value] of Object.entries(node['props'])) {
-        const spec = byName.get(prop)
+      for (const [propName, raw] of Object.entries(node['props'])) {
+        const spec = byName.get(propName)
         if (!spec) {
-          if (value === undefined) continue
+          if (raw === undefined) continue
           const known = entry.props.map((p) => p.name).join(', ') || 'none'
           issues.push({
             severity: 'warning',
             code: BLOCK_PROP_UNKNOWN,
             path,
-            message: `${where} sets "${prop}", which ${entry.atomId} does not declare (its props: ${known}); the block ignores it`,
+            message: `${where} sets "${propName}", which ${entry.atomId} does not declare (its props: ${known}); the block ignores it`,
           })
           continue
         }
-        const literal = spec.bindable === false
-        const template = literal ? firstTemplate(value, prop) : undefined
-        if (template) {
-          issues.push({
-            severity: 'warning',
-            code: BLOCK_PROP_NOT_BINDABLE,
-            path,
-            message: `${where} sets ${template.at} to ${short(template.text)}, but ${entry.atomId} declares ${prop} bindable: false; the {{…}} is not resolved and renders as written`,
-          })
-        }
-        const found = valueIssue(where, prop, value, spec.jsonSchema, entry.atomId, literal)
-        if (found) issues.push({ severity: 'warning', path, ...found })
-        else {
-          // The members of its items and nested objects, by name — template values aside.
-          for (const member of literal || !isBinding(value) ? unknownMembers(value, spec.jsonSchema, prop) : []) {
-            const near = nearestName(member.name, member.known)
+        // A breakpoint map (`{ xs: 'column', md: 'row' }`) is judged value by
+        // value: the renderer resolves it for the breakpoint it draws at.
+        for (const [prop, value] of breakpointValues(propName, raw, spec.jsonSchema)) {
+          const literal = spec.bindable === false
+          const template = literal ? firstTemplate(value, prop) : undefined
+          if (template) {
             issues.push({
               severity: 'warning',
-              code: BLOCK_PROP_UNKNOWN,
+              code: BLOCK_PROP_NOT_BINDABLE,
               path,
-              message:
-                `${at}.props.${member.at} (${type as string}${id}) sets "${member.name}", which ${entry.atomId} does not declare for ${member.at.slice(0, -(member.name.length + 1))} ` +
-                `(its members: ${member.known.join(', ') || 'none'})${near ? `; did you mean "${near}"?` : ''}; the block ignores it`,
+              message: `${where} sets ${template.at} to ${short(template.text)}, but ${entry.atomId} declares ${prop} bindable: false; the {{…}} is not resolved and renders as written`,
             })
           }
-        }
-        if (!found && isRecord(spec.jsonSchema) && (literal || !carriesBinding(value))) {
-          // The rest of the shape, as the runtime reads it: bounds, formats, nested members.
-          const shape = spec.jsonSchema as PropShape
-          // A member the schema does not name is reported above, by name.
-          for (const issue of checkPropValue(coercePropValue(value, shape), shape, prop).filter((i) => i.code !== 'unknownMember')) {
-            issues.push({
-              severity: 'warning',
-              code: BLOCK_PROP_SHAPE,
-              path,
-              message: `${where} sets ${issue.message.replace(/^([^:]+): /, '$1, which ')}; ${entry.atomId} gets it as written`,
-            })
+          const found = valueIssue(where, prop, value, spec.jsonSchema, entry.atomId, literal)
+          if (found) issues.push({ severity: 'warning', path, ...found })
+          else {
+            // The members of its items and nested objects, by name — template values aside.
+            for (const member of literal || !isBinding(value) ? unknownMembers(value, spec.jsonSchema, prop) : []) {
+              const near = nearestName(member.name, member.known)
+              issues.push({
+                severity: 'warning',
+                code: BLOCK_PROP_UNKNOWN,
+                path,
+                message:
+                  `${at}.props.${member.at} (${type as string}${id}) sets "${member.name}", which ${entry.atomId} does not declare for ${member.at.slice(0, -(member.name.length + 1))} ` +
+                  `(its members: ${member.known.join(', ') || 'none'})${near ? `; did you mean "${near}"?` : ''}; the block ignores it`,
+              })
+            }
+          }
+          if (!found && isRecord(spec.jsonSchema) && (literal || !carriesBinding(value))) {
+            // The rest of the shape, as the runtime reads it: bounds, formats, nested members.
+            const shape = spec.jsonSchema as PropShape
+            // A member the schema does not name is reported above, by name.
+            for (const issue of checkPropValue(coercePropValue(value, shape), shape, prop).filter((i) => i.code !== 'unknownMember')) {
+              issues.push({
+                severity: 'warning',
+                code: BLOCK_PROP_SHAPE,
+                path,
+                message: `${where} sets ${issue.message.replace(/^([^:]+): /, '$1, which ')}; ${entry.atomId} gets it as written`,
+              })
+            }
           }
         }
       }

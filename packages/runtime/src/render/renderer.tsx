@@ -40,6 +40,7 @@ import { collectVisibilityCss } from './visibility-css.js'
 import { collectStatesCss } from './states-css.js'
 import { collectConditionalStatesCss } from './conditional-states-css.js'
 import { collectResponsiveStyleCss } from './responsive-style-css.js'
+import { resolveResponsiveProps } from './responsive-props.js'
 import { collectGroupStatesCss } from './group-states-css.js'
 import { buildDarkThemeCss } from './dark-theme-css.js'
 import { resolveAppearanceMode } from '@pwfabric/contracts'
@@ -597,9 +598,15 @@ function renderBlock(
   // value here so the inline path (this block + computeBlockLayoutStyle hoists)
   // sees a flat `Record<string,string>`; the larger-breakpoint values are
   // emitted as scoped media-query CSS by collectResponsiveStyleCss.
+  // Breakpoint-valued props (`direction: { xs: 'column', md: 'row' }`) are
+  // resolved for the breakpoint drawn at, before the block and the layout
+  // rules below read them (responsive-props.ts).
+  const viewportName = (context.viewport ?? 'lg') as BreakpointName
   const block = applyRowStacking(
-    flattenResponsiveStyle(rawBlock),
-    (context.viewport ?? 'lg') as BreakpointName,
+    flattenResponsiveStyle(
+      resolveResponsiveProps(rawBlock, viewportName, dynamicBlocks?.get(rawBlock.type)?.definition?.props)
+    ),
+    viewportName,
     components
   )
   // Layout applies to EVERY path below (static/dynamic/unknown/gated) so installed
