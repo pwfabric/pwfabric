@@ -141,6 +141,37 @@ export function llmsTxt(app: { readonly name: string; readonly description?: str
   return `${[...head, '', '## Pages', '', ...links].join('\n')}\n`
 }
 
+/**
+ * `llms.txt` of an app with locales (pwapp-format §2.4.1): the app, then a
+ * section per locale (the default first), `## Pages (<lang>)`.
+ */
+export function llmsTxtLocales(
+  app: { readonly name: string; readonly description?: string },
+  sections: readonly { readonly lang: string; readonly pages: readonly LlmsPage[] }[]
+): string {
+  const head = [`# ${app.name}`, ...(app.description ? ['', `> ${app.description}`] : [])]
+  const body = sections.flatMap((s) => ['', `## Pages (${s.lang})`, '', ...s.pages.map((p) => `- [${p.title}](${p.url})${p.description ? `: ${p.description}` : ''}`)])
+  return `${[...head, ...body].join('\n')}\n`
+}
+
+/**
+ * `llms-full.txt` of an app with locales: each locale's pages under a
+ * `# <lang>` heading, in the same order, after the app's title.
+ */
+export function llmsFullTxtLocales(
+  app: { readonly name: string; readonly description?: string },
+  sections: readonly { readonly lang: string; readonly pages: readonly LlmsPage[] }[],
+  link: (page: LlmsPage) => LinkResolver
+): string {
+  const head = [`# ${app.name}`, ...(app.description ? ['', `> ${app.description}`] : [])]
+  const parts = sections.map((s) => {
+    // The locale's pages as llmsFullTxt writes them, without its title lines.
+    const own = llmsFullTxt({ name: '' }, s.pages, link).split('\n').slice(1)
+    return [`# ${s.lang}`, ...own].join('\n').trimEnd()
+  })
+  return `${[...head, '', parts.join('\n\n')].join('\n')}\n`
+}
+
 /** `llms-full.txt`: every page's words, a band every page shares once at the end. */
 export function llmsFullTxt(
   app: { readonly name: string; readonly description?: string },

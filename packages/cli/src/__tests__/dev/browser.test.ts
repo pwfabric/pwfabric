@@ -153,6 +153,40 @@ describe('from page to page inside the app layout', () => {
     const result = JSON.parse(stdout.trim().split('\n').pop() as string) as Record<string, unknown>
     expect(result['heading']).toBe('About us')
     expect(result['errors']).toEqual([])
-    expect(result['navigation']).toEqual({ shown: true, kept: true, title: 'K Demo — About' })
+    expect(result['navigation']).toEqual({ shown: true, kept: true, title: 'K Demo — About', lang: '' })
+  })
+})
+
+describe('an app in several languages in the browser', () => {
+  let localeServer: DevServer
+  let localeCleanup: () => Promise<void>
+  beforeAll(async () => {
+    const app = await makeApp()
+    localeCleanup = app.cleanup
+    const identityPath = join(app.root, 'pwpack.json')
+    const identity = JSON.parse(await readFile(identityPath, 'utf8')) as { app: { surfaceOrder: string[] } }
+    identity.app.surfaceOrder = ['home', 'pricing']
+    await writeFile(identityPath, JSON.stringify(identity))
+    const page = { blocks: [{ id: 'page', type: 'stack', props: {}, children: [{ id: 'hello', type: 'title', props: { text: "{{t('intro')}}" } }] }] }
+    await writeFile(join(app.root, 'app', 'surfaces', 'home.receipt.json'), JSON.stringify({ title: 'Home', ...page }))
+    await writeFile(join(app.root, 'app', 'surfaces', 'pricing.receipt.json'), JSON.stringify({ title: 'Pricing', path: { de: 'preise' }, ...page }))
+    await mkdir(join(app.root, 'app', 'messages'), { recursive: true })
+    await writeFile(join(app.root, 'app', 'messages', 'en.json'), JSON.stringify({ intro: 'Fresh bread' }))
+    await writeFile(join(app.root, 'app', 'messages', 'de.json'), JSON.stringify({ intro: 'Frisches Brot' }))
+    const planPath = join(app.root, 'app', 'plan.json')
+    const plan = JSON.parse(await readFile(planPath, 'utf8')) as Record<string, unknown>
+    await writeFile(planPath, JSON.stringify({ ...plan, locales: ['en', 'de'], defaultLocale: 'en' }))
+    localeServer = await createDevServer({ root: app.root, port: 0 }, { watch: false })
+  })
+  afterAll(async () => {
+    await localeServer?.close()
+    await localeCleanup?.()
+  })
+
+  it('draws the locale the route names, in its words', async () => {
+    const { stdout } = await promisify(execFile)(process.execPath, [SMOKE, localeServer.url, '--go', '#/de/preise', '--until', 'Frisches Brot'], { timeout: 60_000 })
+    const result = JSON.parse(stdout.trim().split(String.fromCharCode(10)).pop() as string) as Record<string, unknown>
+    expect(result['errors']).toEqual([])
+    expect(result['navigation']).toMatchObject({ shown: true, lang: 'de' })
   })
 })

@@ -294,3 +294,28 @@ describe('MESSAGES_INVALID — plurals (envelope §2.1)', () => {
     expect(bad[0]?.message).toContain('messages["cart.n"]')
   })
 })
+
+describe('the words of an app with locales (envelope §2.3)', () => {
+  const app = { 'pwpack.json': { app: {} } }
+  const plan = { title: 'Acme', locales: ['en', 'de'], defaultLocale: 'en' }
+
+  it("reads the default locale's catalogue for the ids the app can reach", async () => {
+    const root = await project({ ...app, 'app/plan.json': plan, 'app/messages/en.json': { 'notFound.title': 'x', 'notFound.body': 'y' } })
+    const issues = checkMessages(root)
+    expect(codes(issues)).toEqual(['MESSAGES_MISSING'])
+    expect(issues[0]?.path).toBe('app/messages/en.json')
+    expect(issues[0]?.message).toContain('notFound.home')
+  })
+
+  it("checks every catalogue's plurals", async () => {
+    const root = await project({
+      ...app,
+      'pwpack.json': { app: { notFound: 'missing' } },
+      'app/plan.json': plan,
+      'app/messages/en.json': { n: '{n, plural, one {#} other {#}}' },
+      'app/messages/de.json': { n: '{n, plural, one {#}}' },
+    })
+    const issues = checkMessages(root)
+    expect(issues.map((i) => [i.code, i.path])).toEqual([['MESSAGES_INVALID', 'app/messages/de.json']])
+  })
+})

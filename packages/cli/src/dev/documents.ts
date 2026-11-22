@@ -28,6 +28,8 @@ export interface PageDocument {
   readonly notFound: boolean
   /** The path it is served at under the app's base (`/`, `/pricing/`); undefined for `404.html`. */
   readonly path?: string
+  /** In an app with locales: the locale the document is drawn in (envelope §2.3). */
+  readonly locale?: string
 }
 
 /** The folders of the served folder (§1): a page key named like one has no document of its own under path routing. */
@@ -144,6 +146,20 @@ export function sitemapXml(urls: readonly string[]): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map((u) => `  <url><loc>${xml(u)}</loc></url>\n`).join('')}</urlset>
+`
+}
+
+/**
+ * `sitemap.xml` of an app with locales (pwapp-format §2.4): one `<url>` per
+ * page per locale, each with an `xhtml:link` alternate per locale and one
+ * for `x-default`.
+ */
+export function sitemapXmlLocales(entries: readonly { readonly url: string; readonly alternates: readonly { readonly hreflang: string; readonly href: string }[] }[]): string {
+  const url = (e: (typeof entries)[number]): string =>
+    `  <url><loc>${xml(e.url)}</loc>${e.alternates.map((a) => `<xhtml:link rel="alternate" hreflang="${xml(a.hreflang)}" href="${xml(a.href)}"/>`).join('')}</url>\n`
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+${entries.map(url).join('')}</urlset>
 `
 }
 
