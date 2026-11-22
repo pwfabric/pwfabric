@@ -126,6 +126,19 @@ describe('content security policy', () => {
     expect(csp.directives['style-src']).toEqual(["'self'", "'unsafe-inline'", 'https://s.example.com'])
   })
 
+  it('adds the script origin a placed block declares to script-src, after the build’s own sources', () => {
+    const csp = deriveCsp({ ...base, blocks: [{ atomId: 'embed.widget', origins: { script: ['https://widget.example.com'] } }] })
+    const scripts = csp.directives['script-src'] as string[]
+    expect(scripts.slice(0, 2)).toEqual(["'self'", 'blob:'])
+    expect(scripts[scripts.length - 1]).toBe('https://widget.example.com')
+    expect(deriveCsp(base).directives['script-src']).not.toContain('https://widget.example.com')
+  })
+
+  it('adds the origin of an absolute app icon to img-src, and none for an app file', () => {
+    expect(deriveCsp({ ...base, favicon: 'https://cdn.example.com/i.png' }).directives['img-src']).toContain('https://cdn.example.com')
+    expect(deriveCsp({ ...base, favicon: 'pwpack/media/i.png' }).directives['img-src']).toEqual(["'self'", 'data:', 'blob:'])
+  })
+
   it('resolves engine hosts the way a reader does: https, except explicit http on loopback', () => {
     expect(engineHostOrigin('{baseUrl}', { baseUrl: 'api.example.com/v1' })).toBe('https://api.example.com')
     expect(engineHostOrigin('http://api.example.com', {})).toBe('https://api.example.com')

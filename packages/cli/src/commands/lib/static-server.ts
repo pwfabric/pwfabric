@@ -167,6 +167,52 @@ export function headerPatternMatches(pattern: string, path: string): boolean {
   return path.length >= head.length + tail.length && path.startsWith(head) && path.endsWith(tail)
 }
 
+/** The static-host redirects file a build writes beside `index.html` (from `plan.json` `redirects`). */
+export const REDIRECTS_FILE = '_redirects'
+
+/** One line of a `_redirects` file. */
+export interface RedirectRule {
+  readonly from: string
+  readonly to: string
+  readonly status: number
+}
+
+/**
+ * Parses the `_redirects` convention of static hosts: `from to [status]` per
+ * line, fields split on whitespace, `#` lines are comments, the status 301
+ * when absent. A line that is not three fields of that form is skipped.
+ */
+export function parseRedirectsFile(text: string): RedirectRule[] {
+  const rules: RedirectRule[] = []
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const [from, to, status, ...rest] = line.split(/\s+/)
+    const code = status === undefined ? 301 : Number(status)
+    if (!from || !to || rest.length > 0 || !Number.isInteger(code) || code < 300 || code > 399) continue
+    rules.push({ from, to, status: code })
+  }
+  return rules
+}
+
+/**
+ * Where `path` (`/` + the relative path) is sent, or undefined: the first rule
+ * whose `from` matches — exactly, or by a trailing splat (`/blog/*`), whose
+ * match fills `:splat` in the target.
+ */
+export function redirectFor(rules: readonly RedirectRule[], path: string): { location: string; status: number } | undefined {
+  for (const rule of rules) {
+    const star = rule.from.indexOf('*')
+    if (star < 0) {
+      if (rule.from === path) return { location: rule.to, status: rule.status }
+      continue
+    }
+    const head = rule.from.slice(0, star)
+    if (path.startsWith(head)) return { location: rule.to.replace(':splat', path.slice(head.length)), status: rule.status }
+  }
+  return undefined
+}
+
 /** The headers the `_headers` file adds for a relative path. */
 async function extraHeaders(source: StaticSource, rel: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
@@ -231,10 +277,18 @@ async function handle(
     return
   }
   const rel = requestPath(req.url ?? '/')
-  // The headers file configures the server; it is not part of the site.
-  const found = rel === null || rel === HEADERS_FILE ? null : await resolveRequest(source, rel)
+  // The build's redirects, before any file — as a static host applies them.
+  const redirects = await load(source, REDIRECTS_FILE)
+  const sent = rel !== null && redirects ? redirectFor(parseRedirectsFile(new TextDecoder().decode(redirects)), `/${rel}`) : undefined
+  if (sent) {
+    res.writeHead(sent.status, { location: sent.location, 'cache-control': 'no-cache' }).end()
+    return
+  }
+  // The headers and redirects files configure the server; they are not part of the site.
+  const config = rel === HEADERS_FILE || rel === REDIRECTS_FILE
+  const found = rel === null || config ? null : await resolveRequest(source, rel)
   if (!found) {
-    const own = rel !== null && rel !== HEADERS_FILE ? host?.envelopeFile(rel, undefined) : undefined
+    const own = rel !== null && !config ? host?.envelopeFile(rel, undefined) : undefined
     if (own) {
       res.writeHead(200, { 'content-type': contentTypeOf(rel as string), 'content-length': String(own.byteLength), 'cache-control': 'no-cache' })
       if (req.method === 'HEAD') res.end()

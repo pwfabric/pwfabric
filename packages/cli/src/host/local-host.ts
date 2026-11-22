@@ -417,7 +417,8 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
 
   function surface(req: IncomingMessage, res: ServerResponse, parts: string[]): void {
     if (req.method !== 'GET') methodNotAllowed()
-    const file = parts.length === 1 ? parts[0] : undefined
+    // A page in a folder of app/surfaces/ (`docs/intro`) is a nested path.
+    const file = parts.length > 0 ? parts.join('/') : undefined
     if (!file || !file.endsWith('.receipt.json')) notFound()
     const key = file.slice(0, -'.receipt.json'.length)
     // The sign-in screen is the page a visitor signs in ON: refusing it

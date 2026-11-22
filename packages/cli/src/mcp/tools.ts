@@ -124,9 +124,11 @@ interface CatalogEntry {
   readonly themes: readonly string[]
 }
 
+/** The app's page keys, a page in a folder of app/surfaces/ included (`docs/intro`). */
 async function surfacesOf(root: string): Promise<string[]> {
-  const entries = await readdir(join(root, 'app', 'surfaces')).catch(() => [] as string[])
+  const entries = await readdir(join(root, 'app', 'surfaces'), { recursive: true }).catch(() => [] as string[])
   return entries
+    .map((f) => f.split('\\').join('/'))
     .filter((f) => f.endsWith('.receipt.json'))
     .map((f) => f.slice(0, -'.receipt.json'.length))
     .sort()

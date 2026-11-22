@@ -237,6 +237,12 @@ export interface ShellOptions {
   /** The policy for the shell's `<meta http-equiv="Content-Security-Policy">`; none when absent. */
   readonly csp?: string
   /**
+   * The app's icon (`appearance` `brand.favicon`), as the document links it:
+   * an app file (`pwpack/media/<file>`) or an absolute http(s) address.
+   * Absent: an empty icon (`data:,`), so the browser asks for no `/favicon.ico`.
+   */
+  readonly favicon?: string
+  /**
    * How the app routes (`runApp`'s `router`). `path` and `auto` put the app's
    * base in `<head>` (`<base href>`, see {@link ShellOptions.base}); `auto`
    * also declares the host's fallback with `<meta name="pw-router"
@@ -626,7 +632,7 @@ export function buildShellHtml(options: ShellOptions): string {
     <meta charset="UTF-8" />${base}${csp}
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(options.title)}</title>${description}${meta}
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="${options.favicon ? escapeHtml(servedHref(options.favicon)) : 'data:,'}" />
     ${options.themeCss !== undefined ? `<style>${options.themeCss.replace(/<\//g, '<\\/')}</style>` : `<link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />`}${layout}${fonts}
     <script type="importmap">${importMapText()}</script>
     <link rel="modulepreload" href="./${escapeHtml(assets.runner)}" />${renderer}${shims}${boot}${hints}

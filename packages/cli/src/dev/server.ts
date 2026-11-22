@@ -312,9 +312,9 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
       send(res, 200, CONTENT_TYPES['.html'] as string, overlayHtml(current.diagnostics), head)
       return
     }
-    // `_headers` configures a static host; it is not part of the site.
+    // `_headers` and `_redirects` configure a static host; they are not part of the site.
     const file =
-      rel === '_headers'
+      rel === '_headers' || rel === '_redirects'
         ? undefined
         : (current?.files.get(rel) ?? (isPagePath(rel) ? current?.files.get('index.html') : undefined))
     if (!file) {

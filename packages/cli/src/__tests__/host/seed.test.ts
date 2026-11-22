@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readSeed } from '../../host/definitions.js'
+import { readReceipt, readSeed, surfaceKeys } from '../../host/definitions.js'
 
 const roots: string[] = []
 afterEach(() => {
@@ -40,5 +40,19 @@ describe('readSeed — app/content then app/data', () => {
   it('rejects a content file that is not { data: [...] }', () => {
     const root = app({ 'app/content/Product.json': [{ id: A }] })
     expect(() => readSeed(root, 'Product')).toThrow('{ "data": [ ...records ] }')
+  })
+})
+
+describe('surfaceKeys and readReceipt — pages in folders', () => {
+  it('lists a receipt in a folder of app/surfaces as page folder/key, and reads it', () => {
+    const root = app({
+      'app/surfaces/home.receipt.json': { blocks: [] },
+      'app/surfaces/docs/intro.receipt.json': { title: 'Intro', blocks: [] },
+      'app/surfaces/docs/notes.md': 'x',
+    })
+    expect(surfaceKeys(root)).toEqual(['docs/intro', 'home'])
+    expect(readReceipt(root, 'docs/intro')?.['title']).toBe('Intro')
+    expect(readReceipt(root, '../pwpack')).toBeUndefined()
+    expect(readReceipt(root, 'docs/../home')).toBeUndefined()
   })
 })

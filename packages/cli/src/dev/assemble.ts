@@ -12,7 +12,7 @@
  * be pinned). Nothing is fetched; every input is on disk.
  */
 import { join } from 'node:path'
-import { blockPropDescriptors, blockTypeFirstUses, blockTypeNames, checkBlockIds, checkReceiptBlockProps, hashPack, unknownBlockTypeIssue } from '@pwfabric/pack'
+import { blockPropDescriptors, blockTypeFirstUses, blockTypeNames, checkBlockIds, checkReceiptBlockProps, hashPack, publicReservedReason, publicScriptReason, unknownBlockTypeIssue } from '@pwfabric/pack'
 import type { BlockOrigins } from '@pwfabric/contracts'
 import { atomKindMeta } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins } from '@pwfabric/contracts/schemas'
@@ -39,6 +39,8 @@ import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
 import { deriveCsp, headersFile } from './csp.js'
 import { documentHead, isRecordPage, pageDocuments, publicOriginOf, robotsTxt, SERVED_FOLDERS, sitemapXml } from './documents.js'
 import { llmsFullTxt, llmsTxt, type LlmsPage } from './llms.js'
+import { planHeadersOf, planRedirectsOf, planScriptOrigins, planScriptsOf, redirectsFile } from './plan-site.js'
+import { parseHeadersFile } from '../commands/lib/static-server.js'
 import { firstPaintData, paintPages, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
 import { canonicalOf, hashHref, pathHref } from '@pwfabric/runner'
 import {
@@ -307,6 +309,73 @@ function withoutAuthoring(receipt: Record<string, unknown>): Record<string, unkn
   return served
 }
 
+/**
+ * The app's icon (`appearance` `brand.favicon`) as the documents link it: an
+ * absolute http(s) address as written; a media file of the app
+ * (`media/<file>`) as served, `pwpack/media/<file>`; a public file
+ * (`public/favicon.ico`, or `favicon.ico`) at the app's root. A file the app does not have, or any other
+ * form, is an error (FAVICON_INVALID) and the documents keep the empty icon.
+ */
+function faviconOf(config: Record<string, unknown> | undefined, files: ReadonlyMap<string, Uint8Array>, diagnostics: AssembleDiagnostic[]): string | undefined {
+  const brand = isRecord(config) ? config['brand'] : undefined
+  const raw = isRecord(brand) ? brand['favicon'] : undefined
+  if (raw === undefined) return undefined
+  const value = typeof raw === 'string' ? raw.trim() : ''
+  // An address the head carries: visible ASCII, no whitespace or control character.
+  if (/^https?:\/\/[\x21-\x7e]+$/i.test(value)) return value
+  const file = value.replace(/^\.?\//, '')
+  if (/^media\/(?!.*(?:^|\/)\.\.?(?:\/|$))[^\s?#]+$/.test(file) && files.has(file)) return `pwpack/${file}`
+  // A public file (`public/favicon.ico`, or as served: `favicon.ico`) is served at the app's root.
+  const served = file.replace(/^public\//, '')
+  if (/^[^\s?#]+$/.test(served) && !served.split('/').some((seg) => seg === '..' || seg === '.') && files.has(`public/${served}`)) return served
+  diagnostics.push({
+    severity: 'error',
+    code: 'FAVICON_INVALID',
+    message: `brand.favicon is "${value}": it is an http(s) address or a file of the app (media/<file>, or a file of public/), and the app has no such file`,
+    path: 'app/definitions/appearance.json',
+  })
+  return undefined
+}
+
+/** The folder whose files a build copies, as they are, to the root of the served folder. */
+export const PUBLIC_DIR = 'public/'
+
+/**
+ * The app's `public/` files as served (`public/favicon.ico` → `favicon.ico`),
+ * each with its bytes: those `pwf validate` does not already refuse (a path
+ * the build writes, a file that is script — pwpack-format §1.4).
+ */
+function publicFilesOf(appFiles: ReadonlyMap<string, Uint8Array>, pageKeys: readonly string[]): [string, Uint8Array][] {
+  const out: [string, Uint8Array][] = []
+  for (const path of [...appFiles.keys()].filter((p) => p.startsWith(PUBLIC_DIR)).sort()) {
+    const rel = path.slice(PUBLIC_DIR.length)
+    const bytes = appFiles.get(path) as Uint8Array
+    if (rel === '' || publicReservedReason(rel, pageKeys) || publicScriptReason(rel, bytes)) continue
+    out.push([rel, bytes])
+  }
+  return out
+}
+
+/**
+ * Copies the public files into the served folder, byte for byte. One that
+ * would replace a file the build wrote is an error (APP_PUBLIC_RESERVED),
+ * never a silent overwrite.
+ */
+function copyPublic(publicFiles: readonly [string, Uint8Array][], files: Map<string, Uint8Array>, diagnostics: AssembleDiagnostic[]): void {
+  for (const [rel, bytes] of publicFiles) {
+    if (files.has(rel) || rel === 'publish.json') {
+      diagnostics.push({
+        severity: 'error',
+        code: 'APP_PUBLIC_RESERVED',
+        message: `${PUBLIC_DIR}${rel} would be served at /${rel}, which the build writes itself; rename or move it`,
+        path: `${PUBLIC_DIR}${rel}`,
+      })
+      continue
+    }
+    files.set(rel, bytes)
+  }
+}
+
 function atomLabel(atom: CompiledAtom): string {
   return atom.source.origin === 'app' ? atom.id : `${atom.id} (${atom.source.id}@${atom.source.version})`
 }
@@ -379,7 +448,8 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // Under path routing a route is a folder of the served app (`<key>/index.html`).
   if ((options.router ?? 'hash') !== 'hash') {
     for (const page of routes) {
-      if (page.key !== entry && SERVED_FOLDERS.includes(page.key)) {
+      // A page in a folder (`docs/intro`) is served under its first segment's folder.
+      if (page.key !== entry && SERVED_FOLDERS.includes(page.key.split('/')[0] as string)) {
         diagnostics.push({
           severity: 'error',
           code: 'PAGE_KEY_RESERVED',
@@ -621,6 +691,13 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       path: 'app/plan.json',
     })
   }
+  // What the plan asks of the site beyond its pages (plan-site.ts): scripts,
+  // response headers, redirects. Each is checked; a malformed one is an error.
+  const planScripts = planScriptsOf(plan, diagnostics)
+  // The app's public files, as served: listed in project.json, copied last.
+  const publicFiles = publicFilesOf(app.folder.files, keys)
+  // The app's icon: every document links it.
+  const favicon = faviconOf(config, app.folder.files, diagnostics)
   // An app that requires sign-in shows a visitor the gate first; whether the
   // renderer is ever needed is up to the visitor, so it is not preloaded.
   const gated = isRecord(authDoc) && authDoc['required'] === true
@@ -713,6 +790,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         webfontHref,
         ...(options.shellExtra !== undefined ? { bodyExtra: options.shellExtra } : {}),
         ...(csp !== undefined ? { csp } : {}),
+        ...(favicon !== undefined ? { favicon } : {}),
         assets,
         preloadRenderer: !gated,
         bootFiles: BOOT_FILES.filter((f) => files.has(f)),
@@ -752,6 +830,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       ...(appDescription !== undefined ? { description: appDescription } : {}),
       ...(origin !== undefined ? { origin } : {}),
       ...(image !== undefined ? { image: /^https?:\/\//i.test(image) ? image : `pwpack/${image.replace(/^\.?\//, '')}` } : {}),
+      // The scripts the runner loads once the visitor consents (envelope §2.2).
+      ...(planScripts.length > 0 ? { scripts: planScripts } : {}),
+      ...(publicFiles.length > 0 ? { publicFiles: publicFiles.map(([rel]) => rel) } : {}),
     })
   )
   for (const page of pages) {
@@ -858,10 +939,20 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     media: media.records,
     webfontHref,
     blocks: placedBlocks,
+    scripts: planScriptOrigins(planScripts),
+    ...(favicon !== undefined ? { favicon } : {}),
   })
   // Written last: the shell preloads only boot files the folder has.
   for (const doc of documents) files.set(doc.file, shell(doc, csp.meta))
-  files.set('_headers', enc.encode(headersFile(csp.header, csp.mediaHeader, documents.map((d) => d.file))))
+  // The plan's headers come after the engine's, and may not set one the
+  // engine sets on a path they share (pwapp-format §2.6).
+  const engineHeaders = headersFile(csp.header, csp.mediaHeader, documents.map((d) => d.file))
+  const planHeaders = planHeadersOf(
+    plan,
+    diagnostics,
+    parseHeadersFile(engineHeaders).map((r) => ({ path: r.pattern, headers: r.headers.map(([name]) => name.replace(/^!\s*/, '')) }))
+  )
+  files.set('_headers', enc.encode(headersFile(csp.header, csp.mediaHeader, documents.map((d) => d.file), planHeaders)))
   // THE SITEMAP: every page's own address on the app's public origin — not a
   // record page (it names no page without its record), and nothing of an app
   // that requires sign-in, which a crawler cannot read.
@@ -922,6 +1013,17 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         ...(shipped?.moduleUrl && shipped.integrity && a.hash ? { module: shipped.moduleUrl, integrity: shipped.integrity } : {}),
       }
     })
+  // Public files next, so a redirect cannot shadow one of them either.
+  copyPublic(publicFiles, files, diagnostics)
+  // The plan's redirects, in the static-host `_redirects` convention, under
+  // the app's base: none from an address the app serves, which a host
+  // answers first.
+  const servedPath = (from: string): boolean => {
+    const rel = from.replace(/^\/+/, '')
+    return rel === '' || files.has(rel) || files.has(`${rel.replace(/\/+$/, '')}/index.html`) || documents.some((d) => d.path === from)
+  }
+  const planRedirects = planRedirectsOf(plan, diagnostics, servedPath)
+  if (planRedirects.length > 0) files.set('_redirects', enc.encode(redirectsFile(planRedirects, base)))
   files.set(
     'publish.json',
     json({
@@ -933,6 +1035,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       atoms: publishedAtoms,
       ...(media.records.length > 0 ? { media: media.records } : {}),
       csp: { policy: csp.header, ...(csp.unresolved.length > 0 ? { unresolved: csp.unresolved } : {}) },
+      // For a host that does not read `_headers` / `_redirects` (pwapp-format §2.6).
+      ...(planHeaders.length > 0 ? { headers: planHeaders.map((r) => ({ path: r.path, headers: Object.fromEntries(r.headers) })) } : {}),
+      ...(planRedirects.length > 0 ? { redirects: planRedirects } : {}),
     })
   )
 
