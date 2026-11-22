@@ -21,6 +21,9 @@ import { DataBoundSurfaceRenderer } from '../DataBoundSurfaceRenderer.js'
 import { DynamicArtifactProvider } from '../dynamic-artifact-context.js'
 import { BlockModuleLoader } from '../dynamic-block-loader.js'
 import type { BlockComponent, BlockComponentRegistry } from '../types.js'
+// The package root, imported with the file: loading the whole graph cold took past a test's 5 s under load.
+import * as packageRoot from '../../index.js'
+import * as blockProps from '../block-props.js'
 
 const L = DEFAULT_BLOCK_LAYOUT
 
@@ -132,9 +135,9 @@ describe('a loaded block is unchanged', () => {
 })
 
 describe('the exported surface', () => {
-  it('the package root exports blockPropsForRender, as its types say, and it is the renderer’s own', async () => {
-    const root = (await import('../../index.js')) as Record<string, unknown>
-    const own = await import('../block-props.js')
+  it('the package root exports blockPropsForRender, as its types say, and it is the renderer’s own', () => {
+    const root = packageRoot as Record<string, unknown>
+    const own = blockProps
     expect(root['blockPropsForRender']).toBe(own.blockPropsForRender)
     expect(typeof root['applyBlockProps']).toBe('function')
   })

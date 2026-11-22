@@ -13,6 +13,8 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
 import * as React from 'react'
 import { SurfaceRenderer } from '../renderer.js'
+// The render index, imported with the file: loading it cold took past a test's 5 s under load.
+import * as renderIndex from '../index.js'
 
 // `useViewport` relies on matchMedia, which jsdom does not implement. A stub
 // that never matches (`matches: false`) keeps the hook at its SSR fallback
@@ -106,8 +108,8 @@ describe('widthScope placement escape', () => {
     expect(rail.style.flexBasis).toBe('auto')
   })
 
-  it('does not export isShellBlock', async () => {
-    const mod = await import('../index.js')
+  it('does not export isShellBlock', () => {
+    const mod = renderIndex
     expect('isShellBlock' in mod).toBe(false)
   })
 })
