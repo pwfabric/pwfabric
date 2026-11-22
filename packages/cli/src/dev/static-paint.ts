@@ -218,7 +218,7 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
     navigation: (input.navigation ?? null) as Parameters<typeof pageSurfaceOf>[3]['navigation'],
     door,
     user: FIRST_FRAME_USER,
-    messages: runnerMessages(project['messages'] as Parameters<typeof runnerMessages>[0]),
+    messages: runnerMessages(project['messages'] as Parameters<typeof runnerMessages>[0], typeof project['locale'] === 'string' ? project['locale'] : undefined),
   }
   // The address a page reads: none.
   const address = { query: () => '', writeQuery: () => undefined, notFound: () => undefined }

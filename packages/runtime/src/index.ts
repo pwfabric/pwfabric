@@ -158,11 +158,13 @@ export { documentAddress, SurfaceAddressContext } from './render/index.js'
 // The app's words: a block's own words (`ui.*` ids) read through useAppMessage
 export type { AppMessages, MessageVars } from './render/index.js'
 export {
+  AppLocaleContext,
   AppMessagesContext,
   useAppMessage,
   useAppMessages,
   formatMessage,
   messageOf,
+  pluralProblems,
   appMessagesOf,
 } from './render/index.js'
 export {

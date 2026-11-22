@@ -24,6 +24,8 @@
 
 import { messageOf, type AppMessages, type MessageVars } from '@pwfabric/runtime/render/messages'
 
+export { pluralProblems } from '@pwfabric/runtime/render/messages'
+
 /** The renderer's own ids (`ui.retry`, `ui.loading`), beside the runner's: what `pwf validate` checks too. */
 export { RENDERER_MESSAGE_IDS } from '@pwfabric/runtime/render/messages'
 
@@ -113,9 +115,9 @@ export type RunnerMessageId = (typeof RUNNER_MESSAGE_IDS)[number]
 /** A word of the runner's: the app's message for `id`, placeholders filled — or `''` when the app sets none. */
 export type RunnerMessages = (id: RunnerMessageId, vars?: MessageVars) => string
 
-/** The runner's words for an app's `messages` (`project.json`). */
-export function runnerMessages(app?: AppMessages | null): RunnerMessages {
-  return (id, vars) => messageOf(app, id, undefined, vars)
+/** The runner's words for an app's `messages` (`project.json`), their plurals in the app's `locale` (`en` without one). */
+export function runnerMessages(app?: AppMessages | null, locale?: string): RunnerMessages {
+  return (id, vars) => messageOf(app, id, undefined, vars, locale)
 }
 
 /** No app messages at all: every word is `''` (for a caller that was handed none). */

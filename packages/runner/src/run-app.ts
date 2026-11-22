@@ -106,7 +106,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   const appId = project.id ?? project.title ?? 'app'
   // The app's words (envelope §2): every word the runner draws is read
   // here, and one the app does not set is drawn as nothing.
-  const say = runnerMessages(project.messages)
+  const say = runnerMessages(project.messages, project.locale)
   const dataCache = sessionDataCache(sessionStorage, appId)
   // THE VISITOR'S CONSENT and the scripts that wait for it (envelope §2.2):
   // handed to every block as `context.consent` / `setConsent`; nothing is

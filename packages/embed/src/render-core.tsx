@@ -23,6 +23,7 @@ import {
   BlockSurfaceRenderer as SurfaceRenderer,
   DataBoundSurfaceRenderer,
   DynamicArtifactProvider,
+  AppLocaleContext,
   AppMessagesContext,
   surfaceNeedsDataBinding,
 } from '@pwfabric/runtime'
@@ -379,7 +380,12 @@ export function createSurfaceElement(opts: RenderCoreOptions): React.ReactElemen
       children: React.createElement(
         FirstCommit,
         { onCommit: opts.onHydrated },
-        React.createElement(AppMessagesContext.Provider, { value: opts.messages ?? null }, rendererElement)
+        React.createElement(
+          AppMessagesContext.Provider,
+          { value: opts.messages ?? null },
+          // ...and their plurals are written in the app's locale (envelope §2.1).
+          React.createElement(AppLocaleContext.Provider, { value: opts.locale }, rendererElement)
+        )
       ),
     }
   )

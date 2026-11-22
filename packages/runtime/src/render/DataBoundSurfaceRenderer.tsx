@@ -1848,7 +1848,7 @@ function DataBoundInner({
   // skips this and renders the tree at once; unresolved bindings evaluate to
   // undefined and fill in per source (see loadingStrategy prop docs).
   if (!initialLoaded && loadingStrategy !== 'immediate') {
-    const loadingLabel = messageOf(appMessages, 'ui.loading')
+    const loadingLabel = messageOf(appMessages, 'ui.loading', undefined, undefined, locale)
     return (
       <div
         data-surface-loading
