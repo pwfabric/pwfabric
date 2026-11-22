@@ -38,6 +38,7 @@ describe('RUNNER_MESSAGE_IDS', () => {
     expect(new Set(RUNNER_MESSAGE_IDS).size).toBe(RUNNER_MESSAGE_IDS.length)
     expect(RUNNER_MESSAGE_IDS).toContain('session.refused')
     expect(RUNNER_MESSAGE_IDS).toContain('bridge.exchangeFailed')
+    expect(RUNNER_MESSAGE_IDS).toEqual(expect.arrayContaining(['locale.suggestion', 'locale.switch', 'locale.dismiss']))
     expect('RUNNER_MESSAGES' in runner).toBe(false)
   })
 })
