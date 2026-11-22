@@ -102,6 +102,19 @@ describe('hash routing with locales', () => {
     expect(router.locale()).toBe('en')
   })
 
+  it('opens the entry at its key in every locale, as a single-language app does', () => {
+    history.replaceState(null, '', '/#/home')
+    const router = createRouter('hash', PAGES, 'home', { locales })
+    expect(router.current()).toBe('home')
+    expect(router.locale()).toBe('en')
+    history.replaceState(null, '', '/#/de/home')
+    expect(router.current()).toBe('home')
+    expect(router.locale()).toBe('de')
+    // Only the entry: another page is at its address.
+    history.replaceState(null, '', '/#/de/pricing')
+    expect(router.current()).toBeNull()
+  })
+
   it('writes the query onto the localized route', () => {
     history.replaceState(null, '', '/#/de/preise')
     const router = createRouter('hash', PAGES, 'home', { locales })
