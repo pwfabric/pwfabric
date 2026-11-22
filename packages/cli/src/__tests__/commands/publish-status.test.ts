@@ -76,4 +76,23 @@ describe('pwf publish --status', () => {
     expect(out.code).toBe(1)
     expect(out.c.err.join('\n')).toMatch(/NOT_SIGNED_IN/)
   })
+
+  it('refuses a second folder, --new beside it and a project id that is none', async () => {
+    const { root, env } = await setup()
+    expect((await status(root, env, stub(null, null, []), ['--project', 'shop-1', 'a', 'b'])).code).toBe(2)
+    expect((await status(root, env, stub(null, null, []), ['--project', 'shop-1', '--new'])).code).toBe(2)
+    const bad = await status(root, env, stub(null, null, []), ['--project', 'no spaces/please'])
+    expect(bad.code).toBe(2)
+    expect(bad.c.err.join('\n')).toContain('is not a project id')
+  })
+
+  it('shows a waiting publish with only what the studio says, and an online one without a version', async () => {
+    const { root, env } = await setup()
+    const waiting = await status(root, env, stub({ request: { action: 'publish', status: 'awaiting', approveUrl: `${STUDIO}/a` }, log: [] }, null, []), ['--project', 'shop-5'])
+    expect(waiting.c.out).toEqual(['Waiting for approval: project shop-5 is not online yet', `  approve  ${STUDIO}/a`])
+    const live = await status(root, env, stub(null, { published: true, url: 'https://shop.example.app/' }, []), ['--project', 'shop-6'])
+    expect(live.c.out).toEqual(['Online: project shop-6', '  url      https://shop.example.app/'])
+    const json = await status(root, env, stub(null, { published: true, url: 'https://shop.example.app/' }, []), ['--project', 'shop-6', '--json'])
+    expect(JSON.parse(json.c.out.join('\n'))).toMatchObject({ projectId: 'shop-6', state: 'live' })
+  })
 })

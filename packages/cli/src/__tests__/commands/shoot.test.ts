@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
+import { cp, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { main } from '../../index.js'
 import { runShoot, shotName } from '../../commands/shoot.js'
@@ -90,5 +90,41 @@ describe('pwf shoot', () => {
     const c = capture(root)
     expect(await runShoot(parseArgs(['shoot']).args, c.io, { loadPlaywright: async () => null })).toBe(1)
     expect(c.err.join('\n')).toMatch(/Playwright is not installed/)
+  })
+
+  it('refuses a second folder, widths that are no window and a scheme it does not have', async () => {
+    const { root } = await built('path')
+    const run = (argv: string[]) => runShoot(parseArgs(['shoot', ...argv]).args, capture(root).io, { loadPlaywright: async () => fakeChromium([]), settleMs: 0 })
+    await expect(run(['a', 'b'])).rejects.toThrow(/unexpected argument "b"/)
+    await expect(run(['--widths', '90'])).rejects.toThrow(/--widths takes window widths/)
+    await expect(run(['--theme', 'sepia'])).rejects.toThrow(/--theme takes light, dark or both \(not "sepia"\)/)
+  })
+
+  it('shoots one locale’s pages, refuses a locale the app does not have, takes paths with or without a slash, and reports --json', async () => {
+    const { cwd, root } = await built('path')
+    expect(await main(['locale', 'add', 'de'], capture(root).io)).toBe(0)
+    expect(await main(['build', '--router', 'path'], capture(root).io)).toBe(0)
+    const log: string[] = []
+    const c = capture(root)
+    expect(await runShoot(parseArgs(['shoot', '--locale', 'de', '--widths', '390']).args, c.io, { loadPlaywright: async () => fakeChromium(log), settleMs: 0 })).toBe(0)
+    expect(log.filter((l) => !l.startsWith('guard')).every((l) => l.startsWith('/de/'))).toBe(true)
+    await expect(runShoot(parseArgs(['shoot', '--locale', 'fr']).args, capture(root).io, { loadPlaywright: async () => fakeChromium([]), settleMs: 0 })).rejects.toThrow(
+      /--locale fr: the app has no such locale \(it has en, de\)|--locale fr: the app has no such locale \(it has de, en\)/
+    )
+    const paths: string[] = []
+    const out = join(cwd, 'shots')
+    const j = capture(root)
+    expect(await runShoot(parseArgs(['shoot', '--path', 'pricing/', '--path', '/', '--widths', '390', '--out', out, '--json']).args, j.io, { loadPlaywright: async () => fakeChromium(paths), settleMs: 0 })).toBe(0)
+    expect(paths.filter((l) => !l.startsWith('guard'))).toEqual(['/pricing/ 200 @390 light', '/ 200 @390 light'])
+    expect(JSON.parse(j.out.join('\n'))).toMatchObject({ dir: out })
+  })
+
+  it('shoots a built folder that is no app into ./shots, in dark when asked', async () => {
+    const { cwd, root } = await built('hash')
+    const site = join(cwd, 'site')
+    await cp(join(root, '.pwf', 'out'), site, { recursive: true })
+    const log: string[] = []
+    expect(await runShoot(parseArgs(['shoot', site, '--widths', '390', '--theme', 'dark']).args, capture(cwd).io, { loadPlaywright: async () => fakeChromium(log), settleMs: 0 })).toBe(0)
+    expect(existsSync(join(cwd, 'shots', 'home@390-dark.png'))).toBe(true)
   })
 })
