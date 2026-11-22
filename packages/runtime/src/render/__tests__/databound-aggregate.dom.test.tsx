@@ -272,9 +272,9 @@ describe('an aggregate entity source binds the number', () => {
     await waitFor(() => expect(screen.getByTestId('text-block').textContent).toBe('n:|e:error'))
   })
 
-  it('the list-wrap exemption is entity-only: a rest source carrying aggregate is still a list', async () => {
-    // Only the entity branch reads `aggregate`; a rest source with the key
-    // fetches its endpoint as always, so it must bind the way rest binds.
+  it('a rest source carrying aggregate binds the aggregate, as the own-records rewrite serves it', async () => {
+    // An own-records aggregate is served as a rest source that keeps its
+    // `aggregate` (data-protocol §2.2–2.3): it binds the object, not a list of one.
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ value: 3 }) })) as never
@@ -284,12 +284,12 @@ describe('an aggregate entity source binds the number', () => {
         <DataBoundSurfaceRenderer
           surface={surfaceWith(
             { id: 'records', kind: 'rest', endpoint: '/api/x', aggregate: { fn: 'count' } },
-            'len:{{records.length}}|first:{{records[0].value}}'
+            'array:{{isArray(records)}}|value:{{records.value}}'
           )}
           components={components}
         />
       )
-      await waitFor(() => expect(screen.getByTestId('text-block').textContent).toBe('len:1|first:3'))
+      await waitFor(() => expect(screen.getByTestId('text-block').textContent).toBe('array:false|value:3'))
     } finally {
       vi.unstubAllGlobals()
     }
@@ -308,5 +308,27 @@ describe('an aggregate entity source binds the number', () => {
       />
     )
     await waitFor(() => expect(screen.getByTestId('text-block').textContent).toBe('first:elma|len:1'))
+  })
+})
+
+describe('an own-records aggregate served over rest', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  it('binds the object, not a list of one', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data: { fn: 'count', value: 3, count: 3 } }), { status: 200, headers: { 'content-type': 'application/json' } })))
+    const Out = ({ props }: { props: Record<string, unknown> }) => <div data-testid="out">{String(props.text ?? '')}</div>
+    render(
+      <DataBoundSurfaceRenderer
+        surface={{
+          id: 'p',
+          blocks: [{ id: 'o', type: 'out', layout: DEFAULT_BLOCK_LAYOUT, props: { text: '{{taken.value}}|{{isArray(taken)}}|{{taken.count}}' } }],
+          capabilities: [
+            { capability: 'platform/persistence', config: { dataSources: [{ id: 'taken', kind: 'rest', method: 'GET', endpoint: 'https://x.example/records/S/count', returns: 'data', aggregate: { fn: 'count' } }] } },
+          ],
+        } as never}
+        components={{ out: Out } as never}
+        loadingStrategy="immediate"
+      />
+    )
+    await waitFor(() => expect(screen.getByTestId('out').textContent).toBe('3|false|3'))
   })
 })

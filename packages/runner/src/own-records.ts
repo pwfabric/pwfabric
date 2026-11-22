@@ -61,7 +61,8 @@ export function ownRecordsSource(source: unknown, base: string, declared?: Reado
     const qs = params.toString()
     endpoint = `${collection}/${route}${qs ? `?${qs}` : ''}`
   }
-  return { ...rest, kind: 'rest', method: 'GET', endpoint, authProviderRef: base, returns: 'data' }
+  // An aggregate keeps its `aggregate`: it binds `{ fn, field?, value, count }`, not a list (data-protocol §2.3).
+  return { ...rest, kind: 'rest', method: 'GET', endpoint, authProviderRef: base, returns: 'data', ...(isObject(aggregate) ? { aggregate } : {}) }
 }
 
 /**

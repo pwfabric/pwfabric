@@ -1263,10 +1263,10 @@ function useSurfaceData(
     // An AGGREGATE source is one number, not a list of one: wrapping
     // `{ value }` into `[{ value }]` would still read through the single-
     // element fallthrough, but `.length` would lie and `count` would hide.
-    // Entity-only: that is the one branch that reads `aggregate`; a rest
-    // source carrying the key still fetches a list and binds as one.
+    // An entity source, and the rest source an own-records aggregate is
+    // served as (it keeps its `aggregate`, data-protocol §2.2–2.3).
     const aggregateIds = new Set(
-      (dataSources ?? []).filter((s) => s.kind === 'entity' && s.aggregate !== undefined).map((s) => s.id)
+      (dataSources ?? []).filter((s) => (s.kind === 'entity' || s.kind === 'rest') && s.aggregate !== undefined).map((s) => s.id)
     )
     for (const [key, value] of Object.entries(sourceData)) {
       const listy = LIST_KINDS.has(kindById.get(key) ?? '') && !aggregateIds.has(key)

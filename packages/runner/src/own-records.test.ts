@@ -48,6 +48,18 @@ describe('ownRecordsSource — a connector-less entity source reads the app\'s o
     })
   })
 
+  it('keeps the aggregate on the rest source, so it binds { fn, value, count } and not a list (data-protocol §2.3)', () => {
+    expect(ownRecordsSource({ id: 'n', kind: 'entity', entityType: 'T', aggregate: { fn: 'count' } }, BASE)).toEqual({
+      id: 'n',
+      kind: 'rest',
+      method: 'GET',
+      endpoint: '/_host/records/T/count',
+      authProviderRef: BASE,
+      returns: 'data',
+      aggregate: { fn: 'count' },
+    })
+  })
+
   it('a plain count goes to /count, anything else to /aggregate with its parameters', () => {
     expect(ownRecordsSource({ kind: 'entity', entityType: 'T', aggregate: { fn: 'count' } }, BASE)).toMatchObject({
       endpoint: '/_host/records/T/count',
