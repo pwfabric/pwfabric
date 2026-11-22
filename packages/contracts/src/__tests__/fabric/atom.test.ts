@@ -851,9 +851,20 @@ describe('block definition origins', () => {
     }
   })
 
-  it('rejects a directive it does not know (script code is verified, never allowed in)', () => {
+  it('accepts script origins, exact ones only: a block that loads a third-party script names where it comes from', () => {
     expect(
       AtomBlockDefinitionMetadataSchema.safeParse({ ...valid, origins: { script: ['https://cdn.example.com'] } }).success
+    ).toBe(true)
+    for (const bad of ['*', 'https://*.example.com', "'unsafe-inline'", 'https://cdn.example.com/widget.js', 'data:']) {
+      const r = AtomBlockDefinitionMetadataSchema.safeParse({ ...valid, origins: { script: [bad] } })
+      expect(r.success, bad).toBe(false)
+      expect((r.error?.issues[0] as { params?: { code?: string } }).params?.code, bad).toBe(BLOCK_ORIGIN_INVALID)
+    }
+  })
+
+  it('rejects a directive it does not know', () => {
+    expect(
+      AtomBlockDefinitionMetadataSchema.safeParse({ ...valid, origins: { worker: ['https://cdn.example.com'] } }).success
     ).toBe(false)
   })
 

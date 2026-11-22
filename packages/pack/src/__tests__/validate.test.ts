@@ -284,7 +284,7 @@ describe('validatePack — block origins', () => {
       { id: 'x', version: '1' },
       {
         'atoms/blocks/media/map/component.tsx': 'x',
-        'atoms/blocks/media/map/manifest.json': manifest({ frame: ['https://www.openstreetmap.org/export/embed.html'], script: ['https://cdn.example.com'] }),
+        'atoms/blocks/media/map/manifest.json': manifest({ frame: ['https://www.openstreetmap.org/export/embed.html'], script: ['https://*.example.com'] }),
       }
     )
     expect(codes(v, 'error')).toEqual(['BLOCK_ORIGIN_INVALID', 'BLOCK_ORIGIN_INVALID'])
