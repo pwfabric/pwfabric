@@ -8,6 +8,7 @@ import {
   addressTable,
   checkPropValue,
   layoutSlotProblems,
+  localePrefix,
   localesOf,
   localesProblems,
   missingCatalogueIds,
@@ -105,10 +106,12 @@ export const PUBLIC_RESERVED_DIRS: readonly string[] = ['assets', 'shims', 'bloc
  * build writes, or `undefined`: a fixed file, a runtime folder, or a page's
  * own document (`<key>/index.html`, under either routing).
  */
-export function publicReservedReason(rel: string, pageKeys: readonly string[]): string | undefined {
+export function publicReservedReason(rel: string, pageKeys: readonly string[], localePrefixes: readonly string[] = []): string | undefined {
   if (PUBLIC_RESERVED_FILES.has(rel)) return 'the build writes itself'
   const top = rel.split('/')[0] as string
   if (PUBLIC_RESERVED_DIRS.includes(top)) return `is in ${top}/, a folder of the build's own`
+  // A locale's prefix names that locale's site (envelope §2.3).
+  if (rel.includes('/') && localePrefixes.includes(`${top.toLowerCase()}/`)) return `is in ${top}/, the address prefix of a locale`
   if (rel.endsWith('/index.html') && pageKeys.includes(rel.slice(0, -'/index.html'.length))) {
     return `is the document of page "${rel.slice(0, -'/index.html'.length)}"`
   }
@@ -443,7 +446,7 @@ export function validatePack(pack: PackFolder): PackValidation {
   for (const path of paths) {
     if (!path.startsWith(PUBLIC_DIR) || path === PUBLIC_DIR) continue
     const rel = path.slice(PUBLIC_DIR.length)
-    const reason = publicReservedReason(rel, pageKeys)
+    const reason = publicReservedReason(rel, pageKeys, localeDecl ? localeDecl.locales.filter((l) => l !== localeDecl.defaultLocale).map(localePrefix) : [])
     if (reason) add('error', 'APP_PUBLIC_RESERVED', `${path} would be served at /${rel}, which ${reason}; rename or move it`, path)
     const script = publicScriptReason(rel, pack.files.get(path) as Uint8Array)
     if (script) add('error', 'APP_PUBLIC_SCRIPT', `${path} ${script}; script code enters an app only through its blocks`, path)

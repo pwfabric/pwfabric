@@ -137,6 +137,32 @@ describe('an app in several languages, path routing', () => {
   })
 })
 
+describe('the static head of each locale', () => {
+  it("writes a title and description given with t() in the document's locale", async () => {
+    const root = await bakery()
+    await put(root, 'app/surfaces/pricing.receipt.json', page("{{t('pricing.title')}}", { path: { de: 'preise' }, description: "{{t('pricing.about')}}" }))
+    await put(root, 'app/messages/en.json', { intro: 'Fresh bread every morning', 'notFound.title': 'Not found', 'pricing.title': 'Prices', 'pricing.about': 'What bread costs.' })
+    await put(root, 'app/messages/de.json', { intro: 'Jeden Morgen frisches Brot', 'notFound.title': 'Nicht gefunden', 'pricing.title': 'Preise' })
+    const r = await assemblePwapp(root, { cacheDir: null, router: 'path' })
+    expect(r.ok, errors(r).join(' | ')).toBe(true)
+    const de = doc(text(r.files.get('de/preise/index.html')))
+    expect(de.title).toBe('K Demo — Preise')
+    expect(de.querySelector('meta[property="og:title"]')?.getAttribute('content')).toBe('K Demo — Preise')
+    // An id the locale does not set reads the default's word.
+    expect(de.querySelector('meta[name="description"]')?.getAttribute('content')).toBe('What bread costs.')
+    expect(doc(text(r.files.get('pricing/index.html'))).title).toBe('K Demo — Prices')
+  })
+})
+
+describe('public files and locale prefixes', () => {
+  it("refuses a public file under a non-default locale's prefix (APP_PUBLIC_RESERVED) and does not copy it", async () => {
+    const root = await bakery()
+    await put(root, 'public/de/guide.txt', 'x')
+    const r = await assemblePwapp(root, { cacheDir: null, router: 'path' })
+    expect(errors(r).join()).toContain('APP_PUBLIC_RESERVED')
+  })
+})
+
 describe('an app in several languages, hash routing', () => {
   it('is one document in the default locale, the locales in the route', async () => {
     const r = await assemblePwapp(await bakery(), { cacheDir: null })

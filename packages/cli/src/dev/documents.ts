@@ -16,7 +16,7 @@
  * address (from the runner's own functions, so the head the build writes is
  * the head the runner keeps), and the Open Graph tags a link preview reads.
  */
-import { canonicalOf, composeTitle, descriptionOf, publicOriginOf } from '@pwfabric/runner'
+import { canonicalOf, composeTitle, descriptionOf, publicOriginOf, runnerMessages } from '@pwfabric/runner'
 
 /** One HTML document of the served folder. */
 export interface PageDocument {
@@ -88,14 +88,26 @@ export function documentHead(input: {
   /** The app's title template (`plan.json` `titleTemplate`, receipt §1.1). */
   readonly titleTemplate?: string
   readonly appDescription?: string
+  /**
+   * The words of the document's locale (its catalogue over the default's;
+   * the app's `messages` in a single-language app): a title or description
+   * written with `{{t('<id>')}}` is written with them, so a search engine
+   * reads the locale's words in the static head (envelope §2.3).
+   */
+  readonly words?: Readonly<Record<string, string>>
+  readonly locale?: string
   readonly origin?: string
   readonly image?: string
   readonly gated: boolean
   readonly base: string
 }): DocumentHead {
   const receipt = !input.gated && input.receipt && typeof input.receipt === 'object' ? (input.receipt as Record<string, unknown>) : {}
-  const title = composeTitle(input.appTitle || undefined, literal(receipt['title']), { template: input.titleTemplate, own: receipt['titleTemplate'] === false }) ?? ''
-  const description = descriptionOf(receipt['description'], input.appDescription)
+  const say = input.words ? runnerMessages(input.words, input.locale) : undefined
+  // `{{t('<id>')}}` is the locale's word; any other expression is the browser's.
+  const worded = (value: unknown): unknown =>
+    say && typeof value === 'string' ? value.replace(/\{\{\s*t\(\s*(['"])([^'"]+)\1\s*\)\s*\}\}/g, (_, _q: string, id: string) => say(id as never)) : value
+  const title = composeTitle(input.appTitle || undefined, literal(worded(receipt['title'])), { template: input.titleTemplate, own: receipt['titleTemplate'] === false }) ?? ''
+  const description = descriptionOf(worded(receipt['description']), input.appDescription)
   const canonical = input.doc.path !== undefined ? canonicalOf(input.origin, input.doc.path) : undefined
   const image = previewImageOf(input.image, input.origin, input.base)
   return {

@@ -306,6 +306,11 @@ describe('validatePack — app', () => {
       expect(v.issues.find((i) => i.code === 'MESSAGES_LOCALE_MISSING')?.message).toContain('"b"')
     })
 
+    it("reserves a non-default locale's prefix for its site: no public file under it (APP_PUBLIC_RESERVED)", () => {
+      expect(codes(all({ 'public/de/guide.pdf': 'x' }), 'error')).toEqual(['APP_PUBLIC_RESERVED'])
+      expect(codes(all({ 'public/en/guide.pdf': 'x', 'public/de.txt': 'x' }), 'error')).toEqual([])
+    })
+
     it('reads nothing of this for a single-language app', () => {
       const single = withIdentity(identity, { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/pricing.receipt.json': '{"blocks":[]}' })
       expect(codes(single)).toEqual([])
