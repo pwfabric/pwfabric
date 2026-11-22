@@ -107,6 +107,8 @@ export interface DocumentWeight {
   readonly overBudget: boolean
   /** Video and audio the browser loads only when it plays (not counted): each file, raw. */
   readonly deferred: readonly { readonly file: string; readonly raw: number }[]
+  /** Video and audio counted because the page autoplays or preloads them: each file, raw, and why. */
+  readonly counted: readonly { readonly file: string; readonly raw: number; readonly why: string }[]
 }
 
 /** A `<video>` or `<audio>` element: its attributes and what it holds. */
@@ -119,18 +121,26 @@ const MEDIA_ELEMENT = /<(video|audio)\b([^>]*)>([\s\S]*?)<\/\1\s*>/gi
  * them: that image is drawn at once.
  */
 export function deferredMediaLinks(html: string): string[] {
-  const out: string[] = []
+  return mediaLinks(html)
+    .filter((m) => m.upfront === undefined)
+    .map((m) => m.url)
+}
+
+/** Every media URL of `<video>` and `<audio>` elements, with why the browser loads it up front (`autoplay`, `preload`), if it does. */
+export function mediaLinks(html: string): { url: string; kind: string; upfront?: 'autoplay' | 'preload' }[] {
+  const out: { url: string; kind: string; upfront?: 'autoplay' | 'preload' }[] = []
   for (const m of html.matchAll(MEDIA_ELEMENT)) {
     const attrs = m[2] as string
-    if (/\sautoplay(?:[\s=>]|$)/i.test(` ${attrs}`)) continue
-    const preload = /\spreload\s*(?:=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/i.exec(` ${attrs}`)
-    if (preload) {
-      const value = (preload[1] ?? preload[2] ?? preload[3] ?? '').trim().toLowerCase()
-      if (value === '' || value === 'auto') continue
+    let upfront: 'autoplay' | 'preload' | undefined
+    if (/\sautoplay(?:[\s=>]|$)/i.test(` ${attrs}`)) upfront = 'autoplay'
+    else {
+      const preload = /\spreload\s*(?:=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/i.exec(` ${attrs}`)
+      const value = preload ? (preload[1] ?? preload[2] ?? preload[3] ?? '').trim().toLowerCase() : undefined
+      if (value === '' || value === 'auto') upfront = 'preload'
     }
     for (const s of [`<${m[1]}${attrs}>`, ...((m[3] as string).match(/<source\b[^>]*>/gi) ?? [])]) {
       const src = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(s)
-      if (src) out.push((src[1] ?? src[2] ?? '').replace(/&amp;/g, '&'))
+      if (src) out.push({ url: (src[1] ?? src[2] ?? '').replace(/&amp;/g, '&'), kind: (m[1] as string).toLowerCase(), ...(upfront ? { upfront } : {}) })
     }
   }
   return out
@@ -177,7 +187,12 @@ export function documentWeights(out: BuiltOutput, budgetKb: number): DocumentWei
       raw += (out.files.get(rel) as Uint8Array).length
       gzip += gzipped(rel)
     }
-    return { document: doc, address: `${out.base}${documentAddress(doc)}`, raw, gzip, files: refs.size - 1, overBudget: gzip > budgetKb * 1024, deferred }
+    const counted = new Map<string, { file: string; raw: number; why: string }>()
+    for (const m of mediaLinks(html)) {
+      const file = m.upfront ? partOf(m.url) : undefined
+      if (file && refs.has(file) && !counted.has(file)) counted.set(file, { file, raw: (out.files.get(file) as Uint8Array).length, why: `${m.upfront === 'autoplay' ? 'autoplay' : 'preloaded'} ${m.kind}` })
+    }
+    return { document: doc, address: `${out.base}${documentAddress(doc)}`, raw, gzip, files: refs.size - 1, overBudget: gzip > budgetKb * 1024, deferred, counted: [...counted.values()] }
   })
 }
 
@@ -303,6 +318,7 @@ export async function runCheck(args: ParsedArgs, io: CommandIO, deps: CheckDeps 
       const line = `  ${d.address.padEnd(24)} ${kb(d.raw).padStart(10)} raw ${kb(d.gzip).padStart(10)} gzip  (${d.files} file${d.files === 1 ? '' : 's'})${d.overBudget ? '  OVER BUDGET' : ''}`
       if (d.overBudget) io.err(line)
       else io.out(line)
+      for (const m of d.counted) io.out(`    ${m.file.padEnd(22)} ${kb(m.raw).padStart(10)} raw, counted: ${m.why}`)
       for (const m of d.deferred) io.out(`    ${m.file.padEnd(22)} ${kb(m.raw).padStart(10)} raw, not counted: the browser loads it when it plays`)
     }
     io.out('  counts the document and the files it names; block modules a page loads later are not in it')

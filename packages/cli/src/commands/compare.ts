@@ -26,7 +26,10 @@ export function addressesOf(out: BuiltOutput): string[] {
     if (at > 0 && out.files.has(`${rel.slice(0, at)}/index.html`)) nestedRoots.add(`${rel.slice(0, at)}/`)
   }
   for (const rel of out.files.keys()) {
-    if (RUNTIME_FOLDERS.some((f) => rel.startsWith(f)) || HOST_FILES.has(rel)) continue
+    if (RUNTIME_FOLDERS.some((f) => rel.startsWith(f))) continue
+    // A host's manifest (publish.json, _headers, _redirects, project.json), at any depth: not an address.
+    const name = rel.slice(rel.lastIndexOf('/') + 1)
+    if (HOST_FILES.has(name) || name === 'project.json') continue
     if (rel.startsWith('pwpack/') && !rel.startsWith('pwpack/media/')) continue
     const nested = [...nestedRoots].find((r) => rel.startsWith(r))
     if (nested !== undefined) {

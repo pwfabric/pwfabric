@@ -87,6 +87,12 @@ describe('pwf check', () => {
     const upfront = await weigh()
     expect(upfront.raw - bare.raw).toBeGreaterThan(700 * 1024)
     expect(upfront.deferred).toEqual([])
+    // As a site writes it (React's autoPlay=""), preload="metadata" beside it: it plays, so it is counted, and the report says why.
+    await page('<video src="media/clip.mp4" autoPlay="" loop="" muted="" playsInline="" poster="media/poster.jpg" preload="metadata"></video>')
+    expect((await weigh()).raw - bare.raw).toBeGreaterThan(400 * 1024)
+    const said = capture(cwd)
+    await main(['check', out, '--weight'], said.io)
+    expect(said.text()).toMatch(/media\/clip\.mp4\s+[\d.]+ KB raw, counted: autoplay video/)
   })
 
   it('follows _redirects and accepts hash routes of the app', async () => {
@@ -171,7 +177,7 @@ describe('pwf compare', () => {
     const { cwd, root } = await app()
     const before = join(cwd, 'before')
     await build(root, before)
-    const nested = ['en/index.html', 'en/assets/app.1a2b3c4d.js', 'en/blocks/hero.js', 'en/shims/react.js', 'en/engines/core.js', 'en/pwpack/surfaces/home.json', 'en/pwpack/media/a.png']
+    const nested = ['en/index.html', 'en/assets/app.1a2b3c4d.js', 'en/blocks/hero.js', 'en/shims/react.js', 'en/engines/core.js', 'en/pwpack/surfaces/home.json', 'en/pwpack/media/a.png', 'en/publish.json', 'en/_headers', 'docs/_redirects', 'old/project.json']
     for (const rel of [...nested, 'docs/assets/logo.png']) {
       await mkdir(join(before, rel, '..'), { recursive: true })
       await writeFile(join(before, rel), 'x')
