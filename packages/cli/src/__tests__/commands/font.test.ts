@@ -230,3 +230,18 @@ describe('pwf font add --subset', () => {
     await expect(fontAdd({ root: none, family: 'Inter', from: 'npm:@fontsource/inter', subsets: ['klingon'], fetch: await fontsource(none) })).rejects.toThrow(/klingon.*cyrillic-ext, greek, latin, latin-ext/)
   })
 })
+
+describe('pwf font add list flags', () => {
+  it('takes a comma list or the flag repeated, and says so when given a space-separated list', async () => {
+    const root = await appFolder()
+    await writeFile(join(root, 'cal.woff2'), await readFile(FONT))
+    expect(await main(['font', 'add', 'A', '--from', 'cal.woff2', '--weight', '400,700', '--style', 'normal,italic'], capture(root).io)).toBe(0)
+    expect(await main(['font', 'add', 'B', '--from', 'cal.woff2', '--weight', '400', '--weight', '700', '--style', 'normal', '--style', 'italic'], capture(root).io)).toBe(0)
+    const c = capture(root)
+    expect(await main(['font', 'add', 'C', '--from', 'cal.woff2', '--subset', 'latin', 'latin-ext', 'greek'], c.io)).toBe(2)
+    expect(c.err.join('\n')).toContain('unexpected argument "latin-ext": give a list with commas (--subset latin,latin-ext) or the flag again (--subset latin --subset latin-ext)')
+    const help = capture(root)
+    await main(['font', '--help'], help.io)
+    expect(help.text()).toContain('[--weight <w>[,<w>]]… [--style <s>[,<s>]]… [--subset <name>[,<name>]|all]…')
+  })
+})
