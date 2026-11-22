@@ -1,5 +1,5 @@
 import { request } from 'node:http'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LocalHost } from '../../host/types.js'
@@ -191,6 +191,57 @@ describe('dev server', () => {
     const dotted = await at('/layout.two-pane')
     expect(dotted.status).toBe(200)
     expect(await dotted.text()).toMatch(/\.\/assets\/boot\.[0-9a-f]{8}\.js/)
+  })
+
+  it('answers as pwf run answers the same build: page documents, 404.html, the declared headers without caching (path routing under a base)', async () => {
+    const root = await app()
+    await writeFile(
+      join(root, 'app', 'surfaces', 'guide.receipt.json'),
+      JSON.stringify({ title: 'Guide', blocks: [{ id: 'page', type: 'stack', props: {}, children: [{ id: 't', type: 'title', props: { text: 'Guide' } }] }] })
+    )
+    const identity = JSON.parse(await readFile(join(root, 'pwpack.json'), 'utf8')) as { app: { surfaceOrder: string[] } }
+    identity.app.surfaceOrder = ['home', 'guide']
+    await writeFile(join(root, 'pwpack.json'), JSON.stringify(identity))
+    const live = track(await createDevServer({ root, port: 0, router: 'path', base: '/docs/' }, { watch: false }))
+    const at = (p: string): Promise<Response> => fetch(new URL(p, live.url), { redirect: 'manual' })
+
+    const entry = await at('/docs/')
+    expect(entry.status).toBe(200)
+    const entryHtml = await entry.text()
+    expect(entryHtml).toContain('<base href="/docs/" />')
+    expect(entryHtml).toContain('data-pw-static="home"')
+    // The headers the build declares (_headers), but no caching.
+    expect(entry.headers.get('content-security-policy')).toContain("default-src 'none'")
+    expect(entry.headers.get('cache-control')).toBe('no-store')
+    // A page's OWN document, not the entry's shell.
+    const guide = await at('/docs/guide/')
+    expect(guide.status).toBe(200)
+    expect(await guide.text()).toContain('data-pw-static="guide"')
+    // A page path no file answers: the app's 404.html, with status 404.
+    const missing = await at('/docs/missing/')
+    expect(missing.status).toBe(404)
+    expect(missing.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    expect(await missing.text()).toContain('<meta name="robots" content="noindex"')
+    // A file under the base is the build's.
+    expect((await at(`/docs/${assetIn(entryHtml, 'runner')}`)).status).toBe(200)
+    // The base without its slash is sent to it; anything outside it is not the app.
+    const bare = await at('/docs')
+    expect(bare.status).toBe(308)
+    expect(bare.headers.get('location')).toBe('/docs/')
+    expect((await at('/')).status).toBe(404)
+    expect((await at(`/${assetIn(entryHtml, 'runner')}`)).status).toBe(404)
+  })
+
+  it('under hash routing serves the shell at a page path without adding a <base href>', async () => {
+    const root = await app()
+    const live = track(await createDevServer({ root, port: 0 }, { watch: false }))
+    const deep = await fetch(new URL('/about', live.url))
+    expect(deep.status).toBe(200)
+    const html = await deep.text()
+    expect(html).toMatch(/\.\/assets\/boot\.[0-9a-f]{8}\.js/)
+    expect(html).not.toMatch(/<base[\s>]/)
+    expect(deep.headers.get('content-security-policy')).toContain("default-src 'none'")
+    expect(deep.headers.get('cache-control')).toBe('no-store')
   })
 
   it('mounts a local host: forwards its requests and carries its envelope entries', async () => {

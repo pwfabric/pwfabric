@@ -102,7 +102,8 @@ with [`pwf add block`](#pwf-add-block). The folder validates clean with
 ## `pwf dev`
 
 ```text
-pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--cors <origin>]... [--debug]
+pwf dev [dir] [--port <n>] [--host <name>] [--router <hash|path|auto>] [--base <path>]
+        [--local-host | --no-host] [--cors <origin>]... [--debug]
 ```
 
 | Argument / option | Meaning |
@@ -110,10 +111,19 @@ pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--cors <o
 | `dir` | The app folder. Default: the current folder. |
 | `--port <n>` | Port to listen on, `0`–`65535`. Default `4600`; `0` picks any free port. |
 | `--host <name>` | Interface name or address to bind. Default `127.0.0.1`. |
+| `--router <mode>` | How the app routes, as [`pwf build --router`](#pwf-build). Default `hash`. |
+| `--base <path>` | The path the app is served under, for `path` and `auto`, as `pwf build --base`. The app is served at that path (`/docs` is sent on to `/docs/`). Default `/`. |
 | `--local-host` | Mount the local host for sign-in and data even when the app declares neither. |
 | `--no-host` | Do not mount the local host, even when the app declares sign-in or records. |
 | `--cors <origin>` | Let pages on this exact origin read the app and the local host across origins ([below](#cross-origin-requests---cors)). Repeat for more. Default: none. |
 | `--debug` | Print an engine error with its stack trace. Without it, an engine error is one line. |
+
+**Served as `pwf run` serves the build.** Every address is answered as
+[`pwf run`](#pwf-run) answers the same build: a page's own document, the
+app's `404.html` with status `404` for a page path no file answers (the
+shell, under hash routing), and the headers the build's `_headers` declares,
+its Content-Security-Policy included. Caching is off: every answer is
+`Cache-Control: no-store`.
 
 **The local host.** When the app declares sign-in or records, `pwf dev`
 mounts a development host under `/_host` beside the pages: records live in

@@ -167,8 +167,8 @@ export function headerPatternMatches(pattern: string, path: string): boolean {
   return path.length >= head.length + tail.length && path.startsWith(head) && path.endsWith(tail)
 }
 
-/** The headers the `_headers` file adds for a relative path. */
-async function extraHeaders(source: StaticSource, rel: string): Promise<Record<string, string>> {
+/** The headers the `_headers` file adds for a relative path, names in lower case. */
+export async function declaredHeaders(source: StaticSource, rel: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   const file = await load(source, HEADERS_FILE)
   if (!file) return out
@@ -255,7 +255,7 @@ async function handle(
   const encoding =
     COMPRESSIBLE.test(type) && plain.byteLength >= MIN_COMPRESSED ? acceptedEncoding(req.headers['accept-encoding']) : undefined
   const body = encoding ? compressed(plain, encoding) : plain
-  const declared = await extraHeaders(source, rel ?? '')
+  const declared = await declaredHeaders(source, rel ?? '')
   // Under --cors the command line decides who may read across origins, not
   // the build's `_headers` (a `*` there would undo the exact list).
   if (cors.size > 0) for (const name of Object.keys(declared)) if (isCorsHeader(name)) delete declared[name]
