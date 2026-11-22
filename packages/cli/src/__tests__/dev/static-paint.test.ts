@@ -360,10 +360,10 @@ export default function Jump(p: { props?: { href?: string; homeHref?: string } }
     expect(guide).toContain('href="/docs/guide/"')
   })
 
-  it('under hash routing a fragment-only link stays as written: the one document is every page', async () => {
+  it("under hash routing a fragment-only link is written on its page's route, as the browser writes it (envelope §3)", async () => {
     const r = await assemblePwapp(await linkedApp(), { cacheDir: null })
     expect(r.ok, codes(r).join()).toBe(true)
-    expect(text(r.files.get('index.html'))).toContain('href="#a"')
-    expect(text(r.files.get('pwpack/surfaces/guide.html'))).toContain('href="#a"')
+    expect(text(r.files.get('pwpack/surfaces/guide.html'))).toContain('href="#/guide#a"')
+    expect(text(r.files.get('pwpack/surfaces/guide.html'))).not.toContain('href="#a"')
   })
 })
