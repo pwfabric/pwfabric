@@ -1,5 +1,9 @@
 # @pwfabric/embed
 
+## 3.5.0
+
+- Changed: carries the 3.5 runtime (shared layout, locales, colour scheme, consent context); see `@pwfabric/runtime`.
+
 ## 3.4.0
 
 - No changes; released with the other packages at 3.4.0.

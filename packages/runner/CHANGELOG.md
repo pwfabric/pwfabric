@@ -1,5 +1,15 @@
 # @pwfabric/runner
 
+## 3.5.0
+
+- Added: the shared layout receipt wraps every page, and its blocks stay mounted from page to page.
+- Added: multiple locales in one app: the first path or route segment picks the locale, links by page key resolve to the drawn locale, each page fetches only its own words, and a suggestion strip fixed at the bottom of the viewport offers the visitor's language after hydration (never an automatic redirect).
+- Added: plan `scripts` load once, after the first page is drawn and only once their consent category is granted.
+- Added: the visitor's colour scheme is stored and applied before first paint.
+- Added: the title template composes document titles.
+- Changed: under path routing only the app's own pages are routed; other same-origin paths go to the browser. Fragment-only links resolve against the current page.
+- Changed: shared frame styles are filled back from the shared stylesheet before hydration.
+
 ## 3.4.0
 
 - Changed: the runner adopts the static first frame at every width (the 639 px gate is gone) and removes the build's layout stylesheet once the real render is in place.
