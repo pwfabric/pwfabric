@@ -30,6 +30,8 @@ export interface BuiltOutput {
   readonly routes: readonly string[]
   /** Every page address from the base, in every locale (`""`, `pricing/`, `de/preise/`). */
   readonly addresses: readonly string[]
+  /** The entry page's key, and its address in each locale (`""`, `de/`). */
+  readonly entry?: { readonly key: string; readonly addresses: readonly string[] }
   readonly redirects: readonly RedirectRule[]
 }
 
@@ -66,8 +68,13 @@ export async function readBuiltOutput(path: string): Promise<BuiltOutput> {
   const routes = Array.isArray(project['surfaceOrder']) ? project['surfaceOrder'].filter((k): k is string => typeof k === 'string') : []
   const entry = typeof project['entrySurfaceId'] === 'string' ? project['entrySurfaceId'] : routes[0]
   const addresses = new Set<string>()
+  const entryAddresses = new Set<string>()
   if (isObject(project['addresses'])) {
-    for (const row of Object.values(project['addresses'])) if (isObject(row)) for (const a of Object.values(row)) if (typeof a === 'string') addresses.add(a)
+    for (const row of Object.values(project['addresses'])) {
+      if (!isObject(row)) continue
+      for (const a of Object.values(row)) if (typeof a === 'string') addresses.add(a)
+      if (entry !== undefined && typeof row[entry] === 'string') entryAddresses.add(row[entry] as string)
+    }
   } else {
     for (const key of routes) addresses.add(key === entry ? '' : `${key}/`)
   }
@@ -79,6 +86,7 @@ export async function readBuiltOutput(path: string): Promise<BuiltOutput> {
     base: base.endsWith('/') ? base : `${base}/`,
     routes,
     addresses: [...addresses],
+    ...(entry !== undefined ? { entry: { key: entry, addresses: entryAddresses.size > 0 ? [...entryAddresses] : [''] } } : {}),
     redirects: parseRedirectsFile(text(files.get(REDIRECTS_FILE))),
   }
 }

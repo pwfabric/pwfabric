@@ -104,6 +104,19 @@ describe('pwf check', () => {
     expect(c.err.join('\n')).not.toMatch(/#\/pricing/)
   })
 
+  it('accepts the entry at its key in every locale of a hash build', async () => {
+    const { cwd, root } = await app()
+    expect(await main(['locale', 'add', 'de'], capture(root).io)).toBe(0)
+    const out = join(cwd, 'hash')
+    await build(root, out, 'hash')
+    const index = join(out, 'index.html')
+    await writeFile(index, (await readFile(index, 'utf8')).replace('</body>', '<a href="#/home">h</a><a href="#/de/home">d</a><a href="#/de/nope">n</a></body>'))
+    const c = capture(cwd)
+    expect(await main(['check', out, '--links'], c.io), c.text()).toBe(1)
+    expect(c.err.join('\n')).toMatch(/#\/de\/nope/)
+    expect(c.err.join('\n')).not.toMatch(/#\/(?:de\/)?home\b/)
+  })
+
   it('--hydration says how to install Playwright when it is not there', async () => {
     const { cwd, root } = await app()
     const out = join(cwd, 'out')
