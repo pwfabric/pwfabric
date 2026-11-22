@@ -1,0 +1,271 @@
+/**
+ * `pwf check [out] [--links] [--weight] [--hydration]` — checks a built
+ * pwapp as a visitor would meet it.
+ *
+ * links: every internal `href`, `src` and `srcset` of every page document
+ * names something the build serves — a file, a page's document, a hash
+ * route or per-locale address the app has, or a `_redirects` rule that lands
+ * on one. weight: each document with the files it references (scripts,
+ * styles, preloads, images), raw and gzipped, against a budget.
+ * hydration: the first paint opened in a browser (./lib/hydration.ts), with
+ * Playwright when it is installed. Without a flag: links and weight.
+ */
+import { gzipSync } from 'node:zlib'
+import { resolve } from 'node:path'
+import type { Command, CommandIO, ParsedArgs } from './types.js'
+import { boolFlag, guard, stringFlag, UsageError } from './lib/flags.js'
+import { resolveFrom } from './lib/project.js'
+import { documentAddress, pageDocuments, readBuiltOutput, resolveServed, type BuiltOutput } from './lib/built-output.js'
+import { checkPage, loadPlaywright, PLAYWRIGHT_MISSING, recordPageInfo, type PlaywrightLoader } from './lib/hydration.js'
+import { startStaticServer } from './lib/static-server.js'
+import { appFolderOf, openRunSource, readOnlyHostFor } from './run.js'
+import { HOST_PREFIX } from '../dev/server.js'
+
+/** The default weight budget of one page: its document and what it references, gzipped. */
+export const DEFAULT_BUDGET_KB = 500
+
+export interface BrokenLink {
+  readonly document: string
+  readonly link: string
+  readonly why: string
+}
+
+/** Every URL a document names: `href`, `src`, `poster`, `action` and each `srcset` candidate. */
+export function documentLinks(html: string): string[] {
+  const out: string[] = []
+  const body = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, (m) => (/^<script\b[^>]*\bsrc=/i.test(m) ? m.replace(/>[\s\S]*$/, '>') : ''))
+  for (const m of body.matchAll(/\s(href|src|poster|action|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    const value = (m[2] ?? m[3] ?? '').replace(/&amp;/g, '&')
+    if ((m[1] as string).toLowerCase() === 'srcset') {
+      for (const part of value.split(',')) {
+        const url = part.trim().split(/\s+/)[0]
+        if (url) out.push(url)
+      }
+    } else out.push(value)
+  }
+  return out
+}
+
+const EXTERNAL = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i
+
+/** The links of every page document that name nothing the build serves. */
+export function brokenLinks(out: BuiltOutput, origin?: string): { checked: number; broken: BrokenLink[] } {
+  const broken: BrokenLink[] = []
+  let checked = 0
+  const routes = new Set(out.addresses.map((a) => a.replace(/\/+$/, '')))
+  for (const doc of pageDocuments(out)) {
+    const html = new TextDecoder().decode(out.files.get(doc))
+    for (const raw of documentLinks(html)) {
+      let link = raw.trim()
+      if (link === '' || link.startsWith('{{')) continue
+      if (origin && link.startsWith(origin)) link = link.slice(origin.length) || '/'
+      if (EXTERNAL.test(link)) continue
+      const hash = link.indexOf('#')
+      const fragment = hash >= 0 ? link.slice(hash + 1) : ''
+      const pathPart = (hash >= 0 ? link.slice(0, hash) : link).split('?')[0] as string
+      checked++
+      // A hash route (`#/pricing`, `#/de/preise/`) names a page of the app's.
+      if (fragment.startsWith('/') && (pathPart === '' || pathPart === out.base || pathPart === './')) {
+        const route = fragment.slice(1).split('?')[0]?.split('#')[0]?.replace(/\/+$/, '') ?? ''
+        if (route !== '' && !routes.has(route)) broken.push({ document: doc, link: raw, why: `#/${route} is no page of the app` })
+        continue
+      }
+      if (pathPart === '') continue // an in-page anchor
+      // Relative links resolve against <base href>, as the browser does.
+      const url = new URL(pathPart, `http://pwf.check${out.base}`)
+      let path: string
+      try {
+        path = decodeURIComponent(url.pathname)
+      } catch {
+        broken.push({ document: doc, link: raw, why: 'is not a valid address' })
+        continue
+      }
+      if (!path.startsWith(out.base)) {
+        broken.push({ document: doc, link: raw, why: `is outside the app's base ${out.base}` })
+        continue
+      }
+      const rel = path.slice(out.base.length)
+      const served = resolveServed(out, rel)
+      if (served.file) continue
+      if (served.redirectedTo && /^https?:\/\//i.test(served.redirectedTo)) continue
+      broken.push({ document: doc, link: raw, why: served.redirectedTo ? `redirects to ${served.redirectedTo}, which the build does not serve` : 'the build serves nothing there' })
+    }
+  }
+  return { checked, broken }
+}
+
+export interface DocumentWeight {
+  readonly document: string
+  readonly address: string
+  readonly raw: number
+  readonly gzip: number
+  /** The files it references that the build serves, counted once each. */
+  readonly files: number
+  readonly overBudget: boolean
+}
+
+/** Each page document with the files it names, raw and gzipped. */
+export function documentWeights(out: BuiltOutput, budgetKb: number): DocumentWeight[] {
+  const gz = new Map<string, number>()
+  const gzipped = (rel: string): number => {
+    let n = gz.get(rel)
+    if (n === undefined) {
+      n = gzipSync(out.files.get(rel) as Uint8Array, { level: 9 }).length
+      gz.set(rel, n)
+    }
+    return n
+  }
+  return pageDocuments(out).map((doc) => {
+    const refs = new Set<string>([doc])
+    for (const link of documentLinks(new TextDecoder().decode(out.files.get(doc)))) {
+      if (EXTERNAL.test(link) || link.startsWith('#')) continue
+      try {
+        const path = decodeURIComponent(new URL(link.split('#')[0] as string, `http://pwf.check${out.base}`).pathname)
+        if (!path.startsWith(out.base)) continue
+        const rel = path.slice(out.base.length)
+        if (rel === '' || rel.endsWith('/') || !out.files.has(rel)) continue // another page, not a part of this one
+        if (rel.endsWith('.html')) continue
+        refs.add(rel)
+      } catch {
+        // not an address
+      }
+    }
+    let raw = 0
+    let gzip = 0
+    for (const rel of refs) {
+      raw += (out.files.get(rel) as Uint8Array).length
+      gzip += gzipped(rel)
+    }
+    return { document: doc, address: `${out.base}${documentAddress(doc)}`, raw, gzip, files: refs.size - 1, overBudget: gzip > budgetKb * 1024 }
+  })
+}
+
+const kb = (n: number): string => `${(n / 1024).toFixed(1)} KB`
+
+export interface CheckDeps {
+  readonly loadPlaywright?: PlaywrightLoader
+}
+
+async function runHydration(io: CommandIO, target: string, out: BuiltOutput, widths: number[], loader: PlaywrightLoader): Promise<{ ok: boolean; lines: string[]; missing?: boolean }> {
+  const chromium = await loader(io.cwd)
+  if (!chromium) return { ok: false, lines: [PLAYWRIGHT_MISSING], missing: true }
+  const html = new TextDecoder().decode(out.files.get('index.html'))
+  const data = /<script type="application\/json" id="pw-first-paint">(.*?)<\/script>/s.exec(html)?.[1]
+  if (!data) return { ok: true, lines: ['hydration: no static first paint (an app that requires sign-in): nothing to check'] }
+  const first = JSON.parse(data) as { pages: Record<string, unknown>; entry?: string; notFound?: string }
+  const app = await appFolderOf(target)
+  const host = app ? await readOnlyHostFor(app) : undefined
+  const server = await startStaticServer({ source: await openRunSource(target), port: 0, hostname: '127.0.0.1', hostPrefix: HOST_PREFIX, ...(host ? { host } : {}) })
+  const lines: string[] = []
+  let ok = true
+  const browser = await chromium.launch()
+  try {
+    const origin = server.url.replace(/\/$/, '')
+    const addressOf = (key: string): string =>
+      out.router === 'path' ? (key === first.notFound ? '/pw-check-no-such-page' : key === first.entry ? '/' : `/${key}/`) : `/#/${key}`
+    for (const key of Object.keys(first.pages)) {
+      const info = recordPageInfo(out.label, key, app)
+      for (const width of widths) {
+        const { problems, skipped } = await checkPage(browser, origin, key, info, width, addressOf(key))
+        if (problems.length > 0) ok = false
+        lines.push(`${problems.length > 0 ? 'FAIL' : skipped ? 'skip' : 'ok  '} ${addressOf(key)}${info.query} @${width}${skipped ? ` (${skipped})` : ''}${problems.map((p) => `\n       ${p}`).join('')}`)
+      }
+    }
+  } finally {
+    await browser.close()
+    await server.close()
+  }
+  return { ok, lines }
+}
+
+export async function runCheck(args: ParsedArgs, io: CommandIO, deps: CheckDeps = {}): Promise<number> {
+  if (args.positionals.length > 1) throw new UsageError(`unexpected argument "${args.positionals[1]}"`)
+  const target = resolveFrom(io.cwd, args.positionals[0] ?? '.')
+  const some = ['links', 'weight', 'hydration'].some((f) => boolFlag(args, f))
+  const links = some ? boolFlag(args, 'links') : true
+  const weight = some ? boolFlag(args, 'weight') : true
+  const hydration = boolFlag(args, 'hydration')
+  const budgetFlag = stringFlag(args, 'budget')
+  const budget = budgetFlag === undefined ? DEFAULT_BUDGET_KB : Number(budgetFlag)
+  if (!(budget > 0)) throw new UsageError('--budget takes kilobytes, a number above 0')
+  const widthsFlag = stringFlag(args, 'widths')
+  const widths = widthsFlag === undefined ? [390] : widthsFlag.split(',').map((w) => Number(w.trim()))
+  if (widths.some((w) => !Number.isInteger(w) || w < 200 || w > 4000)) throw new UsageError('--widths takes window widths in pixels, e.g. 390,1440')
+  const originFlag = stringFlag(args, 'origin')
+  const out = await readBuiltOutput(target)
+  const report: Record<string, unknown> = { output: out.label, router: out.router, base: out.base }
+  let ok = true
+  if (links) {
+    const r = brokenLinks(out, originFlag)
+    report['links'] = r
+    if (r.broken.length > 0) ok = false
+  }
+  if (weight) {
+    const w = documentWeights(out, budget)
+    report['weight'] = { budgetKb: budget, documents: w }
+    if (w.some((d) => d.overBudget)) ok = false
+  }
+  let hydrationLines: string[] = []
+  let playwrightMissing = false
+  if (hydration) {
+    const h = await runHydration(io, resolve(target), out, widths, deps.loadPlaywright ?? loadPlaywright)
+    hydrationLines = h.lines
+    playwrightMissing = h.missing === true
+    report['hydration'] = { ok: h.ok, lines: h.lines }
+    if (!h.ok) ok = false
+  }
+  if (boolFlag(args, 'json')) {
+    io.out(JSON.stringify({ ok, ...report }, null, 2))
+    return ok ? 0 : 1
+  }
+  io.out(`${out.label} (${out.router} routing, base ${out.base})`)
+  if (links) {
+    const r = report['links'] as ReturnType<typeof brokenLinks>
+    io.out(`links: ${r.checked} checked, ${r.broken.length} broken`)
+    for (const b of r.broken) io.err(`  BROKEN ${b.document}: ${b.link} — ${b.why}`)
+  }
+  if (weight) {
+    io.out(`weight (budget ${budget} KB gzipped per page):`)
+    for (const d of (report['weight'] as { documents: DocumentWeight[] }).documents) {
+      const line = `  ${d.address.padEnd(24)} ${kb(d.raw).padStart(10)} raw ${kb(d.gzip).padStart(10)} gzip  (${d.files} file${d.files === 1 ? '' : 's'})${d.overBudget ? '  OVER BUDGET' : ''}`
+      if (d.overBudget) io.err(line)
+      else io.out(line)
+    }
+    io.out('  counts the document and the files it names; block modules a page loads later are not in it')
+  }
+  if (hydration) {
+    if (playwrightMissing) io.err(`hydration: ${hydrationLines[0]}`)
+    else for (const line of hydrationLines) io.out(line)
+  }
+  return ok ? 0 : 1
+}
+
+export const check: Command = {
+  name: 'check',
+  summary: 'Check a built pwapp: broken internal links, page weight, hydration of the first paint',
+  usage: `pwf check [out] [--links] [--weight] [--hydration] [--budget <KB>] [--widths <px,…>] [--origin <url>] [--json]
+
+  out            the built pwapp: a folder with index.html, an app folder (its
+                 .pwf/out) or a .pwapp (default: the current folder)
+  --links        every internal href, src and srcset of every page document
+                 names what the build serves: a file, a page's document, a
+                 hash route or per-locale address of the app, or a _redirects
+                 rule landing on one; relative links resolve against <base href>
+  --weight       each page document with the scripts, styles, preloads and
+                 images it names, raw and gzipped, against --budget
+  --budget <KB>  the gzipped weight a page may have (default ${DEFAULT_BUDGET_KB})
+  --hydration    open every painted page in Chromium and check that hydration
+                 adopts the first frame (the engine's hydration check). Needs
+                 Playwright beside the app or pwf (an optional peer); without
+                 it pwf says how to install it and exits 1
+  --widths <px>  window widths for --hydration (default 390)
+  --origin <url> the app's public origin: absolute links on it count as internal
+  --json         the result as data
+
+Without --links, --weight or --hydration: links and weight. Links to other
+origins are not followed (pwf makes no network request). Under --hydration a
+build made with --base other than / is served at the root, so its addresses
+do not match: check such a build without --base. Exit 1 when a link is
+broken, a page is over budget or a page fails hydration.`,
+  run: (args, io) => guard('check', io, () => runCheck(args, io)),
+}
