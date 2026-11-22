@@ -60,9 +60,30 @@ export function pageLabel(page: Page): string {
 
 /** Navigation derived from the route table when the app declares none. */
 export function deriveNavigation(pages: readonly Page[], entry: string): { navbar: { links: { label: string; href: string }[] } } {
+  // A page that needs a record to draw — its record source (notFoundWhenEmpty),
+  // or a title written from its record — names nothing without one: no link.
+  const linkable = pages.filter((p) => p.key === entry || !needsRecord(p.receipt))
   return {
-    navbar: { links: pages.map((p) => ({ label: pageLabel(p), href: p.key === entry ? '/' : `/${p.key}` })) },
+    navbar: { links: linkable.map((p) => ({ label: pageLabel(p), href: p.key === entry ? '/' : `/${p.key}` })) },
   }
+}
+
+/** Whether a page draws only with a record its address names: a source that is its record, or a title written from data. */
+function needsRecord(receipt: Record<string, unknown>): boolean {
+  if (typeof receipt['title'] === 'string' && /\{\{(?![^}]*\bt\s*\()/.test(receipt['title'])) return true
+  let found = false
+  const walk = (node: unknown): void => {
+    if (found || !node || typeof node !== 'object') return
+    if (Array.isArray(node)) return node.forEach(walk)
+    const rec = node as Record<string, unknown>
+    if (rec['notFoundWhenEmpty'] === true) {
+      found = true
+      return
+    }
+    Object.values(rec).forEach(walk)
+  }
+  walk(receipt['capabilities'])
+  return found
 }
 
 /**
