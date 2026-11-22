@@ -159,6 +159,32 @@ describe('pwf dev', () => {
     await expect(fetch(url)).rejects.toThrow()
   })
 
+  it('serves the app as pwf build --router/--base builds it, at its base', async () => {
+    const root = await app()
+    const c = capture(root)
+    const code = await runDev({ positionals: [], flags: { port: '0', router: 'path', base: '/docs' } }, c.io, {
+      internals: { watch: false },
+      until: async () => {
+        const url = devUrl(c.out)
+        expect(url).toMatch(/\/docs\/$/)
+        const res = await fetch(url)
+        expect(res.status).toBe(200)
+        expect(await res.text()).toContain('<base href="/docs/" />')
+      },
+    })
+    expect(code).toBe(0)
+    expect(c.out.some((l) => l.startsWith('pwf dev: router path, base /docs/'))).toBe(true)
+  })
+
+  it('validates its routing flags as pwf build does', async () => {
+    const c = capture(process.cwd())
+    expect(await runDev({ positionals: [], flags: { router: 'pushstate' } }, c.io)).toBe(2)
+    expect(await runDev({ positionals: [], flags: { base: '/shop/' } }, c.io)).toBe(2)
+    expect(await runDev({ positionals: [], flags: { router: 'path', base: 'shop' } }, c.io)).toBe(2)
+    expect(c.err).toHaveLength(3)
+    expect(c.err[1]).toContain('--base is for path routing')
+  })
+
   it('validates its flags', async () => {
     const c = capture(process.cwd())
     expect(await runDev({ positionals: [], flags: { port: 'abc' } }, c.io)).toBe(2)

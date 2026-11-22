@@ -283,6 +283,21 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
   return { pages: painted, diagnostics }
 }
 
+/**
+ * A painted page's fragment-only links (`href="#a"`, `href="#"`) written onto
+ * the page's own address (`/docs/guide/#a`), for a document under path routing.
+ *
+ * The runner keeps such a link on the page shown, but only once it runs.
+ * Before that the browser resolves it against the shell's `<base href>` — the
+ * app's root, the ENTRY page's address — so a click in the first frame of any
+ * other page loaded the entry page. Under hash routing the one document is
+ * every page, and the link stays as written.
+ */
+export function onPageFragmentLinks(html: string, pageAddress: string): string {
+  const own = escapeHtml(pageAddress.replace(/#.*$/, ''))
+  return html.replace(/(<a\b[^>]*?\shref=")#/g, `$1${own}#`)
+}
+
 /** A page's first frame as a document's body holds it: `#pw-root` naming the page, the frame inside. */
 export function staticRootHtml(page: PaintedPage): string {
   return `<div id="pw-root" ${STATIC_PAGE_ATTR}="${escapeHtml(page.key)}">${page.html}</div>`

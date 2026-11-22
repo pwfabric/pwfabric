@@ -110,11 +110,16 @@ kebab-case, 2–50 characters, starting with a letter; a type the folder already
 has is refused. The word `block` is the subcommand, so a pack folder named
 `block` is added as `pwf add ./block`.
 
-### `pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host]`
+### `pwf dev [dir] [--port <n>] [--host <name>] [--router <mode>] [--base <path>] [--local-host | --no-host]`
 
 Assembles the app in memory, serves it on `http://127.0.0.1:4600/` (`--port 0`
 picks a free port), rebuilds on every change and reloads the page. While a
 build has errors the page shows them, and so does the terminal.
+
+`--router` and `--base` build the app as `pwf build` does, and the app is
+served under that base. Every address is answered as `pwf run` answers the
+same build (page documents, `404.html` with status 404, the `_headers` of the
+build), except that nothing is cached.
 
 When the app declares sign-in (`app/definitions/auth.json`) or records
 (`app/definitions/entities.json`), `pwf dev` mounts the **local host** under
