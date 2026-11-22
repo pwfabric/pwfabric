@@ -19,6 +19,7 @@ import { guard, stringFlag, stringFlags, UsageError } from './lib/flags.js'
 import { CommandFailure } from './lib/failure.js'
 import { resolveFrom } from './lib/project.js'
 import { isWoff2 } from '../dev/font-file.js'
+import { findTheme, themeAtomOf, type ThemeAtom } from '../dev/theme.js'
 import type { Fetch } from '../phiwebs/oauth.js'
 
 /** A font file may be at most 500 KB (appearance §3.3). */
@@ -44,6 +45,8 @@ interface FontSource {
   readonly licence?: { readonly name: string; readonly bytes: Uint8Array }
   readonly origin: string
   readonly license?: string
+  /** The family's generic family, from the package's metadata (Fontsource `category`). */
+  readonly category?: string
 }
 
 export interface FontAddOptions {
@@ -70,6 +73,10 @@ export interface FontAddResult {
   readonly kept: string[]
   /** Whether the theme's `fonts` changed. */
   readonly declared: boolean
+  /** The file the theme's `fonts` are in: the app's own theme atom its appearance uses, else app/definitions/appearance.json. */
+  readonly declaredIn: string
+  /** The family's declared fallback, when it has one. */
+  readonly fallback?: string
 }
 
 const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'font'
@@ -77,11 +84,16 @@ const safeName = (s: string): string => s.replace(/[^A-Za-z0-9._-]+/g, '-').repl
 
 /** A weight as the theme writes it: a number, or a variable range `"100 900"`. */
 function weightOf(raw: string): number | string {
-  const t = raw.trim()
-  if (/^[1-9]00$/.test(t)) return Number(t)
-  if (/^[1-9]00 [1-9]00$/.test(t)) return t
-  throw new UsageError(`--weight "${raw}" is not a weight from 100 to 900 or a range like "100 900"`)
+  const t = raw.trim().replace(/\s+/g, ' ')
+  const inRange = (n: string): boolean => /^[1-9]\d{0,3}$/.test(n) && Number(n) <= 1000
+  if (inRange(t)) return Number(t)
+  const [lo, hi, more] = t.split(' ')
+  if (lo !== undefined && hi !== undefined && more === undefined && inRange(lo) && inRange(hi) && Number(lo) <= Number(hi)) return t
+  throw new UsageError(`--weight "${raw}" is not a weight from 1 to 1000 or a range like "100 900"`)
 }
+
+/** The generic family a Fontsource `category` stands for. */
+const CATEGORY_FALLBACK: Readonly<Record<string, string>> = { 'sans-serif': 'sans-serif', serif: 'serif', monospace: 'monospace', handwriting: 'cursive' }
 
 function styleOf(raw: string): 'normal' | 'italic' {
   if (raw === 'normal' || raw === 'italic') return raw
@@ -172,6 +184,16 @@ async function fromNpm(
   const files = new Map<string, Uint8Array>()
   for (const e of entries) if (e.type === 'file') files.set(e.name.replace(/^package\//, ''), e.data)
   const ranges = unicodeRangesOf(files)
+  let metadata: Record<string, unknown> = {}
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(files.get('metadata.json') ?? new Uint8Array()) || '{}') as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) metadata = parsed as Record<string, unknown>
+  } catch {
+    // no metadata: no category, the default variable range
+  }
+  const wght = (metadata['variable'] as { wght?: { min?: unknown; max?: unknown } } | undefined)?.wght
+  const variableRange = wght && /^\d+$/.test(String(wght.min)) && /^\d+$/.test(String(wght.max)) ? `${String(wght.min)} ${String(wght.max)}` : '100 900'
+  const category = typeof metadata['category'] === 'string' ? metadata['category'] : undefined
   const faces: FontFace[] = []
   const wanted = new Set(weights.map((w) => String(w)))
   for (const [path, bytes] of [...files].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
@@ -179,7 +201,7 @@ async function fromNpm(
     if (!m) continue
     const [, , subset, w, style] = m as unknown as [string, string, string, string, 'normal' | 'italic']
     if (!SUBSETS.includes(subset) || !styles.includes(style)) continue
-    const weight: number | string = w === 'wght' ? '100 900' : Number(w)
+    const weight: number | string = w === 'wght' ? variableRange : Number(w)
     if (w !== 'wght' && !wanted.has(w)) continue
     const name = basename(path)
     faces.push({ name: `${slug(family)}-${subset}-${w}-${style}.woff2`, bytes, weight, style, ...(ranges.has(name) ? { unicodeRange: ranges.get(name) as string } : {}) })
@@ -193,7 +215,33 @@ async function fromNpm(
     ...(licencePath ? { licence: { name: licencePath, bytes: files.get(licencePath) as Uint8Array } } : {}),
     origin: `npm:${pkg}@${doc.version ?? version}`,
     ...(typeof doc.license === 'string' ? { license: doc.license } : {}),
+    ...(category ? { category } : {}),
   }
+}
+
+/**
+ * Where the app's theme tokens are written: the app's own `ui-appearance`
+ * atom (`atoms/appearance/<theme>/manifest.json`) its appearance.json names
+ * by `use`; undefined when there is none (appearance.json itself).
+ */
+async function themeHome(root: string, appearance: Record<string, unknown>): Promise<{ path: string; rel: string; doc: Record<string, unknown> } | undefined> {
+  const config = appearance['config'] && typeof appearance['config'] === 'object' ? (appearance['config'] as Record<string, unknown>) : appearance
+  const use = config['use']
+  if (typeof use !== 'string' || !use.trim()) return undefined
+  const dir = join(root, 'atoms', 'appearance')
+  const themes: ThemeAtom[] = []
+  const docs = new Map<string, Record<string, unknown>>()
+  for (const name of existsSync(dir) ? (await readdir(dir)).sort() : []) {
+    const doc = await readJsonFile(join(dir, name, 'manifest.json')).catch(() => ({}))
+    const theme = themeAtomOf(name, doc, name)
+    if (theme) {
+      themes.push(theme)
+      docs.set(name, doc)
+    }
+  }
+  const hit = findTheme(use, themes)
+  if (!hit) return undefined
+  return { path: join(dir, hit.id, 'manifest.json'), rel: `atoms/appearance/${hit.id}/manifest.json`, doc: docs.get(hit.id) as Record<string, unknown> }
 }
 
 const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => a.byteLength === b.byteLength && a.every((x, i) => x === b[i])
@@ -263,13 +311,16 @@ export async function fontAdd(options: FontAddOptions): Promise<FontAddResult> {
   // The theme's fonts: the family once, each file once.
   const appearancePath = join(options.root, 'app', 'definitions', 'appearance.json')
   const appearance = await readJsonFile(appearancePath)
-  const holder = appearance['config'] && typeof appearance['config'] === 'object' ? (appearance['config'] as Record<string, unknown>) : appearance
+  const home = await themeHome(options.root, appearance)
+  const holder = home ? home.doc : appearance['config'] && typeof appearance['config'] === 'object' ? (appearance['config'] as Record<string, unknown>) : appearance
   const theme = holder['theme'] && typeof holder['theme'] === 'object' ? { ...(holder['theme'] as Record<string, unknown>) } : {}
   const fonts = Array.isArray(theme['fonts']) ? [...(theme['fonts'] as Record<string, unknown>[])] : []
   let at = fonts.findIndex((f) => typeof f?.['family'] === 'string' && (f['family'] as string).toLowerCase() === family.toLowerCase())
   const before = JSON.stringify(fonts)
+  // Without --fallback, the package's category says it (a serif family stands in as serif).
+  const fallback = options.fallback ?? (source.category ? CATEGORY_FALLBACK[source.category] : undefined)
   if (at < 0) {
-    fonts.push({ family, ...(options.fallback ? { fallback: options.fallback } : {}), files: [] })
+    fonts.push({ family, ...(fallback ? { fallback } : {}), files: [] })
     at = fonts.length - 1
   }
   const entry = { ...(fonts[at] as Record<string, unknown>) }
@@ -280,16 +331,20 @@ export async function fontAdd(options: FontAddOptions): Promise<FontAddResult> {
     files.push({ src, weight: face.weight, ...(face.style !== 'normal' ? { style: face.style } : {}), ...(face.unicodeRange ? { unicodeRange: face.unicodeRange } : {}) })
   }
   entry['files'] = files
-  if (options.fallback && entry['fallback'] === undefined) entry['fallback'] = options.fallback
+  if (fallback && entry['fallback'] === undefined) entry['fallback'] = fallback
   fonts[at] = entry
   const declared = JSON.stringify(fonts) !== before
   if (declared) {
     theme['fonts'] = fonts
     holder['theme'] = theme
-    await mkdir(join(options.root, 'app', 'definitions'), { recursive: true })
-    await writeFile(appearancePath, `${JSON.stringify(appearance, null, 2)}\n`)
+    if (home) await writeFile(home.path, `${JSON.stringify(home.doc, null, 2)}\n`)
+    else {
+      await mkdir(join(options.root, 'app', 'definitions'), { recursive: true })
+      await writeFile(appearancePath, `${JSON.stringify(appearance, null, 2)}\n`)
+    }
   }
-  return { family, written, kept, declared }
+  const declaredFallback = typeof entry['fallback'] === 'string' ? entry['fallback'] : undefined
+  return { family, written, kept, declared, declaredIn: home ? home.rel : 'app/definitions/appearance.json', ...(declaredFallback ? { fallback: declaredFallback } : {}) }
 }
 
 async function runFont(args: ParsedArgs, io: CommandIO): Promise<number> {
@@ -310,9 +365,9 @@ async function runFont(args: ParsedArgs, io: CommandIO): Promise<number> {
   })
   for (const f of result.written) io.out(`  wrote ${f}`)
   for (const f of result.kept) io.out(`  kept ${f} (unchanged)`)
-  io.out(result.declared ? `Declared ${result.family} in app/definitions/appearance.json theme.fonts` : `${result.family} was already declared; nothing changed there`)
+  io.out(result.declared ? `Declared ${result.family} in ${result.declaredIn} theme.fonts` : `${result.family} was already declared; nothing changed there`)
   io.out('')
-  io.out(`Next: name it first in a font stack (theme.typography.fontFamily "${result.family}, sans-serif"), then`)
+  io.out(`Next: name it first in a font stack (theme.typography.fontFamily "${result.family}, ${result.fallback ?? 'sans-serif'}"), then`)
   io.out('  pwf validate')
   return 0
 }
@@ -327,12 +382,15 @@ export const fontCommand: Command = {
   --from <https>    one .woff2 file to download
   --from npm:<pkg>  a font package from the npm registry (a Fontsource package):
                     its latin and latin-ext files of the weights and styles asked for
-  --weight <w>      400 (default), 700, … or a variable range "100 900"; repeatable
+  --weight <w>      400 (default), 700, … (1 to 1000) or a variable range "100 900"; repeatable
   --style <s>       normal (default) or italic; repeatable
-  --fallback <g>    the generic family drawn until the file arrives (sans-serif, serif, monospace, …)
+  --fallback <g>    the generic family drawn until the file arrives (sans-serif, serif, monospace, …);
+                    without it, the package's category when it names one
 
 Copies the files into media/fonts/, records them in media/provenance.json and
-declares them in app/definitions/appearance.json theme.fonts (appearance §3.3).
+declares them in the theme's fonts (appearance §3.3): in the app's own theme
+atom (atoms/appearance/<theme>/manifest.json) when app/definitions/
+appearance.json uses it, else in appearance.json theme.fonts.
 Nothing is fetched when the app builds: fonts are the app's own files. Running
 the command again changes nothing that is already there.`,
   run: (args, io) => guard('font', io, () => runFont(args, io)),

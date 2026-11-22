@@ -127,3 +127,62 @@ describe('pwf font add --from <https> and npm:<package>', () => {
     expect(asked).toHaveLength(2)
   })
 })
+
+describe('pwf font add: weights, the family’s category and where the theme is', () => {
+  it('takes a weight or a range from 1 to 1000', async () => {
+    const root = await appFolder()
+    await writeFile(join(root, 'cal.woff2'), await readFile(FONT))
+    expect(await main(['font', 'add', 'Caligraphic', '--from', 'cal.woff2', '--weight', '100 1000'], capture(root).io)).toBe(0)
+    expect((await fontsOf(root))[0]?.files).toEqual([{ src: 'media/fonts/caligraphic-cal.woff2', weight: '100 1000' }])
+    for (const bad of ['0', '1001', '900 100', '100 1001', 'bold']) {
+      expect(await main(['font', 'add', 'Caligraphic', '--from', 'cal.woff2', '--weight', bad], capture(root).io), bad).toBe(2)
+    }
+    await expect(fontAdd({ root, family: 'Odd', from: 'cal.woff2', weights: ['950'] })).resolves.toMatchObject({ declared: true })
+  })
+
+  it('declares a Fontsource family’s category as its fallback, its variable range from the package, and hints the stack with it', async () => {
+    const root = await appFolder()
+    const font = new Uint8Array(await readFile(FONT))
+    const enc = new TextEncoder()
+    const tgz = gzipSync(
+      writeTar(
+        new Map<string, Uint8Array>([
+          ['package/package.json', enc.encode('{"name":"@fontsource-variable/newsreader"}')],
+          ['package/metadata.json', enc.encode(JSON.stringify({ family: 'Newsreader', category: 'serif', variable: { wght: { default: '400', min: '200', max: '800', step: '1' } } }))],
+          ['package/files/newsreader-latin-wght-normal.woff2', font],
+        ])
+      )
+    )
+    const fetchStub = (async (url: string) => {
+      if (url.startsWith('https://registry.npmjs.org/@fontsource-variable%2fnewsreader/')) {
+        return Response.json({ version: '5.3.0', license: 'OFL-1.1', dist: { tarball: 'https://registry.npmjs.org/@fontsource-variable/newsreader/-/newsreader-5.3.0.tgz' } })
+      }
+      if (url.endsWith('newsreader-5.3.0.tgz')) return new Response(tgz)
+      return new Response('', { status: 404 })
+    }) as unknown as typeof fetch
+    const r = await fontAdd({ root, family: 'Newsreader', from: 'npm:@fontsource-variable/newsreader', weights: ['200 800'], fetch: fetchStub })
+    expect(r.fallback).toBe('serif')
+    expect(await fontsOf(root)).toEqual([{ family: 'Newsreader', fallback: 'serif', files: [{ src: 'media/fonts/newsreader-latin-wght-normal.woff2', weight: '200 800' }] }])
+
+    await writeFile(join(root, 'mono.woff2'), font)
+    const c = capture(root)
+    expect(await main(['font', 'add', 'Mono Face', '--from', 'mono.woff2', '--fallback', 'monospace'], c.io)).toBe(0)
+    expect(c.out.join('\n')).toContain('"Mono Face, monospace"')
+  })
+
+  it('writes the fonts into the app’s own theme atom when appearance.json uses it', async () => {
+    const root = await appFolder()
+    const atom = join(root, 'atoms', 'appearance', 'brand', 'manifest.json')
+    await mkdir(join(atom, '..'), { recursive: true })
+    await writeFile(atom, JSON.stringify({ id: 'theme-brand', kind: 'ui-appearance', theme: { colors: { primary: '#123456' } } }))
+    const appearance = JSON.stringify({ use: 'brand', theme: { colors: { accent: '#654321' } } })
+    await writeFile(join(root, 'app', 'definitions', 'appearance.json'), appearance)
+    await writeFile(join(root, 'cal.woff2'), await readFile(FONT))
+    const c = capture(root)
+    expect(await main(['font', 'add', 'Caligraphic', '--from', 'cal.woff2'], c.io), c.text()).toBe(0)
+    expect(c.out.join('\n')).toContain('Declared Caligraphic in atoms/appearance/brand/manifest.json theme.fonts')
+    expect(await readFile(join(root, 'app', 'definitions', 'appearance.json'), 'utf8')).toBe(appearance)
+    const manifest = await json(atom)
+    expect(manifest['theme']).toEqual({ colors: { primary: '#123456' }, fonts: [{ family: 'Caligraphic', files: [{ src: 'media/fonts/caligraphic-cal.woff2', weight: 400 }] }] })
+  })
+})
