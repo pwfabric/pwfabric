@@ -54,6 +54,13 @@ const check = (props: Record<string, unknown>, type = 'button') =>
 const codes = (props: Record<string, unknown>): string[] => check(props).map((i) => i.code)
 
 describe('checkReceiptBlockProps', () => {
+  it('judges a breakpoint map value by value: the renderer resolves it for the breakpoint drawn at', () => {
+    expect(codes({ size: { xs: 'small', md: 'large' } })).toEqual([])
+    const issues = check({ size: { xs: 'small', md: 'huge' } })
+    expect(issues.map((i) => i.code)).toEqual(['BLOCK_PROP_ENUM'])
+    expect(issues[0]?.message).toContain('size.md')
+  })
+
   it('accepts props that fit', () => {
     expect(
       check({

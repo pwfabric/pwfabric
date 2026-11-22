@@ -44,6 +44,31 @@ describe('staticLayoutOf', () => {
     expect(css).toContain('#pw-root [data-block-wrapper="nav"]{width:2px!important}')
   })
 
+  it('a <style> whose text differs is diffed rule by rule: the wider value under #pw-root, a phone-only one reverted', () => {
+    const page = (css: string): string => `<div data-block-wrapper="b"><div data-block-type="box"><style>${css}</style><p>x</p></div></div>`
+    const phone = page('.box{flex-direction:column;gap:8px}.only{color:red}@media (min-width:1px){.m{color:red}}@keyframes k{to{opacity:1}}')
+    const wide = page('.box{flex-direction:row;gap:8px}@media (min-width:1px){.m{color:blue}}@keyframes k{to{opacity:1}}@keyframes w{to{opacity:0}}')
+    const { css, reshaped } = staticLayoutOf(phone, at({ '*': wide }))
+    expect(reshaped).toEqual([])
+    expect(css).toContain('#pw-root .box{flex-direction:row!important}')
+    expect(css).toContain('#pw-root .only{color:revert!important}')
+    expect(css).toContain('@media (min-width:1px){#pw-root .m{color:blue!important}}')
+    // A rule only a condition applies is not reverted; an at-rule both have is not repeated.
+    expect(css).not.toContain('.m{color:revert')
+    expect(css).not.toContain('@keyframes k')
+    expect(css).toContain('@keyframes w{to{opacity:0}}')
+  })
+
+  it('a class or data attribute that differs names the block (CSS cannot change it); its inline styles are still laid out', () => {
+    const page = (cls: string, w: number): string =>
+      `<div data-viewport="v${w}" data-block-wrapper="n"><nav data-block-type="navbar" class="${cls}"><a style="width:${w}px">A</a></nav></div>`
+    const { css, reshaped } = staticLayoutOf(page('menu', 1), at({ '*': page('links', 2) }))
+    expect(reshaped).toEqual(['navbar'])
+    expect(css).toContain('width:2px!important')
+    // The breakpoint the renderer drew at is not how a node looks.
+    expect(staticLayoutOf(page('menu', 1), at({ '*': page('menu', 1).replace('v1', 'v2') })).reshaped).toEqual([])
+  })
+
   it('a node no wrapper or id names alone is addressed by its place under the nearest that does, else the root', () => {
     const phone = '<div><span style="color:red"></span></div><div><span style="color:red"></span></div>'
     const wide = '<div><span style="color:red"></span></div><div><span style="color:blue"></span></div>'

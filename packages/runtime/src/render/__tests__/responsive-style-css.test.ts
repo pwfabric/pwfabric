@@ -132,6 +132,22 @@ describe('responsive-style-css', () => {
     expect(css).not.toContain(':not([data-block-wrapper]){grid-')
   })
 
+  it('writes a responsive position / top / zIndex to the WRAPPER, as the flat values go', () => {
+    const block: Block = {
+      id: 'bar-1',
+      type: 'navbar',
+      layout: DEFAULT_BLOCK_LAYOUT,
+      props: {},
+      style: { position: { xs: 'static', md: 'sticky' }, top: { md: '0' }, zIndex: { md: '10' } },
+    } as unknown as Block
+
+    const css = collectResponsiveStyleCss([block])
+
+    expect(css).toContain('[data-block-id="bar-1"][data-block-wrapper]{position:static !important;top:0 !important;z-index:10 !important}')
+    expect(css).toContain('@media (min-width:768px){[data-pw-surface] [data-block-id="bar-1"][data-block-wrapper]{position:sticky !important}}')
+    expect(css).not.toContain(':not([data-block-wrapper]){')
+  })
+
   it('recurses into children', () => {
     const tree: Block = {
       id: 'parent',

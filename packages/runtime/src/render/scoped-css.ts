@@ -114,6 +114,32 @@ export const GRID_PLACEMENT_KEYS = [
   'gridArea',
 ] as const
 
+/**
+ * Where a block is placed and stacked. `position: sticky` sticks an element
+ * inside its containing block — on the component root that is the wrapper,
+ * exactly as tall as the block, so a sticky navbar never stuck; an absolute
+ * or fixed block is placed relative to the wrapper's parent only when the
+ * wrapper itself is the positioned box. `zIndex` and `alignSelf` belong to the
+ * same box: a z-index on the root stacks it only within the wrapper, and
+ * `alignSelf` aligns a flex or grid ITEM, which is the wrapper.
+ */
+export const POSITION_HOIST_KEYS = [
+  'position',
+  'top',
+  'right',
+  'bottom',
+  'left',
+  'inset',
+  'insetInline',
+  'insetInlineStart',
+  'insetInlineEnd',
+  'insetBlock',
+  'insetBlockStart',
+  'insetBlockEnd',
+  'zIndex',
+  'alignSelf',
+] as const
+
 export const LAYOUT_HOIST_KEYS = [
   'margin',
   'marginTop',
@@ -130,6 +156,7 @@ export const LAYOUT_HOIST_KEYS = [
   'minWidth',
   ...FLEX_HOIST_KEYS,
   ...GRID_PLACEMENT_KEYS,
+  ...POSITION_HOIST_KEYS,
 ] as const
 
 /** The attribute that tells the wrapper from the component root (the same marker states-css uses). */
