@@ -9,7 +9,7 @@ import type { Command, CommandIO, ParsedArgs } from './types.js'
 import { boolFlag, guard, stringFlag, stringFlags, UsageError } from './lib/flags.js'
 import { resolveFrom } from './lib/project.js'
 import { readBuiltOutput } from './lib/built-output.js'
-import { loadPlaywright, PLAYWRIGHT_MISSING, type PlaywrightLoader } from './lib/hydration.js'
+import { launchLocal, loadPlaywright, localPage, PLAYWRIGHT_MISSING, type PlaywrightLoader } from './lib/hydration.js'
 import { startStaticServer } from './lib/static-server.js'
 import { PIN_FIXED_ELEMENTS } from './lib/pin-fixed.js'
 import { appFolderOf, openRunSource, readOnlyHostFor } from './run.js'
@@ -76,14 +76,14 @@ export async function runShoot(args: ParsedArgs, io: CommandIO, deps: ShootDeps 
   await mkdir(dir, { recursive: true })
   const host = app ? await readOnlyHostFor(app) : undefined
   const server = await startStaticServer({ source: await openRunSource(target), port: 0, hostname: '127.0.0.1', hostPrefix: HOST_PREFIX, ...(host ? { host } : {}) })
-  const browser = await chromium.launch()
+  const browser = await launchLocal(chromium)
   const written: string[] = []
   try {
     const origin = server.url.replace(/\/$/, '')
     for (const address of addresses) {
       for (const width of widths) {
         for (const theme of themes as Theme[]) {
-          const page = await browser.newPage({ viewport: { width, height: 900 } })
+          const { page, done } = await localPage(browser, { width, height: 900 })
           await page.emulateMedia({ colorScheme: theme })
           await page.goto(`${origin}${address}`)
           await page.waitForTimeout(deps.settleMs ?? 1500)
@@ -91,7 +91,7 @@ export async function runShoot(args: ParsedArgs, io: CommandIO, deps: ShootDeps 
           // A fixed element in the place a visitor sees it, not wherever the window was.
           await page.evaluate(PIN_FIXED_ELEMENTS)
           await page.screenshot({ path: file, fullPage: true })
-          await page.close()
+          await done()
           written.push(file)
         }
       }

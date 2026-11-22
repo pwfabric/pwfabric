@@ -21,10 +21,17 @@ import { pathToFileURL } from 'node:url'
 
 /** The part of Playwright this check drives. */
 export interface Chromium {
-  launch(): Promise<Browser>
+  launch(options?: { args?: string[] }): Promise<Browser>
 }
 interface Browser {
-  newPage(options: { viewport: { width: number; height: number } }): Promise<Page>
+  newContext(options: { viewport: { width: number; height: number }; serviceWorkers: 'block' }): Promise<Context>
+  close(): Promise<void>
+}
+interface Context {
+  route(url: RegExp, handler: (route: { abort(): Promise<void> }) => Promise<void>): Promise<void>
+  /** Playwright 1.48 and later. */
+  routeWebSocket?(url: RegExp, handler: (ws: { close(): Promise<void> | void }) => void): Promise<void>
+  newPage(): Promise<Page>
   close(): Promise<void>
 }
 interface Page {
@@ -40,6 +47,30 @@ interface Page {
 }
 
 export type PlaywrightLoader = (cwd: string) => Promise<Chromium | null>
+
+/** An http(s) or ws(s) address on any host but this machine's loopback. */
+export const OFF_MACHINE = /^(?:https?|wss?):\/\/(?!(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?(?:[/?#]|$))/i
+
+/** Chromium resolves no name but this machine's: defence in depth beside the routes below. */
+export const LOOPBACK_ONLY_ARGS = ['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost']
+
+/** Chromium for pwf check and pwf shoot: it resolves no host but this machine. */
+export function launchLocal(chromium: Chromium): Promise<Browser> {
+  return chromium.launch({ args: LOOPBACK_ONLY_ARGS })
+}
+
+/**
+ * A page that reaches this machine only: in a context of its own with
+ * service workers blocked, every request (popups included) and every
+ * WebSocket to another host refused. `done` closes page and context.
+ */
+export async function localPage(browser: Browser, viewport: { width: number; height: number }): Promise<{ page: Page; done: () => Promise<void> }> {
+  const context = await browser.newContext({ viewport, serviceWorkers: 'block' })
+  await context.route(OFF_MACHINE, (route) => route.abort())
+  if (context.routeWebSocket) await context.routeWebSocket(OFF_MACHINE, (ws) => void ws.close())
+  const page = await context.newPage()
+  return { page, done: () => context.close() }
+}
 
 /** The line printed when Playwright is not installed. */
 export const PLAYWRIGHT_MISSING =
@@ -161,20 +192,16 @@ interface Seen {
   goneBlocks: (string | null)[]
 }
 
-/** An http(s) or ws(s) address on any host but this machine's loopback. */
-export const OFF_MACHINE = /^(?:https?|wss?):\/\/(?!(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?(?:[/?#]|$))/i
-
 /** One painted page at one width: its problems, or why it was skipped. */
 export async function checkPage(browser: Browser, origin: string, key: string, info: PageInfo, width: number, address: string): Promise<{ problems: string[]; skipped?: string }> {
-  const page = await browser.newPage({ viewport: { width, height: 844 } })
+  // The check reaches the build on this machine only (localPage).
+  const { page, done } = await localPage(browser, { width, height: 844 })
   const problems: string[] = []
   page.on('console', ((m: { text(): string }) => {
     const t = m.text()
     if (/#418|#419|#423|#425|did not match|hydrat/i.test(t)) problems.push(`hydration: ${t.slice(0, 200)}`)
   }) as (x: never) => void)
   page.on('pageerror', ((e: Error) => problems.push(`page error: ${e.message.slice(0, 200)}`)) as (x: never) => void)
-  // The check reaches the build on this machine only: a page's request to any other host is refused.
-  await page.route(OFF_MACHINE, (route) => route.abort())
   let notFound = false
   page.on('request', ((r: { url(): string }) => {
     const url = r.url()
@@ -220,7 +247,7 @@ export async function checkPage(browser: Browser, origin: string, key: string, i
       goneBlocks: painted.filter((e) => !e.isConnected).map((e) => e.closest('[data-block-id]')?.getAttribute('data-block-id') ?? null),
     }
   })()`)
-  await page.close()
+  await done()
   if (info.notFoundKey !== undefined && key !== info.notFoundKey && seen.shown === info.notFoundKey) notFound = true
   if (seen.painted === 0) return { skipped: 'the runner drew before the frame arrived', problems }
   if (info.isRecord) {
@@ -247,4 +274,4 @@ export async function checkPage(browser: Browser, origin: string, key: string, i
   return { problems }
 }
 
-export type { Browser, Page }
+export type { Browser, Context, Page }

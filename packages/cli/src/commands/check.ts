@@ -17,7 +17,7 @@ import type { Command, CommandIO, ParsedArgs } from './types.js'
 import { boolFlag, guard, stringFlag, UsageError } from './lib/flags.js'
 import { resolveFrom } from './lib/project.js'
 import { documentAddress, pageDocuments, readBuiltOutput, resolveServed, type BuiltOutput } from './lib/built-output.js'
-import { checkPage, loadPlaywright, PLAYWRIGHT_MISSING, recordPageInfo, type PlaywrightLoader } from './lib/hydration.js'
+import { checkPage, launchLocal, loadPlaywright, PLAYWRIGHT_MISSING, recordPageInfo, type PlaywrightLoader } from './lib/hydration.js'
 import { startStaticServer } from './lib/static-server.js'
 import { appFolderOf, isAppFolder, openRunSource, readOnlyHostFor } from './run.js'
 import { HOST_PREFIX } from '../dev/server.js'
@@ -231,7 +231,7 @@ async function runHydration(io: CommandIO, target: string, out: BuiltOutput, wid
   const server = await startStaticServer({ source: await openRunSource(target), port: 0, hostname: '127.0.0.1', hostPrefix: HOST_PREFIX, ...(host ? { host } : {}) })
   const lines: string[] = []
   let ok = true
-  const browser = await chromium.launch()
+  const browser = await launchLocal(chromium)
   try {
     const origin = server.url.replace(/\/$/, '')
     const addressOf = (key: string): string =>

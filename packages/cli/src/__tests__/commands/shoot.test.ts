@@ -11,8 +11,13 @@ import { capture, FIXTURE_FOUNDATION, tempDir } from './helpers.js'
 /** A Chromium that records what it is asked and writes an empty file per screenshot. */
 function fakeChromium(log: string[]): Chromium {
   return {
-    launch: async () => ({
-      newPage: async ({ viewport }) => {
+    launch: async (options) => ({
+      newContext: async ({ viewport, serviceWorkers }) => ({
+        route: async (url: RegExp) => {
+          log.push(`guard ${serviceWorkers} ${url.test('https://example.com/') && !url.test('http://127.0.0.1:1/')} ${options?.args?.join(' ') ?? ''}`)
+        },
+        close: async () => {},
+        newPage: async () => {
         let scheme = ''
         return {
           on: () => {},
@@ -32,7 +37,8 @@ function fakeChromium(log: string[]): Chromium {
           },
           close: async () => {},
         }
-      },
+        },
+      }),
       close: async () => {},
     }),
   }
@@ -63,7 +69,9 @@ describe('pwf shoot', () => {
     expect(await runShoot(parseArgs(['shoot', '--widths', '390,1440', '--theme', 'light,dark']).args, c.io, { loadPlaywright: async () => fakeChromium(log), settleMs: 0 }), c.text()).toBe(0)
     expect(log).toContain('/ 200 @390 light')
     expect(log).toContain('/pricing/ 200 @1440 dark')
-    expect(log).toHaveLength(8)
+    expect(log.filter((l) => !l.startsWith('guard'))).toHaveLength(8)
+    // Each page in a context of its own: service workers blocked, other hosts refused, no name resolved but this machine's.
+    expect(new Set(log.filter((l) => l.startsWith('guard')))).toEqual(new Set(['guard block true --host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost']))
     for (const f of ['home@390-light.png', 'home@1440-dark.png', 'pricing@390-dark.png']) expect(existsSync(join(root, '.pwf', 'shots', f))).toBe(true)
     expect(c.out.at(-1)).toMatch(/^8 screenshots in /)
   })
@@ -73,7 +81,7 @@ describe('pwf shoot', () => {
     const log: string[] = []
     const out = join(cwd, 'pics')
     expect(await runShoot(parseArgs(['shoot', '--path', '#/pricing', '--widths', '390', '--out', out]).args, capture(root).io, { loadPlaywright: async () => fakeChromium(log), settleMs: 0 })).toBe(0)
-    expect(log).toEqual(['/#/pricing 200 @390 light'])
+    expect(log.filter((l) => !l.startsWith('guard'))).toEqual(['/#/pricing 200 @390 light'])
     expect(existsSync(join(out, 'pricing@390.png'))).toBe(true)
   })
 

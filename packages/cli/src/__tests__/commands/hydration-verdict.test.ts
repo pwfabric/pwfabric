@@ -7,7 +7,7 @@ import { checkPage, type Browser } from '../../commands/lib/hydration.js'
 
 function browserShowing(shown: string, requested: string[], kept = false): Browser {
   return {
-    newPage: async () => {
+    newContext: async () => ({ route: async () => {}, close: async () => {}, newPage: async () => {
       const handlers: ((r: { url(): string }) => void)[] = []
       return {
         on: (event: string, handler: (x: never) => void) => {
@@ -24,7 +24,7 @@ function browserShowing(shown: string, requested: string[], kept = false): Brows
         emulateMedia: async () => {},
         close: async () => {},
       }
-    },
+    } }),
     close: async () => {},
   } as unknown as Browser
 }
