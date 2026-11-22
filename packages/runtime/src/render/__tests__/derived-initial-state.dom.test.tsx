@@ -69,3 +69,27 @@ describe('a derived initialState seed', () => {
     expect(screen.getByTestId('t').textContent).not.toContain('{{')
   })
 })
+
+describe('a derived seed on a page whose host changes while its data loads', () => {
+  it('waits for the data in flight, as a hydrated page whose visitor becomes known does', async () => {
+    let release: () => void = () => undefined
+    const slow = {
+      resolveBinding: () =>
+        new Promise((done) => {
+          release = () => done({ items: [{ id: 'a' }, { id: 'b' }], total: 2, offset: 0, limit: 50, hasMore: false })
+        }),
+    }
+    const surface = page({ all: '{{dishes.length}}' })
+    const pending = { state: { signedIn: false, pending: true, user: null, methods: [], registration: 'open', error: null }, onAction: () => undefined }
+    const known = { state: { signedIn: false, user: null, methods: [], registration: 'open', error: null }, onAction: () => undefined }
+    const view = (identity: unknown) => (
+      <DataBoundSurfaceRenderer surface={surface} components={components} entityFacade={slow as never} identity={identity as never} loadingStrategy="immediate" />
+    )
+    const { rerender } = render(view(pending))
+    // The visitor becomes known before the rows arrive (the update after hydration).
+    rerender(view(known))
+    await new Promise((r) => setTimeout(r, 20))
+    release()
+    await waitFor(() => expect(screen.getByTestId('t').textContent).toContain('all=2'))
+  })
+})

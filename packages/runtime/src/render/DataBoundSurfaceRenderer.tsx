@@ -1154,8 +1154,10 @@ function useSurfaceData(
     }
     const changed = sources.filter((s) => requestKeyOf(s, surfaceState, me, signedIn) !== requestKeysRef.current[s.id])
     if (changed.length > 0) void fetchSources(changed)
-    // Nothing new to ask (another page whose sources are all the layout's): settled.
-    else setInitialLoaded(true)
+    // Nothing new to ask (another page whose sources are all the layout's):
+    // settled — unless a fetch is still in flight, as on a hydrated page whose
+    // visitor becomes known before its rows arrive; that fetch settles it.
+    else if (controllersRef.current.size === 0) setInitialLoaded(true)
   }, [dataSources, surfaceState, me, signedIn, fetchSources, dataService])
 
   // ---- Unmount: abort what is in flight, forget what was fetched ----
