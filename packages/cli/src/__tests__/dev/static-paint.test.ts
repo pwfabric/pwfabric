@@ -241,4 +241,57 @@ export default function Bar(p: { props?: { account?: { signedIn?: boolean } } })
     const data = JSON.parse(html.match(/<script type="application\/json" id="pw-first-paint">(.*?)<\/script>/)?.[1] ?? '{}')
     expect(data.pages.confirmation.keys).toEqual(['id'])
   })
+  /** An app block drawing one link per `links` entry, and the pages that draw `#a` and a link to `/guide`. */
+  async function linkedApp(): Promise<string> {
+    const root = await app()
+    const block = join(root, 'atoms', 'blocks', 'nav', 'jump')
+    await mkdir(block, { recursive: true })
+    await writeFile(
+      join(block, 'component.tsx'),
+      `import * as React from 'react'
+export default function Jump(p: { props?: { href?: string; homeHref?: string } }): React.ReactElement {
+  return <nav><a href={p.props?.href}>up</a><a href={p.props?.homeHref}>guide</a></nav>
+}
+`
+    )
+    const manifest = JSON.parse(await readFile(join(root, ...PACK_REL, 'atoms', 'blocks', 'text', 'title', 'manifest.json'), 'utf8')) as Record<string, unknown>
+    const prop = (name: string): unknown => ({ name, type: 'string', required: false, default: '', jsonSchema: { type: 'string' } })
+    await writeFile(
+      join(block, 'manifest.json'),
+      JSON.stringify({ ...manifest, id: 'nav.jump', category: 'nav', name: 'jump', definition: { props: [prop('href'), prop('homeHref')], defaultProps: {}, canHaveChildren: false } })
+    )
+    const page = (title: string): string =>
+      JSON.stringify({
+        title,
+        blocks: [{ id: 'page', type: 'stack', props: {}, children: [{ id: 't', type: 'title', props: { text: title } }, { id: 'j', type: 'jump', props: { href: '#a', homeHref: '/guide' } }] }],
+      })
+    await writeFile(join(root, 'app', 'surfaces', 'home.receipt.json'), page('Home'))
+    await writeFile(join(root, 'app', 'surfaces', 'guide.receipt.json'), page('Guide'))
+    const identity = JSON.parse(await readFile(join(root, 'pwpack.json'), 'utf8')) as { app: { surfaceOrder: string[] } }
+    identity.app.surfaceOrder = ['home', 'guide']
+    await writeFile(join(root, 'pwpack.json'), JSON.stringify(identity))
+    return root
+  }
+
+  it('a fragment-only link in a page painted under path routing names that page, not the app root its <base href> points at', async () => {
+    const r = await assemblePwapp(await linkedApp(), { cacheDir: null, router: 'path', base: '/docs/' })
+    expect(r.ok, codes(r).join()).toBe(true)
+    // Before any script runs, `#a` resolves against `<base href="/docs/">`: the entry page.
+    const guide = text(r.files.get('guide/index.html'))
+    expect(guide).toContain('<base href="/docs/" />')
+    expect(guide).toContain('href="/docs/guide/#a"')
+    expect(guide).not.toContain('href="#a"')
+    // The frame's own file (a document holding another page's) says the same.
+    expect(text(r.files.get('pwpack/surfaces/guide.html'))).toContain('href="/docs/guide/#a"')
+    expect(text(r.files.get('index.html'))).toContain('href="/docs/#a"')
+    // A page link is the router's, untouched.
+    expect(guide).toContain('href="/docs/guide/"')
+  })
+
+  it('under hash routing a fragment-only link stays as written: the one document is every page', async () => {
+    const r = await assemblePwapp(await linkedApp(), { cacheDir: null })
+    expect(r.ok, codes(r).join()).toBe(true)
+    expect(text(r.files.get('index.html'))).toContain('href="#a"')
+    expect(text(r.files.get('pwpack/surfaces/guide.html'))).toContain('href="#a"')
+  })
 })

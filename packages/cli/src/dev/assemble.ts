@@ -41,7 +41,7 @@ import { documentHead, isRecordPage, pageDocuments, publicOriginOf, robotsTxt, S
 import { llmsFullTxt, llmsTxt, type LlmsPage } from './llms.js'
 import { planHeadersOf, planRedirectsOf, planScriptOrigins, planScriptsOf, redirectsFile } from './plan-site.js'
 import { parseHeadersFile } from '../commands/lib/static-server.js'
-import { firstPaintData, paintPages, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
+import { firstPaintData, onPageFragmentLinks, paintPages, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
 import { canonicalOf, hashHref, pathHref } from '@pwfabric/runner'
 import {
   BOOT_FILES,
@@ -908,7 +908,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         })
       : { pages: [] as PaintedPage[], diagnostics: [] }
     diagnostics.push(...result.diagnostics)
-    painted = result.pages
+    // Under path routing each page is a document of its own: a fragment-only
+    // link names a place in THAT page, not in the one `<base href>` names.
+    painted = byPath ? result.pages.map((p) => ({ ...p, html: onPageFragmentLinks(p.html, toHref(p.key)) })) : result.pages
     // Every painted page's frame is also a file of its own, for a document
     // that holds another page's (a hash address, a host's SPA fallback).
     for (const page of painted) files.set(staticPageFile(page.key), enc.encode(staticPageFragment(page)))

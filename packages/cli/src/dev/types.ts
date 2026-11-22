@@ -29,6 +29,13 @@ export interface DevServerOptions {
    * host across origins (`pwf dev --cors`). Default none: no CORS at all.
    */
   readonly cors?: readonly string[]
+  /**
+   * How the app routes — `pwf build --router` — served as `pwf run` serves
+   * that build. Default hash.
+   */
+  readonly router?: 'hash' | 'path' | 'auto'
+  /** The path the app is served under, for `path` and `auto` (`/docs/`). Default `/`. */
+  readonly base?: string
 }
 
 export interface DevServer {

@@ -463,10 +463,13 @@ function createPathRouter(
     follow: followAsLink,
     start(onChange) {
       window.addEventListener('popstate', () => onChange())
-      // Link interception: same-origin anchors UNDER this app's base navigate
-      // via pushState instead of a full document load — including ones naming
-      // a page the app does not have, which then render the not-found page
-      // in place. Anything outside the base is the browser's, not ours.
+      // Link interception: a same-origin link naming ONE OF THIS APP'S PAGES
+      // (or the base itself, the entry page) navigates via pushState instead
+      // of a full document load. Any other address is the browser's — even one
+      // under the base: an app at `/` shares its origin with whatever else the
+      // site serves (a blog, a sibling app, a file), and taking every path
+      // rendered those as this app's not-found page. The host answers them,
+      // with its own 404 page when nothing is there.
       document.addEventListener('click', (ev) => {
         const anchor = ownLinkFromClick(ev)
         if (anchor === null) return
@@ -484,10 +487,10 @@ function createPathRouter(
         }
         const url = new URL(anchor.href, location.href)
         if (url.origin !== location.origin) return
-        const path = trimBase(url.pathname)
-        if (path !== base && !path.startsWith(`${base}/`)) {
-          // Not under our base — but a root-relative `/people/` that names one
-          // of our pages is still ours (see strayPageKeyOf). Route it under
+        const key = keyOfPath(url.pathname)
+        if (key === null) {
+          // Not one of our pages at the base — but a root-relative `/people/`
+          // that names one is still ours (see strayPageKeyOf). Route it under
           // the base instead of letting the document walk to `<origin>/people/`.
           const stray = strayLinkOf(written, pages)
           if (stray === null) return
@@ -505,7 +508,7 @@ function createPathRouter(
           return
         }
         ev.preventDefault()
-        const sameSurface = keyOfPath(url.pathname) === resolved && resolved !== null
+        const sameSurface = key === resolved
         const sameQuery = url.search === location.search
         history.pushState(null, '', url.pathname + url.search + url.hash)
         // SAME PAGE, NEW QUERY (`/product?id=12` → `?id=13`). Comparing only
