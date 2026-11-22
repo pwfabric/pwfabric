@@ -38,7 +38,7 @@ describe('svgUnsafeReason', () => {
       [`<svg ${NS}><a><set attributeName="xlink:href" to="javascript:alert(1)"/></a></svg>`, /animates xlink:href/],
       [`<svg ${NS}><rect><set attributeName="onmouseover" to="alert(1)"/></rect></svg>`, /animates onmouseover/],
       [`<svg ${NS}><rect style="fill: url(https://evil.example/t)"/></svg>`, /url\(https/],
-      [`<svg ${NS}><rect fill="url('https://evil.example/t')"/></svg>`, /url\(https/],
+      [`<svg ${NS}><rect fill="url('https://evil.example/t')"/></svg>`, /url\('https/],
       [`<svg ${NS}><style>@import url(https://evil.example/x.css);</style></svg>`, /@import/],
       [`<svg ${NS}><rect style="width: expression(alert(1))"/></svg>`, /expression\(/],
       [`<svg ${NS}><style>.a { background: u\\72l(https://evil.example) }</style></svg>`, /CSS escape/],
@@ -51,6 +51,37 @@ describe('svgUnsafeReason', () => {
       [`<svg ${NS}><rect x="1" x="2"/></svg>`, /twice/],
       [`<html><svg ${NS}/></html>`, /<html> is not part/],
       [`<svg ${NS}/><script>alert(1)</script>`, /more than one root|<script>/],
+    ]
+    for (const [svg, why] of bad) expect(reason(svg), svg).toMatch(why)
+  })
+
+  it('refuses CSS in any attribute that loads something, however it is written', () => {
+    const bad: [string, RegExp][] = [
+      [`<svg ${NS}><rect fill="u\\72l(https://evil.example/t)"/></svg>`, /backslash/],
+      [`<svg ${NS}><rect fill="ur/**/l(https://evil.example/t)"/></svg>`, /CSS comment/],
+      [`<svg ${NS}><rect fill="url(/*x*/https://evil.example/t)"/></svg>`, /CSS comment/],
+      [`<svg ${NS}><rect fill="image-set('https://evil.example/t' 1x)"/></svg>`, /image-set\(/],
+      [`<svg ${NS}><rect fill="-webkit-image-set(url(https://e.example) 1x)"/></svg>`, /image-set\(/],
+      [`<svg ${NS}><rect fill="image('https://evil.example/t')"/></svg>`, /image\(/],
+      [`<svg ${NS}><rect fill="cross-fade(url(#a), url(https://e.example), 50%)"/></svg>`, /cross-fade\(/],
+      [`<svg ${NS}><rect fill="src('https://evil.example/t')"/></svg>`, /src\(/],
+      [`<svg ${NS}><rect fill="element(#x)"/></svg>`, /element\(/],
+      [`<svg ${NS}><rect mask="URL( https://evil.example/m )"/></svg>`, /url\(https/],
+      [`<svg ${NS}><rect clip-path="@import 'x'"/></svg>`, /@import/],
+      [`<svg ${NS}><rect style="font-family: 'x'; background: image-set('https://e.example' 1x)"/></svg>`, /image-set\(|quoted/],
+      [`<svg ${NS}><rect style="content: 'x'"/></svg>`, /quoted string/],
+    ]
+    for (const [svg, why] of bad) expect(reason(svg), svg).toMatch(why)
+    expect(reason(`<svg ${NS}><rect fill="url('#g')" stroke='url("#h")' mask="url( #m )"/></svg>`)).toBeUndefined()
+  })
+
+  it('checks a style as a whole and allows no element inside it', () => {
+    const bad: [string, RegExp][] = [
+      [`<svg ${NS}><style>@import url(https://evil.example/a.css);<style>.a{}</style></style></svg>`, /<style> inside <style>/],
+      [`<svg ${NS}><style>.a{fill:red}<g/>@import url(https://evil.example/a.css);</style></svg>`, /<g> inside <style>/],
+      [`<svg ${NS}><style>.a { background: url(<![CDATA[https://evil.example]]>) }</style></svg>`, /url\(https/],
+      [`<svg ${NS}><style>.a { background: url(https:<!-- -->//evil.example) }</style></svg>`, /url\(https/],
+      [`<svg ${NS}><style>.a { fill: red } /* x */</style></svg>`, /CSS comment/],
     ]
     for (const [svg, why] of bad) expect(reason(svg), svg).toMatch(why)
   })
