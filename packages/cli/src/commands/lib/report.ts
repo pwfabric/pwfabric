@@ -8,6 +8,7 @@ import {
   blockPropsCatalog,
   checkBlockIds,
   checkBlockProps,
+  checkAmbiguousBlockTypes,
   checkBlockTypes,
   checkDefaultCopy,
   checkErrorsAsText,
@@ -507,6 +508,8 @@ export function checkPages(loaded: LoadedSources): PackIssue[] {
     const known = definedBlockTypes(blockSourcesOf(loaded))
     const judged: PageReceipt[] = layout ? [...pages, { key: 'layout', path: layoutPath, receipt: layout }] : pages
     issues.push(...checkBlockTypes(judged, (type) => type === PAGE_SLOT_TYPE || known.has(type)))
+    // A type two blocks answer to by a short name is the build's error too.
+    issues.push(...checkAmbiguousBlockTypes(judged, blockSourcesOf(loaded)))
   }
   return issues
 }

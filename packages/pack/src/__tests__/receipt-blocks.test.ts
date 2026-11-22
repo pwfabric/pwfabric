@@ -60,3 +60,24 @@ describe('checkBlockTypes', () => {
     expect([...names].sort()).toEqual(['button', 'control.button', 'headline', 'text.title', 'title'])
   })
 })
+
+describe('checkAmbiguousBlockTypes', () => {
+  it('refuses a type two blocks answer to by a short name, naming both, and accepts an exact one', async () => {
+    const { checkAmbiguousBlockTypes, packFromRecord } = await import('../index.js')
+    const folder = packFromRecord({
+      'atoms/blocks/docs/panel/manifest.json': JSON.stringify({ name: 'docs-panel' }),
+      'atoms/blocks/layout/panel/manifest.json': JSON.stringify({ name: 'Panel' }),
+      'atoms/blocks/layout/sidebar/manifest.json': JSON.stringify({ name: 'sidebar' }),
+      'atoms/blocks/docs/sidebar/manifest.json': JSON.stringify({ name: 'docs-sidebar' }),
+    })
+    const ref = (id: string, rel: string): AtomRef => ({ kind: 'block', id, relPath: rel })
+    const sources = [
+      { folder, atoms: [ref('docs.panel', 'atoms/blocks/docs/panel/manifest.json'), ref('docs.sidebar', 'atoms/blocks/docs/sidebar/manifest.json')] },
+      { folder, atoms: [ref('layout.panel', 'atoms/blocks/layout/panel/manifest.json'), ref('layout.sidebar', 'atoms/blocks/layout/sidebar/manifest.json')] },
+    ]
+    const page = { key: 'home', path: 'app/surfaces/home.receipt.json', receipt: { blocks: [{ type: 'panel' }, { type: 'sidebar' }] } }
+    const issues = checkAmbiguousBlockTypes([page], sources)
+    expect(issues.map((i) => i.code)).toEqual(['BLOCK_TYPE_AMBIGUOUS'])
+    expect(issues[0]?.message).toContain('"docs.panel" and "layout.panel"')
+  })
+})

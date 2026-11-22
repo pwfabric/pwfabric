@@ -84,6 +84,11 @@ export {
   blockPropDescriptors,
   blockPropsCatalog,
   blockTypeNames,
+  blockTypeNameParts,
+  resolveBlockType,
+  namedBlocksOf,
+  ambiguousBlockTypeMessage,
+  BLOCK_TYPE_AMBIGUOUS,
   checkBlockProps,
   checkReceiptBlockProps,
   nearestName,
@@ -93,9 +98,11 @@ export {
   type BlockPropsCatalog,
   type BlockPropsEntry,
   type BlockSource,
+  type NamedBlock,
 } from './block-props.js'
 export {
   BLOCK_ID_DUPLICATE,
+  checkAmbiguousBlockTypes,
   blockTypeFirstUses,
   checkBlockIds,
   checkBlockTypes,

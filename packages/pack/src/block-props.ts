@@ -113,6 +113,82 @@ export function blockTypeNames(atomId: string, manifest?: Readonly<Record<string
   return [...names]
 }
 
+/**
+ * A block's names, by how firmly they name it: `exact` — its id and its
+ * manifest `name` — and `short` — its id without its first segment and its
+ * last segment (`docs.sidebar` → `sidebar`), which another block may share.
+ */
+export function blockTypeNameParts(atomId: string, manifest?: Readonly<Record<string, unknown>>): { exact: string[]; short: string[] } {
+  const exact = new Set<string>([atomId])
+  const name = manifest?.['name']
+  if (typeof name === 'string' && name) exact.add(name)
+  const short = new Set<string>()
+  const dot = atomId.indexOf('.')
+  if (dot >= 0) short.add(atomId.slice(dot + 1))
+  short.add(atomId.slice(atomId.lastIndexOf('.') + 1))
+  for (const n of exact) short.delete(n)
+  return { exact: [...exact], short: [...short] }
+}
+
+/** One block a type may name, in resolution order (the app's own first, then each pinned pack's). */
+export interface NamedBlock<T> {
+  readonly atom: T
+  readonly id: string
+  readonly manifest?: Readonly<Record<string, unknown>> | undefined
+}
+
+/**
+ * The block a receipt's `type` names, the same in `pwf validate`, `pwf build`
+ * and the tools that describe a block:
+ *
+ *  1. the first block (the app's own, then each pinned pack's, in order) whose
+ *     id or manifest `name` is the type — a later one of that name is shadowed;
+ *  2. else the one block whose short name (its id without its first segment,
+ *     or its last segment) is the type;
+ *  3. two different blocks by a short name is ambiguous — never a pick by
+ *     folder or by order: the receipt writes one of their ids.
+ *
+ * `shadowed` lists the other blocks the type also names; undefined: none.
+ */
+export function resolveBlockType<T>(
+  type: string,
+  blocks: readonly NamedBlock<T>[]
+): { atom: T; id: string; shadowed: NamedBlock<T>[] } | { ambiguous: NamedBlock<T>[] } | undefined {
+  const parts = blocks.map((b) => ({ block: b, names: blockTypeNameParts(b.id, b.manifest) }))
+  const exact = parts.filter((p) => p.names.exact.includes(type)).map((p) => p.block)
+  if (exact.length > 0) {
+    const [first, ...rest] = exact as [NamedBlock<T>, ...NamedBlock<T>[]]
+    return { atom: first.atom, id: first.id, shadowed: rest }
+  }
+  const short = parts.filter((p) => p.names.short.includes(type)).map((p) => p.block)
+  if (short.length === 0) return undefined
+  const ids = [...new Set(short.map((b) => b.id))]
+  if (ids.length > 1) return { ambiguous: ids.map((id) => short.find((b) => b.id === id) as NamedBlock<T>) }
+  const [first, ...rest] = short as [NamedBlock<T>, ...NamedBlock<T>[]]
+  return { atom: first.atom, id: first.id, shadowed: rest }
+}
+
+/** The blocks of the sources, in resolution order, with their manifests. */
+export function namedBlocksOf(sources: readonly BlockSource[]): NamedBlock<AtomRef>[] {
+  const out: NamedBlock<AtomRef>[] = []
+  for (const source of sources) {
+    for (const ref of source.atoms) {
+      if (ref.kind !== 'block') continue
+      const manifest = jsonAt(source.folder, atomManifestPath(ref))
+      out.push({ atom: ref, id: ref.id, ...(isRecord(manifest) ? { manifest } : {}) })
+    }
+  }
+  return out
+}
+
+/** The code of a type that names two different blocks by a short name. */
+export const BLOCK_TYPE_AMBIGUOUS = 'BLOCK_TYPE_AMBIGUOUS'
+
+/** The `BLOCK_TYPE_AMBIGUOUS` finding: the type, the page that places it, and every block it names. */
+export function ambiguousBlockTypeMessage(type: string, pageKey: string, ids: readonly string[]): string {
+  return `page "${pageKey}" places a block of type "${type}", which names ${ids.map((i) => `"${i}"`).join(' and ')} by a short name: write the id of the one meant`
+}
+
 /** The manifest next to an atom (`manifest.json` beside its entry, or the JSON entry itself). */
 export function atomManifestPath(ref: Pick<AtomRef, 'relPath'>): string {
   if (ref.relPath.endsWith('.json')) return ref.relPath
@@ -141,17 +217,15 @@ export function blockPropDescriptors(manifest: unknown): BlockPropDescriptor[] |
  */
 export function blockPropsCatalog(sources: readonly BlockSource[]): Map<string, BlockPropsEntry> {
   const catalog = new Map<string, BlockPropsEntry>()
-  const taken = new Set<string>()
-  for (const source of sources) {
-    for (const ref of source.atoms) {
-      if (ref.kind !== 'block') continue
-      const manifest = jsonAt(source.folder, atomManifestPath(ref))
-      const names = blockTypeNames(ref.id, isRecord(manifest) ? manifest : undefined).filter((n) => !taken.has(n))
-      names.forEach((n) => taken.add(n))
-      const props = blockPropDescriptors(manifest)
-      if (!props) continue
-      for (const n of names) catalog.set(n, { atomId: ref.id, props })
-    }
+  const blocks = namedBlocksOf(sources)
+  const names = new Set(blocks.flatMap((b) => blockTypeNames(b.id, b.manifest)))
+  // Each name as resolveBlockType resolves it; an ambiguous one is judged by
+  // nobody's props (it is BLOCK_TYPE_AMBIGUOUS).
+  for (const name of names) {
+    const hit = resolveBlockType(name, blocks)
+    if (!hit || 'ambiguous' in hit) continue
+    const props = blockPropDescriptors(blocks.find((b) => b.atom === hit.atom)?.manifest)
+    if (props) catalog.set(name, { atomId: hit.id, props })
   }
   return catalog
 }
