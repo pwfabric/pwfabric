@@ -18,9 +18,21 @@ export function addressesOf(out: BuiltOutput): string[] {
   } else {
     for (const a of out.addresses) all.add(`#/${a}`)
   }
+  // An older build wrote a copy of the app per locale (`en/index.html` with its
+  // own runtime folders and `en/pwpack/`): its files are runtime, not addresses.
+  const nestedRoots = new Set<string>()
+  for (const rel of out.files.keys()) {
+    const at = rel.indexOf('/pwpack/')
+    if (at > 0 && out.files.has(`${rel.slice(0, at)}/index.html`)) nestedRoots.add(`${rel.slice(0, at)}/`)
+  }
   for (const rel of out.files.keys()) {
     if (RUNTIME_FOLDERS.some((f) => rel.startsWith(f)) || HOST_FILES.has(rel)) continue
     if (rel.startsWith('pwpack/') && !rel.startsWith('pwpack/media/')) continue
+    const nested = [...nestedRoots].find((r) => rel.startsWith(r))
+    if (nested !== undefined) {
+      const inner = rel.slice(nested.length)
+      if (inner.startsWith('pwpack/') || RUNTIME_FOLDERS.some((f) => inner.startsWith(f))) continue
+    }
     if (rel === 'index.html' || rel === '404.html' || rel.endsWith('/index.html')) continue // a page's document: its address is above
     all.add(rel)
   }

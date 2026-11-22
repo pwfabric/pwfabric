@@ -127,6 +127,22 @@ describe('pwf check', () => {
 })
 
 describe('pwf compare', () => {
+  it('takes an old build’s nested app copies (runtime, blocks, pwpack) for no addresses, but keeps its public files', async () => {
+    const { cwd, root } = await app()
+    const before = join(cwd, 'before')
+    await build(root, before)
+    const nested = ['en/index.html', 'en/assets/app.1a2b3c4d.js', 'en/blocks/hero.js', 'en/shims/react.js', 'en/engines/core.js', 'en/pwpack/surfaces/home.json', 'en/pwpack/media/a.png']
+    for (const rel of [...nested, 'docs/assets/logo.png']) {
+      await mkdir(join(before, rel, '..'), { recursive: true })
+      await writeFile(join(before, rel), 'x')
+    }
+    const after = join(cwd, 'after')
+    await build(root, after)
+    const c = capture(cwd)
+    expect(await main(['compare', before, after, '--json'], c.io)).toBe(1)
+    expect(JSON.parse(c.out.join('\n')).missing).toEqual(['docs/assets/logo.png'])
+  })
+
   it('lists the pages the new build dropped, unless it redirects them', async () => {
     const { cwd, root } = await app()
     await mkdir(join(root, 'public', 'docs'), { recursive: true })
