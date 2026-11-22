@@ -24,12 +24,12 @@ import { createCompileCache } from './compile.js'
 import { formatDiagnostic, type AssembleDiagnostic } from './diagnostics.js'
 import { hostNeeds } from './needs-host.js'
 import { EVENTS_PATH, overlayHtml, RELOAD_CLIENT, RELOAD_JS, RELOAD_PATH, STATUS_PATH } from './overlay.js'
-import { withBaseHref } from './shell.js'
+import { declaredHeaders, requestPath, resolveRequest } from '../commands/lib/static-server.js'
 import { PWF_DIR, type PackMemo } from './sources.js'
 import type { DevBuildResult, DevServer, DevServerOptions, StartDevServer } from './types.js'
 import { watchFolder, type WatchOptions, type Watcher } from './watcher.js'
 import { CONTENT_TYPES, contentTypeOf, isPagePath } from './content-types.js'
-import { applyCors, corsOriginsOf } from './cors.js'
+import { applyCors, corsOriginsOf, isCorsHeader } from './cors.js'
 
 export { contentTypeOf, isPagePath }
 
@@ -71,8 +71,9 @@ export function urlFor(hostname: string, port: number): string {
   return `http://${h.includes(':') ? `[${h}]` : h}:${port}/`
 }
 
-function send(res: ServerResponse, status: number, type: string, body: string | Uint8Array, head = false): void {
+function send(res: ServerResponse, status: number, type: string, body: string | Uint8Array, head = false, extra: Record<string, string> = {}): void {
   res.writeHead(status, {
+    ...extra,
     'content-type': type,
     'cache-control': 'no-store',
     'content-length': typeof body === 'string' ? Buffer.byteLength(body) : body.byteLength,
@@ -136,6 +137,13 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
   const log = options.log ?? ((): void => undefined)
   const hostname = options.hostname ?? DEFAULT_HOSTNAME
   const cors = corsOriginsOf(options.cors ?? [])
+  // The routing a build would be made with (`pwf build --router/--base`); the
+  // folder is served under the base, as a host serving that build serves it.
+  const routing = {
+    ...(options.router !== undefined ? { router: options.router } : {}),
+    ...(options.base !== undefined ? { base: options.base } : {}),
+  }
+  const mount = options.router !== undefined && options.router !== 'hash' ? (options.base ?? '/') : '/'
   const cache = createCompileCache(
     internals.assemble?.cacheDir === undefined ? join(root, PWF_DIR, 'build-cache') : internals.assemble.cacheDir
   )
@@ -155,7 +163,7 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
     const needs = await hostNeeds(root)
     const wanted = options.localHost === true || needs.length > 0
     if (wanted && internals.createHost) {
-      host = internals.createHost({ root, prefix: HOST_PREFIX })
+      host = internals.createHost({ root, prefix: HOST_PREFIX, ...(options.roles ? { roles: options.roles } : {}) })
       if (origin) log(`local host mounted at ${origin}${HOST_PREFIX} — development only: records in memory, no password checked`)
     } else if (wanted && !hostNoted) {
       hostNoted = true
@@ -211,6 +219,7 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
         }
       }
       result = await assemblePwapp(root, {
+        ...routing,
         ...internals.assemble,
         publishedAt,
         cache,
@@ -293,38 +302,48 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
       return
     }
     const head = req.method === 'HEAD'
-    let path: string
-    try {
-      path = decodeURIComponent(url.pathname)
-    } catch {
-      send(res, 400, CONTENT_TYPES['.txt'] as string, 'bad path', head)
-      return
+    // UNDER THE BASE, as a host serving a `--base` build serves it: the
+    // shell's `<base href>` names it, so every file is asked for there.
+    let pathname = url.pathname
+    if (mount !== '/') {
+      if (`${pathname}/` === mount) {
+        res.writeHead(308, { location: mount + url.search, 'cache-control': 'no-store' }).end()
+        return
+      }
+      if (!pathname.startsWith(mount)) {
+        send(res, 404, CONTENT_TYPES['.txt'] as string, `not found: ${pathname} (the app is served under ${mount})`, head)
+        return
+      }
+      pathname = pathname.slice(mount.length - 1)
     }
-    let rel = path.replace(/^\/+/, '')
-    if (rel === '' || rel.endsWith('/')) rel += 'index.html'
-    if (rel.split('/').some((s) => s === '..' || s === '.') || rel.includes('\\') || rel.includes('\0')) {
+    const rel = requestPath(pathname)
+    if (rel === null) {
       send(res, 400, CONTENT_TYPES['.txt'] as string, 'bad path', head)
       return
     }
     const current = state
-    const isPage = rel === 'index.html' || isPagePath(rel)
-    if (isPage && current && !current.ok) {
+    if ((rel === '' || isPagePath(rel)) && current && !current.ok) {
       send(res, 200, CONTENT_TYPES['.html'] as string, overlayHtml(current.diagnostics), head)
       return
     }
-    // `_headers` configures a static host; it is not part of the site.
-    const file =
-      rel === '_headers'
-        ? undefined
-        : (current?.files.get(rel) ?? (isPagePath(rel) ? current?.files.get('index.html') : undefined))
-    if (!file) {
+    // THE FILE `pwf run` ANSWERS WITH (static-server.ts): the path, its
+    // folder's index.html (a page's own document), and for a page path no
+    // file answers the folder's 404.html with status 404 — or, under hash
+    // routing, which writes none, the shell. No `<base href>` is added to it:
+    // under hash routing it made `#x` links leave the page for `/#x`.
+    // `_headers` and `_redirects` configure a static host; they are not part of the site.
+    const source = { files: current?.files ?? new Map<string, Uint8Array>() }
+    const found = rel === '_headers' || rel === '_redirects' ? null : await resolveRequest(source, rel)
+    if (!found) {
       send(res, 404, CONTENT_TYPES['.txt'] as string, `not found: /${rel}`, head)
       return
     }
-    // A nested page path answered with the shell needs the app's base, or the
-    // shell's relative script addresses resolve under the page's folder.
-    const body = isPage && rel !== 'index.html' ? withBaseHref(file) : file
-    send(res, 200, contentTypeOf(isPage ? 'index.html' : rel), body, head)
+    // …with the headers the build declares for it (its Content-Security-Policy),
+    // but not its caching: here a file changes on every edit.
+    const declared = await declaredHeaders(source, rel)
+    delete declared['cache-control']
+    if (cors.size > 0) for (const name of Object.keys(declared)) if (isCorsHeader(name)) delete declared[name]
+    send(res, found.status, contentTypeOf(found.path), found.body, head, declared)
   }
 
   const server = createServer((req, res) => {

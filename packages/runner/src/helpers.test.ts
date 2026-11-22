@@ -4,6 +4,7 @@ import {
   assembleNav,
   FOOTER_BAND_ID,
   composeTitle,
+  isTitleTemplate,
   doorHeaders,
   isHrefKey,
   linkHrefFor,
@@ -183,6 +184,13 @@ describe('a link whose page is an expression', () => {
     expect(linkHrefFor(ENTRY, hashHref)('/')).toBe('#/home')
     expect(linkHrefFor(ENTRY, hashHref)('https://example.com/x')).toBe('https://example.com/x')
     expect(linkHrefFor(ENTRY, hashHref)('#speakers')).toBe('#speakers')
+  })
+
+  it("writes a fragment-only link as the page's own address with the fragment, on a known page (envelope §3)", () => {
+    expect(linkHrefFor(ENTRY, hashHref, 'talks')('#speakers')).toBe('#/talks#speakers')
+    expect(linkHrefFor(ENTRY, pathHref, 'talks')('#speakers')).toBe('/apps/intranet/talks#speakers')
+    expect(linkHrefFor(ENTRY, pathHref, ENTRY)('#')).toBe('/apps/intranet/home#')
+    expect(rewriteHrefs({ props: { href: '#faq', ctaHref: '#', activeHref: '' } }, ENTRY, hashHref, 'help')).toEqual({ props: { href: '#/help#faq', ctaHref: '#/help#', activeHref: '' } })
   })
 })
 
@@ -431,6 +439,34 @@ describe('composeTitle', () => {
 
   it('falls back to the receipt title without a project title', () => {
     expect(composeTitle(undefined, 'Announcements')).toBe('Announcements')
+  })
+})
+
+describe('composeTitle with the app title template (receipt §1.1)', () => {
+  it("replaces the template's %s with the page title, and %% with %", () => {
+    expect(composeTitle('Acme Bakery', 'Menu', { template: '%s · Acme Bakery' })).toBe('Menu · Acme Bakery')
+    expect(composeTitle('Acme', 'Sale', { template: '%s — 100%% butter' })).toBe('Sale — 100% butter')
+  })
+
+  it('titles a page without a title by the app title, never the template with an empty %s', () => {
+    expect(composeTitle('Acme Bakery', undefined, { template: '%s · Acme Bakery' })).toBe('Acme Bakery')
+    expect(composeTitle(undefined, undefined, { template: '%s · Acme Bakery' })).toBeUndefined()
+  })
+
+  it('takes the page title as the whole title when the page says titleTemplate: false', () => {
+    expect(composeTitle('Acme Bakery', 'Acme Bakery — bread before sunrise', { template: '%s · Acme Bakery', own: true })).toBe('Acme Bakery — bread before sunrise')
+    expect(composeTitle('Acme', 'Welcome', { own: true })).toBe('Welcome')
+    expect(composeTitle('Acme', undefined, { own: true })).toBe('Acme')
+  })
+
+  it('composes as before without a template', () => {
+    expect(composeTitle('Acme', 'Menu', {})).toBe('Acme — Menu')
+  })
+
+  it('knows a template: exactly one %s, and no % beside %s and %%', () => {
+    expect(isTitleTemplate('%s · Acme')).toBe(true)
+    expect(isTitleTemplate('%s · 100%% Acme')).toBe(true)
+    for (const bad of ['Acme', '%s %s', '%s · 100% Acme', '%%s', 42]) expect(isTitleTemplate(bad), String(bad)).toBe(false)
   })
 })
 

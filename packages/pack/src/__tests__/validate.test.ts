@@ -202,8 +202,185 @@ describe('validatePack — app', () => {
   })
 
   it('warns on files under app/surfaces that are not receipts', () => {
-    const v = withIdentity({ id: 'x', version: '1' }, { 'app/surfaces/notes.md': 'x', 'app/surfaces/a/b.receipt.json': '{}' })
-    expect(codes(v)).toEqual(['APP_UNEXPECTED_FILE', 'APP_UNEXPECTED_FILE'])
+    const v = withIdentity({ id: 'x', version: '1' }, { 'app/surfaces/notes.md': 'x', 'app/surfaces/a/notes.json': '{}', 'app/surfaces/a/.b.receipt.json': '{}' })
+    expect(codes(v)).toEqual(['APP_UNEXPECTED_FILE', 'APP_UNEXPECTED_FILE', 'APP_UNEXPECTED_FILE'])
+  })
+
+  it('reads a receipt in a folder of app/surfaces as page folder/key', () => {
+    const files = { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/docs/intro.receipt.json': '{"blocks":[]}' }
+    expect(codes(withIdentity({ id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'docs/intro'] } }, files))).toEqual([])
+    // Not in the order: the same warning as a page at the top.
+    const v = withIdentity({ id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home'] } }, files)
+    expect(codes(v)).toEqual(['APP_SURFACE_NOT_SERVED'])
+    expect(v.issues[0]?.message).toContain('"docs/intro"')
+    // Named in the order without its receipt.
+    expect(codes(withIdentity({ id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'docs/gone'] } }, files), 'error')).toEqual(['APP_SURFACE_MISSING'])
+  })
+
+  it('accepts a public/ folder: files copied, as they are, to the served app', () => {
+    const v = validatePack(packFromRecord({ ...CANONICAL_APP, 'public/google123.html': 'x', 'public/.well-known/security.txt': 'x' }))
+    expect(v.issues).toEqual([])
+  })
+
+  describe('public files', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'docs'] } }
+    const receipts = { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/docs.receipt.json': '{"blocks":[]}' }
+    const withPublic = (files: Record<string, string>, severity = 'error'): string[] => codes(withIdentity(identity, { ...receipts, ...files }), severity)
+
+    it('refuses a path the build writes: a fixed file, a runtime folder, a page document', () => {
+      for (const path of ['index.html', '404.html', '_headers', '_redirects', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'assets/a.css', 'pwpack/x.json', 'shims/y.json', 'docs/index.html']) {
+        expect(withPublic({ [`public/${path}`]: 'x' }), path).toEqual(['APP_PUBLIC_RESERVED'])
+      }
+    })
+
+    it('accepts a file beside a page document, and paths that only look alike', () => {
+      expect(withPublic({ 'public/docs/diagram.png': 'x', 'public/Index.html': 'x', 'public/about/index.html': 'x' })).toEqual([])
+    })
+
+    it('refuses script: a script file, or markup with a script element, an on attribute or a javascript: URL', () => {
+      for (const [path, body] of [
+        ['public/widget.js', 'x'],
+        ['public/a.MJS', 'x'],
+        ['public/calc.wasm', 'x'],
+        ['public/page.html', '<p>hi</p><SCRIPT>alert(1)</SCRIPT>'],
+        ['public/logo.svg', '<svg onLoad="x()"></svg>'],
+        ['public/link.htm', '<a href="JavaScript:alert(1)">x</a>'],
+        ['public/feed.xml', '<x><script/></x>'],
+      ]) {
+        expect(withPublic({ [path as string]: body as string }), path).toEqual(['APP_PUBLIC_SCRIPT'])
+      }
+      expect(withPublic({ 'public/verify.html': '<html><body>google-site-verification: verify.html</body></html>' })).toEqual([])
+    })
+  })
+
+  describe('the layout (app/layout.receipt.json)', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home'] } }
+    const receipts = { 'app/surfaces/home.receipt.json': '{"blocks":[]}' }
+    const withLayout = (layout: unknown): string[] => codes(withIdentity(identity, { ...receipts, 'app/layout.receipt.json': JSON.stringify(layout) }))
+
+    it('accepts one page slot at any depth, and an app without a layout', () => {
+      expect(withLayout({ blocks: [{ id: 'nav', type: 'navbar' }, { id: 'main', type: 'section', children: [{ type: 'pw:page', id: 'slot' }] }] })).toEqual([])
+      expect(codes(withIdentity(identity, receipts))).toEqual([])
+    })
+
+    it('refuses no slot, two slots, a slot with more than type and id, and a slot inside a repeat (APP_LAYOUT_SLOT)', () => {
+      expect(withLayout({ blocks: [{ id: 'nav', type: 'navbar' }] })).toEqual(['APP_LAYOUT_SLOT'])
+      expect(withLayout({ blocks: [{ type: 'pw:page' }, { type: 'pw:page' }] })).toEqual(['APP_LAYOUT_SLOT'])
+      expect(withLayout({ blocks: [{ type: 'pw:page', props: { x: 1 } }] })).toEqual(['APP_LAYOUT_SLOT'])
+      expect(withLayout({ blocks: [{ id: 'r', type: 'repeater', repeat: '{{state.tabs}}', children: [{ type: 'pw:page' }] }] })).toEqual(['APP_LAYOUT_SLOT'])
+    })
+
+    it('reports a layout that is not JSON once, as JSON_INVALID', () => {
+      expect(codes(withIdentity(identity, { ...receipts, 'app/layout.receipt.json': '{' }))).toEqual(['JSON_INVALID'])
+    })
+  })
+
+  describe('locales (envelope §2.3)', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'pricing'] } }
+    const plan = { title: 'x', locales: ['en', 'de'], defaultLocale: 'en' }
+    const base = {
+      'app/plan.json': JSON.stringify(plan),
+      'app/surfaces/home.receipt.json': '{"blocks":[]}',
+      'app/surfaces/pricing.receipt.json': JSON.stringify({ path: { de: 'preise' }, blocks: [] }),
+      'app/messages/en.json': JSON.stringify({ a: 'A', b: 'B' }),
+      'app/messages/de.json': JSON.stringify({ a: 'Ä', b: 'Bé' }),
+    }
+    const all = (extra: Record<string, string> = {}): PackValidation => withIdentity(identity, { ...base, ...extra })
+
+    it('accepts catalogues and a per-locale receipt of a declared locale', () => {
+      expect(codes(all({ 'app/surfaces/home.de.receipt.json': '{"blocks":[]}' }))).toEqual([])
+    })
+
+    it('refuses incoherent locales (APP_LOCALES_INVALID)', () => {
+      expect(codes(all({ 'app/plan.json': JSON.stringify({ ...plan, defaultLocale: 'fr' }) }), 'error')).toContain('APP_LOCALES_INVALID')
+      expect(codes(all({ 'app/plan.json': JSON.stringify({ ...plan, messages: { a: 'x' } }) }), 'error')).toContain('APP_LOCALES_INVALID')
+    })
+
+    it('refuses an address conflict (APP_ADDRESS_CONFLICT)', () => {
+      expect(codes(all({ 'app/surfaces/pricing.receipt.json': JSON.stringify({ path: { de: 'home' }, blocks: [] }) }), 'error')).toEqual(['APP_ADDRESS_CONFLICT'])
+    })
+
+    it('warns about each id a locale lacks (MESSAGES_LOCALE_MISSING), and about a catalogue of no declared locale', () => {
+      const v = all({ 'app/messages/de.json': JSON.stringify({ a: 'Ä' }), 'app/messages/fr.json': '{}' })
+      expect(codes(v, 'warning').sort()).toEqual(['APP_UNEXPECTED_FILE', 'MESSAGES_LOCALE_MISSING'])
+      expect(v.issues.find((i) => i.code === 'MESSAGES_LOCALE_MISSING')?.message).toContain('"b"')
+    })
+
+    it("reserves a non-default locale's prefix for its site: no public file under it (APP_PUBLIC_RESERVED)", () => {
+      expect(codes(all({ 'public/de/guide.pdf': 'x' }), 'error')).toEqual(['APP_PUBLIC_RESERVED'])
+      expect(codes(all({ 'public/en/guide.pdf': 'x', 'public/de.txt': 'x' }), 'error')).toEqual([])
+    })
+
+    it('reads nothing of this for a single-language app', () => {
+      const single = withIdentity(identity, { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/pricing.receipt.json': '{"blocks":[]}' })
+      expect(codes(single)).toEqual([])
+    })
+  })
+
+  describe('the layout members (receipt §4)', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home'] } }
+    it('refuses a title, description, appearance, titleTemplate, layout or path on the layout', () => {
+      for (const member of ['title', 'titleTemplate', 'description', 'appearance', 'layout', 'path']) {
+        const v = withIdentity(identity, { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/layout.receipt.json': JSON.stringify({ blocks: [{ type: 'pw:page' }], [member]: 'x' }) })
+        expect(codes(v), member).toEqual(['APP_LAYOUT_INVALID'])
+      }
+    })
+  })
+
+  describe('fonts (appearance §3.3)', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home'] } }
+    const WOFF2 = 'wOF2' + 'x'.repeat(60)
+    const theme = (typography: Record<string, string>, fonts?: unknown) => JSON.stringify({ theme: { typography, ...(fonts ? { fonts } : {}) } })
+    const app = (extra: Record<string, string>) =>
+      withIdentity(identity, { 'app/surfaces/home.receipt.json': '{"blocks":[]}', ...extra })
+    const inter = [{ family: 'Inter', fallback: 'sans-serif', files: [{ src: 'media/fonts/inter.woff2', weight: 400 }] }]
+
+    it('accepts a family with its woff2 files, and generic and system families with none', () => {
+      expect(codes(app({ 'app/definitions/appearance.json': theme({ fontFamily: 'Inter, sans-serif', monoFontFamily: 'ui-monospace, monospace' }, inter), 'media/fonts/inter.woff2': WOFF2 }), 'error')).toEqual([])
+      expect(codes(app({ 'app/definitions/appearance.json': theme({ fontFamily: 'system-ui, sans-serif' }) }))).toEqual([])
+    })
+
+    it('warns about a family the typography names first without files (FONT_FILES_MISSING)', () => {
+      const v = app({ 'app/definitions/appearance.json': theme({ fontFamily: 'Inter, sans-serif', headingFontFamily: '"Fraunces", serif' }, inter), 'media/fonts/inter.woff2': WOFF2 })
+      expect(codes(v, 'warning').filter((c) => c === 'FONT_FILES_MISSING')).toEqual(['FONT_FILES_MISSING'])
+      expect(v.issues.find((i) => i.code === 'FONT_FILES_MISSING')?.message).toContain('Fraunces')
+    })
+
+    it('refuses a missing file, one that is not woff2 by its bytes, and one over 500 KB (FONT_FILE_INVALID)', () => {
+      const doc = theme({ fontFamily: 'Inter' }, inter)
+      expect(codes(app({ 'app/definitions/appearance.json': doc }), 'error')).toEqual(['FONT_FILE_INVALID'])
+      expect(codes(app({ 'app/definitions/appearance.json': doc, 'media/fonts/inter.woff2': 'not a font' }), 'error')).toEqual(['FONT_FILE_INVALID'])
+      expect(codes(app({ 'app/definitions/appearance.json': doc, 'media/fonts/inter.woff2': 'wOF2' + 'x'.repeat(512_001) }), 'error')).toEqual(['FONT_FILE_INVALID'])
+    })
+  })
+
+  describe('the plan pages (app/plan.json surfaces)', () => {
+    const identity = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'about'] } }
+    const receipts = { 'app/surfaces/home.receipt.json': '{"blocks":[]}', 'app/surfaces/about.receipt.json': '{"blocks":[]}' }
+    const withPlan = (plan: unknown): string[] => codes(withIdentity(identity, { ...receipts, 'app/plan.json': JSON.stringify(plan) }))
+
+    it('need not list the not-found or sign-in screen, and may (they are pages, never addresses)', () => {
+      const id = { id: 'x', version: '1', app: { entry: 'home', surfaceOrder: ['home', 'about'], notFound: 'missing', signIn: 'login' } }
+      const files = { ...receipts, 'app/surfaces/missing.receipt.json': '{"blocks":[]}', 'app/surfaces/login.receipt.json': '{"blocks":[]}' }
+      const plan = (surfaces: unknown[]): string[] => codes(withIdentity(id, { ...files, 'app/plan.json': JSON.stringify({ surfaces }) }))
+      expect(plan([{ key: 'home', isEntry: true }, { key: 'about' }])).toEqual([])
+      expect(plan([{ key: 'home', isEntry: true }, { key: 'about' }, { key: 'missing', status: 'applied' }, { key: 'login', status: 'applied' }])).toEqual([])
+    })
+
+    it('are optional: absent, they are app.surfaceOrder', () => {
+      expect(withPlan({ title: 'x' })).toEqual([])
+    })
+
+    it('agree with app when they list every served page and mark the entry; a page not built yet may be planned', () => {
+      expect(withPlan({ surfaces: [{ key: 'home', isEntry: true, status: 'applied' }, { key: 'about', status: 'applied' }, { key: 'pricing', status: 'pending' }] })).toEqual([])
+    })
+
+    it('are an error when a served page is missing, an applied page is not served, or the entry is another page', () => {
+      expect(withPlan({ surfaces: [{ key: 'home' }] })).toEqual(['APP_PLAN_SURFACE_MISMATCH'])
+      expect(withPlan({ surfaces: [{ key: 'home' }, { key: 'about' }, { key: 'pricing', status: 'applied' }] })).toEqual(['APP_PLAN_SURFACE_MISMATCH'])
+      expect(withPlan({ surfaces: [{ key: 'home' }, { key: 'about', isEntry: true }] })).toEqual(['APP_PLAN_SURFACE_MISMATCH'])
+      expect(withPlan({ surfaces: 'home' })).toEqual(['APP_PLAN_SURFACE_MISMATCH'])
+    })
   })
 
   it('errors on app JSON that does not parse, warns elsewhere', () => {
@@ -284,7 +461,7 @@ describe('validatePack — block origins', () => {
       { id: 'x', version: '1' },
       {
         'atoms/blocks/media/map/component.tsx': 'x',
-        'atoms/blocks/media/map/manifest.json': manifest({ frame: ['https://www.openstreetmap.org/export/embed.html'], script: ['https://cdn.example.com'] }),
+        'atoms/blocks/media/map/manifest.json': manifest({ frame: ['https://www.openstreetmap.org/export/embed.html'], script: ['https://*.example.com'] }),
       }
     )
     expect(codes(v, 'error')).toEqual(['BLOCK_ORIGIN_INVALID', 'BLOCK_ORIGIN_INVALID'])

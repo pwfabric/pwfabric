@@ -13,7 +13,7 @@ export { ownApiBaseOf, isOwnApiRef } from './api-base.js'
 export { ownRecordsSource, ownRecordsCapabilities, ownRecordsReceipt } from './own-records.js'
 
 // Pure envelope helpers
-export { pageKeyOf, rewriteHrefs, assembleNav, assembleFooter, FOOTER_BAND_ID, receiptFilesOf, composeTitle, fetchJson, doorHeaders, withVersion, addressStateKeys } from './helpers.js'
+export { pageKeyOf, rewriteHrefs, assembleNav, assembleFooter, FOOTER_BAND_ID, receiptFilesOf, composeTitle, applyTitleTemplate, isTitleTemplate, fetchJson, doorHeaders, withVersion, addressStateKeys } from './helpers.js'
 
 // The first frame of a page, as the runner hydrates it and the build paints it
 export {
@@ -21,6 +21,11 @@ export {
   STATIC_VIEWPORT_MAX_WIDTH,
   STATIC_LAYOUT_ID,
   STATIC_PAGE_ATTR,
+  SHARED_STYLE_ATTR,
+  FRAME_CSS_ATTR,
+  sharedStyleMarker,
+  sharedStyleTexts,
+  fillSharedStyles,
   PAGE_ATTR,
   FIRST_FRAME_USER,
   pageBlocksOf,
@@ -31,6 +36,10 @@ export {
   firstFrameLocale,
 } from './first-frame.js'
 export type { PageContext, PageSurface } from './first-frame.js'
+export { assemblePage, currentPageHref, marksCurrentPage } from './layout.js'
+export { localeStorageKey, mountLocaleSuggestion, preferredLocale } from './locale-suggestion.js'
+export { colorSchemeScript, colorSchemeStorageKey, createColorScheme, THEME_ATTR } from './color-scheme.js'
+export type { ColorScheme, ColorSchemeStore } from './color-scheme.js'
 export { projectAppearanceRef } from './run-app.js'
 export type { ToHref } from './helpers.js'
 
@@ -52,7 +61,7 @@ export type {
   PreviewSurface,
   PreviewSurfaceUpdate,
 } from './preview-bridge.js'
-export type { RouterHandle, RouterOptions } from './router.js'
+export type { RouterHandle, RouterLocales, RouterOptions } from './router.js'
 
 // Auth (PKCE)
 export {
@@ -157,6 +166,7 @@ export {
   AUTH_ERROR_CODES,
   PROVIDER_LABEL_METHODS,
   runnerMessages,
+  pluralProblems,
   authErrorMessage,
   providerLabel,
 } from './messages.js'

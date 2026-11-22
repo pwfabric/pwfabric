@@ -32,7 +32,7 @@ describe('content security policy', () => {
     expect(csp.unresolved).toEqual([])
   })
 
-  it('collects the origins the app declares: data, engines, sign-in, media and webfonts', () => {
+  it('collects the origins the app declares: data, engines, sign-in and media; fonts are its own', () => {
     const receipts = new Map<string, unknown>([
       [
         'home',
@@ -70,7 +70,6 @@ describe('content security policy', () => {
       envelopeAuth: { provider: 'password', loginUrl: 'https://session.example.com/app/w/p/login', startUrl: '/_auth/start' },
       authDefinition: { required: false, topology: 'external', issuer: { issuer: 'https://login.example.com/tenant/v2.0', clientId: 'x' } },
       media: [{ url: 'https://media.example.com/hero.webp' }, { url: 'pwpack/media/logo.png' }],
-      webfontHref: 'https://fonts.googleapis.com/css2?family=Inter&display=swap',
     })
     expect(csp.directives['connect-src']).toEqual([
       "'self'",
@@ -82,8 +81,8 @@ describe('content security policy', () => {
     ])
     expect(csp.directives['img-src']).toEqual(["'self'", 'data:', 'blob:', 'https://cdn.example.org', 'https://img.example.com', 'https://media.example.com'])
     expect(csp.directives['frame-src']).toEqual(['https://cdn.example.org', 'https://img.example.com', 'https://media.example.com'])
-    expect(csp.directives['style-src']).toEqual(["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'])
-    expect(csp.directives['font-src']).toEqual(["'self'", 'https://fonts.gstatic.com'])
+    expect(csp.directives['style-src']).toEqual(["'self'", "'unsafe-inline'"])
+    expect(csp.directives['font-src']).toEqual(["'self'"])
     expect(csp.header).not.toMatch(/elsewhere\.example|link\.example/)
     expect(csp.unresolved.map((u) => [u.source, u.value])).toEqual([
       ['page:home', 'https://{{state.tenant}}.example.net/items'],
@@ -114,7 +113,7 @@ describe('content security policy', () => {
       ...base,
       blocks: [
         { atomId: 'media.interactive-map', origins: { frame: ['https://www.openstreetmap.org'], img: ['https://tile.openstreetmap.org'] } },
-        { atomId: 'data.feed', origins: { connect: ['https://api.example.com'], media: ['https://cdn.example.com'], font: ['https://f.example.com'], style: ['https://s.example.com'] } },
+        { atomId: 'data.feed', origins: { connect: ['https://api.example.com'], media: ['https://cdn.example.com'], font: ['https://f.example.com'], style: ['https://s.example.com'] } as never },
         { atomId: 'text.title' },
       ],
     })
@@ -122,8 +121,22 @@ describe('content security policy', () => {
     expect(csp.directives['img-src']).toEqual(["'self'", 'data:', 'blob:', 'https://tile.openstreetmap.org'])
     expect(csp.directives['media-src']).toEqual(["'self'", 'data:', 'blob:', 'https://cdn.example.com'])
     expect(csp.directives['connect-src']).toEqual(["'self'", 'https://api.example.com'])
-    expect(csp.directives['font-src']).toEqual(["'self'", 'https://f.example.com'])
+    // A font origin opens nothing: font-src is 'self' only.
+    expect(csp.directives['font-src']).toEqual(["'self'"])
     expect(csp.directives['style-src']).toEqual(["'self'", "'unsafe-inline'", 'https://s.example.com'])
+  })
+
+  it('adds the script origin a placed block declares to script-src, after the build’s own sources', () => {
+    const csp = deriveCsp({ ...base, blocks: [{ atomId: 'embed.widget', origins: { script: ['https://widget.example.com'] } }] })
+    const scripts = csp.directives['script-src'] as string[]
+    expect(scripts.slice(0, 2)).toEqual(["'self'", 'blob:'])
+    expect(scripts[scripts.length - 1]).toBe('https://widget.example.com')
+    expect(deriveCsp(base).directives['script-src']).not.toContain('https://widget.example.com')
+  })
+
+  it('adds the origin of an absolute app icon to img-src, and none for an app file', () => {
+    expect(deriveCsp({ ...base, favicon: 'https://cdn.example.com/i.png' }).directives['img-src']).toContain('https://cdn.example.com')
+    expect(deriveCsp({ ...base, favicon: 'pwpack/media/i.png' }).directives['img-src']).toEqual(["'self'", 'data:', 'blob:'])
   })
 
   it('resolves engine hosts the way a reader does: https, except explicit http on loopback', () => {

@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: Every pwf command and option — create, dev, build, validate, pack, add, run, the MCP server for AI coding tools, and publishing on PhiWebs.
+description: Every pwf command and option — create, dev, build, validate, pack, add, run, media, locale, page, records, upgrade, check, compare, shoot, doctor, the MCP server for AI coding tools, and publishing on PhiWebs.
 ---
 
 # The `pwf` command line
@@ -43,6 +43,15 @@ pack, a missing file, a refused write), `2` wrong usage.
 | [`login`](#pwf-login) | Sign in to PhiWebs (the API and the studio) |
 | [`logout`](#pwf-logout) | Sign out of PhiWebs and delete the saved session |
 | [`whoami`](#pwf-whoami) | Show the PhiWebs account and workspace pwf is signed in as |
+| [`media`](#pwf-media) | Add an image to media/, with its provenance and (in an app) its declaration |
+| [`locale`](#pwf-locale) | Add a language to the app, or show how complete each language's words are |
+| [`page`](#pwf-page) | Add a page to the app: its receipt (empty, or from a pattern) and its place in the page order |
+| [`upgrade`](#pwf-upgrade) | Move the app's pinned packs to newer builds, reporting what changed between them |
+| [`check`](#pwf-check) | Check a built pwapp: broken internal links, page weight, hydration of the first paint |
+| [`compare`](#pwf-compare) | List the addresses an older build answered that a new build no longer does |
+| [`records`](#pwf-records) | Import or export the records an app ships (app/content), checked against its entities |
+| [`doctor`](#pwf-doctor) | Show what pwf runs with and what the folder needs: engine, Node, packs, routing, languages, sign-in |
+| [`shoot`](#pwf-shoot) | Screenshot a built app's pages at chosen widths and colour schemes (needs Playwright) |
 
 ## `pwf create`
 
@@ -102,7 +111,8 @@ with [`pwf add block`](#pwf-add-block). The folder validates clean with
 ## `pwf dev`
 
 ```text
-pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--cors <origin>]... [--debug]
+pwf dev [dir] [--port <n>] [--host <name>] [--router <hash|path|auto>] [--base <path>]
+        [--local-host | --no-host] [--cors <origin>]... [--debug]
 ```
 
 | Argument / option | Meaning |
@@ -110,10 +120,19 @@ pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--cors <o
 | `dir` | The app folder. Default: the current folder. |
 | `--port <n>` | Port to listen on, `0`–`65535`. Default `4600`; `0` picks any free port. |
 | `--host <name>` | Interface name or address to bind. Default `127.0.0.1`. |
+| `--router <mode>` | How the app routes, as [`pwf build --router`](#pwf-build). Default `hash`. |
+| `--base <path>` | The path the app is served under, for `path` and `auto`, as `pwf build --base`. The app is served at that path (`/docs` is sent on to `/docs/`). Default `/`. |
 | `--local-host` | Mount the local host for sign-in and data even when the app declares neither. |
 | `--no-host` | Do not mount the local host, even when the app declares sign-in or records. |
 | `--cors <origin>` | Let pages on this exact origin read the app and the local host across origins ([below](#cross-origin-requests---cors)). Repeat for more. Default: none. |
 | `--debug` | Print an engine error with its stack trace. Without it, an engine error is one line. |
+
+**Served as `pwf run` serves the build.** Every address is answered as
+[`pwf run`](#pwf-run) answers the same build: a page's own document, the
+app's `404.html` with status `404` for a page path no file answers (the
+shell, under hash routing), and the headers the build's `_headers` declares,
+its Content-Security-Policy included. Caching is off: every answer is
+`Cache-Control: no-store`.
 
 **The local host.** When the app declares sign-in or records, `pwf dev`
 mounts a development host under `/_host` beside the pages: records live in
@@ -328,6 +347,30 @@ the component. A type the folder already has, in any category, is refused.
 `block` is the subcommand word, so a pack folder named `block` is added as
 `pwf add ./block`.
 
+## `pwf font add`
+
+```text
+pwf font add <family> --from <path|https-url|npm:<package>[@<version>]> [--weight <w>[,<w>]]… [--style <s>[,<s>]]… [--subset <name>[,<name>]|all]… [--fallback <generic>] [--dir <project>]
+```
+
+| Argument / option | Meaning |
+|---|---|
+| `<family>` | The family name the typography tokens use (`Inter`). |
+| `--from <path>` | A `.woff2` file, or a folder of them; a licence text beside them (`LICENSE`, `OFL.txt`) is copied too. In a folder, a file's name gives its weight and style when it says them (`inter-700-italic.woff2`). |
+| `--from <https://…>` | One `.woff2` file to download. |
+| `--from npm:<package>` | A font package from the npm registry, such as a Fontsource package: its files of the subsets, weights and styles asked for, each with its `unicode-range`, and the package's licence. Without `--fallback`, the package's category gives it (a serif family stands in as `serif`), and a variable file takes the package's own weight range. |
+| `--weight <w>` | `400` (default), `700`, … (1 to 1000) or a variable range `"100 900"`. Several: comma-separated (`--weight 400,700`) or the flag repeated. |
+| `--style <s>` | `normal` (default) or `italic`. Several: `--style normal,italic` or the flag repeated. |
+| `--subset <name>` | For `npm:`: the subsets taken (`latin`, `latin-ext`, `greek`, `cyrillic`, `vietnamese`, …, or `all`); default `latin` and `latin-ext`. Several: `--subset latin,greek` or the flag repeated. Each file keeps its `unicode-range`, so a page fetches only the files for the characters it draws. |
+| `--fallback <generic>` | The generic family drawn until a file arrives (`sans-serif`, `serif`, `monospace`, …). |
+
+Copies the files into `media/fonts/`, records them in `media/provenance.json`
+and declares them in the theme's `fonts`: in the app's own theme atom (`atoms/appearance/<theme>/manifest.json`) when `app/definitions/appearance.json` uses it, else in `appearance.json` `theme.fonts`. A file
+that is not WOFF2 or is larger than 500 KB is refused (`FONT_FILE_INVALID`).
+Nothing is downloaded when the app builds: fonts are the app's own files.
+Running the command again changes nothing that is already there. Then name
+the family first in a font stack (`typography.fontFamily`).
+
 ## `pwf run`
 
 ```text
@@ -503,7 +546,13 @@ given `phiwebs` options (`pwf mcp` passes the process's environment).
 
 ```text
 pwf publish [dir] [--project <id>] [--new] [--server <url>] [--studio-url <url>]
+pwf publish --status [dir] [--project <id>] [--json]
 ```
+
+`--status` publishes nothing: it reads where the folder's project (or the
+`--project` one) stands — waiting for a person's approval, with the address
+to approve it in the studio (`GET <studio>/s/p/<id>/approval`); online, with
+its address (`GET <studio>/s/p/<id>/published`); or not published.
 
 | Option | Meaning |
 |---|---|
@@ -532,6 +581,21 @@ Published p_7c1e…@3f9a2c1
   url      https://…/  (the address PhiWebs gives the app)
   project  p_7c1e… (remembered in .pwf/phiwebs.json; --new makes another)
 ```
+
+When the studio holds the publish for a person's approval (it answers `202`
+with `status: "awaiting_approval"` and an `approveUrl`), nothing is online
+yet. `pwf` prints where to approve it, never "Published", and exits `0`:
+
+```text
+Waiting for approval: p_7c1e…@3f9a2c1 is not online yet
+  approve  https://…  (where the person approves this version)
+  url      https://…/ (once approved)
+  project  p_7c1e… (remembered in .pwf/phiwebs.json; --new makes another)
+Open the approve address and approve this version in the studio before …; the app goes online then.
+```
+
+An approval answer without a usable `http(s)` approve address fails with
+`PUBLISH_FAILED`.
 
 The first publish remembers the project in `.pwf/phiwebs.json` (its id only;
 `.pwf/` is in the starter's `.gitignore`), so later publishes go to the same
@@ -619,6 +683,258 @@ pwf whoami [--server <url>]
 Asks the server which account and workspace the saved session belongs to,
 and names the studio the session is signed in to. Prints "Not signed in" and
 exits `1` when there is no session.
+
+## After the app exists (3.5)
+
+The commands below change an app folder (`media`, `locale`, `page`,
+`records`, `upgrade`) or look at a build (`check`, `compare`, `shoot`), and
+`doctor` says what pwf runs with. All work without an account and without a
+network, except a download `pwf media add` is asked for; `check --hydration`
+and `shoot` need Playwright, an optional peer (`npm i -D playwright`, then
+`npx playwright install chromium`), and say so when it is missing. Each
+prints its full usage with `--help`, as below.
+
+## `pwf media`
+
+```text
+pwf media add <file|https-url> [--name <file>] [--alt <text>] [--source <url|generated|uploaded|provided>]
+              [--licence <id>] [--decorative] [--dir <project>] [--json]
+
+  <file>         an image on disk
+  <https-url>    an image to download (https only; nothing is sent but the GET)
+  --name <file>  the name under media/ (default: the file's or the URL's own;
+                 an extension is added when it has none)
+  --alt <text>   what the image shows, written as the declaration's purpose
+  --source <..>  where it came from: an address (provenance "origin"; a
+                 download records its URL by itself) or one of generated,
+                 uploaded (default), provided (provenance "source")
+  --licence <id> the licence it may be used under (an SPDX id or free text)
+  --decorative   the image is ambience, not content (declaration "decorative")
+  --dir <path>   the app or pack folder (default: the current folder)
+
+The bytes decide the type: PNG, JPEG, GIF, WebP, AVIF or SVG, and the name's
+extension must agree (MEDIA_TYPE_MISMATCH). An SVG must be a plain picture
+(MEDIA_SVG_UNSAFE, never rewritten): it is parsed, and a DOCTYPE or entity,
+a processing instruction, an element outside the SVG picture elements
+(script, foreignObject, image, feImage, any prefixed element), an on…
+attribute, an href that is not #id, a url(…) that is not url(#id), an
+animation of href or on…, or CSS with expression(, @import or an escape is
+refused — the screen pwf validate applies to media/ and public/ SVGs. At most 20971520 bytes
+(MEDIA_TOO_LARGE).
+
+Writes media/<name>, its entry in media/provenance.json ({ path, hash,
+source, createdAt, license?, origin? }, pwpack-format §1.3; an address is
+recorded and printed as origin and path only: its query and fragment, where
+a signed address keeps its token, are dropped, and an address with a user
+name or password is refused) and, in an app,
+app/media/<key>.json ({ kind: "image", origin, file, purpose? }); a receipt
+names the image as pwpack/media/<name>. The same bytes again change nothing
+but what the flags set (createdAt is kept); other bytes under a name already
+taken are refused (MEDIA_NAME_TAKEN).
+```
+
+## `pwf locale`
+
+```text
+pwf locale add <lang> [--default <lang>] [--dir <app>]
+pwf locale status [--json] [--dir <app>]
+
+  <lang>            a BCP 47 tag: en, de, pt-BR
+  --default <lang>  the language the app is written in now, when app/plan.json
+                    names no "locale" (first add only)
+  --dir <path>      the app folder (default: the current folder)
+
+add: puts <lang> in app/plan.json "locales" and writes
+app/messages/<lang>.json with every id of the default locale's catalogue, each
+"" to fill in (ids it has already are kept). The first add on a
+single-language app converts it (envelope §2.3): "locales" and
+"defaultLocale" (its "locale") are written into the plan, and its flat
+"messages" move to app/messages/<default>.json. Refused, with nothing written,
+when the language would break the address rules (APP_ADDRESS_CONFLICT: a page
+key starting with its prefix, two locales with one prefix). Again with the
+same language: adds only the ids its catalogue lacks.
+
+status: per locale, the default's ids its catalogue lacks and the ids it
+leaves empty (both fall back to the default's words, MESSAGES_LOCALE_MISSING),
+the pages whose address it translates (a receipt's "path") and the pages with
+a receipt of their own (<key>.<lang>.receipt.json). Exit 0; --json prints the
+same as data.
+```
+
+## `pwf page`
+
+```text
+pwf page add <key> [--title <text>] [--pattern <name|pack id/name>] [--slot NAME=value]...
+              [--id <prefix>] [--path <lang>=<segments>]... [--layout false] [--dir <app>]
+
+  <key>            the page key: lower-case words joined by - or ., folders by /
+                   (pricing, docs/intro); its address and its receipt's path
+  --title <text>   the page's title
+  --pattern <ref>  a pattern atom to build the page from: <name> (the app's own
+                   atoms/patterns/, then its pinned packs), or <pack id>/<name>
+  --slot NAME=value
+                   a value for one of the pattern's slots (repeat for each);
+                   JSON when it reads as a list, object, number, boolean or null
+  --id <prefix>    the pattern's id prefix ({{ID}}; default: the key's last segment)
+  --path <lang>=<segments>
+                   the page's address in one locale (receipt "path"); repeat per
+                   locale, for an app with locales only
+  --layout false   draw the page without the app's layout (receipt "layout": false)
+  --dir <path>     the app folder (default: the current folder)
+
+Writes app/surfaces/<key>.receipt.json and appends <key> to pwpack.json
+app.surfaceOrder; when app/plan.json lists its pages ("surfaces"), an entry
+for the new page too (status applied). A pattern is applied as
+pattern-format §4 says: every slot needs a value (PATTERN_SLOT_MISSING lists
+each with its description — none is invented), and its wiring goes into the
+page's platform/persistence and platform/entities capabilities. Refused,
+writing nothing: a key that exists (PAGE_EXISTS), one named like a folder of
+the served app (PAGE_KEY_RESERVED), and addresses that break the rules of
+envelope §2.3 (APP_ADDRESS_CONFLICT: a path another page has, a locale
+prefix, a key ending in .<lang>).
+```
+
+## `pwf upgrade`
+
+```text
+pwf upgrade [--check] [--from <.pwpack|folder>]... [--to <pack id>@<version>] [--dir <app>] [--json]
+
+  --from <path>  a newer pack build: a .pwpack, a pack folder, or a folder
+                 holding several (repeatable)
+  --to <ref>     upgrade only this pack, to exactly this version
+  --check        report only; change nothing
+  --dir <path>   the app folder (default: the current folder)
+
+pwf keeps no registry of pack versions, so the newer builds are the ones
+--from names; a pack of your PhiWebs workspace is moved to the version
+installed there with `pwf add <pack id>`. For each pinned pack with a newer
+build: whether its engines.pwfabric admits this engine, whether its major
+changed, the blocks, props (definition.props) and patterns the pinned build
+has and the newer one does not, with the receipts that still use them (e.g.
+a navbar's sticky), and the build's CHANGELOG.md between the two versions
+when it carries one. What pwf cannot know is said so: a changed default, a
+renamed enum value or a new behaviour shows only in a changelog.
+
+Without --check each pack is re-pinned to its newest build this engine runs
+(or the --to version), as `pwf add` installs it (cache, pin, requires
+^<major>.0.0). Exit 1 when --to names a version that cannot be used.
+```
+
+## `pwf check`
+
+```text
+pwf check [out] [--links] [--weight] [--hydration] [--budget <KB>] [--widths <px,…>] [--origin <url>] [--json]
+
+  out            the built pwapp: a folder with index.html, an app folder (its
+                 .pwf/out) or a .pwapp (default: the current folder)
+  --links        every internal href, src and srcset of every page document
+                 names what the build serves: a file, a page's document, a
+                 hash route or per-locale address of the app, or a _redirects
+                 rule landing on one; relative links resolve against <base href>
+  --weight       each page document with the scripts, styles, preloads and
+                 images it names, raw and gzipped, against --budget
+  --budget <KB>  the gzipped weight a page may have (default 500)
+  --hydration    open every painted page in Chromium and check that hydration
+                 adopts the first frame (the engine's hydration check). Needs
+                 Playwright beside the app or pwf (an optional peer); without
+                 it pwf says how to install it and exits 1
+  --widths <px>  window widths for --hydration (default 390)
+  --origin <url> the app's public origin: absolute links on it count as internal
+  --json         the result as data
+
+Without --links, --weight or --hydration: links and weight. Links to other
+origins are not followed (pwf makes no network request). Under --hydration a
+build made with --base other than / is served at the root, so its addresses
+do not match: check such a build without --base. Exit 1 when a link is
+broken, a page is over budget or a page fails hydration.
+```
+
+## `pwf compare`
+
+```text
+pwf compare <old> <new> [--json]
+
+  <old>, <new>  two built pwapps: folders with index.html, app folders (their
+                .pwf/out) or .pwapp archives
+
+An address is a page in every locale (its document under path routing, its
+#/ route under hash routing), a media file (pwpack/media/…) or a public
+file. One the old build has and the new one does not is MISSING, unless the
+new build's _redirects sends it to something the new build serves or to
+another site. A hash route cannot be redirected by a host. Exit 1 when any
+address is missing, so a build that would break links people kept can stop
+a release. (Keep a copy of the published build to compare against: build
+into another folder with pwf build --out.)
+```
+
+## `pwf records`
+
+```text
+pwf records import <type> <file.csv|file.json> [--replace] [--format csv|json] [--dir <app>]
+pwf records export <type> [--format csv|json] [--out <file>] [--dir <app>]
+
+  <type>          an entity's typeId in app/definitions/entities.json
+  --replace       import: the file's records replace all of app/content/<type>.json
+                  (default: they join them; a record with an id the file has
+                  already replaces that record)
+  --format        csv or json (default: by the file's extension; export: json)
+  --out <file>    export: write to a file instead of printing
+
+The records are the app's content, app/content/<type>.json ({ "data": [ … ] },
+data-protocol §6.1). Import reads CSV (RFC 4180: a header row naming the
+fields, "…" quoting, "" for a quote) or JSON (a list, or { "data": [ … ] }),
+and checks every record against its entity as a session server would: no
+field the entity does not declare, each value of its field's type (a CSV
+cell becomes a number or a boolean when the field is one; an empty cell is no
+value), required fields set, an id that is a UUID (one is made when absent)
+and given once. One problem and nothing is written; each is listed with its
+row. Export writes id, every declared field and createdAt/updatedAt; a CSV
+text cell starting with =, +, -, @, a tab or a carriage return gets a
+leading ' so a spreadsheet does not run it (import takes the ' off again).
+```
+
+## `pwf doctor`
+
+```text
+pwf doctor [dir] [--online] [--json]
+
+  dir        the app or pack folder (default: the current folder)
+  --online   also ask PhiWebs who the session belongs to (pwf whoami), when
+             signed in; without it pwf doctor reads files only
+  --json     the report as data
+
+Prints the pwf and engine versions and Node's; for a pwpack folder, its
+engines.pwfabric range and each pinned pack — cached in .pwf/packs, its
+content hash the pin's, its own engines.pwfabric admitting this engine —
+with the command that fixes each problem (PIN_NOT_CACHED: pwf add;
+ENGINE_RANGE_EXCLUDED: the range to write, or pwf upgrade); for an app also
+its routing (the last build's router, the plan's origin, redirects and
+header rules), its languages and its font files (media/fonts). Then whether
+pwf is signed in to PhiWebs, read from the saved session without a network
+request. Exit 1 when anything is an error.
+```
+
+## `pwf shoot`
+
+```text
+pwf shoot [out] [--path <address>]... [--widths 390,1440] [--theme light,dark] [--locale <lang>]
+          [--out <dir>] [--json]
+
+  out              the built pwapp (a folder with index.html, an app folder
+                   or a .pwapp; default: the current folder)
+  --path <addr>    an address to shoot, from the base: /pricing/, #/pricing,
+                   /pricing/?id=3 (repeatable; default: every page)
+  --widths <px>    window widths (default 390,1440)
+  --theme <list>   light, dark or light,dark: the colour scheme the browser
+                   reports (default light)
+  --locale <lang>  every page of one locale, in an app with locales
+  --out <dir>      where the PNGs go (default: <app>/.pwf/shots, else ./shots)
+
+Serves the build as pwf run does (an app's records read-only), opens each
+address in Chromium and writes one full-page PNG per address, width and
+scheme: <page>@<width>[-<theme>].png. Needs Playwright beside the app or pwf
+(an optional peer); without it pwf says how to install it and exits 1.
+```
 
 Source: `packages/cli/src/commands/*.ts` (each command's
 `usage`), `packages/cli/src/args.ts` (option parsing),

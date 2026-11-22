@@ -174,10 +174,15 @@ function resolveValue(value: unknown, context: ResolveContext): unknown {
 export function resolveValueIn(
   value: unknown,
   data: Record<string, unknown>,
-  options: { readonly linkHref?: LinkHref; readonly locale?: string } = {}
+  options: {
+    readonly linkHref?: LinkHref
+    readonly locale?: string
+    /** More helpers: the app's words, `t(id, vars?)` (messageHelpers). */
+    readonly helpers?: Record<string, (...args: unknown[]) => unknown>
+  } = {}
 ): unknown {
   const context: ResolveContext = {
-    ...createExpressionContext(data, undefined, options.locale),
+    ...createExpressionContext(data, options.helpers, options.locale),
     ...(options.linkHref ? { linkHref: options.linkHref } : {}),
   }
   return resolveValue(value, context)

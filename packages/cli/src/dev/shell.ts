@@ -14,6 +14,7 @@
  * time, so the list has to be complete — and reading it from the bundle that
  * serves it is the only way it stays complete.
  */
+import { faviconTypeOf } from './favicon.js'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -24,7 +25,7 @@ import {
   blockShimFiles,
   shimSource,
 } from '@pwfabric/core/host-imports'
-import { STATIC_LAYOUT_ID } from '@pwfabric/runner'
+import { FRAME_CSS_ATTR, STATIC_LAYOUT_ID } from '@pwfabric/runner'
 
 const require = createRequire(import.meta.url)
 
@@ -193,6 +194,8 @@ export interface ShellAssets {
   readonly boot: string
   /** The token stylesheet, `assets/theme.<hash>.css`. */
   readonly theme: string
+  /** The rules the app's first frames share, `assets/frame.<hash>.css`; absent when none are. */
+  readonly frame?: string
 }
 
 /** The names a build without hashes would use (tests, and a shell built before its files). */
@@ -224,18 +227,46 @@ export interface ShellOptions {
   readonly description?: string
   /** `<link rel="canonical">` and `og:url`: the page's address on the app's public origin, when the app declares one. */
   readonly canonical?: string
+  /**
+   * In an app with locales (pwapp-format §2.4): one `<link rel="alternate"
+   * hreflang>` per locale and `x-default`, each the page's address on the
+   * app's public origin.
+   */
+  readonly alternates?: readonly { readonly hreflang: string; readonly href: string }[]
+  /** `og:site_name`: the app's title. */
+  readonly siteName?: string
+  /** `og:locale` (the document's language, `en_GB`), and an `og:locale:alternate` per other locale of the app. */
+  readonly ogLocale?: { readonly locale: string; readonly alternates?: readonly string[] }
+  /**
+   * An app with locales: the inline scripts read a page off the address
+   * table (`addresses` in their data, envelope §2.3) rather than off its key.
+   */
+  readonly localized?: boolean
   /** `og:image`: the app's preview picture, as an absolute address. */
   readonly image?: string
   /** The document answers an address that names no page (`404.html`): it asks search engines not to index it. */
   readonly noindex?: boolean
   /** `<html lang>`: the app's locale. Absent or not a tag: no `lang`. */
   readonly lang?: string
-  /** The webfont stylesheet of the app's theme and its pages' own (theme.ts `webfontStylesheetHref`): preconnected and preloaded. */
-  readonly webfontHref?: string | null
+  /** The body family's regular font file, as served (`assets/fonts/…`): preloaded (pwapp-format §2.3). */
+  readonly fontPreload?: string
   /** Markup appended to `<body>` (the dev server's reload client). */
   readonly bodyExtra?: string
   /** The policy for the shell's `<meta http-equiv="Content-Security-Policy">`; none when absent. */
   readonly csp?: string
+  /**
+   * The app's icon (`appearance` `brand.favicon`), as the document links it:
+   * an app file (`pwpack/media/<file>`) or an absolute http(s) address.
+   * Absent: an empty icon (`data:,`), so the browser asks for no `/favicon.ico`.
+   */
+  readonly favicon?: string
+  /**
+   * The colour-scheme script (appearance §4.1), inline before the theme
+   * stylesheet: it applies the visitor's stored light or dark before the first
+   * paint. Absent: the app and its pages wear light or dark only. Written
+   * as given — the policy allows it by the hash of this exact text.
+   */
+  readonly colorSchemeScript?: string
   /**
    * How the app routes (`runApp`'s `router`). `path` and `auto` put the app's
    * base in `<head>` (`<base href>`, see {@link ShellOptions.base}); `auto`
@@ -288,6 +319,21 @@ export interface ShellOptions {
 }
 
 /**
+ * A BCP 47 tag as Open Graph writes a locale, `language_TERRITORY`: the tag's
+ * own region when it has one (`en-GB` → `en_GB`), else the likeliest
+ * (`tr` → `tr_TR`, `en` → `en_US`, by `Intl.Locale#maximize`).
+ */
+export function ogLocaleOf(tag: string): string {
+  try {
+    const own = new Intl.Locale(tag)
+    const region = own.region ?? own.maximize().region
+    return region ? `${own.language}_${region}` : own.language
+  } catch {
+    return tag.replace(/-/g, '_')
+  }
+}
+
+/**
  * The page an address names, as both inline scripts read it: the hash
  * router's key (`#/<key>?<query>`), the entry for none, the app's not-found
  * page for a key that is not a route. Under path routing (the data's
@@ -314,6 +360,25 @@ const ADDRESS_KEY = String.raw`var own = function (o, k) { return Object.prototy
     if (d.routes.indexOf(key) < 0 && d.notFound) key = d.notFound`
 
 /**
+ * {@link ADDRESS_KEY} for an app with locales (envelope §3): the address
+ * below the base (or the route) is read against the document's own
+ * `addresses` (`{ <address>: <key> }`, every locale's addresses, a locale the
+ * document is not drawn in naming no page), the not-found page for any other.
+ * The entry's key below a locale's entry address (`menu`, `de/menu`) is read
+ * as that entry address, as the runner's router reads it.
+ */
+const ADDRESS_KEY_LOCALES = ADDRESS_KEY.replace(
+  String.raw`    if (key === '') key = d.entry
+    if (d.routes.indexOf(key) < 0 && d.notFound) key = d.notFound`,
+  String.raw`    var at = function (k) { return own(d.addresses || {}, k) ? d.addresses[k] : null }
+    var tail = '/' + d.entry
+    var e = key === d.entry ? '' : key.slice(-tail.length) === tail ? key.slice(0, -tail.length) : null
+    if (at(key) !== null) key = at(key)
+    else if (e !== null && (at(e) === d.entry || at(e) === '')) key = at(e)
+    else key = d.notFound || ''`
+)
+
+/**
  * The shell's inline script in `<head>`: asks for what the OPENED page needs
  * — its receipt, its block modules, its first image, its first frame — and nothing of any
  * other page's (pwapp-format §2.1). It reads `<script type="application/json"
@@ -324,10 +389,16 @@ const ADDRESS_KEY = String.raw`var own = function (o, k) { return Object.prototy
  * A hint is only a head start: nothing here can stop the app from starting.
  * Constant text, so the Content Security Policy allows it by one hash.
  */
-export const PAGE_HINTS_SCRIPT = String.raw`(function () {
+export const PAGE_HINTS_SCRIPT = pageHintsScript(ADDRESS_KEY)
+
+/** {@link PAGE_HINTS_SCRIPT} of an app with locales. */
+export const PAGE_HINTS_SCRIPT_LOCALES = pageHintsScript(ADDRESS_KEY_LOCALES)
+
+function pageHintsScript(addressKey: string): string {
+  return String.raw`(function () {
   try {
     var d = JSON.parse(document.getElementById('pw-page-hints').textContent || '{}')
-    ${ADDRESS_KEY}
+    ${addressKey}
     var page = own(d.pages, key) ? d.pages[key] : null
     if (!page) return
     document.documentElement.setAttribute('data-pw-page', key)
@@ -354,6 +425,7 @@ export const PAGE_HINTS_SCRIPT = String.raw`(function () {
     if (painted) add(page.frame, 'fetch')
   } catch (e) {}
 })()`
+}
 
 /**
  * The shell's inline script after `#root`, run where it stands — before the
@@ -369,13 +441,19 @@ export const PAGE_HINTS_SCRIPT = String.raw`(function () {
  * drawn into the root by then.
  * Constant text, so the Content Security Policy allows it by one hash.
  */
-export const FIRST_PAINT_SCRIPT = String.raw`(function () {
+export const FIRST_PAINT_SCRIPT = firstPaintScript(ADDRESS_KEY)
+
+/** {@link FIRST_PAINT_SCRIPT} of an app with locales. */
+export const FIRST_PAINT_SCRIPT_LOCALES = firstPaintScript(ADDRESS_KEY_LOCALES)
+
+function firstPaintScript(addressKey: string): string {
+  return String.raw`(function () {
   var root = document.getElementById('root')
   var data = document.getElementById('pw-first-paint')
   if (!root || !data) return
   try {
     var d = JSON.parse(data.textContent || '{}')
-    ${ADDRESS_KEY}
+    ${addressKey}
     var page = own(d.pages, key) ? d.pages[key] : null
     if (page && m && m[2]) {
       var query = new URLSearchParams(m[2])
@@ -399,6 +477,7 @@ export const FIRST_PAINT_SCRIPT = String.raw`(function () {
     }).catch(function () {})
   } catch (e) {}
 })()`
+}
 
 /**
  * What a page needs before it can draw, so the shell (or boot.js) can ask for
@@ -489,8 +568,6 @@ export function importMapText(): string {
 export interface BootOptions {
   /** The runtime files' served names; default {@link PLAIN_ASSETS}. */
   readonly assets?: ShellAssets
-  /** The webfont stylesheet the theme names, linked by the boot module so it never holds the first paint. */
-  readonly webfontHref?: string | null
   /** `runApp`'s `router`; default `hash`. */
   readonly router?: RouterMode
 }
@@ -505,20 +582,9 @@ export function bootScript(options: BootOptions = {}): string {
   // boot sits in assets/ beside the runner; the renderer's address is the
   // document's (the runner adds it as a <script src>).
   const runner = `./${assets.runner.slice(assets.runner.lastIndexOf('/') + 1)}`
-  const fonts = options.webfontHref
-    ? `
-// The theme's webfonts: linked from here, not from <head>, so the stylesheet
-// does not hold the first paint (font-display: swap and the metric-matched
-// fallbacks in the theme stylesheet keep the text from moving when they land).
-const fonts = document.createElement('link')
-fonts.rel = 'stylesheet'
-fonts.href = ${JSON.stringify(options.webfontHref)}
-document.head.appendChild(fonts)
-`
-    : ''
   return `// Generated by pwf: starts the app.
 import { runApp } from ${JSON.stringify(runner)}
-${fonts}
+
 runApp({ source: './pwpack', blocks: './blocks/', engines: './engines', renderer: ${JSON.stringify(`./${assets.embed}`)}, router: ${JSON.stringify(options.router ?? 'hash')} })
 `
 }
@@ -548,12 +614,10 @@ export function htmlLangOf(locale: string | undefined): string {
  */
 export function buildShellHtml(options: ShellOptions): string {
   const assets = options.assets ?? PLAIN_ASSETS
-  const href = options.webfontHref ?? null
-  const fonts = href
+  // The body text's file, preloaded: the app's own, never another origin's.
+  const fonts = options.fontPreload
     ? `
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preload" as="style" href="${escapeHtml(href)}" />`
+    <link rel="preload" as="font" type="font/woff2" href="./${escapeHtml(options.fontPreload)}" crossorigin />`
     : ''
   const csp = options.csp
     ? `
@@ -567,11 +631,17 @@ export function buildShellHtml(options: ShellOptions): string {
   const meta = [
     options.noindex ? '<meta name="robots" content="noindex" />' : '',
     options.canonical ? `<link rel="canonical" href="${escapeHtml(options.canonical)}" />` : '',
+    ...(options.alternates ?? []).map((a) => `<link rel="alternate" hreflang="${escapeHtml(a.hreflang)}" href="${escapeHtml(a.href)}" />`),
     '<meta property="og:type" content="website" />',
+    options.siteName ? `<meta property="og:site_name" content="${escapeHtml(options.siteName)}" />` : '',
+    options.ogLocale ? `<meta property="og:locale" content="${escapeHtml(ogLocaleOf(options.ogLocale.locale))}" />` : '',
+    ...(options.ogLocale?.alternates ?? []).map((l) => `<meta property="og:locale:alternate" content="${escapeHtml(ogLocaleOf(l))}" />`),
     options.title ? `<meta property="og:title" content="${escapeHtml(options.title)}" />` : '',
     options.description?.trim() ? `<meta property="og:description" content="${escapeHtml(options.description.trim())}" />` : '',
     options.canonical ? `<meta property="og:url" content="${escapeHtml(options.canonical)}" />` : '',
     options.image ? `<meta property="og:image" content="${escapeHtml(options.image)}" />` : '',
+    // A large card for a page that has a picture to show.
+    `<meta name="twitter:card" content="${options.image ? 'summary_large_image' : 'summary'}" />`,
   ]
     .filter((l) => l !== '')
     .map((l) => `
@@ -609,7 +679,13 @@ export function buildShellHtml(options: ShellOptions): string {
   const firstPaint = options.firstPaint
     ? `
     <script type="application/json" id="pw-first-paint">${scriptJson(options.firstPaint.data)}</script>
-    <script>${FIRST_PAINT_SCRIPT}</script>`
+    <script>${options.localized ? FIRST_PAINT_SCRIPT_LOCALES : FIRST_PAINT_SCRIPT}</script>`
+    : ''
+  // The rules every page's frame shares (static-paint.ts `shareFrameStyles`),
+  // before the frame's own layout, whose rules outweigh them.
+  const frameCss = assets.frame
+    ? `
+    <link rel="stylesheet" href="./${escapeHtml(assets.frame)}" ${FRAME_CSS_ATTR} />`
     : ''
   const layout = options.firstPaint?.layoutCss
     ? `
@@ -618,7 +694,7 @@ export function buildShellHtml(options: ShellOptions): string {
   const hints = options.pageHints && Object.keys(options.pageHints.pages).length > 0
     ? `
     <script type="application/json" id="pw-page-hints">${scriptJson(options.pageHints)}</script>
-    <script>${PAGE_HINTS_SCRIPT}</script>`
+    <script>${options.localized ? PAGE_HINTS_SCRIPT_LOCALES : PAGE_HINTS_SCRIPT}</script>`
     : ''
   return `<!doctype html>
 <html${lang ? ` lang="${escapeHtml(lang)}"` : ''}>
@@ -626,8 +702,9 @@ export function buildShellHtml(options: ShellOptions): string {
     <meta charset="UTF-8" />${base}${csp}
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(options.title)}</title>${description}${meta}
-    <link rel="icon" href="data:," />
-    ${options.themeCss !== undefined ? `<style>${options.themeCss.replace(/<\//g, '<\\/')}</style>` : `<link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />`}${layout}${fonts}
+    <link rel="icon"${options.favicon && faviconTypeOf(options.favicon) ? ` type="${faviconTypeOf(options.favicon) as string}"` : ''} href="${options.favicon ? escapeHtml(servedHref(options.favicon)) : 'data:,'}" />${options.colorSchemeScript ? `
+    <script>${options.colorSchemeScript}</script>` : ''}
+    ${options.themeCss !== undefined ? `<style>${options.themeCss.replace(/<\//g, '<\\/')}</style>` : `<link rel="stylesheet" href="./${escapeHtml(assets.theme)}" />`}${frameCss}${layout}${fonts}
     <script type="importmap">${importMapText()}</script>
     <link rel="modulepreload" href="./${escapeHtml(assets.runner)}" />${renderer}${shims}${boot}${hints}
   </head>

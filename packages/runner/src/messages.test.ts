@@ -38,11 +38,18 @@ describe('RUNNER_MESSAGE_IDS', () => {
     expect(new Set(RUNNER_MESSAGE_IDS).size).toBe(RUNNER_MESSAGE_IDS.length)
     expect(RUNNER_MESSAGE_IDS).toContain('session.refused')
     expect(RUNNER_MESSAGE_IDS).toContain('bridge.exchangeFailed')
+    expect(RUNNER_MESSAGE_IDS).toEqual(expect.arrayContaining(['locale.suggestion', 'locale.switch', 'locale.dismiss']))
     expect('RUNNER_MESSAGES' in runner).toBe(false)
   })
 })
 
 describe('runnerMessages', () => {
+  it('writes a plural in the app’s locale', () => {
+    const say = runnerMessages({ 'pill.signedIn': '{n, plural, one {# Sitzung} other {# Sitzungen}}' }, 'de')
+    expect(say('pill.signedIn', { n: 1 })).toBe('1 Sitzung')
+    expect(say('pill.signedIn', { n: 2000 })).toBe('2.000 Sitzungen')
+  })
+
   it('reads the app’s message; an id it does not set is nothing', () => {
     const say = runnerMessages({ 'gate.title': 'Oturum açın' })
     expect(say('gate.title')).toBe('Oturum açın')

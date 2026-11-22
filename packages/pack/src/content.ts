@@ -12,7 +12,7 @@ import type { PackFolder } from './types.js'
 export const PACK_DOC_FILES: ReadonlySet<string> = new Set(['LICENSE', 'NOTICE', 'README.md'])
 
 /** Root directories of the canonical folder. */
-export const PACK_ROOT_DIRS: ReadonlySet<string> = new Set(['app', 'atoms', 'media'])
+export const PACK_ROOT_DIRS: ReadonlySet<string> = new Set(['app', 'atoms', 'media', 'public'])
 
 /**
  * Root directories of the legacy rootless layout: the atom families of
@@ -43,7 +43,7 @@ export function isPackContentPath(path: string): boolean {
 
 /**
  * The pack content of a folder: `pwpack.json`, `LICENSE`, `NOTICE` and
- * `README.md` at the root; everything under `app/`, `atoms/` and `media/`;
+ * `README.md` at the root; everything under `app/`, `atoms/`, `media/` and `public/`;
  * and, for the legacy rootless layout, everything under a root atom-family
  * directory (`blocks/`, `capabilities/`, `connectors/`, `providers/`,
  * `appearance/`, `patterns/`, `icons/`, `surfaces/`, `auth/`, `lib/`).

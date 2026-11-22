@@ -27,6 +27,8 @@ import type {
   SurfaceConnectionsValue,
   DataServiceConfig,
   SurfaceDataCache,
+  ConsentStore,
+  ColorSchemeStore,
   LinkHref,
   SurfaceAddress,
   AppMessages,
@@ -88,6 +90,16 @@ export interface RenderFatOptions {
   readonly onDescription?: (description: string | undefined) => void
   /** The app's locale (BCP 47) dates and numbers are written in; absent, the visitor's. */
   readonly locale?: string
+  /** The app's languages (envelope §2.3): `context.locales` of every block. */
+  readonly locales?: readonly string[]
+  /** The current page in every locale: `context.alternates` of every block. */
+  readonly alternates?: Readonly<Record<string, string>>
+  /** The visitor's consent and the categories the app's scripts wait for (envelope §2.2): `context.consent*` of every block. */
+  readonly consent?: ConsentStore
+  /** The visitor's colour scheme (appearance §4.1): `context.colorScheme` / `setColorScheme` of every block. */
+  readonly colorScheme?: ColorSchemeStore
+  /** The page this surface is: a change between renders of one mount resets the page's state, the blocks that stay stay mounted. */
+  readonly pageKey?: string
   /** The app's words (`plan.json` `messages`) the blocks' own words read first. */
   readonly messages?: AppMessages
   /**
@@ -216,6 +228,11 @@ export function fatCoreOptions(opts: RenderFatOptions): RenderCoreOptions {
     ...(opts.onTitle !== undefined ? { onTitle: opts.onTitle } : {}),
     ...(opts.onDescription !== undefined ? { onDescription: opts.onDescription } : {}),
     ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
+    ...(opts.locales !== undefined ? { locales: opts.locales } : {}),
+    ...(opts.alternates !== undefined ? { alternates: opts.alternates } : {}),
+    ...(opts.consent !== undefined ? { consent: opts.consent } : {}),
+    ...(opts.colorScheme !== undefined ? { colorScheme: opts.colorScheme } : {}),
+    ...(opts.pageKey !== undefined ? { pageKey: opts.pageKey } : {}),
     ...(opts.messages !== undefined ? { messages: opts.messages } : {}),
     ...(opts.address !== undefined ? { address: opts.address } : {}),
     ...(opts.identity !== undefined ? { identity: opts.identity } : {}),

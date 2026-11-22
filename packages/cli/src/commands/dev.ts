@@ -1,5 +1,5 @@
 /**
- * `pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host]` —
+ * `pwf dev [dir] [--port <n>] [--host <name>] [--router <mode>] [--base <path>] [--local-host | --no-host]` —
  * serves the app locally, rebuilds on every change and reloads the page. Runs
  * until interrupted.
  *
@@ -11,8 +11,10 @@
 import { resolve } from 'node:path'
 import { createDevServer, DEFAULT_HOSTNAME, DEFAULT_PORT, HOST_PREFIX, type DevServerInternals } from '../dev/server.js'
 import { createLocalHost } from '../host/index.js'
+import { readAuth } from '../host/definitions.js'
 import type { Command, CommandIO, ParsedArgs } from './types.js'
 import { corsFlags, UsageError } from './lib/flags.js'
+import { buildRouting, type BuildRouting } from './build.js'
 
 /** Resolves when the process is asked to stop (Ctrl+C or a termination signal). */
 export function untilInterrupted(): Promise<void> {
@@ -52,8 +54,10 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
   }
   const hostname = typeof hostFlag === 'string' ? hostFlag : DEFAULT_HOSTNAME
   let cors: string[]
+  let routing: BuildRouting
   try {
     cors = [...corsFlags(args)]
+    routing = buildRouting(args.flags['router'], args.flags['base'])
   } catch (e) {
     if (!(e instanceof UsageError)) throw e
     io.err(`pwf dev: ${e.message}`)
@@ -86,6 +90,20 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
   }
   const root = resolve(io.cwd, dirArg ?? '.')
 
+  // --as <role>[,<role>]: the roles dev@localhost signs in with ("member": none).
+  const asFlag = args.flags['as']
+  let roles: string[] | undefined
+  if (asFlag !== undefined) {
+    const declared = readAuth(root)?.access.roles ?? []
+    const named = typeof asFlag === 'string' ? asFlag.split(',').map((r) => r.trim()).filter(Boolean) : []
+    const unknown = named.filter((r) => r !== 'member' && !declared.includes(r))
+    if (named.length === 0 || unknown.length > 0) {
+      io.err(`pwf dev: --as ${typeof asFlag === 'string' ? asFlag : ''}: the app declares the roles ${declared.join(', ') || '(none)'} (or "member", for none)`)
+      return 2
+    }
+    roles = named.filter((r) => r !== 'member')
+  }
+
   // Undefined lets the server decide from the app's declarations.
   const localHost = noHost ? false : forceHost ? true : undefined
   const internals: DevServerInternals = { createHost: createLocalHost, ...options.internals }
@@ -100,7 +118,9 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
         log: io.out,
         ...(debug ? { debug } : {}),
         ...(localHost !== undefined ? { localHost } : {}),
+        ...(roles !== undefined ? { roles } : {}),
         ...(cors.length > 0 ? { cors } : {}),
+        ...(routing.router !== 'hash' ? { router: routing.router, ...(routing.base !== undefined ? { base: routing.base } : {}) } : {}),
       },
       internals
     )
@@ -113,8 +133,11 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
     )
     return 1
   }
-  io.out(`pwf dev: serving ${root} at ${server.url}`)
+  const at = routing.router === 'hash' ? server.url : `${server.url}${(routing.base ?? '/').slice(1)}`
+  io.out(`pwf dev: serving ${root} at ${at}`)
+  if (routing.router !== 'hash') io.out(`pwf dev: router ${routing.router}, base ${routing.base ?? '/'}: one document per page and 404.html, as pwf build writes them`)
   if (cors.length > 0) io.out(`pwf dev: cross-origin requests are answered for ${cors.join(', ')} (no credentials)`)
+  if (roles !== undefined) io.out(`pwf dev: dev@localhost signs in as ${roles.length > 0 ? roles.join(', ') : 'a plain member (no role)'}`)
   io.out('press Ctrl+C to stop')
   await (options.until ?? untilInterrupted)()
   await server.close()
@@ -125,18 +148,30 @@ export async function runDev(args: ParsedArgs, io: CommandIO, options: DevComman
 export const devCommand: Command = {
   name: 'dev',
   summary: 'Serve the app locally and reload it on every change',
-  usage: `pwf dev [dir] [--port <n>] [--host <name>] [--local-host | --no-host] [--cors <origin>]... [--debug]
+  usage: `pwf dev [dir] [--port <n>] [--host <name>] [--router <hash|path|auto>] [--base <path>]
+               [--local-host | --no-host] [--as <role>[,<role>]] [--cors <origin>]... [--debug]
 
   dir            the app folder (default: the current folder)
   --port <n>     port to listen on (default ${DEFAULT_PORT}; 0 picks a free one)
   --host <name>  interface to bind (default ${DEFAULT_HOSTNAME})
+  --router <mode>
+                 how the app routes, as pwf build --router (default hash)
+  --base <path>  the path the app is served under, for path and auto, as
+                 pwf build --base (default /; e.g. --base /docs/)
   --local-host   mount the local host for sign-in and data even when the app declares neither
   --no-host      do not mount the local host, even when the app declares sign-in or records
+  --as <roles>   sign dev@localhost in with only these of the declared roles
+                 (comma-separated), or as "member" with none — to try what
+                 each role may do. Default: every declared role
   --cors <origin>
                  let pages on this origin (scheme://host[:port], exact; repeat
                  for more) read the app's files and the local host across
                  origins. Default: none. "*" and "null" are refused.
   --debug        print an engine error with its stack trace
+
+Every address is answered as pwf run answers the same build: a page's own
+document, the app's 404.html (status 404) for a page path no file answers, and
+the headers its _headers declares — except caching, which is off.
 
 A build that fails is listed in the terminal, and the open page shows the
 errors in its place (with a console message) until the next good build.
@@ -145,7 +180,7 @@ The local host (under ${HOST_PREFIX}) is for development only: records live in
 memory and are seeded from app/content/ then app/data/ (again whenever those or
 entities.json change), no password is checked, and nothing
 survives a restart. The access rules of auth.json apply: dev@localhost signs in with every
-declared role, any other e-mail as a plain member.
+declared role (or the ones --as names), any other e-mail as a plain member.
 
 With --cors, a request whose Origin is one of the named origins gets
 Access-Control-Allow-Origin with that origin (and every answer Vary: Origin);

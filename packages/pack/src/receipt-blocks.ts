@@ -12,7 +12,7 @@
  * repeat's `children` are one template, drawn once per item: each node is
  * counted once, as written.
  */
-import { atomManifestPath, blockTypeNames, type BlockSource } from './block-props.js'
+import { ambiguousBlockTypeMessage, atomManifestPath, BLOCK_TYPE_AMBIGUOUS, blockTypeNames, namedBlocksOf, resolveBlockType, type BlockSource } from './block-props.js'
 import type { PackIssue } from './types.js'
 
 export const UNKNOWN_BLOCK_TYPE = 'UNKNOWN_BLOCK_TYPE'
@@ -122,5 +122,21 @@ export function checkBlockIds(page: Pick<PageReceipt, 'path' | 'receipt'>): Pack
       message: `block id "${id}" is used twice on this page, at ${first} and ${at}; a block id is unique within its page (behaviours, media slots and forms address blocks by id)`,
     })
   })
+  return issues
+}
+
+/**
+ * `BLOCK_TYPE_AMBIGUOUS` for every type the pages place that names two
+ * different blocks by a short name (block-props.ts `resolveBlockType`), at
+ * the first page that places it, naming each block.
+ */
+export function checkAmbiguousBlockTypes(pages: readonly PageReceipt[], sources: readonly BlockSource[]): PackIssue[] {
+  const blocks = namedBlocksOf(sources)
+  const issues: PackIssue[] = []
+  for (const [type, page] of blockTypeFirstUses(pages)) {
+    const hit = resolveBlockType(type, blocks)
+    if (!hit || !('ambiguous' in hit)) continue
+    issues.push({ severity: 'error', code: BLOCK_TYPE_AMBIGUOUS, path: page.path, message: ambiguousBlockTypeMessage(type, page.key, hit.ambiguous.map((b) => b.id)) })
+  }
   return issues
 }

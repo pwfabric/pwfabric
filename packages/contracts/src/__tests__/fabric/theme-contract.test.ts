@@ -1,6 +1,6 @@
 /**
  * Theme contract: mode policy and brand fields, status inks, heading scale,
- * wider contrast findings, webfont allow-list, inverse set, and the ink-first
+ * wider contrast findings, inverse set, and the ink-first
  * brand rule. Every "it is fixed" assertion sits next to a
  * positive control proving the check can fail.
  */
@@ -22,7 +22,6 @@ import {
   themeContrastLines,
   type SurfaceTheme,
 } from '../../fabric/index.js'
-import { allowedWebfontsIn, findAllowedWebfont, isAllowedWebfont, parseFontStack, WEBFONT_ALLOW_LIST } from '../../fabric/webfonts.js'
 
 function ratio(a: string, b: string): number {
   const ra = hexToRgb(a)!
@@ -221,45 +220,6 @@ describe('wider contrast findings', () => {
     expect(themeContrastFindings(full())).toEqual([])
     const high = themeContrastFindings(full(), { contrast: 'high' })
     expect(high.find((f) => f.pair[0] === 'textMuted' && f.pair[1] === 'background')).toMatchObject({ min: 7 })
-  })
-})
-
-describe('webfont allow-list', () => {
-  it('parses a stack and keeps only allowed families, in order', () => {
-    expect(parseFontStack(`"Playfair Display", Georgia, serif`)).toEqual(['Playfair Display', 'Georgia', 'serif'])
-    expect(allowedWebfontsIn(`"Playfair Display", 'EB Garamond', Georgia, serif`).map((w) => w.family)).toEqual([
-      'Playfair Display',
-      'EB Garamond',
-    ])
-    expect(allowedWebfontsIn('Palatino, serif')).toEqual([])
-    expect(allowedWebfontsIn(undefined)).toEqual([])
-  })
-
-  it('matches case-insensitively and refuses unknown families', () => {
-    expect(isAllowedWebfont('nunito')).toBe(true)
-    expect(isAllowedWebfont('Comic Sans MS')).toBe(false)
-    expect(findAllowedWebfont('Inter')?.category).toBe('sans')
-  })
-
-  it('every entry is unique and covers Turkish', () => {
-    const names = WEBFONT_ALLOW_LIST.map((w) => w.family.toLowerCase())
-    expect(new Set(names).size).toBe(names.length)
-    expect(WEBFONT_ALLOW_LIST.every((w) => w.latinExt && w.weights.length > 0)).toBe(true)
-  })
-
-  it('lists Newsreader, Fira Code, Roboto Mono and Source Code Pro', () => {
-    expect(findAllowedWebfont('Newsreader')).toMatchObject({ category: 'serif', italic: true, source: 'google' })
-    expect(findAllowedWebfont('Fira Code')).toMatchObject({ category: 'mono', italic: false })
-    expect(findAllowedWebfont('Roboto Mono')).toMatchObject({ category: 'mono', italic: true })
-    expect(findAllowedWebfont('Source Code Pro')).toMatchObject({ category: 'mono', italic: true })
-    expect(allowedWebfontsIn('Newsreader, Georgia, serif').map((w) => w.family)).toEqual(['Newsreader'])
-  })
-
-  it('keeps each category alphabetical', () => {
-    for (const cat of ['sans', 'serif', 'display', 'mono'] as const) {
-      const names = WEBFONT_ALLOW_LIST.filter((w) => w.category === cat).map((w) => w.family)
-      expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)))
-    }
   })
 })
 

@@ -7,6 +7,7 @@
  * @module @pwfabric/runtime/i18n/translator
  */
 
+import { extractBraceBlock, parseIcuOptions } from './icu.js'
 import type {
   I18nCapability,
   LocaleId,
@@ -211,7 +212,7 @@ export class DefaultI18nCapability implements I18nCapability {
     while (i < message.length) {
       if (message[i] === '{') {
         // Extract the full brace-balanced block
-        const block = this.extractBraceBlock(message, i)
+        const block = extractBraceBlock(message, i)
         if (block !== null) {
           const inner = block.content.trim()
           result += this.resolveBlock(inner, values)
@@ -227,37 +228,6 @@ export class DefaultI18nCapability implements I18nCapability {
     }
 
     return result
-  }
-
-  /**
-   * Extract a brace-balanced block starting at position `start`
-   * Returns the content between the outer braces and the end index
-   */
-  private extractBraceBlock(
-    message: string,
-    start: number
-  ): { content: string; end: number } | null {
-    if (message[start] !== '{') return null
-
-    let depth = 0
-    let i = start
-
-    while (i < message.length) {
-      if (message[i] === '{') {
-        depth++
-      } else if (message[i] === '}') {
-        depth--
-        if (depth === 0) {
-          return {
-            content: message.slice(start + 1, i),
-            end: i,
-          }
-        }
-      }
-      i++
-    }
-
-    return null
   }
 
   /**
@@ -298,7 +268,7 @@ export class DefaultI18nCapability implements I18nCapability {
 
   private resolvePlural(count: number, body: string): string {
     const category = this.getPluralCategory(count)
-    const options = this.parseICUOptions(body)
+    const options = parseIcuOptions(body)
 
     // Try exact match first (=0, =1, etc.)
     const exactMatch = options.get(`=${count}`)
@@ -322,7 +292,7 @@ export class DefaultI18nCapability implements I18nCapability {
   }
 
   private resolveSelect(value: string, body: string): string {
-    const options = this.parseICUOptions(body)
+    const options = parseIcuOptions(body)
 
     const match = options.get(value)
     if (match) return match
@@ -331,42 +301,6 @@ export class DefaultI18nCapability implements I18nCapability {
     if (other) return other
 
     return value
-  }
-
-  /**
-   * Parse ICU option blocks like: "one {# item} other {# items}"
-   * Handles nested braces correctly using a brace-depth parser.
-   */
-  private parseICUOptions(body: string): Map<string, string> {
-    const options = new Map<string, string>()
-    let i = 0
-
-    while (i < body.length) {
-      // Skip whitespace
-      while (i < body.length && /\s/.test(body[i] as string)) i++
-      if (i >= body.length) break
-
-      // Read key (non-whitespace until { or whitespace)
-      let key = ''
-      while (i < body.length && body[i] !== '{' && !/\s/.test(body[i] as string)) {
-        key += body[i]
-        i++
-      }
-      if (!key) break
-
-      // Skip whitespace before opening brace
-      while (i < body.length && /\s/.test(body[i] as string)) i++
-      if (i >= body.length || body[i] !== '{') break
-
-      // Extract brace-balanced value
-      const block = this.extractBraceBlock(body, i)
-      if (block === null) break
-
-      options.set(key, block.content)
-      i = block.end + 1
-    }
-
-    return options
   }
 
   private getPluralCategory(count: number): PluralCategory {

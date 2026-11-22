@@ -109,6 +109,8 @@ describe('envelopeEntries', () => {
         ).replace(/%20/g, '+')}`,
         authProviderRef: base,
         returns: 'data',
+        // Kept, so it binds { fn, field, value, count } and not a list (data-protocol §2.3).
+        aggregate: { fn: 'sum', field: 'price', filter: { field: 'price', operator: 'gt', value: 4 } },
       },
       // Orders are `member` `read own`: only a session can be answered (session-sources.ts).
       {
@@ -118,6 +120,7 @@ describe('envelopeEntries', () => {
         endpoint: `${base}/records/Order/count`,
         authProviderRef: base,
         returns: 'data',
+        aggregate: { fn: 'count' },
         requiresSession: true,
       },
       { id: 'remote', kind: 'entity', entityType: 'Product', connector: 'shop-api' },
@@ -214,6 +217,17 @@ describe('the app door', () => {
       const body = (await res.json()) as { data: { principal: unknown } }
       expect(body.data.principal).toEqual({ id: 'dev-user', email: 'dev@localhost', displayName: 'Developer', roles: ['staff'] })
     }
+  })
+
+  it('signs the development user in with only the roles it is given (pwf dev --as)', async () => {
+    const plain = await start('l-shop', { roles: [] })
+    const token = await signIn(plain.base)
+    const session = (await (await fetch(`${plain.base}/session`, withSession(token))).json()) as { data: { principal: { roles: string[] } } }
+    expect(session.data.principal.roles).toEqual([])
+    // Booking: staff read it; a plain member may not.
+    expect((await fetch(`${plain.base}/records/Booking`, withSession(token))).status).toBe(403)
+    const staff = await start('l-shop', { roles: ['staff'] })
+    expect((await fetch(`${staff.base}/records/Booking`, withSession(await signIn(staff.base)))).status).toBe(200)
   })
 
   it('signs any other e-mail in as a plain member', async () => {

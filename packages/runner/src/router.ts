@@ -34,6 +34,14 @@
 import type { RouterMode } from './types.js'
 import type { ToHref } from './helpers.js'
 import { strayPageKeyOf } from './helpers.js'
+// A subpath, so it is bundled: the runner imports no host specifier at load.
+import { addressedPage, isTableAddress, type AddressTable, type LocaleDeclaration } from '@pwfabric/contracts/app-locales'
+
+/** The languages of an app in several (envelope §2.3), as the router reads addresses with them. */
+export interface RouterLocales {
+  readonly declaration: LocaleDeclaration
+  readonly addresses: AddressTable
+}
 
 export interface RouterHandle {
   readonly mode: 'hash' | 'path'
@@ -63,8 +71,16 @@ export interface RouterHandle {
    * address and already shows it.
    */
   writeQuery(query: string, how: 'push' | 'replace'): void
-  /** Build an href for a page key in this router's form. */
+  /**
+   * Build an href for a page key in this router's form — in an app with
+   * locales, the page's address in the locale drawn (envelope §3); an
+   * address of the table is kept as that address.
+   */
   toHref: ToHref
+  /** The locale the current location names (envelope §3); undefined in a single-language app. */
+  locale(): string | undefined
+  /** A page's href in a given locale (a language switch's link); `toHref` in a single-language app. */
+  hrefIn(locale: string, key: string): string
   /**
    * Put the reader where the address says: at the element its in-page anchor
    * names, or at the top when it names none. Called after a route renders.
@@ -193,7 +209,55 @@ export interface RouterOptions {
    * the shell is expected to declare it and `runApp` reads it for us.
    */
   readonly basePath?: string | undefined
+  /** The app's languages and address table (envelope §2.3); absent for a single-language app. */
+  readonly locales?: RouterLocales | undefined
 }
+
+/**
+ * How an app's addresses map to its pages. A single-language app's page is
+ * its key; an app with locales reads the address table (envelope §3).
+ */
+interface PageAddresses {
+  /** The page and locale `rest` (the route, or the path below the base) names. */
+  lookup(rest: string): { key: string | null; locale: string | undefined }
+  /** The address of `key` in `locale`, from the base, without slashes at its ends (`de/preise`, `''`). */
+  addressOf(key: string, locale: string | undefined): string
+}
+
+function pageAddresses(pages: readonly string[], entry: string, locales: RouterLocales | undefined): PageAddresses {
+  if (!locales) {
+    return {
+      lookup: (rest) => {
+        const key = rest.replace(/^\/+|\/+$/g, '')
+        return { key: key === '' ? entry : pages.includes(key) ? key : null, locale: undefined }
+      },
+      addressOf: (key) => key,
+    }
+  }
+  const { declaration, addresses } = locales
+  return {
+    lookup: (rest) => {
+      const found = addressedPage(addresses, declaration, rest)
+      if (found.key !== null) return found
+      // The entry's key opens the entry in every locale (`#/menu`, `#/de/menu`), as in a single-language app.
+      const trimmed = rest.replace(/^\/+|\/+$/g, '')
+      const own = found.locale === declaration.defaultLocale ? trimmed : trimmed.replace(/^[^/]+\/?/, '')
+      return own === entry ? { ...found, key: entry } : found
+    },
+    addressOf: (key, locale) => {
+      const row = addresses[locale ?? declaration.defaultLocale] ?? {}
+      const own = row[key]
+      if (own !== undefined) return own.replace(/\/+$/, '')
+      // An address of the table (`de/preise/`, a language switch's link) is kept.
+      const trimmed = key.replace(/^\/+|\/+$/g, '')
+      if (isTableAddress(addresses, trimmed)) return trimmed
+      return trimmed
+    },
+  }
+}
+
+/** One page in one locale: what a location change compares. */
+const pageId = (key: string | null, locale: string | undefined): string | null => (key === null ? null : `${locale ?? ''}\u0000${key}`)
 
 // ============================================================
 // MODE RESOLUTION
@@ -252,7 +316,12 @@ function hashQueryOf(hash: string): string {
   return ROUTE_HASH.exec(hash)?.[2] ?? ''
 }
 
-function createHashRouter(pages: readonly string[], entry: string): RouterHandle {
+function createHashRouter(pages: readonly string[], entry: string, locales?: RouterLocales): RouterHandle {
+  const book = pageAddresses(pages, entry, locales)
+  /** The locale of the last location read. */
+  let shownLocale: string | undefined = locales?.declaration.defaultLocale
+  /** `#/<address>` of a page in a locale; a single-language app's is `#/<key>` (hashHref). */
+  const hrefIn = (locale: string | undefined, key: string): string => (locales ? `#/${book.addressOf(key, locale)}` : hashHref(key))
   /**
    * The last hash that actually named a page. An anchor-only hash change must
    * leave the reader where they are, so "no route in the location" answers
@@ -267,12 +336,17 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
    */
   let shownRoute = '#/'
 
+  /** The page and locale a route names, as one id (see pageId); a single-language app's unknown key is still its own id. */
   const routeOf = (hash: string): string | null => {
     const match = ROUTE_HASH.exec(hash)
     if (!match) return null
-    const key = (match[1] ?? '').replace(/\/+$/, '')
-    return key === '' ? entry : key
+    const route = (match[1] ?? '').replace(/\/+$/, '')
+    if (!locales) return route === '' ? entry : route
+    const found = book.lookup(route)
+    return pageId(found.key, found.locale) ?? `\u0001${route}`
   }
+  /** What `routeOf` answers for the page last resolved. */
+  const resolvedId = (): string | null => (locales ? pageId(resolved, shownLocale) : resolved)
 
   const noteRoute = (match: RegExpExecArray): void => {
     shownRoute = `#/${match[1] ?? ''}${match[2] !== undefined ? `?${match[2]}` : ''}`
@@ -299,6 +373,12 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
       noteRoute(match)
       resolvedQuery = match[2] ?? ''
       const key = (match[1] ?? '').replace(/\/+$/, '')
+      if (locales) {
+        const found = book.lookup(key)
+        shownLocale = found.locale
+        if (found.key !== null) resolved = found.key
+        return found.key
+      }
       if (key === '') {
         resolved = entry
         return entry
@@ -309,16 +389,18 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
       }
       return null
     },
+    locale: () => (locales ? shownLocale : undefined),
+    hrefIn: (locale, key) => hrefIn(locale, key),
     query: () => (ROUTE_HASH.test(location.hash) ? hashQueryOf(location.hash) : resolvedQuery),
     writeQuery(query, how) {
       const key = resolved ?? entry
       const anchor = hashAnchorOf(location.hash)
-      const hash = `#/${key}${query ? `?${query}` : ''}${anchor ? `#${anchor}` : ''}`
+      const hash = `${locales ? hrefIn(shownLocale, key) : `#/${key}`}${query ? `?${query}` : ''}${anchor ? `#${anchor}` : ''}`
       // The query this page now shows: a Back to the old one is a change.
       resolvedQuery = query
       writeLocation(location.pathname + location.search + hash, how)
     },
-    toHref: hashHref,
+    toHref: locales ? (key) => hrefIn(shownLocale, key) : hashHref,
     applyScroll() {
       scrollToAnchor(hashAnchorOf(location.hash))
     },
@@ -343,7 +425,7 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
         // address, not the surface. Re-rendering would replace the DOM under
         // the reader — and the browser cannot scroll here, because the
         // fragment it sees is the whole `/route#anchor`.
-        if (routeOf(location.hash) === resolved) {
+        if (routeOf(location.hash) === resolvedId()) {
           // Same page, NEW QUERY (`#/product?id=12` → `?id=13`): the page
           // state may have changed, so the runner decides whether to re-render.
           if (hashQueryOf(location.hash) !== resolvedQuery) {
@@ -379,7 +461,7 @@ function createHashRouter(pages: readonly string[], entry: string): RouterHandle
         // The query and fragment ride along: `/records/5#top` names a place in
         // that page, and dropping it is how a row link lands at the top of a
         // record the reader asked one section of.
-        location.hash = `#/${stray.key}${stray.suffix}`
+        location.hash = `${locales ? hrefIn(shownLocale, stray.key) : `#/${stray.key}`}${stray.suffix}`
       })
     },
   }
@@ -422,6 +504,10 @@ function createPathRouter(
   entry: string,
   options: RouterOptions
 ): RouterHandle {
+  const locales = options.locales
+  const book = pageAddresses(pages, entry, locales)
+  /** The locale of the last location read. */
+  let shownLocale: string | undefined = locales?.declaration.defaultLocale
   // The shell declares its own base. Only when it does not do we fall back to
   // reading it off the current location — and that fallback cannot tell a deep
   // link to an unknown page from a deeper deploy path, so it is last resort.
@@ -434,12 +520,19 @@ function createPathRouter(
     if (pages.includes(lastSegment)) base = base.slice(0, base.length - lastSegment.length - 1)
   }
 
-  const keyOfPath = (pathname: string): string | null => {
+  /** The page and locale a path names; null outside the base. */
+  const pageOfPath = (pathname: string): { key: string | null; locale: string | undefined } | null => {
     const path = trimBase(pathname)
-    if (path === base) return entry
-    if (!path.startsWith(`${base}/`)) return null
-    const candidate = path.slice(base.length + 1)
-    return pages.includes(candidate) ? candidate : null
+    if (path !== base && !path.startsWith(`${base}/`)) return null
+    return book.lookup(path === base ? '' : path.slice(base.length + 1))
+  }
+  const keyOfPath = (pathname: string): string | null => pageOfPath(pathname)?.key ?? null
+  /** `<base>/<address>/` of a page in a locale; the entry at the base. */
+  const singleHref = pathHref(base, entry)
+  const hrefIn = (locale: string | undefined, key: string): string => {
+    if (!locales) return singleHref(key)
+    const address = book.addressOf(key, locale)
+    return address === '' ? `${base}/` : `${base}/${address}/`
   }
 
   /** The page this router last resolved — what the DOM currently shows. */
@@ -449,24 +542,31 @@ function createPathRouter(
     mode: 'path',
     base: base === '' ? '/' : `${base}/`,
     current() {
-      resolved = keyOfPath(location.pathname)
+      const found = pageOfPath(location.pathname)
+      if (locales) shownLocale = found?.locale ?? locales.declaration.defaultLocale
+      resolved = found?.key ?? null
       return resolved
     },
+    locale: () => (locales ? shownLocale : undefined),
+    hrefIn: (locale, key) => hrefIn(locale, key),
     query: () => location.search.replace(/^\?/, ''),
     writeQuery(query, how) {
       writeLocation(location.pathname + (query ? `?${query}` : '') + location.hash, how)
     },
-    toHref: pathHref(base, entry),
+    toHref: locales ? (key) => hrefIn(shownLocale, key) : pathHref(base, entry),
     applyScroll() {
       scrollToAnchor(location.hash.startsWith('#') ? location.hash.slice(1) : null)
     },
     follow: followAsLink,
     start(onChange) {
       window.addEventListener('popstate', () => onChange())
-      // Link interception: same-origin anchors UNDER this app's base navigate
-      // via pushState instead of a full document load — including ones naming
-      // a page the app does not have, which then render the not-found page
-      // in place. Anything outside the base is the browser's, not ours.
+      // Link interception: a same-origin link naming ONE OF THIS APP'S PAGES
+      // (or the base itself, the entry page) navigates via pushState instead
+      // of a full document load. Any other address is the browser's — even one
+      // under the base: an app at `/` shares its origin with whatever else the
+      // site serves (a blog, a sibling app, a file), and taking every path
+      // rendered those as this app's not-found page. The host answers them,
+      // with its own 404 page when nothing is there.
       document.addEventListener('click', (ev) => {
         const anchor = ownLinkFromClick(ev)
         if (anchor === null) return
@@ -484,15 +584,15 @@ function createPathRouter(
         }
         const url = new URL(anchor.href, location.href)
         if (url.origin !== location.origin) return
-        const path = trimBase(url.pathname)
-        if (path !== base && !path.startsWith(`${base}/`)) {
-          // Not under our base — but a root-relative `/people/` that names one
-          // of our pages is still ours (see strayPageKeyOf). Route it under
+        const key = keyOfPath(url.pathname)
+        if (key === null) {
+          // Not one of our pages at the base — but a root-relative `/people/`
+          // that names one is still ours (see strayPageKeyOf). Route it under
           // the base instead of letting the document walk to `<origin>/people/`.
           const stray = strayLinkOf(written, pages)
           if (stray === null) return
           ev.preventDefault()
-          history.pushState(null, '', `${base}/${stray.key}${stray.suffix}`)
+          history.pushState(null, '', `${locales ? hrefIn(shownLocale, stray.key) : `${base}/${stray.key}`}${stray.suffix}`)
           // AN ANCHOR ON THE SAME PAGE DOES NOT RE-RENDER HERE EITHER. The
           // sibling branch below guards this with `sameSurface`; without the
           // guard here, a `/people#top` link on `/people` would fetch the
@@ -505,7 +605,8 @@ function createPathRouter(
           return
         }
         ev.preventDefault()
-        const sameSurface = keyOfPath(url.pathname) === resolved && resolved !== null
+        // In an app with locales the same page in another locale is another page.
+        const sameSurface = key === resolved && (!locales || pageOfPath(url.pathname)?.locale === shownLocale)
         const sameQuery = url.search === location.search
         history.pushState(null, '', url.pathname + url.search + url.hash)
         // SAME PAGE, NEW QUERY (`/product?id=12` → `?id=13`). Comparing only
@@ -593,5 +694,5 @@ export function createRouter(
   entry: string,
   options: RouterOptions = {}
 ): RouterHandle {
-  return mode === 'path' ? createPathRouter(pages, entry, options) : createHashRouter(pages, entry)
+  return mode === 'path' ? createPathRouter(pages, entry, options) : createHashRouter(pages, entry, options.locales)
 }

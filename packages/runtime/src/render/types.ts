@@ -134,6 +134,42 @@ export interface CapabilityProvider {
   readonly data?: unknown
 }
 
+/** The visitor's consent answers: category → consented. A category not answered is absent. */
+export type ConsentAnswers = Readonly<Record<string, boolean>>
+
+/**
+ * The visitor's consent as a host keeps it (envelope §2.2): the categories
+ * the app's scripts wait for, the answers so far, and a way to record new
+ * ones. The runner's is backed by browser storage and loads the scripts.
+ */
+export interface ConsentStore {
+  /** The categories the app's scripts name, each once, in declaration order. */
+  readonly categories: readonly string[]
+  /** The answers so far; the same object until they change. */
+  answers(): ConsentAnswers
+  /** Records answers, merged over the previous ones; a category not in `categories` is ignored. */
+  set(answers: ConsentAnswers): void
+  /** Called after every change of the answers; returns the unsubscribe. */
+  subscribe(listener: () => void): () => void
+}
+
+/** The visitor's colour scheme (appearance §4.1): `"system"` while none is chosen, the device then decides. */
+export type ColorScheme = 'light' | 'dark' | 'system'
+
+/**
+ * The visitor's colour-scheme choice, as a host keeps it (appearance §4.1).
+ * The runner's is backed by browser storage and sets `data-pw-theme` on the
+ * document element.
+ */
+export interface ColorSchemeStore {
+  /** The choice so far; `"system"` when none is made. */
+  scheme(): ColorScheme
+  /** Records a choice; any value but `"light"`, `"dark"` or `"system"` is ignored. */
+  set(scheme: ColorScheme): void
+  /** Called after every change of the choice; returns the unsubscribe. */
+  subscribe(listener: () => void): () => void
+}
+
 /**
  * Block rendering context
  */
@@ -165,6 +201,19 @@ export interface BlockContext {
    */
   readonly locale?: string
   /**
+   * The app's languages, in order (envelope §2.3): `locales` of an app in
+   * several languages, `[locale]` of a single-language one. Absent without a
+   * locale.
+   */
+  readonly locales?: readonly string[]
+  /**
+   * The current page's address in every locale, from the app's base, as a
+   * link to it is written (`{ en: '/pricing/', de: '/de/preise/' }`): what a
+   * language switch draws. Only in an app with `locales`; on the not-found
+   * page, each locale's entry page.
+   */
+  readonly alternates?: Readonly<Record<string, string>>
+  /**
    * An app page's address, written the way this host routes (envelope §3):
    * `appHref('/webhooks?x=1')` is `#/webhooks?x=1` under a hash router,
    * `<base>/webhooks?x=1` under a path router. A block that draws a link of
@@ -180,6 +229,36 @@ export interface BlockContext {
    * built from a row is still checked by the block (`safeDataLink`).
    */
   readonly appHref: LinkHref
+  /**
+   * The consent categories the app's scripts wait for, each once, in
+   * declaration order (envelope §2.2): what a consent block asks about.
+   * Empty when the app declares no script.
+   */
+  readonly consentCategories?: readonly string[]
+  /**
+   * The visitor's answers so far, `{ <category>: true | false }`; a category
+   * not answered is absent. `{}` in the first frame and the hydrating render
+   * (the build knows no visitor); the stored answers arrive right after.
+   */
+  readonly consent?: ConsentAnswers
+  /**
+   * Records the visitor's answers, merged over the previous ones; a category
+   * not in `consentCategories` is ignored. A host without a consent store
+   * ignores the call.
+   */
+  readonly setConsent?: (answers: ConsentAnswers) => void
+  /**
+   * The visitor's colour scheme (appearance §4.1): `"light"`, `"dark"`, or
+   * `"system"` when none is chosen. `"system"` in the first frame and the
+   * hydrating render (the build knows no visitor); the stored choice arrives
+   * in the update right after. A block reads it here, never from storage.
+   */
+  readonly colorScheme?: ColorScheme
+  /**
+   * Records the visitor's colour scheme; any other value is ignored. A host
+   * without a colour-scheme store ignores the call.
+   */
+  readonly setColorScheme?: (scheme: ColorScheme) => void
 }
 
 // ============================================================
@@ -265,6 +344,21 @@ export interface SurfaceRendererProps {
   readonly surface: RenderableSurface
   /** The app's locale, handed to every block as `context.locale`. */
   readonly locale?: string
+  /** The app's languages (envelope §2.3), handed to every block as `context.locales`. */
+  readonly locales?: readonly string[]
+  /** The current page in every locale, handed to every block as `context.alternates`. */
+  readonly alternates?: Readonly<Record<string, string>>
+  /** The visitor's consent (envelope §2.2), handed to every block as `context.consentCategories`, `consent` and `setConsent`. */
+  readonly consent?: ConsentStore
+  /** The visitor's colour scheme (appearance §4.1), handed to every block as `context.colorScheme` and `setColorScheme`. */
+  readonly colorScheme?: ColorSchemeStore
+  /**
+   * The page this surface is (the runner's page key). When it changes between
+   * two renders of the same mount, the page's state and the data of the
+   * sources it no longer declares are dropped, while the blocks that stay —
+   * an app layout's (receipt §4) — stay mounted.
+   */
+  readonly pageKey?: string
   /**
    * How this host writes an app link (its router's form); handed to every
    * block as `context.appHref`. Absent, a link is written as given.

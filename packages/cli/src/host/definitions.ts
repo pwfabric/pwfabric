@@ -163,21 +163,39 @@ export function entityDeclarationsOf(raw: unknown): EntityDeclaration[] {
   })
 }
 
-/** A page key is a file name, never a path. */
+/** A collection name (and a page key's one segment): a file name, never a path. */
 export const PAGE_KEY = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
 
+/**
+ * A page key: one name, or names joined by `/` for a page in a folder of
+ * `app/surfaces/` (`docs/intro` is `app/surfaces/docs/intro.receipt.json`).
+ * Each segment starts with a letter or digit, so none is `.` or `..`.
+ */
+export const PAGE_PATH = /^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.-]*)*$/
+
+/** The page keys `app/surfaces/` holds receipts for, folders included (`docs/intro`), sorted. */
 export function surfaceKeys(root: string): string[] {
   const dir = join(root, 'app', 'surfaces')
   if (!existsSync(dir)) return []
-  return readdirSync(dir)
-    .filter((f) => f.endsWith('.receipt.json'))
-    .map((f) => f.slice(0, -'.receipt.json'.length))
-    .filter((k) => PAGE_KEY.test(k))
-    .sort()
+  const keys: string[] = []
+  const walk = (at: string, prefix: string): void => {
+    for (const entry of readdirSync(at, { withFileTypes: true })) {
+      if (entry.isDirectory()) walk(join(at, entry.name), `${prefix}${entry.name}/`)
+      else if (entry.name.endsWith('.receipt.json')) keys.push(`${prefix}${entry.name.slice(0, -'.receipt.json'.length)}`)
+    }
+  }
+  walk(dir, '')
+  return keys.filter((k) => PAGE_PATH.test(k)).sort()
+}
+
+/** The app's layout (`app/layout.receipt.json`, receipt §4), or undefined. */
+export function readLayoutReceipt(root: string): Record<string, unknown> | undefined {
+  const raw = readJson(join(root, 'app', 'layout.receipt.json'))
+  return isObject(raw) && Array.isArray(raw['blocks']) ? raw : undefined
 }
 
 export function readReceipt(root: string, key: string): Record<string, unknown> | undefined {
-  if (!PAGE_KEY.test(key)) return undefined
+  if (!PAGE_PATH.test(key)) return undefined
   const raw = readJson(join(root, 'app', 'surfaces', `${key}.receipt.json`))
   return isObject(raw) ? raw : undefined
 }
@@ -191,7 +209,7 @@ export function readSignInKey(root: string): string | undefined {
   const identity = readJson(join(root, 'pwpack.json'))
   const app = isObject(identity) ? identity['app'] : undefined
   const key = isObject(app) ? app['signIn'] : undefined
-  return typeof key === 'string' && PAGE_KEY.test(key) ? key : undefined
+  return typeof key === 'string' && PAGE_PATH.test(key) ? key : undefined
 }
 
 /**

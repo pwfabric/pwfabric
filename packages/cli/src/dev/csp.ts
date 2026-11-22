@@ -6,24 +6,27 @@
  * and nothing else (pwapp-format §2.1):
  *
  *   default-src  'none'
- *   script-src   'self' blob: 'sha256-<import map>'
+ *   script-src   'self' blob: 'sha256-<import map>' [+ script origins]
  *                Blocks and compiled engines are verified and then imported
  *                from `blob:` URLs. The import map is the shell's only inline
  *                script (an import map cannot be an external file), so its
  *                hash is listed; the boot call is a file (`assets/boot.<hash>.js`),
- *                and the runner adds the renderer as one.
- *   style-src    'self' 'unsafe-inline' [+ the webfont stylesheet origin]
+ *                and the runner adds the renderer as one. The app's own
+ *                third-party scripts (`plan.json` `scripts`) and the scripts a
+ *                placed block declares (`definition.origins.script`) add their
+ *                exact origins — never a wildcard.
+ *   style-src    'self' 'unsafe-inline'
  *                The renderer draws `<style>` elements at run time (the
  *                surface base, visibility, state, responsive and dark-theme
  *                rules, computed per page), and blocks set `style`
  *                attributes. Neither can be hashed ahead of time.
- *   img-src      'self' data: blob: [+ media origins]
+ *   img-src      'self' data: blob: [+ media origins, the app icon's origin]
  *   media-src    'self' data: blob: [+ media origins]
  *   frame-src    [media origins + declared frame origins] — only when there are any;
  *                'self' when a page frames a document of the app's OWN media
  *                (a block prop holding `pwpack/media/<file>.pdf|.txt`),
  *                so a receipt or a report can be shown in place
- *   font-src     'self' [+ the webfont file origin]
+ *   font-src     'self' — fonts are the app's own files (appearance §3.3)
  *   connect-src  'self' [+ every origin the app's data and sign-in reach]
  *   base-uri     'self'  — a host that serves the app under a sub-path
  *                injects `<base href>` (pwapp-format §2); 'none' would make
@@ -91,10 +94,16 @@ export interface CspInputs {
   readonly authDefinition?: unknown
   /** `publish.json` `media[]`. */
   readonly media: readonly { readonly url: string }[]
-  /** The webfont stylesheet the shell links, when any. */
-  readonly webfontHref?: string | null
   /** The block types the pages place, with their manifest's validated `definition.origins`. */
   readonly blocks?: readonly { readonly atomId: string; readonly origins?: BlockOrigins }[]
+  /**
+   * The app's own scripts (`plan.json` `scripts`, checked by plan-site.ts):
+   * each one's declared origins by directive — where it loads from (`script`)
+   * and what it reaches.
+   */
+  readonly scripts?: readonly { readonly origins: BlockOrigins }[]
+  /** The app's icon as the documents link it (`appearance` `brand.favicon`): an absolute address adds its origin to img-src. */
+  readonly favicon?: string
 }
 
 /** Directives a `<meta http-equiv="Content-Security-Policy">` cannot carry (CSP3 §3.3). */
@@ -227,10 +236,10 @@ export function deriveCsp(input: CspInputs): AppCsp {
   const connect = new Set<string>()
   const media = new Set<string>()
   const style = new Set<string>()
-  const font = new Set<string>()
   const img = new Set<string>()
   const mediaOnly = new Set<string>()
   const frame = new Set<string>()
+  const script = new Set<string>()
   let ownFrames = false
 
   const addConnect = (value: string, source: string): void => {
@@ -300,31 +309,32 @@ export function deriveCsp(input: CspInputs): AppCsp {
     if (o) media.add(o)
   }
 
-  // Webfonts: the stylesheet and the files it points at.
-  if (input.webfontHref) {
-    const o = originOf(input.webfontHref)
-    if (o) style.add(o)
-    if (o === 'https://fonts.googleapis.com') font.add('https://fonts.gstatic.com')
+  // Placed blocks: what their own code reaches, by the directive it names.
+  // There is no font directive: a font is never another origin's.
+  const byDirective: Record<string, Set<string>> = { connect, frame, img, media: mediaOnly, style, script }
+  // The app's own scripts, the same way: where each loads from, and what it reaches.
+  for (const declared of [...(input.blocks ?? []), ...(input.scripts ?? [])]) {
+    for (const [directive, origins] of Object.entries(declared.origins ?? {})) {
+      for (const o of origins ?? []) byDirective[directive]?.add(o)
+    }
   }
 
-  // Placed blocks: what their own code reaches, by the directive it names.
-  const byDirective = { connect, frame, img, media: mediaOnly, font, style }
-  for (const block of input.blocks ?? []) {
-    for (const [directive, origins] of Object.entries(block.origins ?? {})) {
-      for (const o of origins ?? []) byDirective[directive as keyof typeof byDirective].add(o)
-    }
+  // The app's icon, when it is another origin's.
+  if (input.favicon) {
+    const o = originOf(input.favicon)
+    if (o) img.add(o)
   }
 
   const sorted = (...sets: Set<string>[]): string[] => [...new Set(sets.flatMap((s) => [...s]))].sort()
   const frames = [...(ownFrames ? ["'self'"] : []), ...sorted(media, frame)]
   const directives: CspDirectives = {
     'default-src': ["'none'"],
-    'script-src': ["'self'", 'blob:', scriptHash(input.importMapText), ...(input.inlineScripts ?? []).map(scriptHash)],
+    'script-src': ["'self'", 'blob:', scriptHash(input.importMapText), ...(input.inlineScripts ?? []).map(scriptHash), ...sorted(script)],
     'style-src': ["'self'", "'unsafe-inline'", ...sorted(style)],
     'img-src': ["'self'", 'data:', 'blob:', ...sorted(media, img)],
     'media-src': ["'self'", 'data:', 'blob:', ...sorted(media, mediaOnly)],
     ...(frames.length > 0 ? { 'frame-src': frames } : {}),
-    'font-src': ["'self'", ...sorted(font)],
+    'font-src': ["'self'"],
     'connect-src': ["'self'", ...sorted(connect)],
     'base-uri': ["'self'"],
     'object-src': ["'none'"],
@@ -358,9 +368,16 @@ export const MEDIA = 'public, max-age=3600'
  * runtime files (`assets/`), the hashed block and engine modules, and the
  * files under fixed names — the shims, the two manifests, the envelope —
  * which are revalidated. Media comes last and replaces the envelope's rule
- * (`! Cache-Control`), since it lives under `pwpack/` too.
+ * (`! Cache-Control`), since it lives under `pwpack/` too. The app's own
+ * rules (`extra`, from `plan.json` `headers`) follow; they cannot set the
+ * policy, and take back nothing the build set.
  */
-export function headersFile(policy: string, mediaPolicy: string, documents: readonly string[] = []): string {
+export function headersFile(
+  policy: string,
+  mediaPolicy: string,
+  documents: readonly string[] = [],
+  extra: readonly { readonly path: string; readonly headers: readonly (readonly [string, string])[] }[] = []
+): string {
   const rule = (path: string, ...lines: string[]): string => `${path}\n${lines.map((l) => `  ${l}\n`).join('')}`
   // A page's document is served at its folder (`/pricing/`) and as the file.
   const pages = documents
@@ -380,5 +397,8 @@ export function headersFile(policy: string, mediaPolicy: string, documents: read
     rule('/shims/*', `Cache-Control: ${REVALIDATE}`),
     rule('/pwpack/*', `Cache-Control: ${REVALIDATE}`),
     rule('/pwpack/media/*', '! Cache-Control', `Cache-Control: ${MEDIA}`),
+    // The app's own (`plan.json` `headers`), last. They add headers; none of
+    // them is the policy (plan-site.ts refuses it), so the policy stays the build's.
+    ...extra.map((r) => rule(r.path, ...r.headers.map(([name, value]) => `${name}: ${value}`))),
   ].join('')
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { checkAccess, checkEntities, checkMessages, checkReservedSources, checkSeeds, checkStatusKeys, reachableMessageIds } from '../../commands/lib/report.js'
+import { checkAccess, checkEntities, checkMessages, checkReservedSources, checkSeeds, checkFontMetrics, checkStatusKeys, checkTitleTemplate, reachableMessageIds } from '../../commands/lib/report.js'
 import { tempDir } from './helpers.js'
 
 async function project(files: Record<string, unknown>): Promise<string> {
@@ -269,5 +269,64 @@ describe('STATUS_KEY_UNKNOWN (E6)', () => {
     expect(issues[0]!.message).toContain('blocks[0].props.action.statusKeys.mesage')
     expect(issues[1]!.message).toContain('statusKeys.message')
     expect(issues[1]!.message).toContain('bind reason')
+  })
+})
+
+describe('PLAN_TITLE_TEMPLATE_INVALID', () => {
+  it('accepts exactly one %s with %% for a %, and no template at all', async () => {
+    expect(checkTitleTemplate(await project({ 'app/plan.json': { titleTemplate: '%s · 100%% Acme' } }))).toEqual([])
+    expect(checkTitleTemplate(await project({ 'app/plan.json': { title: 'Acme' } }))).toEqual([])
+  })
+
+  it('refuses any other', async () => {
+    for (const bad of ['Acme', '%s %s', '%s at 5%', 7]) {
+      expect(codes(checkTitleTemplate(await project({ 'app/plan.json': { titleTemplate: bad } }))), String(bad)).toEqual(['PLAN_TITLE_TEMPLATE_INVALID'])
+    }
+  })
+})
+
+describe('MESSAGES_INVALID — plurals (envelope §2.1)', () => {
+  it('refuses a plural the runner cannot pick, and accepts a good one', async () => {
+    const own = { 'pwpack.json': { app: { notFound: 'missing' } } }
+    expect(checkMessages(await project({ ...own, 'app/plan.json': { messages: { 'cart.n': '{n, plural, one {# item} other {# items}}' } } }))).toEqual([])
+    const bad = checkMessages(await project({ ...own, 'app/plan.json': { messages: { 'cart.n': '{n, plural, one {# item}}' } } }))
+    expect(codes(bad)).toEqual(['MESSAGES_INVALID'])
+    expect(bad[0]?.message).toContain('messages["cart.n"]')
+  })
+})
+
+describe('the words of an app with locales (envelope §2.3)', () => {
+  const app = { 'pwpack.json': { app: {} } }
+  const plan = { title: 'Acme', locales: ['en', 'de'], defaultLocale: 'en' }
+
+  it("reads the default locale's catalogue for the ids the app can reach", async () => {
+    const root = await project({ ...app, 'app/plan.json': plan, 'app/messages/en.json': { 'notFound.title': 'x', 'notFound.body': 'y' } })
+    const issues = checkMessages(root)
+    expect(codes(issues)).toEqual(['MESSAGES_MISSING'])
+    expect(issues[0]?.path).toBe('app/messages/en.json')
+    expect(issues[0]?.message).toContain('notFound.home')
+  })
+
+  it("checks every catalogue's plurals", async () => {
+    const root = await project({
+      ...app,
+      'pwpack.json': { app: { notFound: 'missing' } },
+      'app/plan.json': plan,
+      'app/messages/en.json': { n: '{n, plural, one {#} other {#}}' },
+      'app/messages/de.json': { n: '{n, plural, one {#}}' },
+    })
+    const issues = checkMessages(root)
+    expect(issues.map((i) => [i.code, i.path])).toEqual([['MESSAGES_INVALID', 'app/messages/de.json']])
+  })
+})
+
+describe('FONT_METRICS_UNREADABLE', () => {
+  it("warns for a font file whose metrics cannot be read, as pwf build does", async () => {
+    const { packFromRecord } = await import('@pwfabric/pack')
+    const theme = { theme: { typography: { fontFamily: 'X, sans-serif' }, fonts: [{ family: 'X', files: [{ src: 'media/fonts/x.woff2', weight: 400 }] }] } }
+    const root = await project({ 'app/definitions/appearance.json': theme })
+    const bad = packFromRecord({ 'media/fonts/x.woff2': 'wOF2' + 'x'.repeat(60) })
+    expect(codes(checkFontMetrics(root, bad))).toEqual(['FONT_METRICS_UNREADABLE'])
+    expect(checkFontMetrics(root, packFromRecord({}))).toEqual([])
   })
 })

@@ -16,7 +16,7 @@
  * address (from the runner's own functions, so the head the build writes is
  * the head the runner keeps), and the Open Graph tags a link preview reads.
  */
-import { canonicalOf, composeTitle, descriptionOf, publicOriginOf } from '@pwfabric/runner'
+import { canonicalOf, composeTitle, descriptionOf, publicOriginOf, runnerMessages } from '@pwfabric/runner'
 
 /** One HTML document of the served folder. */
 export interface PageDocument {
@@ -28,6 +28,8 @@ export interface PageDocument {
   readonly notFound: boolean
   /** The path it is served at under the app's base (`/`, `/pricing/`); undefined for `404.html`. */
   readonly path?: string
+  /** In an app with locales: the locale the document is drawn in (envelope §2.3). */
+  readonly locale?: string
 }
 
 /** The folders of the served folder (§1): a page key named like one has no document of its own under path routing. */
@@ -62,6 +64,21 @@ function literal(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' && !value.includes('{{') ? value.trim() : undefined
 }
 
+/** `{{t('<id>')}}`: a word by a literal id, which a producer can write. */
+const T_CALL = /\{\{\s*t\(\s*(['"])([^'"]+)\1\s*\)\s*\}\}/g
+
+/**
+ * `value` with each `{{t('<id>')}}` written as the word of `words` (a
+ * locale's catalogue over the default's), so a static head or llms.txt
+ * reads the locale's words (envelope §2.3); any other expression is left for
+ * the browser. Unchanged without words, or for a value that is not text.
+ */
+export function wordedText(value: unknown, words: Readonly<Record<string, string>> | undefined, locale: string | undefined): unknown {
+  if (!words || typeof value !== 'string') return value
+  const say = runnerMessages(words, locale)
+  return value.replace(T_CALL, (_, _q: string, id: string) => say(id as never))
+}
+
 /** What a document's head says about its page. */
 export interface DocumentHead {
   readonly title: string
@@ -83,15 +100,26 @@ export function documentHead(input: {
   readonly doc: PageDocument
   readonly receipt: unknown
   readonly appTitle: string
+  /** The app's title template (`plan.json` `titleTemplate`, receipt §1.1). */
+  readonly titleTemplate?: string
   readonly appDescription?: string
+  /**
+   * The words of the document's locale (its catalogue over the default's;
+   * the app's `messages` in a single-language app): a title or description
+   * written with `{{t('<id>')}}` is written with them, so a search engine
+   * reads the locale's words in the static head (envelope §2.3).
+   */
+  readonly words?: Readonly<Record<string, string>>
+  readonly locale?: string
   readonly origin?: string
   readonly image?: string
   readonly gated: boolean
   readonly base: string
 }): DocumentHead {
   const receipt = !input.gated && input.receipt && typeof input.receipt === 'object' ? (input.receipt as Record<string, unknown>) : {}
-  const title = composeTitle(input.appTitle || undefined, literal(receipt['title'])) ?? ''
-  const description = descriptionOf(receipt['description'], input.appDescription)
+  const worded = (value: unknown): unknown => wordedText(value, input.words, input.locale)
+  const title = composeTitle(input.appTitle || undefined, literal(worded(receipt['title'])), { template: input.titleTemplate, own: receipt['titleTemplate'] === false }) ?? ''
+  const description = descriptionOf(worded(receipt['description']), input.appDescription)
   const canonical = input.doc.path !== undefined ? canonicalOf(input.origin, input.doc.path) : undefined
   const image = previewImageOf(input.image, input.origin, input.base)
   return {
@@ -142,6 +170,20 @@ export function sitemapXml(urls: readonly string[]): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map((u) => `  <url><loc>${xml(u)}</loc></url>\n`).join('')}</urlset>
+`
+}
+
+/**
+ * `sitemap.xml` of an app with locales (pwapp-format §2.4): one `<url>` per
+ * page per locale, each with an `xhtml:link` alternate per locale and one
+ * for `x-default`.
+ */
+export function sitemapXmlLocales(entries: readonly { readonly url: string; readonly alternates: readonly { readonly hreflang: string; readonly href: string }[] }[]): string {
+  const url = (e: (typeof entries)[number]): string =>
+    `  <url><loc>${xml(e.url)}</loc>${e.alternates.map((a) => `<xhtml:link rel="alternate" hreflang="${xml(a.hreflang)}" href="${xml(a.href)}"/>`).join('')}</url>\n`
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+${entries.map(url).join('')}</urlset>
 `
 }
 

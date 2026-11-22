@@ -326,7 +326,32 @@ export interface SurfaceThemeLayout {
  * }
  * ```
  */
+/** One file of a font family the app ships (appearance §3.3). */
+export interface SurfaceThemeFontFile {
+  /** `media/fonts/<file>.woff2`. */
+  src: string
+  /** 100–900, or `"100 900"`, the range of a variable font. */
+  weight: number | string
+  style?: 'normal' | 'italic'
+  /** The code points the file covers, as CSS `unicode-range` writes them. */
+  unicodeRange?: string
+}
+
+/** The generic families a font falls back to (appearance §3.3). */
+export const FONT_FALLBACKS = ['serif', 'sans-serif', 'monospace', 'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded', 'cursive', 'fantasy', 'math', 'emoji'] as const
+export type FontFallback = (typeof FONT_FALLBACKS)[number]
+
+/** A font family the app ships: its files under `media/fonts/` (appearance §3.3). The format knows no font service. */
+export interface SurfaceThemeFont {
+  family: string
+  files: SurfaceThemeFontFile[]
+  /** Drawn until a file arrives and when it cannot be had; absent, `sans-serif`. */
+  fallback?: FontFallback
+}
+
 export interface SurfaceTheme {
+  /** The font families the app ships (appearance §3.3). */
+  fonts?: SurfaceThemeFont[]
   colors?: SurfaceThemeColors
   border?: SurfaceThemeBorder
   typography?: SurfaceThemeTypography

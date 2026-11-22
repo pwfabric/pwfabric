@@ -39,6 +39,14 @@ describe('@pwfabric/cli/host', () => {
     expect(existsSync(`${pkgDir}src/host/index.ts`)).toBe(true)
   })
 
+  it('exports its package.json, so a host can read the version it runs', () => {
+    // `import pkg from '@pwfabric/cli/package.json'` and
+    // `require.resolve('@pwfabric/cli/package.json')` fail with
+    // ERR_PACKAGE_PATH_NOT_EXPORTED unless the file is an export.
+    const pkg = JSON.parse(readFileSync(`${pkgDir}package.json`, 'utf8')) as { exports: Record<string, unknown> }
+    expect(pkg.exports['./package.json']).toBe('./package.json')
+  })
+
   it('exports the building blocks', () => {
     expect(Object.keys(host).sort()).toEqual(
       [

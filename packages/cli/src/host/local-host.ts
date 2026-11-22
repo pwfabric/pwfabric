@@ -50,6 +50,7 @@ import {
 import {
   readAuth,
   readEntities,
+  readLayoutReceipt,
   readReceipt,
   readSignInKey,
   surfaceKeys,
@@ -177,7 +178,7 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
   /** Accounts made with an invitation (`registration: "invite"`), by principal id. */
   const invited = new Set<string>()
   const transactions = new TokenStore<{ readonly returnTo: string; readonly method: string; readonly expiresAt: number }>()
-  const records = new RecordStore(root, user, { readOnly: options.readOnly === true })
+  const records = new RecordStore(root, user, { readOnly: options.readOnly === true, ...(options.roles ? { devRoles: options.roles } : {}) })
   const issuer = new DevIssuer(bearer, user)
 
   const originOf = (req: IncomingMessage): string => `http://${req.headers.host ?? 'localhost'}`
@@ -191,7 +192,7 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
    */
   const answered = (principal: Principal): Principal & { readonly roles: readonly string[] } => ({
     ...principal,
-    roles: principal.id === user.id ? [...(readAuth(root)?.access.roles ?? [])] : [],
+    roles: principal.id === user.id ? [...(options.roles ?? readAuth(root)?.access.roles ?? [])] : [],
   })
 
   function startSession(principal: Principal = user): { token: string; expiresAt: string; principal: Principal } {
@@ -405,7 +406,11 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
 
   function receiptFor(key: string, base: string): Record<string, unknown> | undefined {
     const receipt = readReceipt(root, key)
-    if (!receipt) return undefined
+    return receipt ? declaredReceipt(receipt, base) : undefined
+  }
+
+  /** A receipt — a page's or the layout's — as the host serves it. */
+  function declaredReceipt(receipt: Record<string, unknown>, base: string): Record<string, unknown> {
     const entities = readEntities(root)
     // The record's fields ride on the source, as `pwf build` writes them
     // (record-fields.ts), so a form here sends the same body it will there;
@@ -417,7 +422,8 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
 
   function surface(req: IncomingMessage, res: ServerResponse, parts: string[]): void {
     if (req.method !== 'GET') methodNotAllowed()
-    const file = parts.length === 1 ? parts[0] : undefined
+    // A page in a folder of app/surfaces/ (`docs/intro`) is a nested path.
+    const file = parts.length > 0 ? parts.join('/') : undefined
     if (!file || !file.endsWith('.receipt.json')) notFound()
     const key = file.slice(0, -'.receipt.json'.length)
     // The sign-in screen is the page a visitor signs in ON: refusing it
@@ -464,6 +470,9 @@ export const createLocalHost: CreateLocalHost = (options: LocalHostOptions): Loc
         const receipt = receiptFor(key, base)
         if (receipt) out[`surfaces/${key}.receipt.json`] = receipt
       }
+      // The app's layout (receipt §4), its sources reading from the host like a page's.
+      const layout = readLayoutReceipt(root)
+      if (layout) out['layout.receipt.json'] = declaredReceipt(layout, base)
       return out
     },
 

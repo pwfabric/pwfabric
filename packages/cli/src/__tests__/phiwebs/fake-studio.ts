@@ -33,6 +33,8 @@ export interface FakeStudio {
   findings: unknown[]
   /** A refusal the next import answers with (once). */
   importRefusal: { status: number; body: unknown } | null
+  /** What every publish answers instead of publishing (an approval request, say); null publishes. */
+  publishAnswer: { status: number; body: unknown } | null
   /** Projects that answer NOT_OPEN to a publish until opened (a new project starts so). */
   readonly asleep: Set<string>
   /** The tools /mcp lists. */
@@ -76,6 +78,7 @@ export async function startFakeStudio(verify: (token: string) => boolean, option
     rpc: [],
     findings: [],
     importRefusal: null,
+    publishAnswer: null,
     asleep: new Set(),
     tools: FAKE_STUDIO_TOOLS,
     close: async () => {
@@ -122,6 +125,15 @@ export async function startFakeStudio(verify: (token: string) => boolean, option
             result: { isError: true, content: [{ type: 'text', text: 'Error PROJECT_BUSY: a turn is running' }], structuredContent: { error: { code: 'PROJECT_BUSY' } } },
           })
         }
+        if (name === 'publish') {
+          const projectId = (args as { projectId?: string })?.projectId ?? ''
+          const pending = { projectId, status: 'awaiting_approval', requestId: 'r-1', approveUrl: `${state.webUrl}/p/${projectId}?approve=r-1`, version: 'abc1234', action: 'publish' }
+          return json(200, {
+            jsonrpc: '2.0',
+            id: msg.id,
+            result: { content: [{ type: 'text', text: `Waiting for approval: open ${pending.approveUrl}. next: call get_project` }], structuredContent: pending },
+          })
+        }
         if (name === 'list_projects') {
           return json(200, {
             jsonrpc: '2.0',
@@ -166,6 +178,7 @@ export async function startFakeStudio(verify: (token: string) => boolean, option
         return json(200, { state: 'ready' })
       }
       if (state.asleep.has(id)) return json(409, { error: 'the project is asleep: open it first', code: 'NOT_OPEN' })
+      if (state.publishAnswer) return json(state.publishAnswer.status, state.publishAnswer.body)
       return json(200, { app: id, version: 'abc1234', url: `https://${id}.apps.example.com/` })
     }
     json(404, { error: url.pathname, code: 'NOT_FOUND' })

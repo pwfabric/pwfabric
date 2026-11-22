@@ -8,6 +8,7 @@ import {
   blockPropsCatalog,
   checkBlockIds,
   checkBlockProps,
+  checkAmbiguousBlockTypes,
   checkBlockTypes,
   checkDefaultCopy,
   checkErrorsAsText,
@@ -22,16 +23,20 @@ import {
   type PackValidation,
   type PageReceipt,
 } from '@pwfabric/pack'
-import { PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
+import { assemblePage, isTitleTemplate, pluralProblems, PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
+import { layoutSlotProblems, localesOf, PAGE_SLOT_TYPE } from '@pwfabric/contracts'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { engineVersion, pinsOf } from './identity.js'
+import { faviconOf } from '../../dev/favicon.js'
+import { appearanceConfigOf } from '../../dev/theme.js'
+import { bodyFontOf, fontAssetsOf, themeFontsOf, unreadableMetricsMessage } from '../../dev/fonts.js'
 import { engineRangeDiagnostics, isRecord, jsonOf, loadSources, type LoadedSources } from '../../dev/sources.js'
 import { servedPageKeys } from '../../dev/envelope.js'
 import { readAuth, readEntities, readReceipt, readSeed, surfaceKeys, type AuthDeclaration } from '../../host/definitions.js'
 
 /**
  * Checks every `packs[]` pin against `.pwf/packs/<id>@<version>/`.
- * A build that is not cached is a warning (`PIN_NOT_CACHED`: `pwf add` it);
+ * A build that is not cached is an error (`PIN_NOT_CACHED`: `pwf add` it), as `pwf build` makes it;
  * a cached build whose content hash differs from the pin is an error
  * (`PIN_HASH_MISMATCH`).
  */
@@ -47,11 +52,12 @@ export async function checkPins(root: string, identity: PackValidation['identity
     }
     const rel = cacheRelDir(pin.id, pin.version)
     if (!existsSync(dir)) {
+      // An error, as `pwf build` makes it (PACK_NOT_CACHED), with the same fix.
       issues.push({
-        severity: 'warning',
+        severity: 'error',
         code: 'PIN_NOT_CACHED',
         path: rel,
-        message: `${pin.id}@${pin.version} is pinned but not in ${rel}; run \`pwf add <its .pwpack or folder>\``,
+        message: `${pin.id}@${pin.version} is pinned in pwpack.json but is not in ${rel}/ — run \`pwf add ${pin.id}@${pin.version}\` (or recreate the app with \`pwf create\`) to put it there`,
       })
       continue
     }
@@ -357,17 +363,83 @@ export function checkMessages(root: string): PackIssue[] {
   if (!isObj(pwpack) || !isObj(pwpack['app'])) return []
   // An app with no plan sets no words: every id it can reach is missing.
   const plan = readJsonFile(join(root, 'app', 'plan.json'))
-  const messages = isObj(plan) && isObj(plan['messages']) ? plan['messages'] : {}
+  // An app with locales keeps its words per locale (envelope §2.3): the
+  // default locale's catalogue is the one every id must be in.
+  const locales = localesOf(plan)
+  const catalogueOf = (lang: string): Record<string, unknown> => {
+    const doc = readJsonFile(join(root, 'app', 'messages', `${lang}.json`))
+    return isObj(doc) ? doc : {}
+  }
+  const messages = locales ? catalogueOf(locales.defaultLocale) : isObj(plan) && isObj(plan['messages']) ? plan['messages'] : {}
+  const wordFiles: [string, Record<string, unknown>][] = locales
+    ? locales.locales.map((l) => [`app/messages/${l}.json`, catalogueOf(l)])
+    : [['app/plan.json', messages]]
+  // A plural the runner cannot pick is written as its text (envelope §2.1): the build's code and words.
+  const plurals: PackIssue[] = []
+  for (const [path, words] of wordFiles) {
+    for (const [id, text] of Object.entries(words)) {
+      if (typeof text !== 'string') continue
+      for (const problem of pluralProblems(text)) plurals.push({ severity: 'error', code: 'MESSAGES_INVALID', path, message: `messages["${id}"]: ${problem}` })
+    }
+  }
   const missing = reachableMessageIds(root).filter((id) => !(typeof messages[id] === 'string' && messages[id] !== ''))
-  if (missing.length === 0) return []
+  if (missing.length === 0) return plurals
   return [
+    ...plurals,
     {
       severity: 'error',
       code: 'MESSAGES_MISSING',
-      path: 'app/plan.json',
+      path: locales ? `app/messages/${locales.defaultLocale}.json` : 'app/plan.json',
       message:
         `the app can show ${missing.length} runner message${missing.length === 1 ? '' : 's'} it does not set in messages, ` +
         `and the engine writes no words of its own, so the visitor reads nothing there: ${missing.join(', ')}`,
+    },
+  ]
+}
+
+/**
+ * The app's icon (`app/definitions/appearance.json` `brand.favicon`): the
+ * build's rule and words (`FAVICON_INVALID`, dev/favicon.ts).
+ */
+export function checkFavicon(root: string, pack: PackFolder): PackIssue[] {
+  const appearance = readJsonFile(join(root, 'app', 'definitions', 'appearance.json'))
+  const brand = isObj(appearance) ? appearance['brand'] : undefined
+  const { problem } = faviconOf(isObj(brand) ? brand['favicon'] : undefined, pack.files)
+  return problem ? [{ severity: 'error', code: 'FAVICON_INVALID', path: 'app/definitions/appearance.json', message: problem }] : []
+}
+
+/**
+ * The app's font files whose metrics cannot be read (`FONT_METRICS_UNREADABLE`,
+ * a warning, as `pwf build` gives it): their family is drawn with a plain
+ * stand-in, and the text may move when the font arrives.
+ */
+export function checkFontMetrics(root: string, pack: PackFolder): PackIssue[] {
+  const doc = readJsonFile(join(root, 'app', 'definitions', 'appearance.json'))
+  if (!isObj(doc)) return []
+  const config = appearanceConfigOf(doc) as Record<string, unknown> | undefined
+  return fontAssetsOf(themeFontsOf(config), pack.files, bodyFontOf(config)).unreadable.map((u) => ({
+    severity: 'warning',
+    code: 'FONT_METRICS_UNREADABLE',
+    path: u.src ?? 'app/definitions/appearance.json',
+    message: unreadableMetricsMessage(u),
+  }))
+}
+
+/**
+ * The app's title template (`app/plan.json` `titleTemplate`, receipt §1.1):
+ * exactly one `%s`, and `%%` for a `%` (`PLAN_TITLE_TEMPLATE_INVALID`, the
+ * build's code and words).
+ */
+export function checkTitleTemplate(root: string): PackIssue[] {
+  const plan = readJsonFile(join(root, 'app', 'plan.json'))
+  const raw = isObj(plan) ? plan['titleTemplate'] : undefined
+  if (raw === undefined || isTitleTemplate(raw)) return []
+  return [
+    {
+      severity: 'error',
+      code: 'PLAN_TITLE_TEMPLATE_INVALID',
+      path: 'app/plan.json',
+      message: `plan.json "titleTemplate" is ${JSON.stringify(raw)}: it holds exactly one %s, which the page's title replaces, and writes a % as %%`,
     },
   ]
 }
@@ -428,12 +500,35 @@ export function checkPages(loaded: LoadedSources): PackIssue[] {
     const receipt = jsonOf(app.folder, path)
     // A missing or unreadable receipt is the pack validation's finding.
     if (isRecord(receipt) && Array.isArray(receipt['blocks'])) pages.push({ key, path, receipt })
+    // ...and its receipt for each locale that has one (envelope §2.3), judged the same way.
+    for (const lang of localesOf(jsonOf(app.folder, 'app/plan.json'))?.locales ?? []) {
+      const own = `app/surfaces/${key}.${lang}.receipt.json`
+      const doc = jsonOf(app.folder, own)
+      if (isRecord(doc) && Array.isArray(doc['blocks'])) pages.push({ key, path: own, receipt: doc })
+    }
   }
-  const issues = pages.flatMap((page) => checkBlockIds(page))
+  // The layout (receipt §4), when it is one: each page is judged as drawn in it.
+  const layoutPath = 'app/layout.receipt.json'
+  const layoutDoc = jsonOf(app.folder, layoutPath)
+  const layout = isRecord(layoutDoc) && Array.isArray(layoutDoc['blocks']) && layoutSlotProblems(layoutDoc).length === 0 ? layoutDoc : undefined
+  type Receipt = Parameters<typeof assemblePage>[1]
+  const issues: PackIssue[] = []
+  for (const page of pages) {
+    const drawn = layout
+      ? assemblePage(layout as unknown as Receipt, page.receipt as unknown as Receipt, { key: page.key, entry: identity.app.entry })
+      : { receipt: page.receipt, problems: [] }
+    issues.push(...checkBlockIds({ path: page.path, receipt: drawn.receipt }))
+    for (const problem of drawn.problems) {
+      if (problem.kind === 'source') issues.push({ severity: 'error', code: 'SOURCE_ID_DUPLICATE', path: page.path, message: `${problem.message} (${layoutPath})` })
+    }
+  }
   const allPacksRead = loaded.packs.length === (identity.packs ?? []).length
   if (allPacksRead) {
     const known = definedBlockTypes(blockSourcesOf(loaded))
-    issues.push(...checkBlockTypes(pages, (type) => known.has(type)))
+    const judged: PageReceipt[] = layout ? [...pages, { key: 'layout', path: layoutPath, receipt: layout }] : pages
+    issues.push(...checkBlockTypes(judged, (type) => type === PAGE_SLOT_TYPE || known.has(type)))
+    // A type two blocks answer to by a short name is the build's error too.
+    issues.push(...checkAmbiguousBlockTypes(judged, blockSourcesOf(loaded)))
   }
   return issues
 }
@@ -454,7 +549,7 @@ export async function validateProject(root: string, pack: PackFolder): Promise<P
   const engineIssues: PackIssue[] = loaded
     ? engineRangeDiagnostics(loaded, engineVersion()).map((d) => ({ severity: 'error', code: d.code, message: d.message, ...(d.path ? { path: d.path } : {}) }))
     : []
-  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
+  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkTitleTemplate(root), ...checkFavicon(root, pack), ...checkFontMetrics(root, pack), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 

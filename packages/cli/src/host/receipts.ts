@@ -54,7 +54,8 @@ function rewriteSource(source: unknown, base: string, declared: ReadonlySet<stri
     const qs = params.toString()
     endpoint = `${collection}/${route}${qs ? `?${qs}` : ''}`
   }
-  return { ...rest, kind: 'rest', method: 'GET', endpoint, authProviderRef: base, returns: 'data' }
+  // An aggregate keeps its `aggregate`: it binds `{ fn, field?, value, count }`, not a list (data-protocol §2.3).
+  return { ...rest, kind: 'rest', method: 'GET', endpoint, authProviderRef: base, returns: 'data', ...(isObject(aggregate) ? { aggregate } : {}) }
 }
 
 /** A copy of `receipt` whose declared entity sources read from `base`. Non-mutating. */

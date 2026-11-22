@@ -6,6 +6,7 @@ import {
   blockPropsCatalog,
   blockTypeNames,
   checkBlockProps,
+  resolveBlockType,
   checkReceiptBlockProps,
   isBinding,
   nearestName,
@@ -54,6 +55,13 @@ const check = (props: Record<string, unknown>, type = 'button') =>
 const codes = (props: Record<string, unknown>): string[] => check(props).map((i) => i.code)
 
 describe('checkReceiptBlockProps', () => {
+  it('judges a breakpoint map value by value: the renderer resolves it for the breakpoint drawn at', () => {
+    expect(codes({ size: { xs: 'small', md: 'large' } })).toEqual([])
+    const issues = check({ size: { xs: 'small', md: 'huge' } })
+    expect(issues.map((i) => i.code)).toEqual(['BLOCK_PROP_ENUM'])
+    expect(issues[0]?.message).toContain('size.md')
+  })
+
   it('accepts props that fit', () => {
     expect(
       check({
@@ -279,6 +287,7 @@ describe('blockPropsCatalog + checkBlockProps', () => {
       'app/surfaces/about.receipt.json': '﻿' + JSON.stringify(receipt([{ type: 'text', props: { tone: 1 } }])),
       'app/surfaces/broken.receipt.json': '{',
       'app/surfaces/nested/x.receipt.json': JSON.stringify(receipt([{ type: 'button', props: { size: 'sm' } }])),
+      'app/layout.receipt.json': JSON.stringify(receipt([{ type: 'text', props: { shade: 1 } }, { type: 'pw:page' }])),
     })
     const foundation = packFromRecord({
       'atoms/blocks/control/button/component.tsx': 'x',
@@ -310,9 +319,32 @@ describe('blockPropsCatalog + checkBlockProps', () => {
     expect(catalog.has('plain')).toBe(false)
     const issues = checkBlockProps(app, catalog)
     expect(issues.map((i) => [i.path, i.code])).toEqual([
+      // The layout's blocks are judged like a page's (receipt §4).
+      ['app/layout.receipt.json', 'BLOCK_PROP_UNKNOWN'],
       ['app/surfaces/about.receipt.json', 'BLOCK_PROP_UNKNOWN'],
       ['app/surfaces/home.receipt.json', 'BLOCK_PROP_TYPE'],
       ['app/surfaces/home.receipt.json', 'BLOCK_PROP_ENUM'],
     ])
+  })
+})
+
+describe('resolveBlockType — which block a receipt type names', () => {
+  const b = (id: string, name?: string) => ({ atom: id, id, ...(name ? { manifest: { name } } : {}) })
+
+  it("takes the block whose id or name is the type before any block's short name, wherever it comes in order", () => {
+    // The app's docs.sidebar (name docs-sidebar) first; the pack's layout.sidebar is named sidebar.
+    expect(resolveBlockType('sidebar', [b('docs.sidebar', 'docs-sidebar'), b('layout.sidebar', 'sidebar')])).toMatchObject({ id: 'layout.sidebar' })
+    expect(resolveBlockType('docs-sidebar', [b('docs.sidebar', 'docs-sidebar'), b('layout.sidebar', 'sidebar')])).toMatchObject({ id: 'docs.sidebar' })
+  })
+
+  it('lets the first of two blocks of one exact name win, the other shadowed', () => {
+    expect(resolveBlockType('button', [b('custom.button', 'button'), b('control.button', 'button')])).toMatchObject({ id: 'custom.button', shadowed: [{ id: 'control.button' }] })
+  })
+
+  it('takes a short name only when one block answers to it; two are ambiguous, never picked by order', () => {
+    expect(resolveBlockType('panel', [b('layout.panel')])).toMatchObject({ id: 'layout.panel' })
+    const hit = resolveBlockType('panel', [b('docs.panel', 'docs-panel'), b('layout.panel', 'Panel')])
+    expect(hit && 'ambiguous' in hit ? hit.ambiguous.map((x) => x.id) : hit).toEqual(['docs.panel', 'layout.panel'])
+    expect(resolveBlockType('nothing', [b('layout.panel')])).toBeUndefined()
   })
 })

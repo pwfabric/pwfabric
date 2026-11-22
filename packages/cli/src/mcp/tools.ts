@@ -12,6 +12,7 @@ import {
   atomManifestPath,
   blockPropDescriptors,
   blockTypeNames,
+  resolveBlockType,
   nearestName,
   UNKNOWN_BLOCK_TYPE,
   validatePack,
@@ -124,9 +125,11 @@ interface CatalogEntry {
   readonly themes: readonly string[]
 }
 
+/** The app's page keys, a page in a folder of app/surfaces/ included (`docs/intro`). */
 async function surfacesOf(root: string): Promise<string[]> {
-  const entries = await readdir(join(root, 'app', 'surfaces')).catch(() => [] as string[])
+  const entries = await readdir(join(root, 'app', 'surfaces'), { recursive: true }).catch(() => [] as string[])
   return entries
+    .map((f) => f.split('\\').join('/'))
     .filter((f) => f.endsWith('.receipt.json'))
     .map((f) => f.slice(0, -'.receipt.json'.length))
     .sort()
@@ -189,17 +192,19 @@ async function findBlock(
     else sources.push({ pack: `${pin.id}@${pin.version}`, own: false, folder })
   }
   const names = new Set<string>()
-  let found: FoundBlock | undefined
+  // In resolution order, so the block found is the one a receipt's type names (resolveBlockType).
+  const blocks: { atom: FoundBlock; id: string; manifest?: Record<string, unknown> }[] = []
   for (const source of sources) {
     for (const atom of validatePack(source.folder).atoms) {
       if (atom.kind !== 'block') continue
       const manifestPath = atomManifestPath(atom)
       const manifest = manifestAt(source.folder, manifestPath)
-      const answers = blockTypeNames(atom.id, manifest)
-      answers.forEach((n) => names.add(n))
-      if (!found && manifest && answers.includes(type)) found = { pack: source.pack, own: source.own, atomId: atom.id, manifestPath, manifest }
+      blockTypeNames(atom.id, manifest).forEach((n) => names.add(n))
+      if (manifest) blocks.push({ atom: { pack: source.pack, own: source.own, atomId: atom.id, manifestPath, manifest }, id: atom.id, manifest })
     }
   }
+  const hit = resolveBlockType(type, blocks)
+  const found = hit && !('ambiguous' in hit) ? hit.atom : undefined
   return { ...(found ? { found } : {}), names: [...names].sort(), missing }
 }
 

@@ -118,7 +118,6 @@ describe('embed.js, the visitor bundle', () => {
     'contracts/fabric/pack-requires': 'install-time (@pwfabric/contracts/pack)',
     'contracts/fabric/atom': 'reads pack files: compiler, pack tools, install (@pwfabric/contracts/pack)',
     'contracts/fabric/record-write': "a session server's (@pwfabric/contracts/record-write)",
-    'contracts/fabric/webfonts': 'the publish path and a font picker read it (@pwfabric/contracts/webfonts)',
     'authoring/index': 'the whole authoring kit; a page seeds @pwfabric/authoring/block',
     'authoring/define-factory': 'composes blocks in tooling',
     'authoring/registry': 'registers blocks in tooling',
@@ -138,7 +137,7 @@ describe('embed.js, the visitor bundle', () => {
     const runtime = seeded['__pwfabric_runtime'] as Record<string, unknown>
     const core = seeded['__pwfabric_core'] as Record<string, unknown>
     const sdk = seeded['__pwfabric_sdk'] as Record<string, unknown>
-    for (const name of ['createPostgresConnector', 'createSeoCapability', 'createAnalyticsCapability', 'createGraphResolver', 'createPerformanceReporter', 'platformCapabilities', 'satisfiesSemverRange', 'resolveSiblingEntry', 'prepareRecordWrite', 'findAllowedWebfont']) {
+    for (const name of ['createPostgresConnector', 'createSeoCapability', 'createAnalyticsCapability', 'createGraphResolver', 'createPerformanceReporter', 'platformCapabilities', 'satisfiesSemverRange', 'resolveSiblingEntry', 'prepareRecordWrite']) {
       expect(runtime[name], name).toBeUndefined()
     }
     for (const name of ['defineConfigSchema', 'observeLCP', 'BLOCK_HOST_IMPORTS']) {

@@ -80,7 +80,8 @@ export interface BlockSource {
   readonly label?: string
 }
 
-const RECEIPT = /^app\/surfaces\/[^/]+\.receipt\.json$/
+/** A page's receipt, a page's receipt for one locale, and the app's layout (receipt §4): the props of each are checked. */
+const RECEIPT = /^app\/(?:surfaces\/[^/]+|layout)\.receipt\.json$/
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -112,6 +113,82 @@ export function blockTypeNames(atomId: string, manifest?: Readonly<Record<string
   return [...names]
 }
 
+/**
+ * A block's names, by how firmly they name it: `exact` — its id and its
+ * manifest `name` — and `short` — its id without its first segment and its
+ * last segment (`docs.sidebar` → `sidebar`), which another block may share.
+ */
+export function blockTypeNameParts(atomId: string, manifest?: Readonly<Record<string, unknown>>): { exact: string[]; short: string[] } {
+  const exact = new Set<string>([atomId])
+  const name = manifest?.['name']
+  if (typeof name === 'string' && name) exact.add(name)
+  const short = new Set<string>()
+  const dot = atomId.indexOf('.')
+  if (dot >= 0) short.add(atomId.slice(dot + 1))
+  short.add(atomId.slice(atomId.lastIndexOf('.') + 1))
+  for (const n of exact) short.delete(n)
+  return { exact: [...exact], short: [...short] }
+}
+
+/** One block a type may name, in resolution order (the app's own first, then each pinned pack's). */
+export interface NamedBlock<T> {
+  readonly atom: T
+  readonly id: string
+  readonly manifest?: Readonly<Record<string, unknown>> | undefined
+}
+
+/**
+ * The block a receipt's `type` names, the same in `pwf validate`, `pwf build`
+ * and the tools that describe a block:
+ *
+ *  1. the first block (the app's own, then each pinned pack's, in order) whose
+ *     id or manifest `name` is the type — a later one of that name is shadowed;
+ *  2. else the one block whose short name (its id without its first segment,
+ *     or its last segment) is the type;
+ *  3. two different blocks by a short name is ambiguous — never a pick by
+ *     folder or by order: the receipt writes one of their ids.
+ *
+ * `shadowed` lists the other blocks the type also names; undefined: none.
+ */
+export function resolveBlockType<T>(
+  type: string,
+  blocks: readonly NamedBlock<T>[]
+): { atom: T; id: string; shadowed: NamedBlock<T>[] } | { ambiguous: NamedBlock<T>[] } | undefined {
+  const parts = blocks.map((b) => ({ block: b, names: blockTypeNameParts(b.id, b.manifest) }))
+  const exact = parts.filter((p) => p.names.exact.includes(type)).map((p) => p.block)
+  if (exact.length > 0) {
+    const [first, ...rest] = exact as [NamedBlock<T>, ...NamedBlock<T>[]]
+    return { atom: first.atom, id: first.id, shadowed: rest }
+  }
+  const short = parts.filter((p) => p.names.short.includes(type)).map((p) => p.block)
+  if (short.length === 0) return undefined
+  const ids = [...new Set(short.map((b) => b.id))]
+  if (ids.length > 1) return { ambiguous: ids.map((id) => short.find((b) => b.id === id) as NamedBlock<T>) }
+  const [first, ...rest] = short as [NamedBlock<T>, ...NamedBlock<T>[]]
+  return { atom: first.atom, id: first.id, shadowed: rest }
+}
+
+/** The blocks of the sources, in resolution order, with their manifests. */
+export function namedBlocksOf(sources: readonly BlockSource[]): NamedBlock<AtomRef>[] {
+  const out: NamedBlock<AtomRef>[] = []
+  for (const source of sources) {
+    for (const ref of source.atoms) {
+      if (ref.kind !== 'block') continue
+      const manifest = jsonAt(source.folder, atomManifestPath(ref))
+      out.push({ atom: ref, id: ref.id, ...(isRecord(manifest) ? { manifest } : {}) })
+    }
+  }
+  return out
+}
+
+/** The code of a type that names two different blocks by a short name. */
+export const BLOCK_TYPE_AMBIGUOUS = 'BLOCK_TYPE_AMBIGUOUS'
+
+/** The `BLOCK_TYPE_AMBIGUOUS` finding: the type, the page that places it, and every block it names. */
+export function ambiguousBlockTypeMessage(type: string, pageKey: string, ids: readonly string[]): string {
+  return `page "${pageKey}" places a block of type "${type}", which names ${ids.map((i) => `"${i}"`).join(' and ')} by a short name: write the id of the one meant`
+}
+
 /** The manifest next to an atom (`manifest.json` beside its entry, or the JSON entry itself). */
 export function atomManifestPath(ref: Pick<AtomRef, 'relPath'>): string {
   if (ref.relPath.endsWith('.json')) return ref.relPath
@@ -140,17 +217,15 @@ export function blockPropDescriptors(manifest: unknown): BlockPropDescriptor[] |
  */
 export function blockPropsCatalog(sources: readonly BlockSource[]): Map<string, BlockPropsEntry> {
   const catalog = new Map<string, BlockPropsEntry>()
-  const taken = new Set<string>()
-  for (const source of sources) {
-    for (const ref of source.atoms) {
-      if (ref.kind !== 'block') continue
-      const manifest = jsonAt(source.folder, atomManifestPath(ref))
-      const names = blockTypeNames(ref.id, isRecord(manifest) ? manifest : undefined).filter((n) => !taken.has(n))
-      names.forEach((n) => taken.add(n))
-      const props = blockPropDescriptors(manifest)
-      if (!props) continue
-      for (const n of names) catalog.set(n, { atomId: ref.id, props })
-    }
+  const blocks = namedBlocksOf(sources)
+  const names = new Set(blocks.flatMap((b) => blockTypeNames(b.id, b.manifest)))
+  // Each name as resolveBlockType resolves it; an ambiguous one is judged by
+  // nobody's props (it is BLOCK_TYPE_AMBIGUOUS).
+  for (const name of names) {
+    const hit = resolveBlockType(name, blocks)
+    if (!hit || 'ambiguous' in hit) continue
+    const props = blockPropDescriptors(blocks.find((b) => b.atom === hit.atom)?.manifest)
+    if (props) catalog.set(name, { atomId: hit.id, props })
   }
   return catalog
 }
@@ -363,6 +438,22 @@ function valueIssue(
   }
 }
 
+const BREAKPOINT_NAMES = new Set(['xs', 'sm', 'md', 'lg', 'xl', '2xl'])
+
+/**
+ * The values a prop is judged by: each breakpoint's (`prop.md`) when it is
+ * written as a breakpoint map (an object whose every key is a breakpoint
+ * name) and its declared shape does not take an object; else the value.
+ */
+function breakpointValues(prop: string, value: unknown, schema: unknown): [string, unknown][] {
+  const type = isRecord(schema) ? schema['type'] : undefined
+  const takesObject = type === 'object' || (Array.isArray(type) && type.includes('object'))
+  if (takesObject || !isRecord(value)) return [[prop, value]]
+  const keys = Object.keys(value)
+  if (keys.length === 0 || !keys.every((k) => BREAKPOINT_NAMES.has(k))) return [[prop, value]]
+  return keys.map((k) => [`${prop}.${k}`, value[k]])
+}
+
 /**
  * The prop findings for one receipt. `path` is the receipt's pack path, used
  * as each issue's `path`. Block types the catalogue does not know are skipped
@@ -378,56 +469,60 @@ export function checkReceiptBlockProps(receipt: unknown, catalog: BlockPropsCata
       const id = typeof node['id'] === 'string' && node['id'] ? ` "${node['id']}"` : ''
       const where = `${at} (${type as string}${id})`
       const byName = new Map(entry.props.map((p) => [p.name, p]))
-      for (const [prop, value] of Object.entries(node['props'])) {
-        const spec = byName.get(prop)
+      for (const [propName, raw] of Object.entries(node['props'])) {
+        const spec = byName.get(propName)
         if (!spec) {
-          if (value === undefined) continue
+          if (raw === undefined) continue
           const known = entry.props.map((p) => p.name).join(', ') || 'none'
           issues.push({
             severity: 'warning',
             code: BLOCK_PROP_UNKNOWN,
             path,
-            message: `${where} sets "${prop}", which ${entry.atomId} does not declare (its props: ${known}); the block ignores it`,
+            message: `${where} sets "${propName}", which ${entry.atomId} does not declare (its props: ${known}); the block ignores it`,
           })
           continue
         }
-        const literal = spec.bindable === false
-        const template = literal ? firstTemplate(value, prop) : undefined
-        if (template) {
-          issues.push({
-            severity: 'warning',
-            code: BLOCK_PROP_NOT_BINDABLE,
-            path,
-            message: `${where} sets ${template.at} to ${short(template.text)}, but ${entry.atomId} declares ${prop} bindable: false; the {{…}} is not resolved and renders as written`,
-          })
-        }
-        const found = valueIssue(where, prop, value, spec.jsonSchema, entry.atomId, literal)
-        if (found) issues.push({ severity: 'warning', path, ...found })
-        else {
-          // The members of its items and nested objects, by name — template values aside.
-          for (const member of literal || !isBinding(value) ? unknownMembers(value, spec.jsonSchema, prop) : []) {
-            const near = nearestName(member.name, member.known)
+        // A breakpoint map (`{ xs: 'column', md: 'row' }`) is judged value by
+        // value: the renderer resolves it for the breakpoint it draws at.
+        for (const [prop, value] of breakpointValues(propName, raw, spec.jsonSchema)) {
+          const literal = spec.bindable === false
+          const template = literal ? firstTemplate(value, prop) : undefined
+          if (template) {
             issues.push({
               severity: 'warning',
-              code: BLOCK_PROP_UNKNOWN,
+              code: BLOCK_PROP_NOT_BINDABLE,
               path,
-              message:
-                `${at}.props.${member.at} (${type as string}${id}) sets "${member.name}", which ${entry.atomId} does not declare for ${member.at.slice(0, -(member.name.length + 1))} ` +
-                `(its members: ${member.known.join(', ') || 'none'})${near ? `; did you mean "${near}"?` : ''}; the block ignores it`,
+              message: `${where} sets ${template.at} to ${short(template.text)}, but ${entry.atomId} declares ${prop} bindable: false; the {{…}} is not resolved and renders as written`,
             })
           }
-        }
-        if (!found && isRecord(spec.jsonSchema) && (literal || !carriesBinding(value))) {
-          // The rest of the shape, as the runtime reads it: bounds, formats, nested members.
-          const shape = spec.jsonSchema as PropShape
-          // A member the schema does not name is reported above, by name.
-          for (const issue of checkPropValue(coercePropValue(value, shape), shape, prop).filter((i) => i.code !== 'unknownMember')) {
-            issues.push({
-              severity: 'warning',
-              code: BLOCK_PROP_SHAPE,
-              path,
-              message: `${where} sets ${issue.message.replace(/^([^:]+): /, '$1, which ')}; ${entry.atomId} gets it as written`,
-            })
+          const found = valueIssue(where, prop, value, spec.jsonSchema, entry.atomId, literal)
+          if (found) issues.push({ severity: 'warning', path, ...found })
+          else {
+            // The members of its items and nested objects, by name — template values aside.
+            for (const member of literal || !isBinding(value) ? unknownMembers(value, spec.jsonSchema, prop) : []) {
+              const near = nearestName(member.name, member.known)
+              issues.push({
+                severity: 'warning',
+                code: BLOCK_PROP_UNKNOWN,
+                path,
+                message:
+                  `${at}.props.${member.at} (${type as string}${id}) sets "${member.name}", which ${entry.atomId} does not declare for ${member.at.slice(0, -(member.name.length + 1))} ` +
+                  `(its members: ${member.known.join(', ') || 'none'})${near ? `; did you mean "${near}"?` : ''}; the block ignores it`,
+              })
+            }
+          }
+          if (!found && isRecord(spec.jsonSchema) && (literal || !carriesBinding(value))) {
+            // The rest of the shape, as the runtime reads it: bounds, formats, nested members.
+            const shape = spec.jsonSchema as PropShape
+            // A member the schema does not name is reported above, by name.
+            for (const issue of checkPropValue(coercePropValue(value, shape), shape, prop).filter((i) => i.code !== 'unknownMember')) {
+              issues.push({
+                severity: 'warning',
+                code: BLOCK_PROP_SHAPE,
+                path,
+                message: `${where} sets ${issue.message.replace(/^([^:]+): /, '$1, which ')}; ${entry.atomId} gets it as written`,
+              })
+            }
           }
         }
       }

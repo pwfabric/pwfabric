@@ -46,6 +46,33 @@ export interface PwappProject {
    */
   readonly description?: string
   /**
+   * How a page's title becomes the document title (receipt §1.1), from
+   * `app/plan.json` `titleTemplate`: exactly one `%s`, which the page's title
+   * replaces; `%%` writes a `%`. Absent: `<app title> — <page title>`.
+   */
+  readonly titleTemplate?: string
+  /**
+   * The app's layout (receipt §4), relative to the envelope: the receipt every
+   * page is drawn in. Absent: the app has none, and the runner asks for none.
+   */
+  readonly layoutReceiptFile?: string
+  /** The app's languages (envelope §2.3), from `app/plan.json`. Absent: one language, `locale`. */
+  readonly locales?: readonly string[]
+  /** The language at the app's root; one of `locales`. */
+  readonly defaultLocale?: string
+  /** The address table: `{ <lang>: { <key>: address } }`, each from the base (envelope §2.3). */
+  readonly addresses?: Readonly<Record<string, Readonly<Record<string, string>>>>
+  /** The per-locale receipts the app has: `{ <lang>: { <key>: path } }`, relative to the envelope. */
+  readonly localeReceiptFiles?: Readonly<Record<string, Readonly<Record<string, string>>>>
+  /**
+   * Each page's words per locale: `{ <lang>: { <key>: path } }`, the ids the
+   * page, its layout and the runner read, the locale's over the default's.
+   * A page fetches its own file instead of the catalogues.
+   */
+  readonly pageMessages?: Readonly<Record<string, Readonly<Record<string, string>>>>
+  /** The pages that read a word by an id they compute: they fetch the catalogues too. */
+  readonly pageMessagesDynamic?: readonly string[]
+  /**
    * The app's public origin (`https://example.com`), from `app/plan.json`
    * `origin`: a page's canonical address is this origin and the page's path
    * (envelope §4). Absent: the app names no canonical address.
@@ -57,6 +84,14 @@ export interface PwappProject {
    * file (`pwpack/media/<file>`).
    */
   readonly image?: string
+  /**
+   * Third-party scripts the app loads once the visitor consents to their
+   * category (envelope §2.2): `{ key, src, integrity?, origins?, consent }[]`,
+   * from `app/plan.json` `scripts`. The runner loads them (consent.ts).
+   */
+  readonly scripts?: readonly unknown[]
+  /** The app's public files as served (`favicon.ico`, `docs/guide.pdf`): file links, not pages. */
+  readonly publicFiles?: readonly string[]
   readonly entrySurfaceId: string
   readonly surfaceOrder: readonly string[]
   readonly surfaceReceiptFiles?: Readonly<Record<string, string>>
@@ -345,6 +380,10 @@ export interface SurfaceReceipt {
   readonly title?: string
   /** The page in a sentence: its `<meta name="description">` (receipt §1). */
   readonly description?: string
+  /** `false`: the page's `title` is the whole document title (receipt §1.1). */
+  readonly titleTemplate?: boolean
+  /** `false`: the page is drawn without the app's layout (receipt §4). */
+  readonly layout?: boolean
   readonly blocks: SurfaceBlockNode[]
   readonly appearance?: unknown
   readonly capabilities?: readonly {

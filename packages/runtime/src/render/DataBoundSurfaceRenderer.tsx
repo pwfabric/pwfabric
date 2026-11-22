@@ -63,7 +63,7 @@ import { applyEntityQuery } from '../entity/apply-query.js'
 import { documentAddress, type SurfaceAddress } from './address.js'
 import { useNotFoundReport, useUrlStateSync, withRecordFrameHeld } from './address-sync.js'
 import { useAppMessages } from './app-messages.js'
-import { messageOf } from './messages.js'
+import { messageHelpers, messageOf, readsMessages } from './messages.js'
 
 // ============================================================
 // extract dataSources + initialState from persistence config
@@ -259,6 +259,12 @@ function blockTreeReadsAuth(blocks: readonly Block[] | undefined): boolean {
   return READS_AUTH.test(JSON.stringify(blocks))
 }
 
+/** Does any block read the app's words (`{{t('…')}}`, expressions §6)? Only the data-bound path resolves them. */
+function blockTreeReadsMessages(blocks: readonly Block[] | undefined): boolean {
+  if (!blocks || blocks.length === 0) return false
+  return readsMessages(JSON.stringify(blocks))
+}
+
 function blockTreeHasAction(blocks: readonly Block[] | undefined): boolean {
   if (!blocks) return false
   for (const block of blocks) {
@@ -318,7 +324,8 @@ export function surfaceNeedsDataBinding(surface: {
     hasEntityFormBindings(surface) ||
     blockTreeHasAction(surface.blocks) ||
     blockTreeHasCondition(surface.blocks) ||
-    blockTreeReadsAuth(surface.blocks)
+    blockTreeReadsAuth(surface.blocks) ||
+    blockTreeReadsMessages(surface.blocks)
   )
 }
 
@@ -605,7 +612,9 @@ function useSurfaceData(
    * out, a `requiresSession` source is not asked (isRefusedWithoutSession);
    * pending, it waits, loading (awaitsSession).
    */
-  signedIn?: SessionKnown
+  signedIn?: SessionKnown,
+  /** The page this surface is; a change resets the page's state (see below). */
+  pageKey?: string
 ): SurfaceDataResult {
   const meRef = React.useRef(me)
   meRef.current = me
@@ -622,11 +631,12 @@ function useSurfaceData(
   // yet: it is left out here and written once the first data pass has
   // settled (see the effect after the expression context).
   const derivedSeeds = React.useMemo(() => derivedSeedsOf(initialState), [initialState])
-  const [surfaceState, setSurfaceState] = React.useState<Record<string, unknown>>(() => {
+  const seedState = (): Record<string, unknown> => {
     const plain: Record<string, unknown> = { ...initialState }
     for (const key of Object.keys(derivedSeeds)) delete plain[key]
     return plain
-  })
+  }
+  const [surfaceState, setSurfaceState] = React.useState<Record<string, unknown>>(seedState)
 
   // ADDRESS SEED APPLIED AFTER HYDRATION (data-protocol §1.1 / pwapp-format §2.5).
   //
@@ -664,7 +674,7 @@ function useSurfaceData(
   // (`notFoundWhenEmpty`) idle: that page is never shown — the not-found page
   // replaces it — so its first frame stays the one every record it names
   // loads in, and a record page's frame stands for any `?id=` (E16).
-  const [sourceData, setSourceData] = React.useState<Record<string, SourceData>>(() => {
+  const seedSourceData = (): Record<string, SourceData> => {
     if (!dataSources) return {}
     const seeded: Record<string, SourceData> = {}
     const state = initialState ?? {}
@@ -693,7 +703,8 @@ function useSurfaceData(
       }
     }
     return seeded
-  })
+  }
+  const [sourceData, setSourceData] = React.useState<Record<string, SourceData>>(seedSourceData)
   // ADDRESS SEED APPLIED AFTER HYDRATION — render-time adjustment body.
   //
   // `useState` for `lastAppliedInitialState` is declared above; the if-body
@@ -1143,6 +1154,10 @@ function useSurfaceData(
     }
     const changed = sources.filter((s) => requestKeyOf(s, surfaceState, me, signedIn) !== requestKeysRef.current[s.id])
     if (changed.length > 0) void fetchSources(changed)
+    // Nothing new to ask (another page whose sources are all the layout's):
+    // settled — unless a fetch is still in flight, as on a hydrated page whose
+    // visitor becomes known before its rows arrive; that fetch settles it.
+    else if (controllersRef.current.size === 0) setInitialLoaded(true)
   }, [dataSources, surfaceState, me, signedIn, fetchSources, dataService])
 
   // ---- Unmount: abort what is in flight, forget what was fetched ----
@@ -1248,10 +1263,10 @@ function useSurfaceData(
     // An AGGREGATE source is one number, not a list of one: wrapping
     // `{ value }` into `[{ value }]` would still read through the single-
     // element fallthrough, but `.length` would lie and `count` would hide.
-    // Entity-only: that is the one branch that reads `aggregate`; a rest
-    // source carrying the key still fetches a list and binds as one.
+    // An entity source, and the rest source an own-records aggregate is
+    // served as (it keeps its `aggregate`, data-protocol §2.2–2.3).
     const aggregateIds = new Set(
-      (dataSources ?? []).filter((s) => s.kind === 'entity' && s.aggregate !== undefined).map((s) => s.id)
+      (dataSources ?? []).filter((s) => (s.kind === 'entity' || s.kind === 'rest') && s.aggregate !== undefined).map((s) => s.id)
     )
     for (const [key, value] of Object.entries(sourceData)) {
       const listy = LIST_KINDS.has(kindById.get(key) ?? '') && !aggregateIds.has(key)
@@ -1275,6 +1290,27 @@ function useSurfaceData(
   // can count the rows it will filter. A key something already wrote — the
   // address, a control that mounted first — keeps that value.
   const derivedDoneRef = React.useRef(false)
+
+  // ---- Another page in the same mount (`pageKey`) ----
+  // The blocks both pages draw — an app layout's (receipt §4) — stay mounted;
+  // the page's own state starts from its seeds, as on a fresh mount, and the
+  // rows of a source the page still declares (the layout's) are kept: the
+  // fetch effect asks only for the sources whose request is new.
+  const [shownPage, setShownPage] = React.useState(pageKey)
+  if (shownPage !== pageKey) {
+    setShownPage(pageKey)
+    setSurfaceState(seedState())
+    setLastAppliedInitialState(initialState)
+    const declared = new Set((dataSources ?? []).map((source) => source.id))
+    const seeded = seedSourceData()
+    setSourceData((prev) => {
+      const next: Record<string, SourceData> = { ...seeded }
+      for (const [id, entry] of Object.entries(prev)) if (declared.has(id) && next[id] === undefined && entry.idle !== true) next[id] = entry
+      return next
+    })
+    setInitialLoaded(false)
+    derivedDoneRef.current = false
+  }
   React.useEffect(() => {
     if (!initialLoaded || derivedDoneRef.current) return
     derivedDoneRef.current = true
@@ -1391,7 +1427,7 @@ export function DataBoundSurfaceRenderer(props: DataBoundSurfaceRendererProps): 
     return [...declaredBehaviors.filter((b) => !hostIds.has(b.id)), ...hostBehaviors]
   }, [declaredBehaviors, hostBehaviors])
   const hasBehaviors = Boolean(behaviors && behaviors.length > 0)
-  const dataBound = hasBehaviors || surfaceNeedsDataBinding(surface)
+  const dataBound = hasBehaviors || surfaceNeedsDataBinding(surface) || readsMessages(title) || readsMessages(description)
 
   // A page with nothing dynamic still has a title; one with expressions in it
   // is resolved by DataBoundInner, against what has loaded.
@@ -1565,7 +1601,8 @@ function DataBoundInner({
       writeOnly,
       locale,
       authState.user,
-      auth ? (authState.pending === true ? 'pending' : authState.signedIn) : undefined
+      auth ? (authState.pending === true ? 'pending' : authState.signedIn) : undefined,
+      (rendererProps as { pageKey?: string }).pageKey
     )
   const pageScope = React.useMemo<Record<string, unknown>>(
     () => ({ ...pageData, __auth: authState, me: authState.user }),
@@ -1586,6 +1623,10 @@ function DataBoundInner({
   const expressionDataRef = React.useRef(expressionData)
   expressionDataRef.current = expressionData
 
+  // The app's words, read by `{{t('…')}}` (expressions §6), in the locale drawn.
+  const appWords = useAppMessages()
+  const wordHelpers = React.useMemo(() => messageHelpers(appWords, locale), [appWords, locale])
+
   // THE TITLE OF THIS RECORD'S PAGE. `{{dish.0.name}}` is the dish once it
   // has loaded; until then (or when it resolves to nothing) the host shows
   // its own. A title an expression could not resolve stays unreported rather
@@ -1593,12 +1634,12 @@ function DataBoundInner({
   const resolveText = React.useCallback(
     (template: string | undefined): string | undefined => {
       if (typeof template !== 'string' || !template.trim()) return undefined
-      const value = resolveValueIn(template, expressionData, locale ? { locale } : {})
+      const value = resolveValueIn(template, expressionData, { ...(locale ? { locale } : {}), helpers: wordHelpers })
       if (value === undefined || value === null) return undefined
       const text = String(value).trim()
       return text === '' || text.includes('{{') ? undefined : text
     },
-    [expressionData, locale]
+    [expressionData, locale, wordHelpers]
   )
   const resolvedTitle = React.useMemo(() => resolveText(title), [resolveText, title])
   React.useEffect(() => {
@@ -1680,12 +1721,12 @@ function DataBoundInner({
   // Resolve expressions in blocks
   const resolvedBlocks = React.useMemo(
     () =>
-      resolveBlockExpressions(blocks as Block[], expressionData, undefined, {
+      resolveBlockExpressions(blocks as Block[], expressionData, wordHelpers, {
         literalProps,
         ...(linkHref ? { linkHref } : {}),
         ...(locale ? { locale } : {}),
       }),
-    [blocks, expressionData, linkHref, literalProps, locale]
+    [blocks, expressionData, linkHref, literalProps, locale, wordHelpers]
   )
 
   // Shared action dispatcher. `values` are the fields of the form whose
@@ -1752,9 +1793,10 @@ function DataBoundInner({
         {
           ...(linkHref ? { linkHref } : {}),
           ...(locale ? { locale } : {}),
+          helpers: wordHelpers,
         }
       ) as SurfaceAction,
-    [linkHref, locale]
+    [linkHref, locale, wordHelpers]
   )
 
   // Event interceptor
@@ -1820,7 +1862,7 @@ function DataBoundInner({
   // skips this and renders the tree at once; unresolved bindings evaluate to
   // undefined and fill in per source (see loadingStrategy prop docs).
   if (!initialLoaded && loadingStrategy !== 'immediate') {
-    const loadingLabel = messageOf(appMessages, 'ui.loading')
+    const loadingLabel = messageOf(appMessages, 'ui.loading', undefined, undefined, locale)
     return (
       <div
         data-surface-loading

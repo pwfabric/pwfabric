@@ -48,6 +48,16 @@ describe('navigation and project.json', () => {
     })
     expect(pageLabel(pages[1] as Page)).toBe('menu')
   })
+  it('links no page that draws only with a record: its record source, or a title written from data', () => {
+    const product = page('product', {
+      title: '{{product.0.name}}',
+      blocks: [],
+      capabilities: [{ capability: 'platform/persistence', config: { dataSources: [{ id: 'product', kind: 'rest', endpoint: '/x/{{state.id}}', notFoundWhenEmpty: true }] } }],
+    })
+    const titled = page('dish', { title: '{{dish.0.name}}', blocks: [] })
+    const worded = page('about', { title: "{{t('about.title')}}", blocks: [] })
+    expect(deriveNavigation([...pages, product, titled, worded], 'home').navbar.links.map((l) => l.href)).toEqual(['/', '/menu', '/about'])
+  })
   it('writes the route table and the receipt files', () => {
     expect(buildProjectJson({ id: '@pwpack/a/b', title: 'B', entry: 'home', pages })).toEqual({
       schemaVersion: '1.0.0',

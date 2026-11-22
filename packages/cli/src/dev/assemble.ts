@@ -12,8 +12,20 @@
  * be pinned). Nothing is fetched; every input is on disk.
  */
 import { join } from 'node:path'
-import { blockPropDescriptors, blockTypeFirstUses, blockTypeNames, checkBlockIds, checkReceiptBlockProps, hashPack, unknownBlockTypeIssue } from '@pwfabric/pack'
-import type { BlockOrigins } from '@pwfabric/contracts'
+import { ambiguousBlockTypeMessage, BLOCK_TYPE_AMBIGUOUS, blockPropDescriptors, blockTypeFirstUses, blockTypeNames, checkBlockIds, resolveBlockType, checkReceiptBlockProps, hashPack, publicReservedReason, publicScriptReason, unknownBlockTypeIssue } from '@pwfabric/pack'
+import {
+  addressTable,
+  catalogueFor,
+  layoutSlotProblems,
+  localePrefix,
+  localesOf,
+  PAGE_SLOT_TYPE,
+  receiptPathOf,
+  resolveAppearanceMode,
+  type AddressTable,
+  type BlockOrigins,
+  type LocaleDeclaration,
+} from '@pwfabric/contracts'
 import { atomKindMeta } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins } from '@pwfabric/contracts/schemas'
 import { compileProviderBundle, compileSources, createCompileCache, providerFacetOf, type CompileCache, type CompiledAtom } from './compile.js'
@@ -33,18 +45,24 @@ import {
   type Page,
 } from './envelope.js'
 import { collectMedia, fillMediaSlots } from './media.js'
+import { faviconOf } from './favicon.js'
+import { bodyFontOf, fontAssetsOf, fontsOf, unreadableMetricsMessage, withFontFallbacks } from './fonts.js'
 import { declaredRecordFields, withRecordFields } from '../host/record-fields.js'
 import { withSessionSources } from '../host/session-sources.js'
 import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
 import { deriveCsp, headersFile } from './csp.js'
-import { documentHead, isRecordPage, pageDocuments, publicOriginOf, robotsTxt, SERVED_FOLDERS, sitemapXml } from './documents.js'
-import { llmsFullTxt, llmsTxt, type LlmsPage } from './llms.js'
-import { firstPaintData, paintPages, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
-import { canonicalOf, hashHref, pathHref } from '@pwfabric/runner'
+import { documentHead, isRecordPage, pageDocuments, wordedText, publicOriginOf, robotsTxt, SERVED_FOLDERS, sitemapXml, sitemapXmlLocales, type PageDocument } from './documents.js'
+import { llmsFullTxt, llmsFullTxtLocales, llmsTxt, llmsTxtLocales, type LlmsPage } from './llms.js'
+import { planHeadersOf, planRedirectsOf, planScriptOrigins, planScriptsOf, redirectsFile } from './plan-site.js'
+import { parseHeadersFile } from '../commands/lib/static-server.js'
+import { firstPaintData, onPageFragmentLinks, paintPages, shareFrameStyles, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
+import { assemblePage, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS, canonicalOf, colorSchemeScript, hashHref, isTitleTemplate, pathHref, pluralProblems } from '@pwfabric/runner'
 import {
   BOOT_FILES,
   FIRST_PAINT_SCRIPT,
+  FIRST_PAINT_SCRIPT_LOCALES,
   PAGE_HINTS_SCRIPT,
+  PAGE_HINTS_SCRIPT_LOCALES,
   servedHref,
   bootScript,
   buildShellHtml,
@@ -67,9 +85,6 @@ import {
   resolveAppearance,
   resolvePageAppearance,
   themeAtomOf,
-  webfontsOf,
-  webfontStylesheetHref,
-  withWebfontFallbacks,
   type PageAppearance,
   type PageTheme,
   type ThemeAtom,
@@ -201,6 +216,24 @@ function titleOf(plan: unknown): string {
   return textOf(plan, 'title') ?? ''
 }
 
+/**
+ * The app's title template (`plan.json` `titleTemplate`, receipt §1.1):
+ * exactly one `%s`, `%%` for a `%`. Any other is an error, and no template
+ * is used.
+ */
+function titleTemplateOf(plan: unknown, diagnostics: AssembleDiagnostic[]): string | undefined {
+  const raw = isRecord(plan) ? plan['titleTemplate'] : undefined
+  if (raw === undefined) return undefined
+  if (isTitleTemplate(raw)) return raw
+  diagnostics.push({
+    severity: 'error',
+    code: 'PLAN_TITLE_TEMPLATE_INVALID',
+    message: `plan.json "titleTemplate" is ${JSON.stringify(raw)}: it holds exactly one %s, which the page's title replaces, and writes a % as %%`,
+    path: 'app/plan.json',
+  })
+  return undefined
+}
+
 /** A receipt member that is text as it stands — not empty, no expression — trimmed. */
 function literalText(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' && !value.includes('{{') ? value.trim() : undefined
@@ -259,6 +292,10 @@ function messagesOf(plan: unknown, diagnostics: AssembleDiagnostic[]): Record<st
   for (const [id, value] of Object.entries(raw)) {
     if (typeof value === 'string') {
       out[id] = value
+      // A plural the runner cannot pick is written as its text (envelope §2.1).
+      for (const problem of pluralProblems(value)) {
+        diagnostics.push({ severity: 'error', code: 'MESSAGES_INVALID', message: `messages["${id}"]: ${problem}`, path: 'app/plan.json' })
+      }
       continue
     }
     diagnostics.push({
@@ -272,13 +309,13 @@ function messagesOf(plan: unknown, diagnostics: AssembleDiagnostic[]): Record<st
 }
 
 /**
- * The app's resolved appearance with each webfont's metric-matched stand-in
- * named in its stacks (theme.ts `withWebfontFallbacks`), in whichever of the
- * shapes it came.
+ * The app's resolved appearance with each of its fonts' metric-matched
+ * stand-in named in its stacks (fonts.ts `withFontFallbacks`), in whichever
+ * of the shapes it came.
  */
 function withFallbackStacks(doc: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
   if (!doc) return doc
-  return isRecord(doc['config']) ? { ...doc, config: withWebfontFallbacks(doc['config']) } : withWebfontFallbacks(doc)
+  return isRecord(doc['config']) ? { ...doc, config: withFontFallbacks(doc['config']) } : withFontFallbacks(doc)
 }
 
 /**
@@ -296,6 +333,184 @@ function withPageAppearance(receipt: Record<string, unknown>, wears: PageAppeara
   return receipt
 }
 
+/** What an app in several languages adds to its pages (envelope §2.3); empty for a single-language app. */
+interface LocaleInputs {
+  /** Each page's receipt for one locale (`<key>.<lang>`), as a page of that key. */
+  readonly pages: Page[]
+  /** lang → page key → its receipt in that locale. */
+  readonly receipts: Map<string, Map<string, Page>>
+  /** `localeReceiptFiles`: lang → page key → envelope path. */
+  readonly receiptFiles: Record<string, Record<string, string>>
+  readonly catalogues: Record<string, Record<string, string>>
+  readonly addresses: AddressTable
+}
+
+/**
+ * The per-locale receipts (`app/surfaces/<key>.<lang>.receipt.json`), the
+ * catalogues (`app/messages/<lang>.json`, their plurals checked) and the
+ * address table of an app with locales. The table's and the declaration's
+ * own errors are the pack validation's (APP_LOCALES_INVALID, APP_ADDRESS_CONFLICT).
+ */
+function localeInputsOf(
+  folder: SourcePack['folder'],
+  locales: LocaleDeclaration | undefined,
+  pages: readonly Page[],
+  surfaceOrder: readonly string[],
+  entry: string,
+  diagnostics: AssembleDiagnostic[]
+): LocaleInputs {
+  const out: LocaleInputs = { pages: [], receipts: new Map(), receiptFiles: {}, catalogues: {}, addresses: {} }
+  if (!locales) return out
+  for (const lang of locales.locales) {
+    const own = new Map<string, Page>()
+    for (const page of pages) {
+      const path = `app/surfaces/${page.key}.${lang}.receipt.json`
+      const bytes = folder.files.get(path)
+      if (!bytes) continue
+      const value = jsonOf(folder, path)
+      if (value instanceof Error || !isRecord(value) || !Array.isArray(value['blocks'])) {
+        diagnostics.push({ severity: 'error', code: 'RECEIPT_INVALID', message: value instanceof Error ? `not JSON: ${value.message}` : 'a receipt is an object with a "blocks" array', path })
+        continue
+      }
+      const localePage: Page = { key: `${page.key}.${lang}`, path, bytes, receipt: value }
+      own.set(page.key, localePage)
+      out.pages.push(localePage)
+      ;(out.receiptFiles[lang] ??= {})[page.key] = `surfaces/${page.key}.${lang}.receipt.json`
+    }
+    if (own.size > 0) out.receipts.set(lang, own)
+    const words = jsonOf(folder, `app/messages/${lang}.json`)
+    const catalogue: Record<string, string> = {}
+    if (isRecord(words)) {
+      for (const [id, text] of Object.entries(words)) {
+        if (typeof text !== 'string') {
+          diagnostics.push({ severity: 'error', code: 'MESSAGES_INVALID', message: `messages["${id}"] is not a string`, path: `app/messages/${lang}.json` })
+          continue
+        }
+        catalogue[id] = text
+        for (const problem of pluralProblems(text)) diagnostics.push({ severity: 'error', code: 'MESSAGES_INVALID', message: `messages["${id}"]: ${problem}`, path: `app/messages/${lang}.json` })
+      }
+    }
+    out.catalogues[lang] = catalogue
+  }
+  const pathOf = (key: string): Readonly<Record<string, string>> | undefined => receiptPathOf(pages.find((p) => p.key === key)?.receipt)
+  return { ...out, addresses: addressTable(locales, [...new Set(surfaceOrder)], entry, pathOf).addresses }
+}
+
+/** The ids the runner and the renderer read (their own words), and the prefix of a block's own (`ui.*`). */
+const ENGINE_WORDS: ReadonlySet<string> = new Set<string>([...RUNNER_MESSAGE_IDS, ...RENDERER_MESSAGE_IDS])
+
+/**
+ * The words of every page in every locale (envelope §2.3): per page, the ids
+ * its receipt (in that locale, as drawn in the layout) reads by a literal
+ * `t('<id>')`, the engine's own ids and a block's own (`ui.*`), from the
+ * locale's catalogue over the default's. `dynamic` lists the pages that read
+ * a word by an id they compute: those fetch the whole catalogue as well.
+ */
+function pageWordsOf(
+  localed: LocaleInputs,
+  locales: LocaleDeclaration | undefined,
+  pages: readonly Page[],
+  drawn: (key: string, receipt: unknown) => unknown
+): { files: Record<string, Record<string, string>>; bodies: Map<string, Record<string, string>>; dynamic: string[] } {
+  const out = { files: {} as Record<string, Record<string, string>>, bodies: new Map<string, Record<string, string>>(), dynamic: [] as string[] }
+  if (!locales) return out
+  const dynamic = new Set<string>()
+  for (const lang of locales.locales) {
+    const words = catalogueFor(localed.catalogues, locales, lang)
+    for (const page of pages) {
+      const receipt = localed.receipts.get(lang)?.get(page.key)?.receipt ?? page.receipt
+      const text = JSON.stringify(drawn(page.key, receipt) ?? receipt)
+      const literal = new Set([...text.matchAll(LITERAL_T)].map((m) => m[2] as string))
+      if (COMPUTED_T.test(text)) dynamic.add(page.key)
+      const own: Record<string, string> = {}
+      for (const [id, word] of Object.entries(words)) if (literal.has(id) || ENGINE_WORDS.has(id) || id.startsWith('ui.')) own[id] = word
+      const path = `messages/${lang}/${page.key}.json`
+      ;(out.files[lang] ??= {})[page.key] = path
+      out.bodies.set(path, own)
+    }
+  }
+  out.dynamic = [...dynamic].sort()
+  return out
+}
+
+/** `t('<id>')` / `t("<id>")` in a receipt's JSON text (its quotes escaped as JSON writes them). */
+const LITERAL_T = /\bt\(\s*(\\?['"])([^'"\\]+)\1/g
+/** A `t(` whose id is not a literal. */
+const COMPUTED_T = /\{\{[^}]*\bt\(\s*(?![\s\\]*['"])/
+
+/** The locales in the order their sections are written: the default first, then `locales` order. */
+function orderedLocales(locales: LocaleDeclaration): string[] {
+  return [locales.defaultLocale, ...locales.locales.filter((l) => l !== locales.defaultLocale)]
+}
+
+/**
+ * A page's address in a locale as the runner's router writes it (runner
+ * router.ts): `<base><address>` under path routing, `#/<address>` under hash
+ * routing; an address that is not a page's key in the table is written as given.
+ */
+function localeHref(addresses: AddressTable, lang: string, key: string, byPath: boolean, base: string): string {
+  const own = addresses[lang]?.[key]
+  const address = (own ?? key).replace(/^\/+|\/+$/g, '')
+  if (!byPath) return `#/${address}`
+  const root = base.replace(/\/+$/, '')
+  return address === '' ? `${root}/` : `${root}/${address}/`
+}
+
+/**
+ * The address table as the inline scripts read it (`{ <address>: <key> }`):
+ * every locale's addresses without their end slashes, those of the locale
+ * drawn naming their page, every other naming none (`''`).
+ */
+function addressKeysOf(addresses: AddressTable, lang: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [l, row] of Object.entries(addresses)) for (const [key, address] of Object.entries(row)) out[address.replace(/\/+$/, '')] = l === lang ? key : ''
+  return out
+}
+
+/** `hreflang` alternates of a page: one per locale, then `x-default`, the default locale's. */
+function hreflangsOf(locales: LocaleDeclaration, url: (lang: string) => string | undefined): { hreflang: string; href: string }[] {
+  const out: { hreflang: string; href: string }[] = []
+  for (const lang of locales.locales) {
+    const href = url(lang)
+    if (href !== undefined) out.push({ hreflang: lang, href })
+  }
+  const fallback = url(locales.defaultLocale)
+  if (fallback !== undefined) out.push({ hreflang: 'x-default', href: fallback })
+  return out
+}
+
+/** The app's layout in its source, and as the envelope serves it (`project.json` `layoutReceiptFile`). */
+export const LAYOUT_FILE = 'app/layout.receipt.json'
+export const LAYOUT_RECEIPT_FILE = 'layout.receipt.json'
+
+/**
+ * The app's layout (receipt §4), read like a page: absent, none. One that is
+ * not a receipt, or does not hold exactly one bare page slot
+ * (APP_LAYOUT_SLOT), is an error, and no page is drawn in it.
+ */
+function layoutOf(folder: SourcePack['folder'], diagnostics: AssembleDiagnostic[], reported: ReadonlySet<string | undefined>): Page | undefined {
+  const bytes = folder.files.get(LAYOUT_FILE)
+  if (!bytes) return undefined
+  const value = jsonOf(folder, LAYOUT_FILE)
+  if (value instanceof Error || !isRecord(value) || !Array.isArray(value['blocks'])) {
+    if (!reported.has(LAYOUT_FILE)) {
+      diagnostics.push({
+        severity: 'error',
+        code: 'RECEIPT_INVALID',
+        message: value instanceof Error ? `not JSON: ${value.message}` : 'a layout is an object with a "blocks" array',
+        path: LAYOUT_FILE,
+      })
+    }
+    return undefined
+  }
+  const problems = layoutSlotProblems(value)
+  if (problems.length > 0) {
+    if (!reported.has(LAYOUT_FILE)) diagnostics.push({ severity: 'error', code: 'APP_LAYOUT_SLOT', message: `${LAYOUT_FILE}: ${problems.join('; ')}`, path: LAYOUT_FILE })
+    return undefined
+  }
+  return { key: 'layout', path: LAYOUT_FILE, bytes, receipt: value }
+}
+
 /**
  * The receipt as served, without its authoring information: `knowledge` (what
  * the page is for, the patterns it exercises) stays in the app's source; no
@@ -305,6 +520,53 @@ function withoutAuthoring(receipt: Record<string, unknown>): Record<string, unkn
   if (receipt['knowledge'] === undefined) return receipt
   const { knowledge: _knowledge, ...served } = receipt
   return served
+}
+
+/** The app's icon (`appearance` `brand.favicon`), as the documents link it (favicon.ts); a problem is FAVICON_INVALID. */
+function faviconFor(config: Record<string, unknown> | undefined, files: ReadonlyMap<string, Uint8Array>, diagnostics: AssembleDiagnostic[]): string | undefined {
+  const brand = isRecord(config) ? config['brand'] : undefined
+  const { href, problem } = faviconOf(isRecord(brand) ? brand['favicon'] : undefined, files)
+  if (problem) diagnostics.push({ severity: 'error', code: 'FAVICON_INVALID', message: problem, path: 'app/definitions/appearance.json' })
+  return href
+}
+
+/** The folder whose files a build copies, as they are, to the root of the served folder. */
+export const PUBLIC_DIR = 'public/'
+
+/**
+ * The app's `public/` files as served (`public/favicon.ico` → `favicon.ico`),
+ * each with its bytes: those `pwf validate` does not already refuse (a path
+ * the build writes, a file that is script — pwpack-format §1.4).
+ */
+function publicFilesOf(appFiles: ReadonlyMap<string, Uint8Array>, pageKeys: readonly string[], localePrefixes: readonly string[] = []): [string, Uint8Array][] {
+  const out: [string, Uint8Array][] = []
+  for (const path of [...appFiles.keys()].filter((p) => p.startsWith(PUBLIC_DIR)).sort()) {
+    const rel = path.slice(PUBLIC_DIR.length)
+    const bytes = appFiles.get(path) as Uint8Array
+    if (rel === '' || publicReservedReason(rel, pageKeys, localePrefixes) || publicScriptReason(rel, bytes)) continue
+    out.push([rel, bytes])
+  }
+  return out
+}
+
+/**
+ * Copies the public files into the served folder, byte for byte. One that
+ * would replace a file the build wrote is an error (APP_PUBLIC_RESERVED),
+ * never a silent overwrite.
+ */
+function copyPublic(publicFiles: readonly [string, Uint8Array][], files: Map<string, Uint8Array>, diagnostics: AssembleDiagnostic[]): void {
+  for (const [rel, bytes] of publicFiles) {
+    if (files.has(rel) || rel === 'publish.json') {
+      diagnostics.push({
+        severity: 'error',
+        code: 'APP_PUBLIC_RESERVED',
+        message: `${PUBLIC_DIR}${rel} would be served at /${rel}, which the build writes itself; rename or move it`,
+        path: `${PUBLIC_DIR}${rel}`,
+      })
+      continue
+    }
+    files.set(rel, bytes)
+  }
 }
 
 function atomLabel(atom: CompiledAtom): string {
@@ -379,7 +641,8 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // Under path routing a route is a folder of the served app (`<key>/index.html`).
   if ((options.router ?? 'hash') !== 'hash') {
     for (const page of routes) {
-      if (page.key !== entry && SERVED_FOLDERS.includes(page.key)) {
+      // A page in a folder (`docs/intro`) is served under its first segment's folder.
+      if (page.key !== entry && SERVED_FOLDERS.includes(page.key.split('/')[0] as string)) {
         diagnostics.push({
           severity: 'error',
           code: 'PAGE_KEY_RESERVED',
@@ -388,6 +651,27 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         })
       }
     }
+  }
+  // ── the layout (receipt §4): the receipt every page is drawn in ──
+  const layoutPage = layoutOf(app.folder, diagnostics, reported)
+  // ── the app's languages (envelope §2.3) ──
+  const locales = localesOf(jsonOf(app.folder, 'app/plan.json'))
+  const localed = localeInputsOf(app.folder, locales, pages, identity.app.surfaceOrder, entry, diagnostics)
+  /**
+   * A page's receipt assembled into the layout (envelope §4 step 2), the way
+   * the runner assembles it: what the first frame, the page hints and the
+   * policy read. The envelope serves page and layout apart.
+   */
+  const inLayout = (key: string, receipt: unknown, layout: unknown, blocks?: readonly BlockManifestEntry[]): { receipt: unknown; problems: readonly { kind: string; id: string; message: string }[] } => {
+    if (!isRecord(layout) || !isRecord(receipt) || !Array.isArray(receipt['blocks'])) return { receipt, problems: [] }
+    type Receipt = Parameters<typeof assemblePage>[1]
+    type Blocks = NonNullable<Parameters<typeof assemblePage>[2]['blocks']>
+    return assemblePage(layout as unknown as Receipt, receipt as unknown as Receipt, {
+      key,
+      entry,
+      notFoundPage: key === notFoundKey,
+      ...(blocks ? { blocks: blocks as unknown as Blocks } : {}),
+    })
   }
   if (!identity.app.surfaceOrder.includes(entry)) {
     diagnostics.push({ severity: 'error', code: 'ENTRY_NOT_A_PAGE', message: `app.entry "${entry}" is not in app.surfaceOrder`, path: 'pwpack.json' })
@@ -460,26 +744,45 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // time, not in the visitor's browser: a prop the manifest does not declare,
   // a value that does not fit its declared shape (the runtime renders it
   // as written, with a developer warning), a template on a literal-only prop. Warnings.
+  // Which block a type names: the one rule of @pwfabric/pack resolveBlockType
+  // (an id or a manifest name first, a short name only when one block has it).
+  const named = atoms.filter((a) => a.kind === 'block').map((a) => ({ atom: a, id: a.id, ...(a.manifest ? { manifest: a.manifest } : {}) }))
   const propCatalog = new Map<string, { atomId: string; props: NonNullable<ReturnType<typeof blockPropDescriptors>> }>()
-  for (const [name, list] of byName) {
-    const props = list[0] ? blockPropDescriptors(list[0].manifest) : undefined
-    if (list[0] && props) propCatalog.set(name, { atomId: list[0].id, props })
+  for (const name of byName.keys()) {
+    const hit = resolveBlockType(name, named)
+    if (!hit || 'ambiguous' in hit) continue
+    const props = blockPropDescriptors(hit.atom.manifest)
+    if (props) propCatalog.set(name, { atomId: hit.id, props })
   }
-  for (const page of pages) {
+  for (const page of [...pages, ...localed.pages, ...(layoutPage ? [layoutPage] : [])]) {
     for (const issue of checkReceiptBlockProps(page.receipt, propCatalog, page.path)) {
       diagnostics.push({ severity: 'warning', code: issue.code, message: issue.message, path: page.path })
     }
-    // A block id is unique within its page (receipt §2), as `pwf validate` says too.
-    for (const issue of checkBlockIds(page)) diagnostics.push({ severity: 'error', code: issue.code, message: issue.message, path: page.path })
+  }
+  for (const page of [...pages, ...localed.pages]) {
+    // A block id is unique within its page (receipt §2) — the page as drawn,
+    // in the layout — as `pwf validate` says too; so is a data source id.
+    const drawn = inLayout(page.key, page.receipt, layoutPage?.receipt)
+    for (const issue of checkBlockIds({ path: page.path, receipt: drawn.receipt })) diagnostics.push({ severity: 'error', code: issue.code, message: issue.message, path: page.path })
+    for (const problem of drawn.problems) {
+      if (problem.kind === 'source') diagnostics.push({ severity: 'error', code: 'SOURCE_ID_DUPLICATE', message: `${problem.message} (${LAYOUT_FILE})`, path: page.path })
+    }
   }
 
   const used = new Set<CompiledAtom>()
   const placedBlocks: { atomId: string; origins?: BlockOrigins }[] = []
   const blockManifest: BlockManifestEntry[] = []
   const modules = new Map<string, Uint8Array>()
-  for (const [type, page] of blockTypeFirstUses(pages)) {
-    const candidates = byName.get(type) ?? []
-    const atom = candidates[0]
+  for (const [type, page] of blockTypeFirstUses([...pages, ...localed.pages, ...(layoutPage ? [layoutPage] : [])])) {
+    // The layout's page slot is the format's, no block (receipt §4).
+    if (type === PAGE_SLOT_TYPE) continue
+    const hit = resolveBlockType(type, named)
+    if (hit && 'ambiguous' in hit) {
+      diagnostics.push({ severity: 'error', code: BLOCK_TYPE_AMBIGUOUS, message: ambiguousBlockTypeMessage(type, page.key, hit.ambiguous.map((b) => b.id)), path: page.path })
+      continue
+    }
+    const atom = hit?.atom
+    const shadowed = hit ? hit.shadowed.map((b) => b.atom) : []
     if (!atom) {
       // The same finding, worded the same, as `pwf validate` (@pwfabric/pack checkBlockTypes).
       const issue = unknownBlockTypeIssue(type, page)
@@ -488,11 +791,11 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     }
     if (!used.has(atom)) placedBlocks.push({ atomId: atom.id, ...declaredOrigins(atom, diagnostics) })
     used.add(atom)
-    if (candidates.length > 1) {
+    if (shadowed.length > 0) {
       diagnostics.push({
         severity: 'info',
         code: 'BLOCK_TYPE_SHADOWED',
-        message: `block type "${type}" resolves to ${atomLabel(atom)}; also defined by ${candidates.slice(1).map(atomLabel).join(', ')}`,
+        message: `block type "${type}" resolves to ${atomLabel(atom)}; also defined by ${shadowed.map(atomLabel).join(', ')}`,
         path: page.path,
       })
     }
@@ -593,6 +896,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // ── the served folder ────────────────────────────────────────────
   const runtime = options.runtime ?? (await loadRuntimeAssets())
   const title = titleOf(plan)
+  const titleTemplate = titleTemplateOf(plan, diagnostics)
   const locale = isRecord(plan) && typeof plan['locale'] === 'string' ? plan['locale'] : undefined
   // The app's words (`plan.json` `messages`), carried as they are: the runner
   // reads every word it draws there first (envelope §2).
@@ -621,14 +925,31 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       path: 'app/plan.json',
     })
   }
+  // What the plan asks of the site beyond its pages (plan-site.ts): scripts,
+  // response headers, redirects. Each is checked; a malformed one is an error.
+  const planScripts = planScriptsOf(plan, diagnostics)
+  // The app's public files, as served: listed in project.json, copied last.
+  const publicFiles = publicFilesOf(app.folder.files, keys, locales ? locales.locales.filter((l) => l !== locales.defaultLocale).map(localePrefix) : [])
+  // The app's icon: every document links it.
+  const favicon = faviconFor(config, app.folder.files, diagnostics)
+  // The visitor's colour-scheme choice, applied before the first paint
+  // (appearance §4.1) — only where there is one to make: the app, or one of
+  // its pages, wears the `system` policy. Keyed like the runner keys storage
+  // (envelope §4): `project.json` `id`.
+  const wearsSystem = [config, ...pageThemes.map((p) => p.config)].some((c) => resolveAppearanceMode(c).policy === 'system')
+  const schemeScript = wearsSystem ? colorSchemeScript(identity.id) : undefined
   // An app that requires sign-in shows a visitor the gate first; whether the
   // renderer is ever needed is up to the visitor, so it is not preloaded.
   const gated = isRecord(authDoc) && authDoc['required'] === true
 
   // ── the runtime files, content-hashed (cached as immutable: _headers) ──
-  // One stylesheet for the webfonts of the app's theme and of every page's own.
-  const webfontHref = webfontStylesheetHref(webfontsOf([config, ...pageThemes.map((p) => p.config)]))
-  const themeCss = enc.encode(buildThemeCss(config, pageThemes))
+  // The app's own fonts, of its theme and of every page's own (pwapp-format §2.3):
+  // served hashed under assets/fonts/, declared in the theme stylesheet.
+  const fontAssets = fontAssetsOf(fontsOf([config, ...pageThemes.map((p) => p.config)]), app.folder.files, bodyFontOf(config))
+  for (const u of fontAssets.unreadable) {
+    diagnostics.push({ severity: 'warning', code: 'FONT_METRICS_UNREADABLE', message: unreadableMetricsMessage(u), path: u.src ?? 'app/definitions/appearance.json' })
+  }
+  const themeCss = enc.encode(buildThemeCss(config, pageThemes, fontAssets.css))
   const assets0 = {
     embed: hashedName('assets/embed.js', runtime.embedJs),
     runner: hashedName('assets/runner.js', runtime.runnerJs),
@@ -638,8 +959,8 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const moduleOf = new Map(blockManifest.map((b) => [b.blockType, b.moduleUrl]))
   // The receipt as it will be served: its media slots filled.
   const media = collectMedia(app.folder, diagnostics)
-  const servedReceiptOf = (page: Page): unknown => {
-    const filled = fillMediaSlots(page.bytes, media.slots.get(page.key))
+  const servedReceiptOf = (page: Page, slotKey = page.key): unknown => {
+    const filled = fillMediaSlots(page.bytes, media.slots.get(slotKey))
     if (!filled) return page.receipt
     try {
       return JSON.parse(new TextDecoder().decode(filled)) as unknown
@@ -647,25 +968,35 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       return page.receipt
     }
   }
-  const hintsOf = (page: Page): PageHints => {
-    const receipt = servedReceiptOf(page)
+  const hintsOf = (page: Page, lang?: string): PageHints => {
+    // In a locale with a receipt of its own for the page, that receipt (envelope §2.3).
+    const own = lang !== undefined ? localed.receipts.get(lang)?.get(page.key) : undefined
+    const receipt = own ? servedReceiptOf(own, page.key) : servedReceiptOf(page)
     const image = firstImageOf(receipt)
+    // The modules of the page as drawn: the layout's blocks too.
+    const drawn = inLayout(page.key, receipt, layoutPage?.receipt).receipt
     return {
-      receipt: `pwpack/surfaces/${page.key}.receipt.json`,
-      modules: [...new Set(blockTypesOf(receipt).map((t) => moduleOf.get(t)).filter((m): m is string => m !== undefined))].sort(),
+      receipt: `pwpack/surfaces/${own ? own.key : page.key}.receipt.json`,
+      modules: [...new Set(blockTypesOf(drawn).map((t) => moduleOf.get(t)).filter((m): m is string => m !== undefined))].sort(),
       ...(image ? { image: servedHref(image.src), ...(image.priority ? { imagePriority: true } : {}) } : {}),
     }
   }
   // Every route's and the not-found page's, for the shell to ask for the
   // OPENED page's only (pwapp-format §2.1): never the entry page's on another.
   const hinted: Record<string, PageHints> = {}
-  if (!gated) for (const page of [...routes, ...(notFoundPage ? [notFoundPage] : [])]) hinted[page.key] = hintsOf(page)
+  if (!gated) for (const page of [...routes, ...(notFoundPage ? [notFoundPage] : [])]) hinted[page.key] = hintsOf(page, locales?.defaultLocale)
   const router = options.router ?? 'hash'
   const byPath = router !== 'hash'
   const base = options.base ?? '/'
   // A page's address, as the runner's router writes it — into every link the
   // first frame draws, and the document each page is served from.
-  const toHref = byPath ? pathHref(base, entry) : hashHref
+  // A page's address in a locale, as the runner's router writes it (envelope §3).
+  const hrefIn = (lang: string, key: string): string => localeHref(localed.addresses, lang, key, byPath, base)
+  const toHref = locales ? (key: string): string => hrefIn(locales.defaultLocale, key) : byPath ? pathHref(base, entry) : hashHref
+  // The locales a document is drawn in: each under path routing; the
+  // default's alone under hash routing, where the one document holds every
+  // locale's routes and the runner draws the others.
+  const drawnLocales = locales ? (byPath ? orderedLocales(locales) : [locales.defaultLocale]) : []
   // The inline scripts read the address as the runner will: by path when it routes by path.
   const routed = router === 'hash' ? {} : { router }
   const pageHints = {
@@ -673,29 +1004,62 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     entry,
     routes: routes.map((p) => p.key),
     ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
+    ...(locales ? { addresses: addressKeysOf(localed.addresses, locales.defaultLocale) } : {}),
     pages: hinted,
   }
-  const bootJs = bootScript({ assets: { ...assets0, boot: '' }, webfontHref, router })
+  /** Each other locale drawn: its hints, frames and first-paint data (envelope §2.3). */
+  const editions = new Map<string, { hinted: Record<string, PageHints>; painted: readonly PaintedPage[]; firstPaintJson?: Record<string, unknown> }>()
+  for (const lang of drawnLocales) {
+    if (lang === locales?.defaultLocale) continue
+    const own: Record<string, PageHints> = {}
+    if (!gated) for (const page of [...routes, ...(notFoundPage ? [notFoundPage] : [])]) own[page.key] = hintsOf(page, lang)
+    editions.set(lang, { hinted: own, painted: [] })
+  }
+  const bootJs = bootScript({ assets: { ...assets0, boot: '' }, router })
   const assets: ShellAssets = { ...assets0, boot: hashedName('assets/boot.js', bootJs) }
   let painted: readonly PaintedPage[] = []
+  // The rules every painted page writes the same, linked from every document (static-paint.ts shareFrameStyles).
+  let frameAsset: string | undefined
   let firstPaintJson: Record<string, unknown> | undefined
-  const documents = pageDocuments({
-    byPath,
-    entry,
-    routes: routes.map((p) => p.key),
-    ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
-    base,
-    toHref,
-  })
+  const documentsIn = (href: (key: string) => string): PageDocument[] =>
+    pageDocuments({
+      byPath,
+      entry,
+      routes: routes.map((p) => p.key),
+      ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
+      base,
+      toHref: href,
+    })
+  // An app with locales: one document per page per locale, `<prefix>404.html` for each other locale.
+  const documents: PageDocument[] = locales
+    ? drawnLocales.flatMap((lang) =>
+        documentsIn((key) => hrefIn(lang, key)).map((d) => ({
+          ...d,
+          locale: lang,
+          ...(d.notFound && lang !== locales.defaultLocale ? { file: `${localePrefix(lang)}404.html` } : {}),
+        }))
+      )
+    : documentsIn(toHref)
   // One document per page under path routing, the one shell under hash
   // routing: each with its page's head and its page's first frame.
   const shell = (doc: (typeof documents)[number], csp?: string): Uint8Array => {
-    const own = doc.key === undefined ? undefined : painted.find((p) => p.key === doc.key)
+    const edition = doc.locale !== undefined ? editions.get(doc.locale) : undefined
+    const docPainted = edition ? edition.painted : painted
+    const docHints = edition ? { ...pageHints, addresses: addressKeysOf(localed.addresses, doc.locale as string), pages: edition.hinted } : pageHints
+    const docFirstPaint = edition ? edition.firstPaintJson : firstPaintJson
+    const own = doc.key === undefined ? undefined : docPainted.find((p) => p.key === doc.key)
     const page = doc.key === undefined ? undefined : pages.find((p) => p.key === doc.key)
     const head = documentHead({
       doc,
-      receipt: page ? (servedReceipts.get(page.key) ?? page.receipt) : undefined,
+      receipt: page ? (servedIn(doc.locale).get(page.key) ?? page.receipt) : undefined,
       appTitle: title,
+      ...(titleTemplate !== undefined ? { titleTemplate } : {}),
+      // The document's words, for a title written with t() (envelope §2.3).
+      ...(locales && doc.locale !== undefined
+        ? { words: catalogueFor(localed.catalogues, locales, doc.locale), locale: doc.locale }
+        : messages !== undefined
+          ? { words: messages, ...(locale !== undefined ? { locale } : {}) }
+          : {}),
       ...(appDescription !== undefined ? { appDescription } : {}),
       ...(origin !== undefined ? { origin } : {}),
       ...(image !== undefined ? { image } : {}),
@@ -707,19 +1071,29 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         title: head.title,
         ...(head.description !== undefined ? { description: head.description } : {}),
         ...(head.canonical !== undefined ? { canonical: head.canonical } : {}),
+        ...(locales && byPath && origin !== undefined && !doc.notFound && doc.key !== undefined && !gated
+          ? { alternates: hreflangsOf(locales, (lang) => canonicalOf(origin, hrefIn(lang, doc.key as string))) }
+          : {}),
         ...(head.image !== undefined ? { image: head.image } : {}),
         ...(head.noindex ? { noindex: true } : {}),
-        ...(locale !== undefined ? { lang: locale } : {}),
-        webfontHref,
+        ...(doc.locale !== undefined ? { lang: doc.locale, localized: true } : locale !== undefined ? { lang: locale } : {}),
+        ...(title ? { siteName: title } : {}),
+        ...(locales && doc.locale !== undefined
+          ? { ogLocale: { locale: doc.locale, alternates: locales.locales.filter((l) => l !== doc.locale) } }
+          : locale !== undefined
+            ? { ogLocale: { locale } }
+            : {}),
+        ...(fontAssets.preload !== undefined ? { fontPreload: fontAssets.preload } : {}),
         ...(options.shellExtra !== undefined ? { bodyExtra: options.shellExtra } : {}),
         ...(csp !== undefined ? { csp } : {}),
-        assets,
+        ...(favicon !== undefined ? { favicon } : {}),
+        ...(schemeScript !== undefined ? { colorSchemeScript: schemeScript } : {}),
+        assets: frameAsset ? { ...assets, frame: frameAsset } : assets,
         preloadRenderer: !gated,
         bootFiles: BOOT_FILES.filter((f) => files.has(f)),
-        themeCss: new TextDecoder().decode(themeCss),
-        pageHints: { ...pageHints, ...(doc.key !== undefined ? { page: doc.key } : {}) },
-        ...(firstPaintJson
-          ? { firstPaint: { rootHtml: own ? staticRootHtml(own) : '', layoutCss: own?.layoutCss ?? '', data: firstPaintJson } }
+        pageHints: { ...docHints, ...(doc.key !== undefined ? { page: doc.key } : {}) },
+        ...(docFirstPaint
+          ? { firstPaint: { rootHtml: own ? staticRootHtml(own) : '', layoutCss: own?.layoutCss ?? '', data: docFirstPaint } }
           : {}),
         router,
         ...(options.base !== undefined ? { base: options.base } : {}),
@@ -730,11 +1104,16 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   files.set(assets.runner, enc.encode(runtime.runnerJs))
   files.set(assets.embed, enc.encode(runtime.embedJs))
   files.set(assets.theme, themeCss)
+  for (const [path, bytes] of fontAssets.files) files.set(path, bytes)
   for (const [name, source] of await shimsFor(runtime.embedJs)) files.set(`shims/${name}`, enc.encode(source))
   for (const [file, bytes] of [...modules].sort((a, b) => (a[0] < b[0] ? -1 : 1))) files.set(file, bytes)
   files.set('blocks/manifest.json', json(blockManifest))
   files.set('engines/manifest.json', json(engineManifest))
 
+  // ── each page's words per locale (envelope §2.3): a page fetches only the
+  // ids it, its layout and the runner read, its locale's over the default's;
+  // a page that reads a word by an id it computes fetches the catalogue too.
+  const pageWords = pageWordsOf(localed, locales, [...pages], (key, receipt) => inLayout(key, receipt, layoutPage?.receipt).receipt)
   files.set(
     'pwpack/project.json',
     json({
@@ -750,10 +1129,36 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         ...(messages !== undefined ? { messages } : {}),
       }),
       ...(appDescription !== undefined ? { description: appDescription } : {}),
+      ...(titleTemplate !== undefined ? { titleTemplate } : {}),
       ...(origin !== undefined ? { origin } : {}),
       ...(image !== undefined ? { image: /^https?:\/\//i.test(image) ? image : `pwpack/${image.replace(/^\.?\//, '')}` } : {}),
+      // The scripts the runner loads once the visitor consents (envelope §2.2).
+      ...(planScripts.length > 0 ? { scripts: planScripts } : {}),
+      ...(publicFiles.length > 0 ? { publicFiles: publicFiles.map(([rel]) => rel) } : {}),
+      ...(layoutPage ? { layoutReceiptFile: LAYOUT_RECEIPT_FILE } : {}),
+      // The app's languages, its address table and its per-locale receipts (envelope §2.3).
+      ...(locales
+        ? {
+            locales: locales.locales,
+            defaultLocale: locales.defaultLocale,
+            addresses: localed.addresses,
+            ...(localed.pages.length > 0 ? { localeReceiptFiles: localed.receiptFiles } : {}),
+            // Each page's words in each locale: what it, its layout and the runner read.
+            pageMessages: pageWords.files,
+            ...(pageWords.dynamic.length > 0 ? { pageMessagesDynamic: pageWords.dynamic } : {}),
+          }
+        : {}),
     })
   )
+  for (const [lang, words] of Object.entries(localed.catalogues)) files.set(`pwpack/messages/${lang}.json`, json(words))
+  for (const [path, words] of pageWords.bodies) files.set(`pwpack/${path}`, json(words))
+  for (const page of localed.pages) {
+    const base = page.key.slice(0, page.key.lastIndexOf('.'))
+    const declared = withoutAuthoring(
+      withPageAppearance(withSessionSources(withRecordFields(page.receipt, recordFields), entityDeclarations, authDeclaration), pageAppearance.get(base))
+    )
+    files.set(`pwpack/surfaces/${page.key}.receipt.json`, declared === page.receipt ? page.bytes : json(declared))
+  }
   for (const page of pages) {
     const declared = withoutAuthoring(
       withPageAppearance(
@@ -762,6 +1167,10 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       )
     )
     files.set(`pwpack/surfaces/${page.key}.receipt.json`, declared === page.receipt ? page.bytes : json(declared))
+  }
+  if (layoutPage) {
+    const declared = withoutAuthoring(withSessionSources(withRecordFields(layoutPage.receipt, recordFields), entityDeclarations, authDeclaration))
+    files.set(`pwpack/${LAYOUT_RECEIPT_FILE}`, declared === layoutPage.receipt ? layoutPage.bytes : json(declared))
   }
   files.set('pwpack/navigation.json', json(isRecord(navigationDoc) ? navigationDoc : deriveNavigation(routes, entry)))
   if (appearance) files.set('pwpack/appearance.json', json(appearance))
@@ -784,6 +1193,11 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     const filled = fillMediaSlots(files.get(path) as Uint8Array, media.slots.get(page.key))
     if (filled) files.set(path, filled)
   }
+  for (const page of localed.pages) {
+    const path = `pwpack/surfaces/${page.key}.receipt.json`
+    const filled = fillMediaSlots(files.get(path) as Uint8Array, media.slots.get(page.key.slice(0, page.key.lastIndexOf('.'))))
+    if (filled) files.set(path, filled)
+  }
 
   // ── the Content Security Policy ──────────────────────────────────
   const servedReceipts = new Map<string, unknown>()
@@ -795,6 +1209,34 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       servedReceipts.set(page.key, page.receipt)
     }
   }
+  // Each page as drawn: assembled into the layout as served (receipt §4).
+  const servedLayoutBytes = files.get(`pwpack/${LAYOUT_RECEIPT_FILE}`)
+  let servedLayout: unknown = layoutPage?.receipt
+  try {
+    if (layoutPage && servedLayoutBytes) servedLayout = JSON.parse(new TextDecoder().decode(servedLayoutBytes)) as unknown
+  } catch {
+    // The source's layout stands in.
+  }
+  const drawnReceipts = new Map<string, unknown>()
+  for (const [key, receipt] of servedReceipts) drawnReceipts.set(key, inLayout(key, receipt, servedLayout, blockManifest).receipt)
+  // A locale's pages: its own receipt for a page when it has one (envelope §2.3).
+  const servedByLocale = new Map<string, Map<string, unknown>>()
+  for (const [lang, own] of localed.receipts) {
+    const map = new Map(servedReceipts)
+    for (const [key, page] of own) {
+      const bytes = files.get(`pwpack/surfaces/${page.key}.receipt.json`)
+      let receipt: unknown = page.receipt
+      try {
+        if (bytes) receipt = JSON.parse(new TextDecoder().decode(bytes)) as unknown
+      } catch {
+        // the source's receipt stands in
+      }
+      map.set(key, receipt)
+      drawnReceipts.set(page.key, inLayout(key, receipt, servedLayout, blockManifest).receipt)
+    }
+    servedByLocale.set(lang, map)
+  }
+  const servedIn = (lang: string | undefined): ReadonlyMap<string, unknown> => (lang !== undefined ? (servedByLocale.get(lang) ?? servedReceipts) : servedReceipts)
   const envelopeAuthBytes = files.get('pwpack/auth.json')
 
   // ── the static first paint (pwapp-format §2.5) ────────────────────
@@ -813,55 +1255,109 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     }
     const project = served('pwpack/project.json')
     const paintable = [...routes, ...(notFoundPage ? [notFoundPage] : [])]
-    const result = isRecord(project)
-      ? await paintPages({
-          staticJs: runtime.staticJs,
-          blockManifest,
-          files,
-          project,
-          navigation: served('pwpack/navigation.json'),
-          appearance: served('pwpack/appearance.json'),
-          auth: isRecord(project['identity']) ? served('pwpack/auth.json') : undefined,
-          pages: paintable.map((p) => ({ key: p.key, receipt: (servedReceipts.get(p.key) ?? p.receipt) as Record<string, unknown> })),
-          toHref,
-        })
-      : { pages: [] as PaintedPage[], diagnostics: [] }
-    diagnostics.push(...result.diagnostics)
-    painted = result.pages
-    // Every painted page's frame is also a file of its own, for a document
-    // that holds another page's (a hash address, a host's SPA fallback).
-    for (const page of painted) files.set(staticPageFile(page.key), enc.encode(staticPageFragment(page)))
-    // Such a document asks for it with itself (shell.ts PageHints.frame).
-    for (const page of painted) {
-      const hint = hinted[page.key]
-      if (hint) hinted[page.key] = { ...hint, frame: staticPageFile(page.key), ...(page.addressKeys.length > 0 ? { frameKeys: page.addressKeys } : {}) }
-    }
-    if (painted.length > 0) {
-      firstPaintJson = firstPaintData({
-        ...routed,
-        entry,
-        routes: routes.map((p) => p.key),
-        ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
-        pages: painted,
+    /** The pages of one locale (the app's, in a single-language app), painted as the runner draws them there. */
+    const paintIn = async (lang: string | undefined): Promise<{ pages: readonly PaintedPage[]; diagnostics: readonly AssembleDiagnostic[] }> => {
+      if (!isRecord(project)) return { pages: [], diagnostics: [] }
+      const own = lang !== undefined ? localed.receipts.get(lang) : undefined
+      const drawnOf = (key: string): unknown => drawnReceipts.get(own?.get(key)?.key ?? key)
+      const href = lang !== undefined ? (key: string): string => hrefIn(lang, key) : toHref
+      return paintPages({
+        staticJs: runtime.staticJs as string,
+        blockManifest,
+        files,
+        // The project as a page in that locale reads it: its locale and its words.
+        project: lang !== undefined && locales ? { ...project, locale: lang, messages: catalogueFor(localed.catalogues, locales, lang) } : project,
+        navigation: served('pwpack/navigation.json'),
+        appearance: served('pwpack/appearance.json'),
+        auth: isRecord(project['identity']) ? served('pwpack/auth.json') : undefined,
+        pages: paintable.map((p) => ({
+          key: p.key,
+          receipt: (drawnOf(p.key) ?? p.receipt) as Record<string, unknown>,
+          ...(locales
+            ? { extra: { locales: locales.locales, alternates: Object.fromEntries(locales.locales.map((l) => [l, hrefIn(l, p === notFoundPage ? entry : p.key)])) } }
+            : {}),
+        })),
+        toHref: href,
       })
+    }
+    const langs: (string | undefined)[] = locales ? drawnLocales : [undefined]
+    const results = []
+    for (const lang of langs) results.push({ lang, result: await paintIn(lang) })
+    for (const r of results) diagnostics.push(...r.result.diagnostics)
+    // A <style> text two or more pages write, sent once — across every locale.
+    const shared = shareFrameStyles(results.flatMap((r) => r.result.pages))
+    if (shared.css !== '') {
+      const bytes = enc.encode(shared.css)
+      frameAsset = hashedName('assets/frame.css', bytes)
+      files.set(frameAsset, bytes)
+    }
+    let at = 0
+    for (const { lang, result } of results) {
+      const href = lang !== undefined ? (key: string): string => hrefIn(lang, key) : toHref
+      const mine = shared.pages.slice(at, at + result.pages.length)
+      at += result.pages.length
+      // Under path routing each page is a document of its own: a fragment-only
+      // link names a place in THAT page, not in the one `<base href>` names.
+      // Rewritten on the final frame, after the shared rules left it.
+      const framed = byPath ? mine.map((p) => ({ ...p, html: onPageFragmentLinks(p.html, href(p.key)) })) : mine
+      const other = lang !== undefined && lang !== locales?.defaultLocale ? editions.get(lang) : undefined
+      const frameLang = other ? lang : undefined
+      const hints = other ? other.hinted : hinted
+      // Every painted page's frame is also a file of its own, for a document
+      // that holds another page's (a hash address, a host's SPA fallback).
+      for (const page of framed) files.set(staticPageFile(page.key, frameLang), enc.encode(staticPageFragment(page)))
+      // Such a document asks for it with itself (shell.ts PageHints.frame).
+      for (const page of framed) {
+        const hint = hints[page.key]
+        if (hint) hints[page.key] = { ...hint, frame: staticPageFile(page.key, frameLang), ...(page.addressKeys.length > 0 ? { frameKeys: page.addressKeys } : {}) }
+      }
+      const data =
+        framed.length > 0
+          ? firstPaintData({
+              ...routed,
+              entry,
+              routes: routes.map((p) => p.key),
+              ...(notFoundPage ? { notFound: notFoundPage.key } : {}),
+              pages: framed,
+              ...(locales && lang !== undefined ? { locale: { ...(frameLang !== undefined ? { lang: frameLang } : {}), addresses: addressKeysOf(localed.addresses, lang) } } : {}),
+            })
+          : undefined
+      if (other) editions.set(lang as string, { ...other, painted: framed, ...(data ? { firstPaintJson: data } : {}) })
+      else {
+        painted = framed
+        firstPaintJson = data
+      }
     }
   }
 
   const csp = deriveCsp({
     importMapText: importMapText(),
-    inlineScripts: [...(Object.keys(hinted).length > 0 ? [PAGE_HINTS_SCRIPT] : []), ...(firstPaintJson ? [FIRST_PAINT_SCRIPT] : [])],
-    receipts: servedReceipts,
+    inlineScripts: [
+      ...(Object.keys(hinted).length > 0 ? [locales ? PAGE_HINTS_SCRIPT_LOCALES : PAGE_HINTS_SCRIPT] : []),
+      ...(firstPaintJson || [...editions.values()].some((e) => e.firstPaintJson) ? [locales ? FIRST_PAINT_SCRIPT_LOCALES : FIRST_PAINT_SCRIPT] : []),
+      ...(schemeScript !== undefined ? [schemeScript] : []),
+    ],
+    receipts: drawnReceipts,
     connections,
     engines: engineManifest,
     envelopeAuth: envelopeAuthBytes ? JSON.parse(new TextDecoder().decode(envelopeAuthBytes)) : undefined,
     authDefinition: authDoc,
     media: media.records,
-    webfontHref,
     blocks: placedBlocks,
+    scripts: planScriptOrigins(planScripts),
+    ...(favicon !== undefined ? { favicon } : {}),
   })
   // Written last: the shell preloads only boot files the folder has.
   for (const doc of documents) files.set(doc.file, shell(doc, csp.meta))
-  files.set('_headers', enc.encode(headersFile(csp.header, csp.mediaHeader, documents.map((d) => d.file))))
+  // The plan's headers come after the engine's, and may not set one the
+  // engine sets on a path they share (pwapp-format §2.6).
+  const engineHeaders = headersFile(csp.header, csp.mediaHeader, documents.map((d) => d.file))
+  const planHeaders = planHeadersOf(
+    plan,
+    diagnostics,
+    parseHeadersFile(engineHeaders).map((r) => ({ path: r.pattern, headers: r.headers.map(([name]) => name.replace(/^!\s*/, '')) }))
+  )
+  files.set('_headers', enc.encode(headersFile(csp.header, csp.mediaHeader, documents.map((d) => d.file), planHeaders)))
   // THE SITEMAP: every page's own address on the app's public origin — not a
   // record page (it names no page without its record), and nothing of an app
   // that requires sign-in, which a crawler cannot read.
@@ -870,25 +1366,31 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     : documents
         .filter((d) => !d.notFound && d.key !== undefined && d.path !== undefined)
         .filter((d) => !isRecordPage(servedReceipts.get(d.key as string)))
-        .map((d) => ({ key: d.key as string, url: canonicalOf(origin, d.path as string) }))
-        .filter((d): d is { key: string; url: string } => d.url !== undefined)
+        .map((d) => ({ key: d.key as string, url: canonicalOf(origin, d.path as string), locale: d.locale }))
+        .filter((d): d is { key: string; url: string; locale: string | undefined } => d.url !== undefined)
   const listed = listedDocs.map((d) => d.url)
   const baseDir = base.endsWith('/') ? base : `${base}/`
   const sitemap = listed.length > 0 ? canonicalOf(origin, `${baseDir}sitemap.xml`) : undefined
-  if (sitemap !== undefined) files.set('sitemap.xml', enc.encode(sitemapXml(listed)))
+  if (sitemap !== undefined) {
+    // An app with locales (path routing): every page per locale, each with its alternates (pwapp-format §2.4).
+    const entries = locales && byPath
+      ? listedDocs.map((d) => ({ url: d.url, alternates: hreflangsOf(locales, (lang) => canonicalOf(origin, hrefIn(lang, d.key))) }))
+      : undefined
+    files.set('sitemap.xml', enc.encode(entries ? sitemapXmlLocales(entries) : sitemapXml(listed)))
+  }
   files.set('robots.txt', enc.encode(robotsTxt(sitemap)))
   // THE PAGES FOR A LANGUAGE MODEL (llms.txt, llms-full.txt): the sitemap's
   // pages, in the app's navigation order, under path routing — where each
   // page has an address of its own to cite.
   if (byPath && origin !== undefined && listedDocs.length > 0) {
-    const order = navigationOrder(JSON.parse(new TextDecoder().decode(files.get('pwpack/navigation.json'))) as unknown, entry, listedDocs.map((d) => d.key))
+    const order = navigationOrder(JSON.parse(new TextDecoder().decode(files.get('pwpack/navigation.json'))) as unknown, entry, [...new Set(listedDocs.map((d) => d.key))])
     const llmsPages: LlmsPage[] = order.map((key) => {
       const doc = listedDocs.find((d) => d.key === key) as { key: string; url: string }
       const receipt = servedReceipts.get(key)
       const own = painted.find((p) => p.key === key)
-      const description = literalText(isRecord(receipt) ? receipt['description'] : undefined)
+      const description = literalText(wordedText(isRecord(receipt) ? receipt['description'] : undefined, messages, locale))
       return {
-        title: literalText(isRecord(receipt) ? receipt['title'] : undefined) ?? (title || key),
+        title: literalText(wordedText(isRecord(receipt) ? receipt['title'] : undefined, messages, locale)) ?? (title || key),
         url: doc.url,
         ...(description !== undefined ? { description } : {}),
         ...(own ? { html: own.html } : {}),
@@ -905,8 +1407,32 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         return undefined
       }
     }
-    files.set('llms.txt', enc.encode(llmsTxt(appInfo, llmsPages)))
-    files.set('llms-full.txt', enc.encode(llmsFullTxt(appInfo, llmsPages, linkFor)))
+    if (locales) {
+      // One section per locale, the default first (pwapp-format §2.4.1).
+      const sections = drawnLocales.map((lang) => {
+        const own = lang === locales.defaultLocale ? painted : (editions.get(lang)?.painted ?? [])
+        const servedHere = servedIn(lang)
+        const pagesHere: LlmsPage[] = order.flatMap((key) => {
+          const doc = listedDocs.find((d) => d.key === key && d.locale === lang)
+          if (!doc) return []
+          const receipt = servedHere.get(key)
+          const frame = own.find((p) => p.key === key)
+          const description = literalText(wordedText(isRecord(receipt) ? receipt['description'] : undefined, catalogueFor(localed.catalogues, locales, lang), lang))
+          return [{
+            title: literalText(wordedText(isRecord(receipt) ? receipt['title'] : undefined, catalogueFor(localed.catalogues, locales, lang), lang)) ?? (title || key),
+            url: doc.url,
+            ...(description !== undefined ? { description } : {}),
+            ...(frame ? { html: frame.html } : {}),
+          }]
+        })
+        return { lang, pages: pagesHere }
+      })
+      files.set('llms.txt', enc.encode(llmsTxtLocales(appInfo, sections)))
+      files.set('llms-full.txt', enc.encode(llmsFullTxtLocales(appInfo, sections, linkFor)))
+    } else {
+      files.set('llms.txt', enc.encode(llmsTxt(appInfo, llmsPages)))
+      files.set('llms-full.txt', enc.encode(llmsFullTxt(appInfo, llmsPages, linkFor)))
+    }
   }
 
   const publishedAtoms = atoms
@@ -922,6 +1448,17 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         ...(shipped?.moduleUrl && shipped.integrity && a.hash ? { module: shipped.moduleUrl, integrity: shipped.integrity } : {}),
       }
     })
+  // Public files next, so a redirect cannot shadow one of them either.
+  copyPublic(publicFiles, files, diagnostics)
+  // The plan's redirects, in the static-host `_redirects` convention, under
+  // the app's base: none from an address the app serves, which a host
+  // answers first.
+  const servedPath = (from: string): boolean => {
+    const rel = from.replace(/^\/+/, '')
+    return rel === '' || files.has(rel) || files.has(`${rel.replace(/\/+$/, '')}/index.html`) || documents.some((d) => d.path === from)
+  }
+  const planRedirects = planRedirectsOf(plan, diagnostics, servedPath)
+  if (planRedirects.length > 0) files.set('_redirects', enc.encode(redirectsFile(planRedirects, base)))
   files.set(
     'publish.json',
     json({
@@ -933,6 +1470,9 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       atoms: publishedAtoms,
       ...(media.records.length > 0 ? { media: media.records } : {}),
       csp: { policy: csp.header, ...(csp.unresolved.length > 0 ? { unresolved: csp.unresolved } : {}) },
+      // For a host that does not read `_headers` / `_redirects` (pwapp-format §2.6).
+      ...(planHeaders.length > 0 ? { headers: planHeaders.map((r) => ({ path: r.path, headers: Object.fromEntries(r.headers) })) } : {}),
+      ...(planRedirects.length > 0 ? { redirects: planRedirects } : {}),
     })
   )
 

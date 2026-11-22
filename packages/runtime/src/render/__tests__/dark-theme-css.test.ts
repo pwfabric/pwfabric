@@ -34,8 +34,10 @@ describe('dark-theme-css', () => {
     expect(css).toContain('[data-pw-surface][data-pw-theme="dark"]{')
     // 2. Auto rule via OS preference, excluding force-light.
     expect(css).toContain(
-      '@media (prefers-color-scheme:dark){[data-pw-surface]:not([data-pw-theme="light"]){'
+      '@media (prefers-color-scheme:dark){[data-pw-surface]:not([data-pw-theme="light"]):not([data-pw-theme="light"] *){'
     )
+    // ...and the same choice made on the document element (appearance §4.1).
+    expect(css).toContain('[data-pw-theme="dark"] [data-pw-surface],[data-pw-surface][data-pw-theme="dark"]{')
     // Dark color vars appear (in both rules — the body is shared).
     expect(css).toContain('--pw-color-background:#0b0b0f')
     expect(css).toContain('--pw-color-text:#f5f5f5')
@@ -87,7 +89,7 @@ describe('dark-theme-css', () => {
 
     expect(blue).toContain('[data-pw-surface="surface-blue"][data-pw-theme="dark"]{')
     expect(blue).toContain(
-      '@media (prefers-color-scheme:dark){[data-pw-surface="surface-blue"]:not([data-pw-theme="light"]){'
+      '@media (prefers-color-scheme:dark){[data-pw-surface="surface-blue"]:not([data-pw-theme="light"]):not([data-pw-theme="light"] *){'
     )
 
     // Neither stylesheet may carry a selector that also matches the other
@@ -184,5 +186,16 @@ describe('resolveAppearanceDarkVars — an explicit dark theme OVERRIDES the der
     const darkVars = resolveAppearanceDarkVars(undefined, light, { colors: { accent: '#111111' } })
     expect(darkVars['--pw-color-accent']).toBe('#111111')
     expect(darkVars['--pw-color-background']).not.toBe('#ffffff')
+  })
+})
+
+describe('color-scheme follows the dark palette', () => {
+  it('sets color-scheme: dark wherever the dark palette applies, so native controls draw dark', () => {
+    const vars = { '--pw-color-background': '#000000' }
+    const system = buildDarkThemeCss(vars, 's1')
+    expect(system).toContain('color-scheme:dark !important')
+    expect(system.split('color-scheme:dark !important').length - 1).toBe(2)
+    expect(buildDarkThemeCss(vars, 's1', 'dark')).toContain('color-scheme:dark !important')
+    expect(buildDarkThemeCss(vars, 's1', 'light')).toBe('')
   })
 })

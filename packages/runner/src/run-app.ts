@@ -34,6 +34,7 @@ import {
   STATIC_LAYOUT_ID,
   STATIC_PAGE_ATTR,
   STATIC_VIEWPORT,
+  fillSharedStyles,
   firstFrameAuthState,
   firstFrameDoorOf,
   firstFrameLocale,
@@ -73,6 +74,12 @@ import { isOwnApiRef, ownApiBaseOf } from './api-base.js'
 import { ownRecordsReceipt } from './own-records.js'
 import { receiptSurfaceId, startPreviewSession, type PreviewPage, type PreviewSession } from './preview-session.js'
 import type { PreviewSurface } from './preview-bridge.js'
+import { createConsent } from './consent.js'
+import { createColorScheme } from './color-scheme.js'
+import { assemblePage } from './layout.js'
+import { localesOf, mergeCatalogues } from '@pwfabric/contracts/app-locales'
+import { mountLocaleSuggestion } from './locale-suggestion.js'
+import type { RunnerMessages } from './messages.js'
 
 export { projectAppearanceRef } from './appearance-ref.js'
 
@@ -103,8 +110,103 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   const appId = project.id ?? project.title ?? 'app'
   // The app's words (envelope §2): every word the runner draws is read
   // here, and one the app does not set is drawn as nothing.
-  const say = runnerMessages(project.messages)
+  // THE APP'S LANGUAGES (envelope §2.3): with `locales`, the words are one
+  // catalogue per locale, `messages/<lang>.json`, fetched for the locale
+  // drawn (over the default locale's), and every word below reads them.
+  const localeDeclaration = localesOf(project)
+  const routerLocales = localeDeclaration && project.addresses ? { declaration: localeDeclaration, addresses: project.addresses } : undefined
+  const catalogues = new Map<string, Promise<Readonly<Record<string, string>>>>()
+  const catalogue = (lang: string): Promise<Readonly<Record<string, string>>> => {
+    let load = catalogues.get(lang)
+    if (!load) {
+      load = fetchJson<Record<string, string>>(withVersion(`${source}/messages/${lang}.json`, opts.version)).then(
+        (words) => (words && typeof words === 'object' ? words : {}),
+        (err: unknown) => {
+          console.warn(`[pwapp] the words of "${lang}" could not be fetched`, err)
+          return {}
+        }
+      )
+      catalogues.set(lang, load)
+    }
+    return load
+  }
+  /** The locale drawn and its words (the project's own in a single-language app). */
+  let drawnLocale = project.locale
+  let words: Readonly<Record<string, string>> | undefined = project.messages
+  let sayNow = runnerMessages(project.messages, project.locale)
+  const say: RunnerMessages = (id, vars) => sayNow(id, vars)
+  /** Draws in `lang` from now on: its words over the default's, `<html lang>`. */
+  /** A page's own words file (`pageMessages`), fetched once. */
+  const pageWordFiles = new Map<string, Promise<Readonly<Record<string, string>>>>()
+  const pageWordFile = (path: string): Promise<Readonly<Record<string, string>>> => {
+    let load = pageWordFiles.get(path)
+    if (!load) {
+      load = fetchJson<Record<string, string>>(withVersion(`${source}/${path}`, opts.version)).then(
+        (w) => (w && typeof w === 'object' ? w : {}),
+        () => ({})
+      )
+      pageWordFiles.set(path, load)
+    }
+    return load
+  }
+  /**
+   * The words page `key` reads in `lang`: its own file when the build wrote
+   * one — the ids it, its layout and the runner read, already over the
+   * default's — and the catalogues only for a page that computes an id (or
+   * a build that wrote no page files).
+   */
+  async function wordsOf(lang: string, key: string | undefined): Promise<Readonly<Record<string, string>>> {
+    const declaration = localeDeclaration as NonNullable<typeof localeDeclaration>
+    const file = key !== undefined ? project.pageMessages?.[lang]?.[key] : undefined
+    const full = async (): Promise<Record<string, string>> => mergeCatalogues(await catalogue(declaration.defaultLocale), await catalogue(lang))
+    if (!file) return full()
+    const own = await pageWordFile(file)
+    return key !== undefined && project.pageMessagesDynamic?.includes(key) ? { ...(await full()), ...own } : own
+  }
+  async function useLocale(lang: string | undefined, key: string | undefined): Promise<void> {
+    if (!localeDeclaration || lang === undefined) return
+    const next = await wordsOf(lang, key)
+    drawnLocale = lang
+    words = next
+    sayNow = runnerMessages(words, lang)
+    document.documentElement.lang = lang
+  }
+  /** The project as a page in the locale drawn reads it: its locale and its words. */
+  const projectNow = (): typeof project => (localeDeclaration ? { ...project, ...(drawnLocale ? { locale: drawnLocale } : {}), ...(words ? { messages: words } : {}) } : project)
+  /** A page's receipt file in the locale drawn: its own for that locale, else the shared one. */
+  const receiptFileOf = (key: string): string | undefined =>
+    (drawnLocale !== undefined ? project.localeReceiptFiles?.[drawnLocale]?.[key] : undefined) ?? receiptFiles[key]
   const dataCache = sessionDataCache(sessionStorage, appId)
+  // THE VISITOR'S CONSENT and the scripts that wait for it (envelope §2.2):
+  // handed to every block as `context.consent` / `setConsent`; nothing is
+  // loaded before the first page is drawn (`consent.start()` below).
+  const consent = createConsent({
+    appId,
+    scripts: project.scripts,
+    storage: (() => {
+      try {
+        return window.localStorage
+      } catch {
+        return undefined
+      }
+    })(),
+    win: window,
+    doc: document,
+  })
+  // THE VISITOR'S COLOUR SCHEME (appearance §4.1): handed to every block as
+  // `context.colorScheme` / `setColorScheme`, kept in storage by the runner
+  // alone and set as `data-pw-theme` on the document element.
+  const colorScheme = createColorScheme({
+    appId,
+    storage: (() => {
+      try {
+        return window.localStorage
+      } catch {
+        return undefined
+      }
+    })(),
+    root: document.documentElement,
+  })
   const boot = await bootSession({ project, auth, storage: sessionStorage, appId })
   let appSession: AppSession | null = boot.session
   // A visitor who will see a page gets the renderer started now, so it is
@@ -159,7 +261,13 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   const declaredBase = document.querySelector('base')?.getAttribute('href') ?? undefined
   const router = createRouter(resolveRouterMode(opts.router ?? 'hash'), pages, entry, {
     basePath: declaredBase,
+    ...(routerLocales ? { locales: routerLocales } : {}),
   })
+  /** The current page in every locale (`context.alternates`): each locale's entry for the not-found page. */
+  const alternatesOf = (key: string, notFoundPage: boolean): Record<string, string> | undefined => {
+    if (!localeDeclaration) return undefined
+    return Object.fromEntries(localeDeclaration.locales.map((l) => [l, router.hrefIn(l, notFoundPage ? entry : key)]))
+  }
 
   const mountSelector = opts.mount ?? '#root'
   const found = document.querySelector(mountSelector)
@@ -412,7 +520,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   })
 
   /** The page on screen, kept so an identity change that is not a sign-in can reach it in place. */
-  let current: { seq: number; surface: unknown; options: Record<string, unknown>; handle: unknown } | null = null
+  let current: { seq: number; surface: unknown; options: Record<string, unknown>; handle: unknown; layout?: boolean } | null = null
   /**
    * THE PAGE READS A NEW `__auth` WITHOUT BEING DRAWN AGAIN. A refused
    * password leaves the visitor on the same form with what they typed; a
@@ -497,7 +605,67 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     )
   }
 
+  /**
+   * THE APP'S LAYOUT (receipt §4), fetched once per load like a receipt —
+   * with the visitor's credential — when `project.json` names one. One that
+   * cannot be had is asked for again by the next page; until then pages are
+   * drawn without it.
+   */
+  let layoutLoad: Promise<SurfaceReceipt | null> | undefined
+  let layoutNow: SurfaceReceipt | null = null
+  function appLayout(): Promise<SurfaceReceipt | null> {
+    const file = project.layoutReceiptFile
+    if (!file) return Promise.resolve(null)
+    layoutLoad ??= fetchReceipt(file).then(
+      (layout) => (layoutNow = layout),
+      (err: unknown) => {
+        console.warn('[pwapp] the app layout could not be fetched; this page is drawn without it', err)
+        layoutLoad = undefined
+        return null
+      }
+    )
+    return layoutLoad
+  }
+
+  /** The pages drawn inside the layout: on to another one, the layout's blocks stay mounted. */
+  const inLayout = new WeakSet<SurfaceReceipt>()
+
+  /** Page `key`'s receipt, assembled into the layout (envelope §4 step 2): what every later step reads. */
+  async function fetchPage(file: string, key: string, notFoundPage: boolean): Promise<SurfaceReceipt> {
+    const [receipt, layout] = await Promise.all([fetchReceipt(file), appLayout()])
+    return assembledPage(layout, receipt, key, notFoundPage)
+  }
+
+  function assembledPage(layout: SurfaceReceipt | null, receipt: SurfaceReceipt, key: string, notFoundPage: boolean): SurfaceReceipt {
+    const { receipt: assembled, problems } = assemblePage(layout, receipt, { key, entry, notFoundPage, blocks: blockManifest })
+    for (const p of problems) console.warn(`[pwapp] page "${key}": ${p.message}`)
+    if (layout && receipt.layout !== false) inLayout.add(assembled)
+    return assembled
+  }
+
+  /**
+   * The mount of the page on screen, when the next page can be drawn into it
+   * — both drawn inside the layout, and the mount still the one in the
+   * document — so only what the page puts in the slot changes (receipt §4).
+   */
+  async function keptLayoutMount(): Promise<{ update(o: Record<string, unknown>): void } | null> {
+    const page = current
+    if (!page?.layout) return null
+    const handle = (await page.handle) as { update?: (o: Record<string, unknown>) => void; container?: unknown } | null | undefined
+    if (page !== current || typeof handle?.update !== 'function') return null
+    const root = container.firstElementChild
+    if (container.childElementCount !== 1 || !(root instanceof HTMLElement) || root.id !== 'pw-root') return null
+    if (handle.container !== undefined && handle.container !== root) return null
+    return handle as { update(o: Record<string, unknown>): void }
+  }
+
   async function route(change?: RouteChange): Promise<void> {
+    // The locale the address names (envelope §3), and its words, before any
+    // word is drawn — the gate's and the sign-in screen's included.
+    if (localeDeclaration) {
+      const shownKey = router.current()
+      await useLocale(router.locale(), shownKey ?? project.notFoundSurfaceId ?? entry)
+    }
     const gated = isGated(project, bridge, Boolean(appSession))
     // THE APP'S SIGN-IN SCREEN, at the address the visitor is on: in front of
     // every page while an app that requires sign-in has no visitor, and while
@@ -521,9 +689,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       return
     }
 
-    const file = receiptFiles[key]
+    const file = receiptFileOf(key)
     if (!file) throw new Error(`[pwapp] no receipt file for page "${key}"`)
-    const receipt = await fetchReceipt(file)
+    const receipt = await fetchPage(file, key, false)
     if (seq !== routeSeq) return
 
     /**
@@ -555,10 +723,10 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   async function showNotFound(seq: number): Promise<void> {
     shown = null
     const own = project.notFoundSurfaceId
-    const file = own ? receiptFiles[own] : undefined
+    const file = own ? receiptFileOf(own) : undefined
     if (own && file) {
       try {
-        const receipt = await fetchReceipt(file)
+        const receipt = await fetchPage(file, own, true)
         if (seq !== routeSeq) return
         await renderPage(seq, own, receipt, new URLSearchParams(router.query()), true)
         return
@@ -579,7 +747,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     shown = null
     const key = ownSignIn as string
     try {
-      const receipt = await fetchReceipt(receiptFiles[key] as string)
+      const receipt = await fetchPage(receiptFileOf(key) as string, key, false)
       if (seq !== routeSeq) return
       await renderPage(seq, key, receipt, new URLSearchParams(router.query()), true)
     } catch (err) {
@@ -641,6 +809,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     }
   }
 
+  /** Whether the visitor's language was offered yet (once per load). */
+  let suggested = false
+
   /** Draws a fetched receipt as the page `key`. */
   async function renderPage(
     seq: number,
@@ -651,6 +822,8 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   ): Promise<void> {
     // The page's block modules start downloading now, beside the renderer.
     warmBlockModules(receipt.blocks, blockManifest)
+    // The words of this page in the locale drawn (fetched once; the route asked first).
+    if (localeDeclaration) await useLocale(router.locale(), key)
     // The renderer, the first time a page is drawn (renderer.ts) — never for
     // a visitor the gate holds — and the engine registry, which is its.
     const fabric = await loadRenderer(rendererUrl)
@@ -664,7 +837,9 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // reports the resolved page title through `onTitle` (receipt §1).
     const titleTemplate = typeof receipt.title === 'string' ? receipt.title : undefined
     const titleIsExpression = titleTemplate?.includes('{{') === true
-    const title = composeTitle(project.title, titleIsExpression ? undefined : titleTemplate)
+    // The app's template and the page's say-so (receipt §1.1).
+    const titleOptions = { template: project.titleTemplate, own: receipt.titleTemplate === false }
+    const title = composeTitle(project.title, titleIsExpression ? undefined : titleTemplate, titleOptions)
     if (title) document.title = title
     // The description the same way: a template is never shown, the app's
     // stands in until the renderer reports it resolved (`onDescription`).
@@ -717,7 +892,13 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     // address's seed, the links in its capabilities' config. capabilities
     // MUST travel: DataBound derives its dataSources from them.
     const surface = pageSurfaceOf(receipt, key, params, pageContext())
+    // The first frame's shared rules, put back while the modules load (only
+    // the first page drawn can have a frame to hydrate).
+    const sharedFilled = staticTaken
+      ? Promise.resolve(true)
+      : fillSharedStyles(container, document, (href) => fetch(href).then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status))))))
     await fabric.loadBlocks(surface.blocks, blockManifest)
+    const frameWhole = await sharedFilled
     if (seq !== routeSeq) return
     // The page the document shows: a page with a theme of its own has its
     // ground under `:root[data-pw-page]` in the theme stylesheet (the shell's
@@ -726,8 +907,15 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
 
     // The build's first frame of this page, when the shell holds it: hydrated,
     // not drawn again.
-    const staticRoot = staticRootFor(key)
-    if (!staticRoot) {
+    // A frame whose shared rules could not be had is not the build's markup:
+    // drawn anew rather than hydrated.
+    const taken = staticRootFor(key)
+    const staticRoot = frameWhole ? taken : null
+    // From one page in the layout to another: the same mount, so the layout's
+    // blocks stay mounted and only the slot's content changes.
+    const kept = !staticRoot && inLayout.has(receipt) ? await keptLayoutMount() : null
+    if (seq !== routeSeq) return
+    if (!staticRoot && !kept) {
       dropStaticLayout()
       container.replaceChildren()
       const mount = document.createElement('div')
@@ -737,19 +925,25 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     const renderOptions: Record<string, unknown> = {
       mode: 'fat',
       blocks: blockManifest,
+      // Which page this is: another page in a kept mount starts its own state afresh.
+      pageKey: key,
       // The appearance, the loading strategy (paint first, fill in after),
       // the link writer, the app's locale and words: the options the first
       // frame is drawn with, the same in the build (first-frame.ts).
-      ...firstFrameOptions({ project, appearanceRef, receipt, entry, toHref: router.toHref }),
+      ...firstFrameOptions({ project: projectNow(), appearanceRef, receipt, entry, toHref: router.toHref, pageKey: key }),
+      // The app's languages and this page in each (envelope §2.3).
+      ...(localeDeclaration ? { locales: localeDeclaration.locales, alternates: alternatesOf(key, notFoundPage) } : {}),
       // And a page the visitor has already seen shows yesterday's rows
       // while today's load, so going back and forth costs nothing visible.
       dataCache,
+      consent,
+      colorScheme,
       // A `navigate` action is followed as a link to its address would be
       // (router.follow): `location.assign('#rsvp')` replaced the hash route.
       onNavigateAction: (url: string) => router.follow(url),
       onTitle: (resolved: string | undefined) => {
         if (seq !== routeSeq) return
-        const next = composeTitle(project.title, resolved)
+        const next = composeTitle(project.title, resolved, titleOptions)
         if (next) document.title = next
       },
       onDescription: (resolved: string | undefined) => {
@@ -814,10 +1008,15 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // DataBoundSurfaceRenderer, which exposes it via SurfaceConnectionsContext.
       ...(connectionsValue ? { connections: connectionsValue } : {}),
     }
-    const rendered = staticRoot
-      ? hydrateFirstFrame(staticRoot, receipt, key, surface, renderOptions)
-      : fabric.render('#pw-root', { surface }, renderOptions)
-    current = { seq, surface, options: renderOptions, handle: rendered }
+    let rendered: unknown
+    if (staticRoot) rendered = hydrateFirstFrame(staticRoot, receipt, key, surface, renderOptions)
+    else if (kept) {
+      // The first frame's stylesheet laid out the page drawn before.
+      dropStaticLayout()
+      kept.update({ ...renderOptions, surface })
+      rendered = kept
+    } else rendered = fabric.render('#pw-root', { surface }, renderOptions)
+    current = { seq, surface, options: renderOptions, handle: rendered, layout: inLayout.has(receipt) }
     if (preview && !notFoundPage) {
       // Kept, not discarded: the bridge re-renders through this handle.
       const surfaceId = receiptSurfaceId(receipt)
@@ -832,6 +1031,38 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
     } else {
       if (notFoundPage) preview?.cleared()
       void rendered
+    }
+    // THE VISITOR'S LANGUAGE, offered once, after the first page is drawn
+    // (and hydrated): never in the first frame (envelope §2.3).
+    // Only for an app that writes the suggestion, and only once the browser is
+    // idle: no other locale's words are fetched before.
+    if (localeDeclaration && !suggested && drawnLocale !== undefined && typeof words?.['locale.suggestion'] === 'string' && words['locale.suggestion'] !== '') {
+      suggested = true
+      const drawn = drawnLocale
+      const shownKey = key
+      const whenIdle = (run: () => void): void => {
+        const idle = (window as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback
+        if (typeof idle === 'function') idle(run, { timeout: 5000 })
+        else setTimeout(run, 2000)
+      }
+      whenIdle(() => {
+        void mountLocaleSuggestion({
+          appId,
+          drawn,
+          locales: localeDeclaration.locales,
+          languages: typeof navigator !== 'undefined' ? navigator.languages ?? [] : [],
+          storage: (() => {
+            try {
+              return window.localStorage
+            } catch {
+              return undefined
+            }
+          })(),
+          doc: document,
+          hrefOf: (lang) => router.hrefIn(lang, router.current() ?? entry),
+          wordsOf: (lang) => wordsOf(lang, shownKey),
+        })
+      })
     }
     // Where the address says — the top for a plain page, the anchored element
     // when it names one. An unconditional scrollTo(0,0) here is what undid an
@@ -879,7 +1110,7 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
         ...rest,
         identity: { ...identity, state: firstFrameAuthState(firstDoor) },
         viewport: STATIC_VIEWPORT,
-        locale: firstFrameLocale(project),
+        locale: firstFrameLocale(projectNow()),
         hydrate: true,
         // After the hydrating commit (an update before it would make React
         // drop the HTML and draw the page again).
@@ -907,12 +1138,13 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
       // The same pipeline a fetched receipt goes through, and the same query
       // seeding — the pushed page behaves like the built one would.
       prepare: (pushed: PreviewSurface) => {
-        const receipt = withOwnRecords(pushed as unknown as SurfaceReceipt)
+        const key = router.current() ?? entry
+        const receipt = assembledPage(layoutNow, withOwnRecords(pushed as unknown as SurfaceReceipt), key, false)
         const seeded = seedStateFromQuery(receipt, new URLSearchParams(router.query()))
         return {
-          blocks: pageBlocks(receipt.blocks, router.current() ?? entry),
+          blocks: pageBlocks(receipt.blocks, key),
           ...(pushed.appearance !== undefined ? { appearance: pushed.appearance } : {}),
-          capabilities: rewriteHrefs(seeded.capabilities ?? [], entry, router.toHref),
+          capabilities: rewriteHrefs(seeded.capabilities ?? [], entry, router.toHref, key),
         }
       },
       // THE TOKEN PATH. The pushed theme is resolved exactly as
@@ -972,4 +1204,5 @@ export async function runApp(opts: RunAppOptions = {}): Promise<void> {
   })
 
   await route()
+  consent.start()
 }

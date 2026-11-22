@@ -87,7 +87,7 @@ export function pageBlocksOf(
   pageKey: string,
   ctx: PageContext
 ): SurfaceReceipt['blocks'] {
-  let blocks = rewriteHrefs(raw, ctx.entry, ctx.toHref)
+  let blocks = rewriteHrefs(raw, ctx.entry, ctx.toHref, pageKey)
   blocks = assembleNav(blocks, ctx.navigation, ctx.entry, ctx.toHref)
   blocks = assembleFooter(blocks, ctx.navigation, pageKey, ctx.entry, ctx.toHref)
   // The declared slot is drawn only when the app has a door; an app without
@@ -128,7 +128,7 @@ export function pageSurfaceOf(
   return {
     blocks: pageBlocksOf(receipt.blocks, pageKey, ctx),
     appearance: receipt.appearance,
-    capabilities: rewriteHrefs(seeded.capabilities, ctx.entry, ctx.toHref) ?? [],
+    capabilities: rewriteHrefs(seeded.capabilities, ctx.entry, ctx.toHref, pageKey) ?? [],
     ...(typeof receipt.title === 'string' ? { title: receipt.title } : {}),
     ...(typeof receipt.description === 'string' ? { description: receipt.description } : {}),
   }
@@ -208,6 +208,8 @@ export function firstFrameOptions(input: {
   readonly receipt: SurfaceReceipt
   readonly entry: string
   readonly toHref: ToHref
+  /** The page drawn: a fragment-only link is written as its address with the fragment. */
+  readonly pageKey?: string
 }): Record<string, unknown> {
   const { project } = input
   return {
@@ -220,9 +222,64 @@ export function firstFrameOptions(input: {
     loadingStrategy: 'immediate',
     // A link whose page is an expression is written for the router once its
     // value is known (rewriteHrefs left it as written).
-    linkHref: linkHrefFor(input.entry, input.toHref),
+    linkHref: linkHrefFor(input.entry, input.toHref, input.pageKey),
     ...(typeof project.locale === 'string' && project.locale ? { locale: project.locale } : {}),
     // ...and its words, for the words a block draws itself (`ui.*`).
     ...(project.messages ? { messages: project.messages } : {}),
   }
+}
+
+/**
+ * The attribute on a first frame's `<style>` whose text the build moved to the
+ * app's shared frame stylesheet (pwapp-format §2.5): a rule every page of the
+ * app writes the same is sent once, in `assets/frame.<hash>.css`, which every
+ * document links ({@link FRAME_CSS_ATTR}); the frame keeps an empty
+ * `<style data-pw-shared="<n>">` in its place. The runner puts the text back
+ * before it hydrates ({@link fillSharedStyles}), so React adopts the same
+ * markup it would render.
+ */
+export const SHARED_STYLE_ATTR = 'data-pw-shared'
+
+/** The attribute on the `<link>` to the shared frame stylesheet. */
+export const FRAME_CSS_ATTR = 'data-pw-frame-css'
+
+/** The comment before the `<n>`th text in the shared frame stylesheet. */
+export const sharedStyleMarker = (n: number): string => `/*pw-shared:${n}*/`
+
+/** The texts of a shared frame stylesheet, by number. */
+export function sharedStyleTexts(css: string): Map<number, string> {
+  const out = new Map<number, string>()
+  const parts = css.split(/\/\*pw-shared:(\d+)\*\//)
+  for (let i = 1; i + 1 < parts.length; i += 2) out.set(Number(parts[i]), parts[i + 1] as string)
+  return out
+}
+
+/**
+ * Puts each shared text back into the frame under `root`, from the stylesheet
+ * the document links. True when the frame is whole (nothing to fill, or all
+ * filled); false when a text could not be had — the frame is then not the
+ * build's markup and must be drawn anew, not hydrated.
+ */
+export async function fillSharedStyles(
+  root: ParentNode,
+  doc: Pick<Document, 'querySelector'>,
+  fetchText: (href: string) => Promise<string>
+): Promise<boolean> {
+  const empty = [...root.querySelectorAll(`style[${SHARED_STYLE_ATTR}]`)]
+  if (empty.length === 0) return true
+  const link = doc.querySelector(`link[${FRAME_CSS_ATTR}]`) as HTMLLinkElement | null
+  if (!link?.href) return false
+  let texts: Map<number, string>
+  try {
+    texts = sharedStyleTexts(await fetchText(link.href))
+  } catch {
+    return false
+  }
+  for (const el of empty) {
+    const text = texts.get(Number(el.getAttribute(SHARED_STYLE_ATTR)))
+    if (text === undefined) return false
+    el.textContent = text
+    el.removeAttribute(SHARED_STYLE_ATTR)
+  }
+  return true
 }

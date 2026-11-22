@@ -40,6 +40,7 @@ import { collectVisibilityCss } from './visibility-css.js'
 import { collectStatesCss } from './states-css.js'
 import { collectConditionalStatesCss } from './conditional-states-css.js'
 import { collectResponsiveStyleCss } from './responsive-style-css.js'
+import { resolveResponsiveProps } from './responsive-props.js'
 import { collectGroupStatesCss } from './group-states-css.js'
 import { buildDarkThemeCss } from './dark-theme-css.js'
 import { resolveAppearanceMode } from '@pwfabric/contracts'
@@ -51,7 +52,7 @@ import type {
   DynamicBlockDescriptor,
   SurfaceEventDescriptor,
 } from '@pwfabric/contracts'
-import type { SurfaceEvent } from './types.js'
+import type { ColorScheme, SurfaceEvent } from './types.js'
 // `defaultBlockComponents` retired. Production render
 // path goes exclusively through the install pipeline — `customComponents`
 // (typically wired from `useDynamicArtifacts`) supplies the runtime
@@ -597,9 +598,15 @@ function renderBlock(
   // value here so the inline path (this block + computeBlockLayoutStyle hoists)
   // sees a flat `Record<string,string>`; the larger-breakpoint values are
   // emitted as scoped media-query CSS by collectResponsiveStyleCss.
+  // Breakpoint-valued props (`direction: { xs: 'column', md: 'row' }`) are
+  // resolved for the breakpoint drawn at, before the block and the layout
+  // rules below read them (responsive-props.ts).
+  const viewportName = (context.viewport ?? 'lg') as BreakpointName
   const block = applyRowStacking(
-    flattenResponsiveStyle(rawBlock),
-    (context.viewport ?? 'lg') as BreakpointName,
+    flattenResponsiveStyle(
+      resolveResponsiveProps(rawBlock, viewportName, dynamicBlocks?.get(rawBlock.type)?.definition?.props)
+    ),
+    viewportName,
     components
   )
   // Layout applies to EVERY path below (static/dynamic/unknown/gated) so installed
@@ -863,6 +870,14 @@ const SURFACE_BASE_CSS =
  * definitions come from the pack-derived registry (the host's installed
  * blocks and receipts) rather than hardcoded starter exports.
  */
+/** No consent store: nothing to subscribe to, nothing answered, no category. */
+const noSubscribe = (): (() => void) => () => undefined
+const NO_ANSWERS: Readonly<Record<string, boolean>> = Object.freeze({})
+const noAnswers = (): Readonly<Record<string, boolean>> => NO_ANSWERS
+const NO_CATEGORIES: readonly string[] = Object.freeze([])
+/** No colour-scheme store: no choice is made, the device decides. */
+const systemScheme = (): ColorScheme => 'system'
+
 export function SurfaceRenderer({
   surface,
   capabilities = [],
@@ -884,7 +899,11 @@ export function SurfaceRenderer({
   address,
   onSelection,
   locale,
+  locales,
+  alternates,
   linkHref: linkHrefProp,
+  consent: consentStore,
+  colorScheme: colorSchemeStore,
 }: SurfaceRendererProps): React.ReactElement {
   // The root, so focus is kept inside the surface when the focused block is
   // hidden (focus-keeper.ts). Only a live surface moves focus.
@@ -940,6 +959,24 @@ export function SurfaceRenderer({
   const contextLinkHref = useSurfaceLinkHref()
   const appHref = useAppHref(linkHrefProp ?? contextLinkHref)
 
+  // The visitor's consent: `{}` while hydrating (the first frame knows no
+  // visitor), then the host's answers, re-read on every change.
+  const consentAnswers = React.useSyncExternalStore(
+    consentStore ? consentStore.subscribe : noSubscribe,
+    consentStore ? consentStore.answers : noAnswers,
+    noAnswers
+  )
+  const consentCategories = consentStore?.categories ?? NO_CATEGORIES
+  const setConsent = React.useCallback((answers: Readonly<Record<string, boolean>>) => consentStore?.set(answers), [consentStore])
+  // The visitor's colour scheme (appearance §4.1): "system" while hydrating
+  // (the first frame is the same for every visitor), then the host's choice.
+  const colorScheme = React.useSyncExternalStore(
+    colorSchemeStore ? colorSchemeStore.subscribe : noSubscribe,
+    colorSchemeStore ? colorSchemeStore.scheme : systemScheme,
+    systemScheme
+  )
+  const setColorScheme = React.useCallback((scheme: ColorScheme) => colorSchemeStore?.set(scheme), [colorSchemeStore])
+
   // Build block context (theme removed from BlockContext)
   const context: BlockContext = React.useMemo(
     () => ({
@@ -950,9 +987,16 @@ export function SurfaceRenderer({
       viewport,
       interactionMode,
       ...(locale ? { locale } : {}),
+      ...(locales ? { locales } : locale ? { locales: [locale] } : {}),
+      ...(alternates ? { alternates } : {}),
       appHref,
+      consentCategories,
+      consent: consentAnswers,
+      setConsent,
+      colorScheme,
+      setColorScheme,
     }),
-    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode, locale, appHref]
+    [capabilityMap, basePath, effectiveOnEvent, imageAdapter, viewport, interactionMode, locale, locales, alternates, appHref, consentCategories, consentAnswers, setConsent, colorScheme, setColorScheme]
   )
 
   // Create image component override if adapter is provided

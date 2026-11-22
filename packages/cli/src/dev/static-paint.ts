@@ -38,6 +38,8 @@ import {
   STATIC_PAGE_ATTR,
   STATIC_VIEWPORT,
   STATIC_LAYOUT_ID,
+  SHARED_STYLE_ATTR,
+  sharedStyleMarker,
   addressStateKeys,
   firstFrameAuthState,
   firstFrameDoorOf,
@@ -74,6 +76,8 @@ export interface StaticPage {
   readonly key: string
   /** The receipt as the build serves it (media filled, record fields declared). */
   readonly receipt: Record<string, unknown>
+  /** More render options, as the runner hands them for this page (an app's locales and the page in each). */
+  readonly extra?: Readonly<Record<string, unknown>>
 }
 
 export interface StaticPaintInput {
@@ -216,7 +220,7 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
     navigation: (input.navigation ?? null) as Parameters<typeof pageSurfaceOf>[3]['navigation'],
     door,
     user: FIRST_FRAME_USER,
-    messages: runnerMessages(project['messages'] as Parameters<typeof runnerMessages>[0]),
+    messages: runnerMessages(project['messages'] as Parameters<typeof runnerMessages>[0], typeof project['locale'] === 'string' ? project['locale'] : undefined),
   }
   // The address a page reads: none.
   const address = { query: () => '', writeQuery: () => undefined, notFound: () => undefined }
@@ -231,11 +235,12 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
       renderer.renderStatic(pageSurfaceOf(receipt, page.key, params, ctx), {
         mode: 'fat',
         blocks: input.blockManifest,
-        ...firstFrameOptions({ project: runnerProject, appearanceRef, receipt, entry, toHref: input.toHref }),
+        ...firstFrameOptions({ project: runnerProject, appearanceRef, receipt, entry, toHref: input.toHref, pageKey: page.key }),
         identity: { state: firstFrameAuthState(firstDoor), onAction: () => undefined },
         viewport,
         locale: firstFrameLocale(runnerProject),
         address,
+        ...(page.extra ?? {}),
       })
     try {
       const result = render(new URLSearchParams())
@@ -283,14 +288,29 @@ export async function paintPages(input: StaticPaintInput): Promise<StaticPaintRe
   return { pages: painted, diagnostics }
 }
 
+/**
+ * A painted page's fragment-only links (`href="#a"`, `href="#"`) written onto
+ * the page's own address (`/docs/guide/#a`), for a document under path routing.
+ *
+ * The runner keeps such a link on the page shown, but only once it runs.
+ * Before that the browser resolves it against the shell's `<base href>` — the
+ * app's root, the ENTRY page's address — so a click in the first frame of any
+ * other page loaded the entry page. Under hash routing the one document is
+ * every page, and the link stays as written.
+ */
+export function onPageFragmentLinks(html: string, pageAddress: string): string {
+  const own = escapeHtml(pageAddress.replace(/#.*$/, ''))
+  return html.replace(/(<a\b[^>]*?\shref=")#/g, `$1${own}#`)
+}
+
 /** A page's first frame as a document's body holds it: `#pw-root` naming the page, the frame inside. */
 export function staticRootHtml(page: PaintedPage): string {
   return `<div id="pw-root" ${STATIC_PAGE_ATTR}="${escapeHtml(page.key)}">${page.html}</div>`
 }
 
 /** The served file holding a page's first frame, for a document that holds another page's. */
-export function staticPageFile(key: string): string {
-  return `pwpack/surfaces/${key}.html`
+export function staticPageFile(key: string, locale?: string): string {
+  return locale === undefined ? `pwpack/surfaces/${key}.html` : `pwpack/surfaces/${key}.${locale}.html`
 }
 
 /** That file's content: the frame's stylesheet (`#pw-static-layout`), then its `#pw-root`. */
@@ -312,14 +332,58 @@ export function firstPaintData(input: {
   readonly routes: readonly string[]
   readonly notFound?: string
   readonly pages: readonly PaintedPage[]
+  /**
+   * An app with locales: every address to the page it names in the locale the
+   * frames are drawn in (envelope §2.3), and, for a locale other than the
+   * default, that locale — its frames are `<key>.<lang>.html`; the default
+   * locale's are `<key>.html`, as the frame files are written.
+   */
+  readonly locale?: { readonly lang?: string; readonly addresses: Readonly<Record<string, string>> }
 }): Record<string, unknown> {
   const pages: Record<string, { keys: readonly string[]; file: string }> = {}
-  for (const p of input.pages) pages[p.key] = { keys: p.addressKeys, file: staticPageFile(p.key) }
+  for (const p of input.pages) pages[p.key] = { keys: p.addressKeys, file: staticPageFile(p.key, input.locale?.lang) }
   return {
     ...(input.router ? { router: input.router } : {}),
     entry: input.entry,
     routes: input.routes,
     ...(input.notFound ? { notFound: input.notFound } : {}),
+    ...(input.locale ? { addresses: input.locale.addresses } : {}),
     pages,
   }
+}
+
+/**
+ * THE RULES EVERY PAGE WRITES THE SAME, SENT ONCE (pwapp-format §2.5). The
+ * renderer draws its base rules, a theme's dark rules and a block's own
+ * `<style>` into every page's frame; on a site of many pages each document
+ * carried them again. A `<style>` text found in two or more painted pages
+ * moves to one stylesheet, `css`, which every document links; each frame
+ * keeps an empty `<style data-pw-shared="<n>">` in its place, and the runner
+ * puts the text back before it hydrates (`@pwfabric/runner`
+ * `fillSharedStyles`), so React adopts the markup it renders. Without
+ * scripts the linked stylesheet is the rules.
+ *
+ * Texts keep their order of first appearance; `css` is empty when no text is
+ * shared.
+ */
+export function shareFrameStyles(pages: readonly PaintedPage[]): { pages: PaintedPage[]; css: string } {
+  const STYLE = /<style([^>]*)>([\s\S]*?)<\/style>/g
+  const seen = new Map<string, number>()
+  for (const page of pages) {
+    for (const text of new Set([...page.html.matchAll(STYLE)].map((m) => m[2] as string))) {
+      if (text !== '') seen.set(text, (seen.get(text) ?? 0) + 1)
+    }
+  }
+  const shared = new Map<string, number>()
+  for (const [text, n] of seen) if (n > 1) shared.set(text, shared.size)
+  if (shared.size === 0) return { pages: [...pages], css: '' }
+  const css = [...shared].map(([text, n]) => `${sharedStyleMarker(n)}${text}`).join('')
+  const out = pages.map((page) => ({
+    ...page,
+    html: page.html.replace(STYLE, (all, attrs: string, text: string) => {
+      const n = shared.get(text)
+      return n === undefined ? all : `<style${attrs} ${SHARED_STYLE_ATTR}="${n}"></style>`
+    }),
+  }))
+  return { pages: out, css }
 }

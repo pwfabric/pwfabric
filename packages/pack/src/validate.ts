@@ -4,7 +4,21 @@
  *
  * @module @pwfabric/pack/validate
  */
-import { checkPropValue, propShapeProblems, type AtomRef, type PropShape, type PwpackIdentity } from '@pwfabric/contracts'
+import {
+  addressTable,
+  checkPropValue,
+  FONT_FALLBACKS,
+  layoutSlotProblems,
+  localePrefix,
+  localesOf,
+  localesProblems,
+  missingCatalogueIds,
+  propShapeProblems,
+  receiptPathOf,
+  type AtomRef,
+  type PropShape,
+  type PwpackIdentity,
+} from '@pwfabric/contracts'
 import { classifyPackPath } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins, safeParsePwpackIdentity } from '@pwfabric/contracts/schemas'
 import type { PackFolder, PackIssue } from './types.js'
@@ -12,6 +26,7 @@ import { findCaseConflicts, findPathConflict, sortedPaths, unsafePathReason } fr
 import { PACK_DOC_FILES } from './content.js'
 import { atomOccurrences, deriveAtoms, IDENTITY_FILE, stripBom } from './manifest.js'
 import { sha256Hex } from './hash.js'
+import { svgUnsafeReason } from './svg.js'
 import { blockPropDescriptors } from './block-props.js'
 import { MEDIA_PROVENANCE_FILE as MEDIA_PROVENANCE, mediaDeclarations, readMediaProvenance } from './media.js'
 
@@ -63,6 +78,92 @@ export interface PackValidation {
 }
 
 const APP_SURFACES = 'app/surfaces/'
+/** The app's layout, the receipt every page is drawn in (receipt §4). */
+export const LAYOUT_FILE = 'app/layout.receipt.json'
+/** The members a layout does not carry: a page's own (receipt §4). */
+const LAYOUT_FORBIDDEN = ['title', 'titleTemplate', 'description', 'appearance', 'layout', 'path'] as const
+/** The app's appearance, whose theme names its fonts. */
+const APPEARANCE_FILE = 'app/definitions/appearance.json'
+/** The generic families a font stack may name without files (appearance §3.3). */
+const GENERIC_FAMILIES: ReadonlySet<string> = new Set(FONT_FALLBACKS)
+/** A font file: at most 500 KB (appearance §3.3). */
+const FONT_FILE_MAX = 512_000
+
+/** Why a font file cannot be served, or undefined: missing, not WOFF2 (by name or bytes), larger than 500 KB. */
+function fontFileProblem(src: string, bytes: Uint8Array | undefined): string | undefined {
+  if (!bytes) return 'the pack does not have'
+  if (!src.endsWith('.woff2')) return 'is not a .woff2 file'
+  if (bytes.byteLength < 4 || bytes[0] !== 0x77 || bytes[1] !== 0x4f || bytes[2] !== 0x46 || bytes[3] !== 0x32) return 'is not WOFF2 (its bytes do not start with wOF2)'
+  if (bytes.byteLength > FONT_FILE_MAX) return `is ${bytes.byteLength} bytes, more than the 500 KB a font file may be`
+  return undefined
+}
+
+/** The first family of a font stack, unquoted; undefined for none. */
+function firstFamily(stack: unknown): string | undefined {
+  if (typeof stack !== 'string') return undefined
+  const first = stack.split(',')[0]?.trim().replace(/^["']|["']$/g, '').trim()
+  return first ? first : undefined
+}
+
+/** The catalogues of an app in several languages (envelope §2.3). */
+const APP_MESSAGES = 'app/messages/'
+/** A page key: a name, or names joined by `/` for a page in a folder of `app/surfaces/`. */
+const PAGE_PATH = /^[A-Za-z0-9][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.-]*)*$/
+const PLAN_FILE = 'app/plan.json'
+const PUBLIC_DIR = 'public/'
+
+/** Files the build writes at the root of the served app (pwpack-format §1.4). */
+export const PUBLIC_RESERVED_FILES: ReadonlySet<string> = new Set([
+  'index.html',
+  '404.html',
+  '_headers',
+  '_redirects',
+  'robots.txt',
+  'sitemap.xml',
+  'llms.txt',
+  'llms-full.txt',
+])
+/** Folders of the served app the build owns (pwapp-format §1). */
+export const PUBLIC_RESERVED_DIRS: readonly string[] = ['assets', 'shims', 'blocks', 'engines', 'pwpack']
+
+/**
+ * Why a public file at `rel` (its path in the served app) is on a path the
+ * build writes, or `undefined`: a fixed file, a runtime folder, or a page's
+ * own document (`<key>/index.html`, under either routing).
+ */
+export function publicReservedReason(rel: string, pageKeys: readonly string[], localePrefixes: readonly string[] = []): string | undefined {
+  if (PUBLIC_RESERVED_FILES.has(rel)) return 'the build writes itself'
+  const top = rel.split('/')[0] as string
+  if (PUBLIC_RESERVED_DIRS.includes(top)) return `is in ${top}/, a folder of the build's own`
+  // A locale's prefix names that locale's site (envelope §2.3).
+  if (rel.includes('/') && localePrefixes.includes(`${top.toLowerCase()}/`)) return `is in ${top}/, the address prefix of a locale`
+  if (rel.endsWith('/index.html') && pageKeys.includes(rel.slice(0, -'/index.html'.length))) {
+    return `is the document of page "${rel.slice(0, -'/index.html'.length)}"`
+  }
+  return undefined
+}
+
+const SCRIPT_FILE = /\.(?:js|mjs|cjs|wasm)$/
+const MARKUP_FILE = /\.(?:html|htm|xhtml|svg|xml)$/
+
+/**
+ * Why a public file is script, or `undefined`: a script or WebAssembly file,
+ * or markup holding a `<script` element, an `on…` attribute or a
+ * `javascript:` URL (compared in lower case, over the text as written).
+ */
+export function publicScriptReason(rel: string, bytes: Uint8Array): string | undefined {
+  const name = rel.toLowerCase()
+  if (SCRIPT_FILE.test(name)) return 'is a script file'
+  if (!MARKUP_FILE.test(name)) return undefined
+  // An SVG is screened by a parse and an allowlist (./svg.ts), the one screen
+  // pwf media add, validation and installing a pack share.
+  if (name.endsWith('.svg')) return svgUnsafeReason(bytes)
+  const text = new TextDecoder().decode(bytes).toLowerCase()
+  if (text.includes('<script')) return 'holds a <script> element'
+  if (/<[^>]*\son[a-z0-9_-]*\s*=/.test(text)) return 'holds an on… event attribute'
+  if (/javascript\s*:/.test(text)) return 'holds a javascript: URL'
+  return undefined
+}
 const RECEIPT_SUFFIX = '.receipt.json'
 const APP_CONTENT = 'app/content/'
 const ENTITIES_FILE = 'app/definitions/entities.json'
@@ -197,6 +298,8 @@ export function validatePack(pack: PackFolder): PackValidation {
     }
     if (PACK_DOC_FILES.has(path)) continue
     if (top === 'media' && parts.length > 1) continue
+    // Files a build copies, as they are, to the root of the served app.
+    if (top === 'public' && parts.length > 1) continue
     if (top === 'atoms' && parts.length > 1) {
       canonical = true
       const family = parts[1] as string
@@ -218,7 +321,7 @@ export function validatePack(pack: PackFolder): PackValidation {
     unknownTop.add(parts.length > 1 ? `${top}/` : top)
   }
   for (const name of unknownTop) {
-    add('warning', 'UNKNOWN_TOP_LEVEL', `${name} is not part of the pwpack folder (pwpack.json, app/, atoms/, media/)`, name)
+    add('warning', 'UNKNOWN_TOP_LEVEL', `${name} is not part of the pwpack folder (pwpack.json, app/, atoms/, media/, public/)`, name)
   }
   for (const family of unknownFamily) {
     add('warning', 'UNKNOWN_ATOM_FAMILY', `atoms/${family} is not a known atom family`, `atoms/${family}`)
@@ -285,18 +388,154 @@ export function validatePack(pack: PackFolder): PackValidation {
       if (seen.has(key)) add('warning', 'APP_SURFACE_DUPLICATE', `app.surfaceOrder lists "${key}" more than once`, IDENTITY_FILE)
       seen.add(key)
     }
+    // The plan's pages (`app/plan.json` `surfaces`) are optional: absent, they
+    // are app.surfaceOrder. Present, they agree with app (plan §3.1): every
+    // served page is planned, an `applied` plan page is served, and the plan's
+    // entry is app.entry.
+    const planBytes = pack.files.get(PLAN_FILE)
+    const plan = planBytes ? parseJson(planBytes) : undefined
+    const planned = plan?.ok && isRecord(plan.value) ? plan.value['surfaces'] : undefined
+    if (planned !== undefined) {
+      const mismatch = (message: string): void => add('error', 'APP_PLAN_SURFACE_MISMATCH', message, PLAN_FILE)
+      // The page addresses: the entry and app.surfaceOrder. The not-found and
+      // sign-in screens are pages but never addresses, so the plan may list
+      // them or not.
+      const served = [...new Set([entry, ...surfaceOrder])]
+      const screens = [...(notFound ? [notFound] : []), ...(signIn ? [signIn] : [])]
+      const pages = Array.isArray(planned) ? planned.filter(isRecord) : []
+      if (!Array.isArray(planned) || pages.length !== planned.length || pages.some((p) => typeof p['key'] !== 'string')) {
+        mismatch(`${PLAN_FILE} surfaces must be a list of pages, each with a "key"`)
+      } else {
+        const keys = pages.map((p) => p['key'] as string)
+        for (const key of served) {
+          if (!keys.includes(key)) mismatch(`pwpack.json app serves "${key}", which ${PLAN_FILE} surfaces does not list — add it there, or leave surfaces out`)
+        }
+        for (const page of pages) {
+          const key = page['key'] as string
+          if (page['status'] === 'applied' && !served.includes(key) && !screens.includes(key)) {
+            mismatch(`${PLAN_FILE} surfaces has "${key}" applied, but pwpack.json app does not serve it — add it to app.surfaceOrder, or mark it as not built yet`)
+          }
+          if (page['isEntry'] === true && key !== entry) mismatch(`${PLAN_FILE} surfaces marks "${key}" as the entry, but app.entry is "${entry}"`)
+        }
+      }
+    }
+  }
+  // ---- the layout (receipt §4): exactly one bare page slot, outside any repeat ----
+  const layoutBytes = pack.files.get(LAYOUT_FILE)
+  const layoutDoc = layoutBytes ? parseJson(layoutBytes) : undefined
+  if (layoutDoc?.ok) {
+    const problems = layoutSlotProblems(layoutDoc.value)
+    if (problems.length > 0) add('error', 'APP_LAYOUT_SLOT', `${LAYOUT_FILE}: ${problems.join('; ')}`, LAYOUT_FILE)
+    // The page's own members: the layout's blocks wear the page's.
+    const layoutValue = layoutDoc.value
+    const own = isRecord(layoutValue) ? LAYOUT_FORBIDDEN.filter((m) => layoutValue[m] !== undefined) : []
+    if (own.length > 0) add('error', 'APP_LAYOUT_INVALID', `${LAYOUT_FILE} carries ${own.join(', ')}, which belong to a page, not to the layout`, LAYOUT_FILE)
+  }
+  // ---- fonts (appearance §3.3): the app's own woff2 files ----
+  const appearanceBytes = pack.files.get(APPEARANCE_FILE)
+  const appearanceDoc = appearanceBytes ? parseJson(appearanceBytes) : undefined
+  if (appearanceDoc?.ok && isRecord(appearanceDoc.value)) {
+    const root = isRecord(appearanceDoc.value['config']) ? appearanceDoc.value['config'] : appearanceDoc.value
+    const tokenSets = [root['theme'], root['darkTheme']].filter(isRecord)
+    const shipped = new Set<string>()
+    const judged = new Set<string>()
+    for (const set of tokenSets) {
+      for (const font of Array.isArray(set['fonts']) ? set['fonts'] : []) {
+        if (!isRecord(font)) continue
+        if (typeof font['family'] === 'string') shipped.add(font['family'].trim().toLowerCase())
+        for (const file of Array.isArray(font['files']) ? font['files'] : []) {
+          const src = isRecord(file) && typeof file['src'] === 'string' ? file['src'] : undefined
+          if (src === undefined || judged.has(src)) continue
+          judged.add(src)
+          const problem = fontFileProblem(src, pack.files.get(src))
+          if (problem) add('error', 'FONT_FILE_INVALID', `${APPEARANCE_FILE} names the font file ${src}, which ${problem}`, src.startsWith('media/') ? src : APPEARANCE_FILE)
+        }
+      }
+    }
+    const missing = new Set<string>()
+    for (const set of tokenSets) {
+      const typography = isRecord(set['typography']) ? set['typography'] : {}
+      for (const token of ['fontFamily', 'headingFontFamily', 'monoFontFamily']) {
+        const first = firstFamily(typography[token])
+        if (first === undefined || GENERIC_FAMILIES.has(first.toLowerCase()) || shipped.has(first.toLowerCase()) || missing.has(first)) continue
+        missing.add(first)
+        add(
+          'warning',
+          'FONT_FILES_MISSING',
+          `${APPEARANCE_FILE} names the family "${first}" (${token}) but ships no files for it, so it is drawn in its fallback: add its woff2 files under media/fonts/ and list them in the theme's fonts (pwf font add "${first}" --from …)`,
+          APPEARANCE_FILE
+        )
+      }
+    }
+  }
+  // ---- locales (envelope §2.3) ----
+  const planDoc = pack.files.get(PLAN_FILE) ? parseJson(pack.files.get(PLAN_FILE) as Uint8Array) : undefined
+  const planValue = planDoc?.ok ? planDoc.value : undefined
+  const localeProblems = localesProblems(planValue)
+  if (localeProblems.length > 0) add('error', 'APP_LOCALES_INVALID', `${PLAN_FILE}: ${localeProblems.join('; ')}`, PLAN_FILE)
+  const localeDecl = localesOf(planValue)
+  if (localeDecl && identity?.app) {
+    const { entry, surfaceOrder } = identity.app
+    const pathOf = (key: string): Readonly<Record<string, string>> | undefined => {
+      const bytes = pack.files.get(`${APP_SURFACES}${key}${RECEIPT_SUFFIX}`)
+      const doc = bytes ? parseJson(bytes) : undefined
+      return doc?.ok ? receiptPathOf(doc.value) : undefined
+    }
+    const table = addressTable(localeDecl, [...new Set(surfaceOrder)], entry, pathOf)
+    for (const problem of table.problems) add('error', 'APP_ADDRESS_CONFLICT', problem, PLAN_FILE)
+  }
+  // The catalogues: one per declared locale, each with the default's ids.
+  const catalogues = new Map<string, Record<string, unknown>>()
+  for (const path of paths) {
+    if (!path.startsWith(APP_MESSAGES)) continue
+    const lang = path.slice(APP_MESSAGES.length).replace(/\.json$/, '')
+    if (!localeDecl || !path.endsWith('.json') || !localeDecl.locales.includes(lang)) {
+      add('warning', 'APP_UNEXPECTED_FILE', `${path} is not an ${APP_MESSAGES}<lang>.json of a locale app/plan.json declares`, path)
+      continue
+    }
+    const doc = parseJson(pack.files.get(path) as Uint8Array)
+    if (doc.ok && isRecord(doc.value)) catalogues.set(lang, doc.value)
+  }
+  if (localeDecl) {
+    const defaults = catalogues.get(localeDecl.defaultLocale) ?? {}
+    for (const lang of localeDecl.locales) {
+      if (lang === localeDecl.defaultLocale) continue
+      const path = `${APP_MESSAGES}${lang}.json`
+      for (const id of missingCatalogueIds(defaults, catalogues.get(lang) ?? {})) {
+        add('warning', 'MESSAGES_LOCALE_MISSING', `${path} does not set "${id}", which ${APP_MESSAGES}${localeDecl.defaultLocale}.json sets: "${lang}" reads the default's word`, path)
+      }
+    }
+  }
+  // ---- public files (copied, as they are, to the served app's root) ----
+  // None may land on a path the build writes, and none may be script:
+  // script code enters an app through its blocks only, compiled and pinned.
+  const pageKeys = identity?.app
+    ? [identity.app.entry, ...identity.app.surfaceOrder, ...(identity.app.notFound ? [identity.app.notFound] : []), ...(identity.app.signIn ? [identity.app.signIn] : [])]
+    : []
+  for (const path of paths) {
+    if (!path.startsWith(PUBLIC_DIR) || path === PUBLIC_DIR) continue
+    const rel = path.slice(PUBLIC_DIR.length)
+    const reason = publicReservedReason(rel, pageKeys, localeDecl ? localeDecl.locales.filter((l) => l !== localeDecl.defaultLocale).map(localePrefix) : [])
+    if (reason) add('error', 'APP_PUBLIC_RESERVED', `${path} would be served at /${rel}, which ${reason}; rename or move it`, path)
+    const script = publicScriptReason(rel, pack.files.get(path) as Uint8Array)
+    if (script) add('error', 'APP_PUBLIC_SCRIPT', `${path} ${script}; script code enters an app only through its blocks`, path)
   }
   for (const path of paths) {
     if (!path.startsWith(APP_SURFACES)) continue
     const rest = path.slice(APP_SURFACES.length)
-    if (rest.includes('/') || !rest.endsWith(RECEIPT_SUFFIX)) {
-      add('warning', 'APP_UNEXPECTED_FILE', `${path} is not an app/surfaces/<key>.receipt.json`, path)
+    // A page may sit in a folder: app/surfaces/docs/intro.receipt.json is
+    // page `docs/intro` (served at docs/intro/ under path routing).
+    if (!rest.endsWith(RECEIPT_SUFFIX) || !PAGE_PATH.test(rest.slice(0, -RECEIPT_SUFFIX.length))) {
+      add('warning', 'APP_UNEXPECTED_FILE', `${path} is not an app/surfaces/<key>.receipt.json (or app/surfaces/<folder>/<key>.receipt.json)`, path)
       continue
     }
     // The pages an app serves are app.surfaceOrder. A receipt written without
     // its key there is a page nobody can reach — every link to it lands on
     // not-found — and the pack still validated clean.
-    const key = rest.slice(0, -RECEIPT_SUFFIX.length)
+    let key = rest.slice(0, -RECEIPT_SUFFIX.length)
+    // A page's receipt for one declared locale (`home.de`) is that page's.
+    const ofLocale = localeDecl?.locales.find((l) => key.endsWith(`.${l}`))
+    if (ofLocale !== undefined) key = key.slice(0, -(ofLocale.length + 1))
     if (identity?.app && !identity.app.surfaceOrder.includes(key) && identity.app.entry !== key && identity.app.notFound !== key && identity.app.signIn !== key) {
       add('warning', 'APP_SURFACE_NOT_SERVED', `${path} is not in pwpack.json app.surfaceOrder, so the app does not serve it — add "${key}" there`, path)
     }
@@ -472,8 +711,16 @@ export function validatePack(pack: PackFolder): PackValidation {
     }
   }
   for (const path of provenance.state === 'invalid' ? [] : mediaFiles) {
-    if (!declared.has(path)) add('warning', 'MEDIA_UNDECLARED', `${path} has no entry in media/provenance.json`, path)
+    // A font's licence text beside it need not be recorded (pwpack-format §1.3).
+    if (!declared.has(path) && !/^media\/fonts\/[^/]+\.txt$/i.test(path)) add('warning', 'MEDIA_UNDECLARED', `${path} has no entry in media/provenance.json`, path)
   }
+  // An SVG among the media is served as the app's own file: a plain picture only (./svg.ts).
+  for (const path of mediaFiles) {
+    if (!path.toLowerCase().endsWith('.svg')) continue
+    const reason = svgUnsafeReason(pack.files.get(path) as Uint8Array)
+    if (reason) add('error', 'MEDIA_SVG_UNSAFE', `${path} ${reason}`, path)
+  }
+
   // Declarations: which layout, and whether the bytes they name are there.
   issues.push(...mediaDeclarations(pack).issues)
 

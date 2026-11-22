@@ -822,11 +822,15 @@ describe('block definition origins', () => {
         img: ['https://tile.openstreetmap.org'],
         connect: ['https://api.example.com:8443'],
         media: ['https://cdn.example.com'],
-        font: ['https://fonts.example.com'],
         style: ['https://css.example.com'],
       },
     })
     expect(r.success).toBe(true)
+  })
+
+  it('refuses a font origin: fonts are the app\'s own files, font-src is self only', () => {
+    const r = AtomBlockDefinitionMetadataSchema.safeParse({ ...valid, origins: { font: ['https://fonts.example.com'] } })
+    expect(r.success).toBe(false)
   })
 
   it('rejects an address that is not an exact origin, with the BLOCK_ORIGIN_INVALID code', () => {
@@ -851,9 +855,20 @@ describe('block definition origins', () => {
     }
   })
 
-  it('rejects a directive it does not know (script code is verified, never allowed in)', () => {
+  it('accepts script origins, exact ones only: a block that loads a third-party script names where it comes from', () => {
     expect(
       AtomBlockDefinitionMetadataSchema.safeParse({ ...valid, origins: { script: ['https://cdn.example.com'] } }).success
+    ).toBe(true)
+    for (const bad of ['*', 'https://*.example.com', "'unsafe-inline'", 'https://cdn.example.com/widget.js', 'data:']) {
+      const r = AtomBlockDefinitionMetadataSchema.safeParse({ ...valid, origins: { script: [bad] } })
+      expect(r.success, bad).toBe(false)
+      expect((r.error?.issues[0] as { params?: { code?: string } }).params?.code, bad).toBe(BLOCK_ORIGIN_INVALID)
+    }
+  })
+
+  it('rejects a directive it does not know', () => {
+    expect(
+      AtomBlockDefinitionMetadataSchema.safeParse({ ...valid, origins: { worker: ['https://cdn.example.com'] } }).success
     ).toBe(false)
   })
 

@@ -39,6 +39,8 @@ export * from './events.js'
 
 // Layout types
 export * from './layout.js'
+export * from './app-layout.js'
+export * from './app-locales.js'
 
 // Listings, publishers and licence grants — how a host distributes an atom —
 // are not part of this package; the atom itself is described by ./atom.js.
@@ -58,9 +60,6 @@ export * from './surface-theme.js'
 // Appearance cascade — the single theme→CSS implementation.
 // Consumed by the renderer, the theme exporter and the composer.
 export * from './appearance-cascade.js'
-// The webfont allow-list is data the publish path and an editor's font picker
-// read, not a visitor's page: its values are `@pwfabric/contracts/webfonts`.
-export type * from './webfonts.js'
 
 // Canonical block type
 export * from './block.js'

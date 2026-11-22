@@ -42,8 +42,10 @@ export {
   writePwpack,
   type PwpackLimits,
 } from './archive.js'
-export { DIR_MODE, FILE_MODE, FIXED_MTIME } from './tar.js'
+export { DIR_MODE, FILE_MODE, FIXED_MTIME, readTar, writeTar } from './tar.js'
+export type { TarEntry, TarReadLimits } from './tar.js'
 export { hashPack, legacyContentHash, sha256Hex } from './hash.js'
+export { SVG_ELEMENTS, SVG_NAMESPACE, svgUnsafeReason, XLINK_NAMESPACE } from './svg.js'
 export {
   deriveAtoms,
   deriveManifest,
@@ -63,6 +65,10 @@ export {
 } from './media.js'
 export {
   ATOM_FAMILIES,
+  PUBLIC_RESERVED_DIRS,
+  PUBLIC_RESERVED_FILES,
+  publicReservedReason,
+  publicScriptReason,
   SUPPORTED_FORMAT_MAJOR,
   validatePack,
   zodImportLine,
@@ -80,6 +86,11 @@ export {
   blockPropDescriptors,
   blockPropsCatalog,
   blockTypeNames,
+  blockTypeNameParts,
+  resolveBlockType,
+  namedBlocksOf,
+  ambiguousBlockTypeMessage,
+  BLOCK_TYPE_AMBIGUOUS,
   checkBlockProps,
   checkReceiptBlockProps,
   nearestName,
@@ -89,9 +100,11 @@ export {
   type BlockPropsCatalog,
   type BlockPropsEntry,
   type BlockSource,
+  type NamedBlock,
 } from './block-props.js'
 export {
   BLOCK_ID_DUPLICATE,
+  checkAmbiguousBlockTypes,
   blockTypeFirstUses,
   checkBlockIds,
   checkBlockTypes,
