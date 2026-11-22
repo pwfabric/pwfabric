@@ -29,7 +29,7 @@ interface Browser {
 }
 interface Page {
   on(event: string, handler: (x: never) => void): void
-  route(url: RegExp, handler: () => Promise<void>): Promise<void>
+  route(url: RegExp, handler: (route: { abort(): Promise<void> }) => Promise<void>): Promise<void>
   addInitScript(script: string): Promise<void>
   goto(url: string): Promise<unknown>
   waitForTimeout(ms: number): Promise<void>
@@ -161,6 +161,9 @@ interface Seen {
   goneBlocks: (string | null)[]
 }
 
+/** An http(s) or ws(s) address on any host but this machine's loopback. */
+export const OFF_MACHINE = /^(?:https?|wss?):\/\/(?!(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?(?:[/?#]|$))/i
+
 /** One painted page at one width: its problems, or why it was skipped. */
 export async function checkPage(browser: Browser, origin: string, key: string, info: PageInfo, width: number, address: string): Promise<{ problems: string[]; skipped?: string }> {
   const page = await browser.newPage({ viewport: { width, height: 844 } })
@@ -170,6 +173,8 @@ export async function checkPage(browser: Browser, origin: string, key: string, i
     if (/#418|#419|#423|#425|did not match|hydrat/i.test(t)) problems.push(`hydration: ${t.slice(0, 200)}`)
   }) as (x: never) => void)
   page.on('pageerror', ((e: Error) => problems.push(`page error: ${e.message.slice(0, 200)}`)) as (x: never) => void)
+  // The check reaches the build on this machine only: a page's request to any other host is refused.
+  await page.route(OFF_MACHINE, (route) => route.abort())
   let notFound = false
   page.on('request', ((r: { url(): string }) => {
     const url = r.url()

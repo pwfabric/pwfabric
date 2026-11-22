@@ -32,8 +32,6 @@ export interface BuiltOutput {
   readonly addresses: readonly string[]
   /** The entry page's key, and its address in each locale (`""`, `de/`). */
   readonly entry?: { readonly key: string; readonly addresses: readonly string[] }
-  /** The app's id (pwpack/project.json), when the build names it. */
-  readonly id?: string
   readonly redirects: readonly RedirectRule[]
 }
 
@@ -89,7 +87,6 @@ export async function readBuiltOutput(path: string): Promise<BuiltOutput> {
     routes,
     addresses: [...addresses],
     ...(entry !== undefined ? { entry: { key: entry, addresses: entryAddresses.size > 0 ? [...entryAddresses] : [''] } } : {}),
-    ...(typeof project['id'] === 'string' ? { id: project['id'] } : {}),
     redirects: parseRedirectsFile(text(files.get(REDIRECTS_FILE))),
   }
 }
