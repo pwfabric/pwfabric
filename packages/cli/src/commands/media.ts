@@ -10,14 +10,14 @@
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
-import { DEFAULT_LIMITS, MEDIA_PROVENANCE_FILE, readMediaProvenance, sha256Hex } from '@pwfabric/pack'
+import { DEFAULT_LIMITS, MEDIA_PROVENANCE_FILE, readMediaProvenance, sha256Hex, svgUnsafeReason } from '@pwfabric/pack'
 import type { Command, CommandIO, ParsedArgs } from './types.js'
 import { boolFlag, guard, stringFlag, UsageError } from './lib/flags.js'
 import { CommandFailure } from './lib/failure.js'
 import { readIdentityFile } from './lib/identity.js'
 import { resolveFrom } from './lib/project.js'
 import { fileExists, inFolder, isObject, readJsonObject, writeJsonFile, type JsonObject } from './lib/app-files.js'
-import { formatOfExtension, IMAGE_TYPES, sniffImage, svgProblem } from './lib/image-type.js'
+import { formatOfExtension, IMAGE_TYPES, sniffImage } from './lib/image-type.js'
 import type { Fetch } from '../phiwebs/oauth.js'
 
 /** The largest file `pwf media add` takes: the largest entry a .pwpack may hold. */
@@ -56,18 +56,28 @@ export interface MediaAddOptions {
   readonly decorative?: boolean
 }
 
-async function fetchBytes(url: string, fetchImpl: Fetch): Promise<Uint8Array> {
+/**
+ * The address as pwf records and prints it: origin and path only. A query or
+ * fragment is dropped (a signed address carries its token there), and the
+ * caller refuses one with a user name or password before it gets here.
+ */
+export function recordedUrl(url: URL): URL {
+  return new URL(`${url.origin}${url.pathname}`)
+}
+
+/** Downloads `url`; `shown` is the address the messages name (never the query). */
+async function fetchBytes(url: string, shown: string, fetchImpl: Fetch): Promise<Uint8Array> {
   let res: Response
   try {
     res = await fetchImpl(url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) })
   } catch (e) {
-    throw new CommandFailure('MEDIA_DOWNLOAD_FAILED', `cannot download ${url}: ${(e as Error).message}`)
+    throw new CommandFailure('MEDIA_DOWNLOAD_FAILED', `cannot download ${shown}: ${(e as Error).name}`)
   }
-  if (!res.ok) throw new CommandFailure('MEDIA_DOWNLOAD_FAILED', `${url} answered HTTP ${res.status}`)
+  if (!res.ok) throw new CommandFailure('MEDIA_DOWNLOAD_FAILED', `${shown} answered HTTP ${res.status}`)
   const declared = Number(res.headers.get('content-length') ?? '0')
-  if (declared > MEDIA_MAX_BYTES) throw tooLarge(url, declared)
+  if (declared > MEDIA_MAX_BYTES) throw tooLarge(shown, declared)
   const bytes = new Uint8Array(await res.arrayBuffer())
-  if (bytes.length > MEDIA_MAX_BYTES) throw tooLarge(url, bytes.length)
+  if (bytes.length > MEDIA_MAX_BYTES) throw tooLarge(shown, bytes.length)
   return bytes
 }
 
@@ -91,9 +101,11 @@ export async function addMedia(root: string, cwd: string, options: MediaAddOptio
   let url: URL | undefined
   let bytes: Uint8Array
   if (isUrl) {
-    url = new URL(options.source)
-    if (url.protocol !== 'https:') throw new UsageError(`${options.source} is not https; download it over https or save it and add the file`)
-    bytes = await fetchBytes(url.href, deps.fetch ?? fetch)
+    const asked = new URL(options.source)
+    if (asked.username || asked.password) throw new UsageError('the address carries a user name or password; pwf does not send or record credentials in an address')
+    url = recordedUrl(asked)
+    if (asked.protocol !== 'https:') throw new UsageError(`${url.href} is not https; download it over https or save it and add the file`)
+    bytes = await fetchBytes(asked.href, url.href, deps.fetch ?? fetch)
   } else {
     const path = resolveFrom(cwd, options.source)
     const read = await readFile(path).catch(() => null)
@@ -103,7 +115,7 @@ export async function addMedia(root: string, cwd: string, options: MediaAddOptio
   }
 
   const format = sniffImage(bytes)
-  if (!format) throw new CommandFailure('MEDIA_TYPE_UNSUPPORTED', `${options.source} is not a PNG, JPEG, GIF, WebP, AVIF or SVG image`)
+  if (!format) throw new CommandFailure('MEDIA_TYPE_UNSUPPORTED', `${url?.href ?? options.source} is not a PNG, JPEG, GIF, WebP, AVIF or SVG image`)
   const type = IMAGE_TYPES[format] as (typeof IMAGE_TYPES)[string]
   let name = options.name ?? (url ? nameFromUrl(url) : basename(options.source))
   const ext = extname(name)
@@ -115,8 +127,8 @@ export async function addMedia(root: string, cwd: string, options: MediaAddOptio
     throw new UsageError(`"${name}" is not a media file name: letters, digits, ".", "_" and "-", starting with a letter or digit (give one with --name)`)
   }
   if (format === 'svg') {
-    const problem = svgProblem(bytes)
-    if (problem) throw new CommandFailure('MEDIA_SVG_UNSAFE', `${name} is not added: ${problem}. An app's files carry no script (pwpack-format §1.4); remove it from the SVG and add it again`)
+    const problem = svgUnsafeReason(bytes)
+    if (problem) throw new CommandFailure('MEDIA_SVG_UNSAFE', `${name} is not added: it ${problem}. An app's files carry no script and reach nothing outside themselves; save it as a plain SVG (an SVG optimiser writes one) and add it again`)
   }
 
   const rel = `media/${name}`
@@ -181,11 +193,15 @@ export async function addMedia(root: string, cwd: string, options: MediaAddOptio
 function validFrom(value: string | undefined): string | undefined {
   if (value === undefined) return undefined
   if ((PROVENANCE_SOURCES as readonly string[]).includes(value)) return value
+  let u: URL | undefined
   try {
-    const u = new URL(value)
-    if (u.protocol === 'https:' || u.protocol === 'http:') return u.href
+    u = new URL(value)
   } catch {
     // not a URL
+  }
+  if (u && (u.protocol === 'https:' || u.protocol === 'http:')) {
+    if (u.username || u.password) throw new UsageError('--source carries a user name or password; give the address without them')
+    return recordedUrl(u).href
   }
   throw new UsageError(
     `--source takes the address the file came from (http(s)://…) or one of ${PROVENANCE_SOURCES.join(', ')}; media/provenance.json has no field for other text (put credits in --alt or the app's own words)`
@@ -241,13 +257,20 @@ export const media: Command = {
   --dir <path>   the app or pack folder (default: the current folder)
 
 The bytes decide the type: PNG, JPEG, GIF, WebP, AVIF or SVG, and the name's
-extension must agree (MEDIA_TYPE_MISMATCH). An SVG holding a <script>, an on…
-attribute, a javascript: URL or a <foreignObject> is refused
-(MEDIA_SVG_UNSAFE), never rewritten. At most ${MEDIA_MAX_BYTES} bytes
+extension must agree (MEDIA_TYPE_MISMATCH). An SVG must be a plain picture
+(MEDIA_SVG_UNSAFE, never rewritten): it is parsed, and a DOCTYPE or entity,
+a processing instruction, an element outside the SVG picture elements
+(script, foreignObject, image, feImage, any prefixed element), an on…
+attribute, an href that is not #id, a url(…) that is not url(#id), an
+animation of href or on…, or CSS with expression(, @import or an escape is
+refused — the screen pwf validate applies to media/ and public/ SVGs. At most ${MEDIA_MAX_BYTES} bytes
 (MEDIA_TOO_LARGE).
 
 Writes media/<name>, its entry in media/provenance.json ({ path, hash,
-source, createdAt, license?, origin? }, pwpack-format §1.3) and, in an app,
+source, createdAt, license?, origin? }, pwpack-format §1.3; an address is
+recorded and printed as origin and path only: its query and fragment, where
+a signed address keeps its token, are dropped, and an address with a user
+name or password is refused) and, in an app,
 app/media/<key>.json ({ kind: "image", origin, file, purpose? }); a receipt
 names the image as pwpack/media/<name>. The same bytes again change nothing
 but what the flags set (createdAt is kept); other bytes under a name already
