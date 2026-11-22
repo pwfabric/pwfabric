@@ -42,7 +42,7 @@ import { llmsFullTxt, llmsTxt, type LlmsPage } from './llms.js'
 import { planHeadersOf, planRedirectsOf, planScriptOrigins, planScriptsOf, redirectsFile } from './plan-site.js'
 import { parseHeadersFile } from '../commands/lib/static-server.js'
 import { firstPaintData, onPageFragmentLinks, paintPages, shareFrameStyles, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
-import { assemblePage, canonicalOf, hashHref, pathHref } from '@pwfabric/runner'
+import { assemblePage, canonicalOf, hashHref, isTitleTemplate, pathHref } from '@pwfabric/runner'
 import {
   BOOT_FILES,
   FIRST_PAINT_SCRIPT,
@@ -201,6 +201,24 @@ function declaredOrigins(atom: CompiledAtom, diagnostics: AssembleDiagnostic[]):
  */
 function titleOf(plan: unknown): string {
   return textOf(plan, 'title') ?? ''
+}
+
+/**
+ * The app's title template (`plan.json` `titleTemplate`, receipt §1.1):
+ * exactly one `%s`, `%%` for a `%`. Any other is an error, and no template
+ * is used.
+ */
+function titleTemplateOf(plan: unknown, diagnostics: AssembleDiagnostic[]): string | undefined {
+  const raw = isRecord(plan) ? plan['titleTemplate'] : undefined
+  if (raw === undefined) return undefined
+  if (isTitleTemplate(raw)) return raw
+  diagnostics.push({
+    severity: 'error',
+    code: 'PLAN_TITLE_TEMPLATE_INVALID',
+    message: `plan.json "titleTemplate" is ${JSON.stringify(raw)}: it holds exactly one %s, which the page's title replaces, and writes a % as %%`,
+    path: 'app/plan.json',
+  })
+  return undefined
 }
 
 /** A receipt member that is text as it stands — not empty, no expression — trimmed. */
@@ -723,6 +741,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // ── the served folder ────────────────────────────────────────────
   const runtime = options.runtime ?? (await loadRuntimeAssets())
   const title = titleOf(plan)
+  const titleTemplate = titleTemplateOf(plan, diagnostics)
   const locale = isRecord(plan) && typeof plan['locale'] === 'string' ? plan['locale'] : undefined
   // The app's words (`plan.json` `messages`), carried as they are: the runner
   // reads every word it draws there first (envelope §2).
@@ -837,6 +856,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
       doc,
       receipt: page ? (servedReceipts.get(page.key) ?? page.receipt) : undefined,
       appTitle: title,
+      ...(titleTemplate !== undefined ? { titleTemplate } : {}),
       ...(appDescription !== undefined ? { appDescription } : {}),
       ...(origin !== undefined ? { origin } : {}),
       ...(image !== undefined ? { image } : {}),
@@ -891,6 +911,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         ...(messages !== undefined ? { messages } : {}),
       }),
       ...(appDescription !== undefined ? { description: appDescription } : {}),
+      ...(titleTemplate !== undefined ? { titleTemplate } : {}),
       ...(origin !== undefined ? { origin } : {}),
       ...(image !== undefined ? { image: /^https?:\/\//i.test(image) ? image : `pwpack/${image.replace(/^\.?\//, '')}` } : {}),
       // The scripts the runner loads once the visitor consents (envelope §2.2).

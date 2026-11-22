@@ -22,7 +22,7 @@ import {
   type PackValidation,
   type PageReceipt,
 } from '@pwfabric/pack'
-import { assemblePage, PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
+import { assemblePage, isTitleTemplate, PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
 import { layoutSlotProblems, PAGE_SLOT_TYPE } from '@pwfabric/contracts'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { engineVersion, pinsOf } from './identity.js'
@@ -374,6 +374,25 @@ export function checkMessages(root: string): PackIssue[] {
 }
 
 /**
+ * The app's title template (`app/plan.json` `titleTemplate`, receipt §1.1):
+ * exactly one `%s`, and `%%` for a `%` (`PLAN_TITLE_TEMPLATE_INVALID`, the
+ * build's code and words).
+ */
+export function checkTitleTemplate(root: string): PackIssue[] {
+  const plan = readJsonFile(join(root, 'app', 'plan.json'))
+  const raw = isObj(plan) ? plan['titleTemplate'] : undefined
+  if (raw === undefined || isTitleTemplate(raw)) return []
+  return [
+    {
+      severity: 'error',
+      code: 'PLAN_TITLE_TEMPLATE_INVALID',
+      path: 'app/plan.json',
+      message: `plan.json "titleTemplate" is ${JSON.stringify(raw)}: it holds exactly one %s, which the page's title replaces, and writes a % as %%`,
+    },
+  ]
+}
+
+/**
  * Block props in the folder's receipts (`app/surfaces/*.receipt.json`) that do not fit the blocks' manifests
  * (`BLOCK_PROP_UNKNOWN`, `BLOCK_PROP_ENUM`, `BLOCK_PROP_TYPE`,
  * `BLOCK_PROP_NOT_BINDABLE`; warnings, as the
@@ -470,7 +489,7 @@ export async function validateProject(root: string, pack: PackFolder): Promise<P
   const engineIssues: PackIssue[] = loaded
     ? engineRangeDiagnostics(loaded, engineVersion()).map((d) => ({ severity: 'error', code: d.code, message: d.message, ...(d.path ? { path: d.path } : {}) }))
     : []
-  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
+  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkTitleTemplate(root), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 

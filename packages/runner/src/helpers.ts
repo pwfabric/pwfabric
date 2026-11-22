@@ -379,13 +379,40 @@ export function receiptFilesOf(project: PwappProject): Readonly<Record<string, s
 // ============================================================
 
 /**
- * Page title composition — avoids duplicating the project title when the
- * receipt's own title already starts with it (demo-runner semantics).
+ * THE DOCUMENT TITLE (receipt §1.1), from the page's title (resolved to text)
+ * and the app's `title` and `titleTemplate`:
+ *  - a page without a title: the app's title (the template is never written
+ *    with its `%s` empty);
+ *  - a page that says `titleTemplate: false` (`own`): its title as it is;
+ *  - the app's template: its `%s` replaced by the page title, `%%` by `%`;
+ *  - else `<app title> — <page title>`, or the page title alone when it
+ *    already starts with the app title.
  */
-export function composeTitle(projectTitle: string | undefined, receiptTitle: string | undefined): string | undefined {
+export function composeTitle(
+  projectTitle: string | undefined,
+  receiptTitle: string | undefined,
+  options: { readonly template?: string | undefined; readonly own?: boolean } = {}
+): string | undefined {
   if (!receiptTitle) return projectTitle
+  if (options.own) return receiptTitle
+  if (options.template !== undefined) return applyTitleTemplate(options.template, receiptTitle)
   if (!projectTitle) return receiptTitle
   return receiptTitle.startsWith(projectTitle) ? receiptTitle : `${projectTitle} — ${receiptTitle}`
+}
+
+/** `template` with its `%s` replaced by `title` and each `%%` by `%`. */
+export function applyTitleTemplate(template: string, title: string): string {
+  return template.replace(/%%|%s/g, (m) => (m === '%%' ? '%' : title))
+}
+
+/**
+ * Whether `template` is a title template (receipt §1.1): exactly one `%s`,
+ * and no `%` that is not part of `%s` or `%%`.
+ */
+export function isTitleTemplate(template: unknown): template is string {
+  if (typeof template !== 'string') return false
+  const rest = template.replace(/%%/g, '')
+  return (rest.match(/%s/g) ?? []).length === 1 && !rest.replace('%s', '').includes('%')
 }
 
 // ============================================================

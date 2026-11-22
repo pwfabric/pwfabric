@@ -167,6 +167,32 @@ describe('page documents under path routing', () => {
   })
 })
 
+describe('the title template (plan.json titleTemplate, receipt §1.1)', () => {
+  it("titles each document through the app's template and carries it into project.json", async () => {
+    const root = await site({ titleTemplate: '%s · 100%% Demo' })
+    const r = await assemblePwapp(root, { cacheDir: null, router: 'path' })
+    expect(r.ok, r.diagnostics.map((d) => d.code).join()).toBe(true)
+    expect(read(text(r.files.get('pricing/index.html'))).doc.title).toBe('Pricing · 100% Demo')
+    // A page whose title is an expression: the app's title alone, never the template.
+    expect(read(text(r.files.get('docs.intro/index.html'))).doc.title).toBe('K Demo')
+    expect((JSON.parse(text(r.files.get('pwpack/project.json'))) as { titleTemplate?: string }).titleTemplate).toBe('%s · 100%% Demo')
+  })
+
+  it('takes a page title as the whole title when the page says titleTemplate: false', async () => {
+    const root = await site({ titleTemplate: '%s · Demo' })
+    await writeFile(join(root, 'app', 'surfaces', 'pricing.receipt.json'), page('Demo pricing, plainly', 'Plans', { titleTemplate: false }))
+    const r = await assemblePwapp(root, { cacheDir: null, router: 'path' })
+    expect(read(text(r.files.get('pricing/index.html'))).doc.title).toBe('Demo pricing, plainly')
+  })
+
+  it('refuses a template without exactly one %s, or with a stray %', async () => {
+    for (const bad of ['Demo', '%s and %s', '%s at 5%']) {
+      const r = await assemblePwapp(await site({ titleTemplate: bad }), { cacheDir: null })
+      expect(r.diagnostics.filter((d) => d.severity === 'error').map((d) => d.code), bad).toContain('PLAN_TITLE_TEMPLATE_INVALID')
+    }
+  })
+})
+
 describe('documents helpers', () => {
   it('maps each page to the file a static host serves at its address', () => {
     const toHref = (k: string): string => (k === 'home' ? '/shop/' : `/shop/${k}/`)
