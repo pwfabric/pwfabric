@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { assemblePwapp } from '../../dev/assemble.js'
 import { fallbackFaceOf, isWoff2, woff2Metrics } from '../../dev/font-file.js'
-import { makeApp, parse, text } from './helpers.js'
+import { makeApp, PACK_REL, parse, text } from './helpers.js'
 
 vi.setConfig({ testTimeout: 90_000 })
 
@@ -135,5 +135,37 @@ describe('an app’s own fonts in a build', () => {
   it('warns about a family named with no files, and draws its fallback', async () => {
     const r = await assemblePwapp(await withFont({ fontFamily: 'Caligraphic, sans-serif', headingFontFamily: 'Nunito, serif' }), { cacheDir: null })
     expect(r.diagnostics.filter((d) => d.code === 'FONT_FILES_MISSING').map((d) => d.message).join()).toContain('Nunito')
+  })
+})
+
+describe('FONT_FILES_MISSING of the theme the app wears', () => {
+  async function sand(typography: Record<string, string>): Promise<string> {
+    const a = await makeApp()
+    cleanups.push(a.cleanup)
+    const manifest = join(a.root, ...PACK_REL, 'atoms', 'appearance', 'theme-sand', 'manifest.json')
+    const doc = JSON.parse(await readFile(manifest, 'utf8')) as { theme: Record<string, unknown> }
+    doc.theme = { ...doc.theme, typography: { ...(doc.theme['typography'] as Record<string, unknown>), ...typography } }
+    await writeFile(manifest, JSON.stringify(doc))
+    return a.root
+  }
+  const missing = (r: { diagnostics: readonly { code: string; message: string; path?: string }[] }) => r.diagnostics.filter((d) => d.code === 'FONT_FILES_MISSING')
+
+  it('names each family a pack’s theme names without files, once', async () => {
+    const r = await assemblePwapp(await sand({ headingFontFamily: 'Fraunces, serif' }), { cacheDir: null })
+    const found = missing(r).map((f) => /"([^"]+)" \((\w+)\)/.exec(f.message)?.slice(1).join(' '))
+    // The kit's theme names Inter for the body too, and ships no file for either.
+    expect(found.sort()).toEqual(['Fraunces headingFontFamily', 'Inter fontFamily'])
+    expect(missing(r).every((f) => f.message.includes('theme-sand') && f.path === 'app/definitions/appearance.json')).toBe(true)
+  })
+
+  it('names nothing when the app’s own appearance overrides that family with one it ships', async () => {
+    const root = await sand({ headingFontFamily: 'Fraunces, serif' })
+    const path = join(root, 'app', 'definitions', 'appearance.json')
+    const doc = JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
+    await mkdir(join(root, 'media', 'fonts'), { recursive: true })
+    await writeFile(join(root, 'media', 'fonts', 'caligraphic.woff2'), await readFile(FONT))
+    doc['theme'] = { ...(doc['theme'] as Record<string, unknown>), typography: { headingFontFamily: 'Caligraphic, serif' }, fonts: [{ family: 'Caligraphic', files: [{ src: 'media/fonts/caligraphic.woff2', weight: 400 }] }] }
+    await writeFile(path, JSON.stringify(doc))
+    expect(missing(await assemblePwapp(root, { cacheDir: null })).map((f) => f.message.match(/"([^"]+)"/)?.[1])).toEqual(['Inter'])
   })
 })

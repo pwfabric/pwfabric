@@ -245,9 +245,12 @@ export function planRedirectsOf(plan: unknown, diagnostics: AssembleDiagnostic[]
     if (typeof from !== 'string' || !VISIBLE.test(from) || !SITE_PATH.test(from) || from.slice(0, -1).includes('*')) {
       return fail(`${at}.from must be a site path from /, visible ASCII with no whitespace, a * only at its end (/old, /blog/*)`)
     }
+    // A backslash in a site path is a slash to a browser (`/\evil.com` is `//evil.com`, another host).
+    if (from.includes('\\')) return fail(`${at}.from must not hold a backslash: a browser reads it as a slash`)
     let target = false
     if (typeof to === 'string' && VISIBLE.test(to)) {
-      if (SITE_PATH.test(to)) target = true
+      // `/:splat` would be another host on a host that fills in a visitor's `//evil.com` unchecked.
+      if (SITE_PATH.test(to)) target = !to.includes('\\') && !to.startsWith('/:splat')
       else {
         try {
           const url = new URL(to)
@@ -257,7 +260,11 @@ export function planRedirectsOf(plan: unknown, diagnostics: AssembleDiagnostic[]
         }
       }
     }
-    if (!target) return fail(`${at}.to must be a site path from / or an absolute http(s) address, visible ASCII with no whitespace`)
+    if (!target) {
+      return fail(
+        `${at}.to must be a site path from / (no backslash, a fixed first segment before :splat, e.g. /docs/:splat) or an absolute http(s) address, visible ASCII with no whitespace`
+      )
+    }
     if (typeof status !== 'number' || !REDIRECT_STATUSES.includes(status)) {
       return fail(`${at}.status must be one of ${REDIRECT_STATUSES.join(', ')}`)
     }

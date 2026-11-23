@@ -199,18 +199,43 @@ export function parseRedirectsFile(text: string): RedirectRule[] {
  * Where `path` (`/` + the relative path) is sent, or undefined: the first rule
  * whose `from` matches — exactly, or by a trailing splat (`/blog/*`), whose
  * match fills `:splat` in the target.
+ *
+ * NEVER OFF THE SITE BY THE SPLAT. The splat is the visitor's: `/go//evil.com`
+ * would make `/:splat` the address `//evil.com`, another host. Its leading
+ * slashes and backslashes are dropped, a splat with a control character
+ * redirects nowhere, and a target that is not an absolute http(s) address
+ * must still be this site's once filled in (a browser reads `/\evil.com` as
+ * `//evil.com`) — else there is no redirect.
  */
 export function redirectFor(rules: readonly RedirectRule[], path: string): { location: string; status: number } | undefined {
   for (const rule of rules) {
     const star = rule.from.indexOf('*')
     if (star < 0) {
-      if (rule.from === path) return { location: rule.to, status: rule.status }
+      if (rule.from === path) return onSite(rule.to, rule.status)
       continue
     }
     const head = rule.from.slice(0, star)
-    if (path.startsWith(head)) return { location: rule.to.replace(':splat', path.slice(head.length)), status: rule.status }
+    if (!path.startsWith(head)) continue
+    const splat = path.slice(head.length)
+    // eslint-disable-next-line no-control-regex -- a control character is what is refused
+    if (/[\u0000-\u001f\u007f]/.test(splat)) return undefined
+    return onSite(rule.to.replace(':splat', splat.replace(/^[/\\]+/, '')), rule.status, rule.to.replace(':splat', ''))
   }
   return undefined
+}
+
+/**
+ * A redirect to `location`, unless it leaves the place its rule names: an
+ * absolute http(s) target its own origin, any other this site.
+ */
+function onSite(location: string, status: number, named = location): { location: string; status: number } | undefined {
+  const site = 'http://pwf.local'
+  try {
+    const expected = /^https?:\/\//i.test(named) ? new URL(named).origin : site
+    return new URL(location, `${site}/`).origin === expected ? { location, status } : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** The headers the `_headers` file adds for a relative path, names in lower case. */

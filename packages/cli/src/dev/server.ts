@@ -342,6 +342,12 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
     // but not its caching: here a file changes on every edit.
     const declared = await declaredHeaders(source, rel)
     delete declared['cache-control']
+    // A preview is framed by whatever shows it (an editor, the PhiWebs
+    // studio): the built site's `frame-ancestors` stays with `pwf run` and the
+    // host, the rest of its policy applies here as it will there.
+    for (const [name, value] of Object.entries(declared)) {
+      if (name.toLowerCase() === 'content-security-policy') declared[name] = withoutFrameAncestors(value)
+    }
     if (cors.size > 0) for (const name of Object.keys(declared)) if (isCorsHeader(name)) delete declared[name]
     send(res, found.status, contentTypeOf(found.path), found.body, head, declared)
   }
@@ -410,3 +416,12 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
 
 /** Implements the `pwf dev` contract (see ./types.ts). */
 export const startDevServer: StartDevServer = (options) => createDevServer(options)
+
+/** A Content-Security-Policy value without its `frame-ancestors` directive. */
+export function withoutFrameAncestors(policy: string): string {
+  return policy
+    .split(';')
+    .map((d) => d.trim())
+    .filter((d) => d !== '' && d.split(/\s+/)[0]?.toLowerCase() !== 'frame-ancestors')
+    .join('; ')
+}
