@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LocalHost } from '../../host/types.js'
-import { contentTypeOf, createDevServer, isPagePath, logLines, startDevServer, urlFor } from '../../dev/server.js'
+import { contentTypeOf, createDevServer, isPagePath, logLines, startDevServer, urlFor, withoutFrameAncestors } from '../../dev/server.js'
 import type { DevServer } from '../../dev/types.js'
 import { makeApp } from './helpers.js'
 
@@ -212,6 +212,8 @@ describe('dev server', () => {
     expect(entryHtml).toContain('data-pw-static="home"')
     // The headers the build declares (_headers), but no caching.
     expect(entry.headers.get('content-security-policy')).toContain("default-src 'none'")
+    // A preview can be framed (the studio shows it in a frame); pwf run keeps frame-ancestors.
+    expect(entry.headers.get('content-security-policy')).not.toContain('frame-ancestors')
     expect(entry.headers.get('cache-control')).toBe('no-store')
     // A page's OWN document, not the entry's shell.
     const guide = await at('/docs/guide/')
@@ -241,7 +243,16 @@ describe('dev server', () => {
     expect(html).toMatch(/\.\/assets\/boot\.[0-9a-f]{8}\.js/)
     expect(html).not.toMatch(/<base[\s>]/)
     expect(deep.headers.get('content-security-policy')).toContain("default-src 'none'")
+    expect(deep.headers.get('content-security-policy')).not.toContain('frame-ancestors')
     expect(deep.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('keeps every directive but frame-ancestors', () => {
+    expect(withoutFrameAncestors("default-src 'none'; frame-ancestors 'none'; img-src 'self'")).toBe(
+      "default-src 'none'; img-src 'self'"
+    )
+    expect(withoutFrameAncestors("FRAME-ANCESTORS 'self';script-src 'self'")).toBe("script-src 'self'")
+    expect(withoutFrameAncestors("default-src 'none'")).toBe("default-src 'none'")
   })
 
   it('mounts a local host: forwards its requests and carries its envelope entries', async () => {
