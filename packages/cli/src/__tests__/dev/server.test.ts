@@ -234,7 +234,44 @@ describe('dev server', () => {
     expect((await at(`/${assetIn(entryHtml, 'runner')}`)).status).toBe(404)
   })
 
-  it('under hash routing serves the shell at a page path without adding a <base href>', async () => {
+  it('under hash routing sends a deep page path to its hash address, relative to where it was asked, so every file resolves from the app root', async () => {
+    const root = await app()
+    await writeFile(
+      join(root, 'app', 'surfaces', 'reservation.receipt.json'),
+      JSON.stringify({ title: 'Reservation', blocks: [{ id: 'page', type: 'stack', props: {}, children: [{ id: 't', type: 'title', props: { text: 'Book' } }] }] })
+    )
+    const identity = JSON.parse(await readFile(join(root, 'pwpack.json'), 'utf8')) as { app: { surfaceOrder: string[] } }
+    identity.app.surfaceOrder = ['home', 'reservation']
+    await writeFile(join(root, 'pwpack.json'), JSON.stringify(identity))
+    const live = track(await createDevServer({ root, port: 0 }, { watch: false }))
+    const at = (p: string): Promise<Response> => fetch(new URL(p, live.url), { redirect: 'manual' })
+
+    const slashed = await at('/reservation/')
+    expect(slashed.status).toBe(302)
+    expect(slashed.headers.get('location')).toBe('../#/reservation')
+    expect(slashed.headers.get('cache-control')).toBe('no-store')
+    const bare = await at('/reservation?when=today')
+    expect(bare.status).toBe(302)
+    expect(bare.headers.get('location')).toBe('./#/reservation?when=today')
+    expect((await at('/docs/intro/')).headers.get('location')).toBe('../../#/docs/intro')
+    // Resolved against the address asked (a preview may serve the app under a
+    // prefix of its own), the redirect lands on the app root.
+    const landed = new URL(slashed.headers.get('location') as string, new URL('/reservation/', live.url))
+    expect(landed.pathname).toBe('/')
+    expect(landed.hash).toBe('#/reservation')
+    const shell = await at(landed.pathname)
+    expect(shell.status).toBe(200)
+    expect(await shell.text()).toMatch(/src="\.\/assets\/boot\.[0-9a-f]{8}\.js"/)
+    // What the page then asks for is there, at the root.
+    expect((await at('/pwpack/project.json')).status).toBe(200)
+    expect((await at('/pwpack/surfaces/reservation.receipt.json')).status).toBe(200)
+    // A file is never redirected: one under a page path is missing.
+    expect((await at('/reservation/pwpack/project.json')).status).toBe(404)
+    // The root itself is the shell.
+    expect((await at('/')).status).toBe(200)
+  })
+
+  it('under hash routing serves the shell, after a deep page path, without adding a <base href>', async () => {
     const root = await app()
     const live = track(await createDevServer({ root, port: 0 }, { watch: false }))
     const deep = await fetch(new URL('/about', live.url))
