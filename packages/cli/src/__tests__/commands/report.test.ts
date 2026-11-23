@@ -242,6 +242,22 @@ describe('MESSAGES_MISSING', () => {
     expect(done).toEqual([])
   })
 
+  it('asks for each ui.* word a placed block reads that the app does not set, naming the block', async () => {
+    const own = { 'pwpack.json': { app: { notFound: 'missing' } } }
+    const words = [
+      { id: 'ui.menu.open', path: 'app/layout.receipt.json', block: 'blocks[0] (navbar "bar")', atomId: 'layout.navbar' },
+      { id: 'ui.menu.close', path: 'app/layout.receipt.json', block: 'blocks[0] (navbar "bar")', atomId: 'layout.navbar' },
+      { id: 'ui.menu.open', path: 'app/surfaces/home.receipt.json', block: 'blocks[1] (navbar "n")', atomId: 'layout.navbar' },
+    ]
+    const issues = checkMessages(await project({ ...own, 'app/plan.json': plan({ messages: { 'ui.menu.close': 'Menüyü kapat' } }) }), words)
+    expect(issues.map((i) => [i.code, i.severity, i.path])).toEqual([['MESSAGES_MISSING', 'error', 'app/plan.json']])
+    expect(issues[0]?.message).toContain('ui.menu.open (layout.navbar, read by blocks[0] (navbar "bar") in app/layout.receipt.json and 1 more)')
+    expect(issues[0]?.message).not.toContain('ui.menu.close')
+    // An empty word is no word.
+    expect(checkMessages(await project({ ...own, 'app/plan.json': plan({ messages: { 'ui.menu.open': '', 'ui.menu.close': 'x' } }) }), words)).toHaveLength(1)
+    expect(checkMessages(await project({ ...own, 'app/plan.json': plan({ messages: { 'ui.menu.open': 'Menü', 'ui.menu.close': 'Kapat' } }) }), words)).toEqual([])
+  })
+
   it('asks a pack (no app member) for no messages: it is not opened as an app', async () => {
     expect(checkMessages(await project({ 'pwpack.json': { id: '@pwpack/cards', version: '0.1.0' } }))).toEqual([])
     expect(checkMessages(await project({ 'pwpack.json': { id: '@pwpack/cards', version: '0.1.0' }, 'app/plan.json': plan() }))).toEqual([])

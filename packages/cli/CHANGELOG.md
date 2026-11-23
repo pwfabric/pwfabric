@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added: a block manifest declares the `ui.*` words it reads of its own in `definition.messages` (`{ id, prop? }`, `prop` naming the prop that replaces the word). `pwf validate` reports each such word of a placed block (pages and the layout) that the app does not set as `MESSAGES_MISSING`, naming the block.
 - Added: `pwf add connection <name> --origin <url> --auth bearer|api-key|basic|none` declares a connection to an outside API in `app/definitions/connections.json` (where it is and the kind of credential, never a credential), and with `--page`, `--source` and `--path` adds a page source that names it as its `connector`. The MCP server offers the same as `pwf_add_connection`.
 - Fixed: `pwf dev` under hash routing sends a deep page path (`/reservation/`) to its hash address (`../#/reservation`), so the page's files resolve from the app root instead of 404 under the path.
 

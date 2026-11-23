@@ -121,6 +121,10 @@ export {
   checkErrorsAsText,
   checkReceiptDefaultCopy,
   checkReceiptErrorsAsText,
+  blockMessagesOf,
+  placedBlockWords,
+  type BlockMessage,
+  type PlacedBlockWord,
 } from './app-words.js'
 export {
   checkReceiptRowFields,

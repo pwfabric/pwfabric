@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   BLOCK_DEFAULT_COPY,
   ERROR_BOUND_AS_TEXT,
+  blockMessagesOf,
   blockPropDescriptors,
   checkDefaultCopy,
   checkReceiptDefaultCopy,
   checkReceiptErrorsAsText,
   packFromRecord,
+  placedBlockWords,
   type BlockPropsCatalog,
+  type BlockSource,
 } from '../index.js'
 
 const copyButton = {
@@ -86,5 +89,51 @@ describe('ERROR_BOUND_AS_TEXT', () => {
     expect(codes(page({ text: "{{__errors.orders == 'forbidden' ? 'No access' : 'Try again'}}" }))).toEqual([])
     expect(codes(page({ text: '{{!__errors.orders}}' }))).toEqual([])
     expect(codes(page({ text: '{{__errorCodes.orders}}' }))).toEqual([])
+  })
+})
+
+describe('the words placed blocks read of their own', () => {
+  const navbar = { definition: { props: [{ name: 'links' }], messages: [{ id: 'ui.menu.open' }, { id: 'ui.menu.close' }, { id: 'ui.nav.main', prop: 'navLabel' }] } }
+  const sources = (receipts: Record<string, unknown>): BlockSource[] => [
+    {
+      folder: packFromRecord(Object.fromEntries(Object.entries(receipts).map(([p, r]) => [p, JSON.stringify(r)]))),
+      atoms: [],
+    },
+    {
+      folder: packFromRecord({ 'atoms/blocks/layout/navbar/manifest.json': JSON.stringify(navbar), 'atoms/blocks/text/title/manifest.json': '{"definition":{"props":[]}}' }),
+      atoms: [
+        { kind: 'block', id: 'layout.navbar', relPath: 'atoms/blocks/layout/navbar/component.tsx' },
+        { kind: 'block', id: 'text.title', relPath: 'atoms/blocks/text/title/component.tsx' },
+      ],
+      label: '.pwf/packs/foundation',
+    },
+  ]
+
+  it('reads the declaration of a block manifest', () => {
+    expect(blockMessagesOf(navbar)).toEqual([{ id: 'ui.menu.open' }, { id: 'ui.menu.close' }, { id: 'ui.nav.main', prop: 'navLabel' }])
+    expect(blockMessagesOf({ definition: { messages: [{ id: 'nope' }, 'ui.x', { id: 'ui.ok', prop: 3 }] } })).toEqual([{ id: 'ui.ok' }])
+    expect(blockMessagesOf({})).toEqual([])
+  })
+
+  it('lists each word a placed block reads, in pages and in the layout, unless the receipt sets the prop that replaces it', () => {
+    const words = placedBlockWords(
+      sources({
+        'app/layout.receipt.json': { blocks: [{ id: 'bar', type: 'navbar', props: {} }, { id: 'slot', type: 'page' }] },
+        'app/surfaces/home.receipt.json': { blocks: [{ id: 's', type: 'stack', children: [{ id: 'nav2', type: 'layout.navbar', props: { navLabel: 'Main' } }, { id: 't', type: 'title' }] }] },
+      })
+    )
+    expect(words.map((w) => [w.id, w.path, w.atomId])).toEqual([
+      ['ui.menu.open', 'app/layout.receipt.json', 'layout.navbar'],
+      ['ui.menu.close', 'app/layout.receipt.json', 'layout.navbar'],
+      ['ui.nav.main', 'app/layout.receipt.json', 'layout.navbar'],
+      ['ui.menu.open', 'app/surfaces/home.receipt.json', 'layout.navbar'],
+      ['ui.menu.close', 'app/surfaces/home.receipt.json', 'layout.navbar'],
+    ])
+    expect(words[0]?.block).toBe('blocks[0] (navbar "bar")')
+  })
+
+  it('reads nothing when no placed block declares a word', () => {
+    expect(placedBlockWords(sources({ 'app/surfaces/home.receipt.json': { blocks: [{ id: 't', type: 'title' }] } }))).toEqual([])
+    expect(placedBlockWords([])).toEqual([])
   })
 })
