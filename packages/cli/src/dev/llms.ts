@@ -9,11 +9,19 @@
  * exactly what a reader without scripts reads, never a template and never
  * data the build does not have.
  *
+ * CHROME IS LEFT OUT. What the layout draws around the page (its header,
+ * its footer, a sidebar beside the slot) and every block that declares itself
+ * chrome (the `chrome` trait: a sidebar, a table of contents, a search box, a
+ * breadcrumb), wherever it is placed, is site furniture, not the page's
+ * words: it is not written. The layout's blocks that hold the page are walked
+ * into. Each heading carries the anchor the page renders for it (`## Plans
+ * {#plans}`): its own id, else the id of the block it is in.
+ *
  * BANDS EVERY PAGE SHARES. A page's top-level blocks (its block wrappers that
- * sit in no other) are its bands. A band whose text is the same on every
- * page — a navbar, a footer, a language switch — is written once, at the end
- * under `## Site navigation`, not once per page.
+ * sit in no other) are its bands. A band whose text is still the same on every
+ * page is written once, at the end under `## Site navigation`, not once per page.
  */
+import { PAGE_SLOT_TYPE } from '@pwfabric/contracts'
 import { parseFrame, parseStyle, type Element } from './static-layout.js'
 
 /** What is never read: code, styles, media, and what the frame hides. */
@@ -52,8 +60,71 @@ function inline(node: Element | string, link: LinkResolver): string {
   return BLOCK.has(node.tag) || /^h[1-6]$/.test(node.tag) || node.tag === 'li' || node.tag === 'tr' ? ` ${text} ` : text
 }
 
-/** An element as Markdown blocks: headings by level, paragraphs, `- ` list items, `| a | b |` table rows. */
-export function markdownOf(root: Element, link: LinkResolver): string[] {
+/**
+ * What a page's text leaves out: the block ids that are chrome (`skip`; a
+ * repeated copy `<id>--<n>` too) and the layout's blocks that hold the page
+ * (`through`: walked into, never a band of their own).
+ */
+export interface Chrome {
+  readonly skip: ReadonlySet<string>
+  readonly through: ReadonlySet<string>
+}
+
+const NO_CHROME: Chrome = { skip: new Set(), through: new Set() }
+
+/** The trait a block declares (`definition.traits`) to say it is site furniture, never a page's words. */
+export const CHROME_TRAIT = 'chrome'
+
+type Node = { readonly id?: unknown; readonly type?: unknown; readonly children?: unknown }
+const nodesOf = (receipt: unknown): Node[] => {
+  const blocks = receipt !== null && typeof receipt === 'object' ? (receipt as { blocks?: unknown }).blocks : undefined
+  return Array.isArray(blocks) ? (blocks.filter((b) => b !== null && typeof b === 'object') as Node[]) : []
+}
+const childrenOf = (node: Node): Node[] => (Array.isArray(node.children) ? (node.children.filter((c) => c !== null && typeof c === 'object') as Node[]) : [])
+
+/**
+ * What of a page's frame is chrome: every block of the layout but those that
+ * hold the page slot (walked into), and every block, on the page or in the
+ * layout, whose type declares the {@link CHROME_TRAIT}.
+ */
+export function chromeOf(layout: unknown, page: unknown, isChromeType: (type: string) => boolean): Chrome {
+  const skip = new Set<string>()
+  const through = new Set<string>()
+  const holdsSlot = (node: Node): boolean => node.type === PAGE_SLOT_TYPE || childrenOf(node).some(holdsSlot)
+  const walkLayout = (node: Node): void => {
+    if (node.type === PAGE_SLOT_TYPE) return
+    const id = typeof node.id === 'string' && node.id !== '' ? node.id : undefined
+    if (!holdsSlot(node) || (typeof node.type === 'string' && isChromeType(node.type))) {
+      if (id) skip.add(id)
+      return
+    }
+    if (id) through.add(id)
+    childrenOf(node).forEach(walkLayout)
+  }
+  nodesOf(layout).forEach(walkLayout)
+  const walkPage = (node: Node): void => {
+    if (typeof node.id === 'string' && node.id !== '' && typeof node.type === 'string' && isChromeType(node.type)) {
+      skip.add(node.id)
+      return
+    }
+    childrenOf(node).forEach(walkPage)
+  }
+  nodesOf(page).forEach(walkPage)
+  return { skip, through }
+}
+
+/** The block id an element wraps (`data-block-wrapper`), if it wraps one. */
+function wrapperOf(el: Element): string | undefined {
+  return el.attrs.get('data-block-wrapper') ?? undefined
+}
+
+function isChrome(el: Element, chrome: Chrome): boolean {
+  const id = wrapperOf(el)
+  return id !== undefined && (chrome.skip.has(id) || chrome.skip.has(id.replace(/--\d+$/, '')))
+}
+
+/** An element as Markdown blocks: headings by level (with their anchor), paragraphs, `- ` list items, `| a | b |` table rows. */
+export function markdownOf(root: Element, link: LinkResolver, chrome: Chrome = NO_CHROME): string[] {
   const blocks: string[] = []
   let line = ''
   const flush = (): void => {
@@ -61,17 +132,18 @@ export function markdownOf(root: Element, link: LinkResolver): string[] {
     if (text) blocks.push(text)
     line = ''
   }
-  const walk = (node: Element | string): void => {
+  const walk = (node: Element | string, block: string | undefined): void => {
     if (typeof node === 'string') {
       line += node
       return
     }
-    if (hidden(node)) return
+    if (hidden(node) || isChrome(node, chrome)) return
     const heading = /^h([1-6])$/.exec(node.tag)
     if (heading) {
       flush()
       const text = squash(inline(node, link))
-      if (text) blocks.push(`${'#'.repeat(Number(heading[1]))} ${text}`)
+      const anchor = node.attrs.get('id') || block
+      if (text) blocks.push(`${'#'.repeat(Number(heading[1]))} ${text}${anchor ? ` {#${anchor}}` : ''}`)
       return
     }
     if (node.tag === 'li') {
@@ -90,18 +162,23 @@ export function markdownOf(root: Element, link: LinkResolver): string[] {
       line += inline(node, link)
       return
     }
-    const block = BLOCK.has(node.tag)
-    if (block) flush()
-    for (const c of node.content) walk(c)
-    if (block) flush()
+    const breaks = BLOCK.has(node.tag)
+    const inside = wrapperOf(node) ?? block
+    if (breaks) flush()
+    for (const c of node.content) walk(c, inside)
+    if (breaks) flush()
   }
-  walk(root)
+  walk(root, wrapperOf(root))
   flush()
   return blocks
 }
 
-/** A page's top-level bands: each block wrapper in no other, with its Markdown. Text outside any wrapper is a band of its own. */
-export function bandsOf(html: string, link: LinkResolver): { readonly id: string; readonly text: string }[] {
+/**
+ * A page's top-level bands: each block wrapper in no other (the layout's
+ * blocks that hold the page walked into), with its Markdown; chrome left out.
+ * Text outside any wrapper is a band of its own.
+ */
+export function bandsOf(html: string, link: LinkResolver, chrome: Chrome = NO_CHROME): { readonly id: string; readonly text: string }[] {
   const root = parseFrame(html)
   const bands: { id: string; text: string }[] = []
   const loose: (Element | string)[] = []
@@ -111,17 +188,18 @@ export function bandsOf(html: string, link: LinkResolver): { readonly id: string
         loose.push(c)
         continue
       }
-      if (hidden(c)) continue
-      if (c.attrs.has('data-block-wrapper')) {
+      if (hidden(c) || isChrome(c, chrome)) continue
+      const id = wrapperOf(c)
+      if (id !== undefined && !chrome.through.has(id)) {
         if (loose.length > 0) {
-          bands.push({ id: '', text: markdownOf({ ...root, content: loose.splice(0) } as Element, link).join('\n\n') })
+          bands.push({ id: '', text: markdownOf({ ...root, content: loose.splice(0) } as Element, link, chrome).join('\n\n') })
         }
-        bands.push({ id: c.attrs.get('data-block-wrapper') as string, text: markdownOf(c, link).join('\n\n') })
+        bands.push({ id, text: markdownOf(c, link, chrome).join('\n\n') })
       } else walk(c)
     }
   }
   walk(root)
-  if (loose.length > 0) bands.push({ id: '', text: markdownOf({ ...root, content: loose } as Element, link).join('\n\n') })
+  if (loose.length > 0) bands.push({ id: '', text: markdownOf({ ...root, content: loose } as Element, link, chrome).join('\n\n') })
   return bands.filter((b) => b.text !== '')
 }
 
@@ -132,6 +210,8 @@ export interface LlmsPage {
   readonly description?: string
   /** The page's first frame (the inner HTML of `#pw-root`); undefined when it was not painted. */
   readonly html?: string
+  /** What of the frame is chrome, left out of `llms-full.txt`. */
+  readonly chrome?: Chrome
 }
 
 /** `llms.txt`: the app, then one link per page. */
@@ -178,7 +258,7 @@ export function llmsFullTxt(
   pages: readonly LlmsPage[],
   link: (page: LlmsPage) => LinkResolver
 ): string {
-  const banded = pages.map((p) => (p.html === undefined ? [] : bandsOf(p.html, link(p))))
+  const banded = pages.map((p) => (p.html === undefined ? [] : bandsOf(p.html, link(p), p.chrome)))
   const key = (b: { id: string; text: string }): string => `${b.id}\u0000${b.text}`
   const shared =
     banded.length > 1 && banded.every((b) => b.length > 0)
