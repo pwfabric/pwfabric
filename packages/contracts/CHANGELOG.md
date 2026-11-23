@@ -1,5 +1,9 @@
 # @pwfabric/contracts
 
+## 3.5.1
+
+- No changes; released with the other packages at 3.5.1.
+
 ## 3.5.0
 
 - Removed (upgrade note): `@pwfabric/contracts/webfonts` — the webfont allow-list (`WEBFONT_ALLOW_LIST`, `findAllowedWebfont`, `isAllowedWebfont`, `allowedWebfontsIn`, `parseFontStack` and their types). Fonts are the app's own files, listed in a theme's `fonts`; the engine knows no font service.
