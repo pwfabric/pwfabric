@@ -1,5 +1,9 @@
 # @pwfabric/runtime
 
+## 3.5.1
+
+- No changes; released with the other packages at 3.5.1.
+
 ## 3.5.0
 
 - Changed (upgrade note): `position`, `top`, `right`, `bottom`, `left`, `inset`, `zIndex` and `alignSelf` in a block's `style` apply to the block's wrapper, not to its root. A sticky block in a row whose items stretch needs `alignSelf: "start"` to stick; see the site's "Upgrading to 3.5".

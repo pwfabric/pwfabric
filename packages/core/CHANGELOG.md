@@ -1,5 +1,9 @@
 # @pwfabric/core
 
+## 3.5.1
+
+- No changes; released with the other packages at 3.5.1.
+
 ## 3.5.0
 
 - Changed: `react-dom` and `@pwfabric/core` are declared seeded by every host; their shims throw a readable error when a page did not seed them.

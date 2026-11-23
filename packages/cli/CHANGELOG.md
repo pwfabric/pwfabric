@@ -1,5 +1,11 @@
 # @pwfabric/cli
 
+## 3.5.1
+
+- Fixed: `pwf run` never redirects off the site through a `_redirects` splat: leading slashes and backslashes are dropped from `:splat`, a control character redirects nowhere, and a filled-in target stays where its rule points. The build refuses `/:splat` targets.
+- Fixed: `FONT_FILES_MISSING` checks the font families of the theme the app uses, theme atoms included.
+- Fixed: a `pwf dev` preview can be shown in a frame (an editor, a hosted studio): `pwf dev` serves the build's Content-Security-Policy without `frame-ancestors`. `pwf run` and the built `_headers` keep it.
+
 ## 3.5.0
 
 - Changed (upgrade note): `brand.favicon` is a media file (`media/<file>`), a file of `public/` or an `https://` address; anything else is `FAVICON_INVALID` in `pwf validate` and `pwf build`. The served form `pwpack/media/<file>` is refused with the file to write instead.

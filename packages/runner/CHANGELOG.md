@@ -1,5 +1,9 @@
 # @pwfabric/runner
 
+## 3.5.1
+
+- No changes; released with the other packages at 3.5.1.
+
 ## 3.5.0
 
 - Added: the shared layout receipt wraps every page, and its blocks stay mounted from page to page.
