@@ -126,13 +126,13 @@ describe('AtomBlockDefinitionMetadataSchema', () => {
     expect(
       AtomBlockDefinitionMetadataSchema.safeParse({
         ...valid,
-        messages: [{ id: 'ui.menu.open' }, { id: 'ui.copy', prop: 'copyLabel' }],
+        messages: [{ id: 'ui.menu.open' }, { id: 'ui.copy', prop: 'copyLabel', when: 'copyButton' }],
       }).success
     ).toBe(true)
   })
 
   it('rejects a word outside ui.*, an empty prop and unknown members', () => {
-    for (const bad of [[{ id: 'menu.open' }], [{ id: 'ui.' }], [{ id: 'ui.copy', prop: '' }], [{ id: 'ui.copy', text: 'Copy' }], ['ui.copy']]) {
+    for (const bad of [[{ id: 'menu.open' }], [{ id: 'ui.' }], [{ id: 'ui.copy', prop: '' }], [{ id: 'ui.copy', when: '' }], [{ id: 'ui.copy', text: 'Copy' }], ['ui.copy']]) {
       expect(AtomBlockDefinitionMetadataSchema.safeParse({ ...valid, messages: bad }).success).toBe(false)
     }
   })

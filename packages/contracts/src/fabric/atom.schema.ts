@@ -120,11 +120,12 @@ export function safeParseBlockOrigins(input: unknown): BlockOriginsValidation {
 
 const traitNameSchema = z.string().regex(/^[a-z][a-z0-9-]*$/, 'trait names must be kebab-case')
 
-/** Schema twin of {@link BlockMessage}: a `ui.*` word the block reads, and the prop that replaces it. */
+/** Schema twin of {@link BlockMessage}: a `ui.*` word the block reads, the prop that replaces it and the prop it is read under. */
 const blockMessageSchema = z
   .object({
     id: z.string().regex(/^ui\.[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*$/),
     prop: z.string().min(1).optional(),
+    when: z.string().min(1).optional(),
   })
   .strict()
 

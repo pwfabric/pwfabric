@@ -52,7 +52,7 @@ The app writes every word. MESSAGES_MISSING lists the runner message ids the
 app can reach (its sign-in screen, account labels, not-found page …) that
 app/plan.json messages does not set, and the ui.* words placed blocks read
 of their own (each block manifest's definition.messages, unless the receipt
-sets the prop that replaces the word): an error, as the engine writes no
+sets the prop that replaces the word, or turns off the part that reads it): an error, as the engine writes no
 words of its own (the visitor would read nothing there). BLOCK_DEFAULT_COPY (warning): a placed block
 shows its manifest's default for a copy prop the receipt does not set.
 ERROR_BOUND_AS_TEXT (warning): a receipt shows {{__errors.*}} or a

@@ -132,6 +132,24 @@ describe('the words placed blocks read of their own', () => {
     expect(words[0]?.block).toBe('blocks[0] (navbar "bar")')
   })
 
+  it('reads a word declared under a prop only while that prop, or its default, is set', () => {
+    const code = {
+      definition: {
+        props: [{ name: 'copyButton', jsonSchema: { type: 'boolean', default: false } }, { name: 'closable', default: true }],
+        messages: [{ id: 'ui.copy', prop: 'copyLabel', when: 'copyButton' }, { id: 'ui.close', when: 'closable' }],
+      },
+    }
+    expect(blockMessagesOf(code)).toEqual([{ id: 'ui.copy', prop: 'copyLabel', when: 'copyButton' }, { id: 'ui.close', when: 'closable' }])
+    const from = (blocks: unknown[]): string[] =>
+      placedBlockWords([
+        { folder: packFromRecord({ 'app/surfaces/home.receipt.json': JSON.stringify({ blocks }) }), atoms: [] },
+        { folder: packFromRecord({ 'atoms/blocks/text/code/manifest.json': JSON.stringify(code) }), atoms: [{ kind: 'block', id: 'text.code', relPath: 'atoms/blocks/text/code/component.tsx' }] },
+      ]).map((w) => w.id)
+    expect(from([{ id: 'a', type: 'code', props: {} }])).toEqual(['ui.close'])
+    expect(from([{ id: 'a', type: 'code', props: { copyButton: true, closable: false } }])).toEqual(['ui.copy'])
+    expect(from([{ id: 'a', type: 'code', props: { copyButton: '{{state.copy}}', copyLabel: 'Kopyala' } }])).toEqual(['ui.close'])
+  })
+
   it('reads nothing when no placed block declares a word', () => {
     expect(placedBlockWords(sources({ 'app/surfaces/home.receipt.json': { blocks: [{ id: 't', type: 'title' }] } }))).toEqual([])
     expect(placedBlockWords([])).toEqual([])

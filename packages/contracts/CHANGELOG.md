@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Added: `definition.messages` on a block manifest (`AtomBlockDefinitionMetadataSchema`, `BlockMessage`): the `ui.*` words the block reads of its own, each `{ id, prop? }`.
+- Added: `definition.messages` on a block manifest (`AtomBlockDefinitionMetadataSchema`, `BlockMessage`): the `ui.*` words the block reads of its own, each `{ id, prop?, when? }`.
 
 ## 3.5.1
 

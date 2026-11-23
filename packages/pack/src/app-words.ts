@@ -19,7 +19,7 @@
  * (MESSAGES_MISSING, which reads the app's messages).
  */
 import type { PackFolder, PackIssue } from './types.js'
-import { namedBlocksOf, resolveBlockType, type BlockPropsCatalog, type BlockSource } from './block-props.js'
+import { blockPropDescriptors, namedBlocksOf, resolveBlockType, type BlockPropsCatalog, type BlockSource } from './block-props.js'
 
 /** A placed block shows its manifest's default for a copy prop the receipt does not set. */
 export const BLOCK_DEFAULT_COPY = 'BLOCK_DEFAULT_COPY'
@@ -195,7 +195,10 @@ export function checkErrorsAsText(app: PackFolder, catalog: BlockPropsCatalog): 
 /** A `ui.*` word a block reads of its own, and the prop that replaces it (block-manifest, "Words a block draws"). */
 export interface BlockMessage {
   readonly id: string
+  /** The prop that replaces the word when a receipt sets it. */
   readonly prop?: string
+  /** The prop that turns on the part that reads the word: read only while it (or its default) is set. */
+  readonly when?: string
 }
 
 const UI_WORD = /^ui\.[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*$/
@@ -208,7 +211,12 @@ export function blockMessagesOf(manifest: unknown): BlockMessage[] {
   for (const entry of list) {
     if (!isRecord(entry) || typeof entry['id'] !== 'string' || !UI_WORD.test(entry['id'])) continue
     const prop = entry['prop']
-    out.push(typeof prop === 'string' && prop !== '' ? { id: entry['id'], prop } : { id: entry['id'] })
+    const when = entry['when']
+    out.push({
+      id: entry['id'],
+      ...(typeof prop === 'string' && prop !== '' ? { prop } : {}),
+      ...(typeof when === 'string' && when !== '' ? { when } : {}),
+    })
   }
   return out
 }
@@ -230,21 +238,31 @@ const SHOWN_RECEIPT = /^app\/(?:surfaces\/[^/]+|layout)\.receipt\.json$/
  * The `ui.*` words the app's placed blocks read of their own, as their
  * manifests declare them (`definition.messages`), resolved as `pwf dev`
  * resolves a type (the app first, then its pinned packs; `sources[0]` is the
- * app). A word whose `prop` the placed block sets is the receipt's, not read.
+ * app). A word whose `prop` the placed block sets is the receipt's, not read;
+ * a word under `when` is read only while that prop (or its default) is set.
  */
 export function placedBlockWords(sources: readonly BlockSource[]): PlacedBlockWord[] {
   const app = sources[0]
   if (!app) return []
   const blocks = namedBlocksOf(sources)
-  const declared = new Map<string, { atomId: string; words: BlockMessage[] } | null>()
-  const wordsOf = (type: string): { atomId: string; words: BlockMessage[] } | null => {
+  type Declared = { atomId: string; words: BlockMessage[]; defaults: Map<string, unknown> }
+  const declared = new Map<string, Declared | null>()
+  const wordsOf = (type: string): Declared | null => {
     if (!declared.has(type)) {
       const hit = resolveBlockType(type, blocks)
-      const words = hit && !('ambiguous' in hit) ? blockMessagesOf(blocks.find((b) => b.atom === hit.atom)?.manifest) : []
-      declared.set(type, hit && !('ambiguous' in hit) && words.length > 0 ? { atomId: hit.id, words } : null)
+      const manifest = hit && !('ambiguous' in hit) ? blocks.find((b) => b.atom === hit.atom)?.manifest : undefined
+      const words = blockMessagesOf(manifest)
+      const defaults = new Map<string, unknown>()
+      for (const d of blockPropDescriptors(manifest) ?? []) {
+        const value = d.default !== undefined ? d.default : isRecord(d.jsonSchema) ? d.jsonSchema['default'] : undefined
+        if (value !== undefined) defaults.set(d.name, value)
+      }
+      declared.set(type, hit && !('ambiguous' in hit) && words.length > 0 ? { atomId: hit.id, words, defaults } : null)
     }
     return declared.get(type) ?? null
   }
+  /** A prop is set when its value (the receipt's, else its default) is anything but absent, false, 0, '' or []. */
+  const isOn = (value: unknown): boolean => (Array.isArray(value) ? value.length > 0 : Boolean(value))
   const out: PlacedBlockWord[] = []
   const paths = [...app.folder.files.keys()].filter((p) => SHOWN_RECEIPT.test(p)).sort()
   for (const path of paths) {
@@ -256,6 +274,7 @@ export function placedBlockWords(sources: readonly BlockSource[]): PlacedBlockWo
       for (const word of found.words) {
         const own = word.prop !== undefined ? props[word.prop] : undefined
         if (typeof own === 'string' && own.trim() !== '') continue
+        if (word.when !== undefined && !isOn(props[word.when] !== undefined ? props[word.when] : found.defaults.get(word.when))) continue
         out.push({ id: word.id, path, block: where(node, at), atomId: found.atomId })
       }
     })
