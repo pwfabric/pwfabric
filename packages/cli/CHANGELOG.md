@@ -1,5 +1,10 @@
 # @pwfabric/cli
 
+## Unreleased
+
+- Added: `pwf add connection <name> --origin <url> --auth bearer|api-key|basic|none` declares a connection to an outside API in `app/definitions/connections.json` (where it is and the kind of credential, never a credential), and with `--page`, `--source` and `--path` adds a page source that names it as its `connector`. The MCP server offers the same as `pwf_add_connection`.
+- Fixed: `pwf dev` under hash routing sends a deep page path (`/reservation/`) to its hash address (`../#/reservation`), so the page's files resolve from the app root instead of 404 under the path.
+
 ## 3.5.1
 
 - Fixed: `pwf run` never redirects off the site through a `_redirects` splat: leading slashes and backslashes are dropped from `:splat`, a control character redirects nowhere, and a filled-in target stays where its rule points. The build refuses `/:splat` targets.

@@ -9,7 +9,7 @@ export const SERVER_INSTRUCTIONS = `PWFabric is an open engine for web apps. An 
 Order of work:
 1. pwf_create_app makes an app folder on a foundation pack (its basic blocks, themes and shells). Download a foundation .pwpack from the open packs' releases, https://github.com/pwfabric/packs/releases, and pass its path. (pwf_create_pack makes a pack folder instead, for authoring blocks.)
 2. pwf_describe_project shows what the folder holds and lists the blocks (type, prop names, purpose) it and its pinned packs offer. Call it before writing a page. pwf_describe_block gives one block in full: each prop's JSON schema, default and description, whether it takes children, and its knowledge (use cases, what it composes with, anti-patterns). Read it for every block you place.
-3. Edit the files yourself: app/surfaces/<page>.receipt.json places blocks with props; app/plan.json holds the app's messages. pwf_add_pack installs another pack (a .pwpack, a folder, or, with the user signed in to PhiWebs, a pack id @pwpack/<handle>/<name> from their workspace); pwf_add_block writes a new block of the folder's own.
+3. Edit the files yourself: app/surfaces/<page>.receipt.json places blocks with props; app/plan.json holds the app's messages. pwf_add_pack installs another pack (a .pwpack, a folder, or, with the user signed in to PhiWebs, a pack id @pwpack/<handle>/<name> from their workspace); pwf_add_block writes a new block of the folder's own; pwf_add_connection declares an outside API the app reads (never its secret) and a page source that names it.
 4. pwf_validate after every change; fix each error by its code and path.
 5. pwf_build writes the static site; pwf_pack writes the .pwpack.
 

@@ -2,6 +2,7 @@
  * `pwf add <pack>` — install a pack build into the project cache and pin it:
  * a local `.pwpack` or folder, or a pack of the signed-in PhiWebs workspace by id.
  * `pwf add block <category>/<type>` — write a new block into the folder.
+ * `pwf add connection <name>` — declare a connection to an outside API.
  */
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -12,6 +13,7 @@ import { cacheDir, cacheRelDir, readPackSource, resolveFrom, writePackFolder } f
 import { caretRange, readIdentityFile, type IdentityJson, upsertPin, upsertRequirement, writeIdentityFile } from './lib/identity.js'
 import { CommandFailure } from './lib/failure.js'
 import { addBlock } from './lib/scaffold.js'
+import { addConnection } from './lib/connection.js'
 import type { StoreOptions } from '../phiwebs/config.js'
 import type { Fetch } from '../phiwebs/oauth.js'
 import { downloadPackSource, packSourceFailure, parsePackRef } from '../phiwebs/pack-sources.js'
@@ -33,6 +35,45 @@ export async function runAddBlock(args: ParsedArgs, io: CommandIO): Promise<numb
   io.out('')
   io.out('Next: declare its props in manifest.json, fill in its knowledge, then')
   io.out('  pwf validate')
+  return 0
+}
+
+/** The word that turns `pwf add` into `pwf add connection`. A pack folder named so is given as `./connection`. */
+export const ADD_CONNECTION = 'connection'
+
+/** `pwf add connection <name> --origin <url> --auth <kind>`: the declaration, and with --page a page source. */
+export async function runAddConnection(args: ParsedArgs, io: CommandIO): Promise<number> {
+  const name = args.positionals[1]
+  if (name === undefined) throw new UsageError('missing <name> after "connection"')
+  if (args.positionals.length > 2) throw new UsageError(`unexpected argument "${args.positionals[2]}"`)
+  const origin = stringFlag(args, 'origin')
+  if (origin === undefined) throw new UsageError("missing --origin <url>: the API's https address")
+  const auth = stringFlag(args, 'auth')
+  if (auth === undefined) throw new UsageError('missing --auth <bearer|api-key|basic|none>: the kind of credential the API takes')
+  const optional = (flag: string): string | undefined => stringFlag(args, flag)
+  const root = resolveFrom(io.cwd, stringFlag(args, 'dir'))
+  const header = optional('header')
+  const items = optional('items')
+  const id = optional('id')
+  const page = optional('page')
+  const source = optional('source')
+  const path = optional('path')
+  const added = await addConnection(root, {
+    name,
+    origin,
+    auth,
+    ...(header !== undefined ? { header } : {}),
+    ...(items !== undefined ? { items } : {}),
+    ...(id !== undefined ? { id } : {}),
+    ...(page !== undefined ? { page } : {}),
+    ...(source !== undefined ? { source } : {}),
+    ...(path !== undefined ? { path } : {}),
+  })
+  io.out(added.unchanged ? `Connection ${added.name} is declared already (${added.file})` : `Added connection ${added.name}`)
+  if (!added.unchanged) io.out(`  wrote ${added.file}`)
+  if (added.source) io.out(`  added source ${added.source.id} (${added.source.entityType} through ${added.name}) to ${added.source.receipt}`)
+  io.out('')
+  for (const line of added.next) io.out(line)
   return 0
 }
 
@@ -129,6 +170,7 @@ export type AddDeps = Omit<AddPackDeps, 'env' | 'server'>
 
 export async function runAdd(args: ParsedArgs, io: CommandIO, deps: AddDeps = {}): Promise<number> {
   if (args.positionals[0] === ADD_BLOCK) return runAddBlock(args, io)
+  if (args.positionals[0] === ADD_CONNECTION) return runAddConnection(args, io)
   const source = args.positionals[0]
   if (source === undefined) throw new UsageError('missing <path-to.pwpack|dir|pack id>')
   const root = resolveFrom(io.cwd, stringFlag(args, 'dir'))
@@ -143,10 +185,13 @@ export async function runAdd(args: ParsedArgs, io: CommandIO, deps: AddDeps = {}
 
 export const add: Command = {
   name: 'add',
-  summary: 'Install a pack (.pwpack, folder, or PhiWebs pack id) into the project and pin it, or add a new block',
+  summary: 'Install a pack (.pwpack, folder, or PhiWebs pack id) into the project and pin it, add a new block, or declare a connection',
   usage: `pwf add <path-to.pwpack|dir> [--dir <project>]
 pwf add @pwpack/<handle>/<name>[@<version>] [--dir <project>] [--server <url>]
 pwf add block <category>/<type> [--dir <project>]
+pwf add connection <name> --origin <url> --auth <bearer|api-key|basic|none>
+    [--header <name>] [--items <path>] [--id <field>]
+    [--page <key> --source <id> --path </collection>] [--dir <project>]
 
   <path>         a .pwpack (or .tgz) archive, or a pwpack folder
   <pack id>      a pack installed in your PhiWebs workspace (needs pwf login)
@@ -170,6 +215,22 @@ folder instead: atoms/blocks/<category>/<type>/manifest.json (id
 <category>.<type>, no props yet, a knowledge skeleton to fill in) and
 component.tsx (renders from its props, holds no words of its own). Both names
 are kebab-case, 2–50 characters, starting with a letter. A type the folder
-already has is refused. A pack folder named "block" is given as ./block.`,
+already has is refused. A pack folder named "block" is given as ./block.
+
+\`pwf add connection <name>\` declares a connection to an outside API in
+app/definitions/connections.json: { name, connector: "rest", config:
+{ baseUrl, itemsPath, idField }, engine: { host: "{baseUrl}", path:
+"/{entityType}", auth: { type }, read } }. It states where the API is
+(--origin, https; plain http on localhost only) and the KIND of credential it
+takes (--auth), never a credential: an origin with a user name, a password or
+a query is refused, and no key, token or header value is written. --header
+(api-key only) is the header the key goes in; it is printed for the host that
+stores the key, not written to the app. --items is where the rows are in the
+answer (default data), --id the field that identifies a row (default id).
+With --page, --source and --path it also adds to that page's
+platform/persistence the source { id, kind: "entity", entityType: <path
+without its slash>, connector: <name> }, bound as {{<id>}}. Running it again
+with the same connection only adds the source. A name declared in another
+shape, or a source id the page has, is refused.`,
   run: (args, io) => guard('add', io, () => runAdd(args, io)),
 }
