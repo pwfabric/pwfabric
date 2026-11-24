@@ -1,6 +1,6 @@
 # @pwfabric/cli
 
-## Unreleased
+## 3.6.0
 
 - Changed: `llms-full.txt` leaves chrome out: the layout's blocks that hold no part of the page (its header, footer, a sidebar beside the slot) and every block whose manifest declares the `chrome` trait, wherever it is placed, are not written, so each page's words appear once. Each heading carries the anchor the page renders for it (`## Plans {#plans}`).
 - Added: a block manifest declares the `ui.*` words it reads of its own in `definition.messages` (`{ id, prop?, when? }`: `prop` names the prop that replaces the word, `when` the prop that turns on the part that reads it). `pwf validate` reports each such word of a placed block (pages and the layout) that the app does not set as `MESSAGES_MISSING`, naming the block.

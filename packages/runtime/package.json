@@ -1,6 +1,6 @@
 {
   "name": "@pwfabric/runtime",
-  "version": "3.5.1",
+  "version": "3.6.0",
   "description": "PWFabric runtime and execution engine",
   "type": "module",
   "license": "BUSL-1.1",
