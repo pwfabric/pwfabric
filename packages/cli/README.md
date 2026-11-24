@@ -15,6 +15,7 @@ pwf pack                                       # write my-shop-0.1.0.pwpack
 pwf add ../cards-2.1.0.pwpack                  # install and pin another pack
 pwf create --pack cards                        # a new, empty pack folder
 pwf add block content/price-tag                # a new block in a pack or app
+pwf add connection shop --origin https://api.example.com --auth bearer  # an outside API
 pwf run ./dist-app                             # serve a built pwapp
 pwf mcp                                        # MCP server for AI coding tools (stdio)
 pwf login                                      # sign in to PhiWebs (whoami, logout)
@@ -110,6 +111,17 @@ kebab-case, 2–50 characters, starting with a letter; a type the folder already
 has is refused. The word `block` is the subcommand, so a pack folder named
 `block` is added as `pwf add ./block`.
 
+### `pwf add connection <name> --origin <url> --auth <bearer|api-key|basic|none> [--header <name>] [--items <path>] [--id <field>] [--page <key> --source <id> --path </collection>]`
+
+Declares a connection to an outside API in `app/definitions/connections.json`
+(`connector: "rest"`, `config: { baseUrl, itemsPath, idField }` and an engine
+declaration `{ host: "{baseUrl}", path: "/{entityType}", auth: { type }, read }`).
+It states where the API is and the kind of credential it takes, never a
+credential: an origin with a user name, a password or a query is refused
+(`CONNECTION_SECRET`), and `--header` (api-key only) is printed for the host
+that stores the key, not written. With `--page`, `--source` and `--path` it also
+adds to the page the source `{ id, kind: "entity", entityType, connector: <name> }`.
+
 ### `pwf dev [dir] [--port <n>] [--host <name>] [--router <mode>] [--base <path>] [--local-host | --no-host]`
 
 Assembles the app in memory, serves it on `http://127.0.0.1:4600/` (`--port 0`
@@ -157,7 +169,7 @@ Stop it with Ctrl-C.
 
 A local MCP server on stdin/stdout for any MCP client (Claude Code, Cursor, VS
 Code, Gemini CLI, …): `npx -y @pwfabric/cli mcp` as the server command. Tools:
-`pwf_create_app`, `pwf_create_pack`, `pwf_add_pack`, `pwf_add_block`,
+`pwf_create_app`, `pwf_create_pack`, `pwf_add_pack`, `pwf_add_block`, `pwf_add_connection`,
 `pwf_describe_project` and `pwf_describe_block` (read-only), `pwf_validate`, `pwf_build`, `pwf_pack` —
 the same functions as the commands. Every tool takes `projectDir`, an absolute
 path, and writes only inside it; answers end with the next step, failures carry

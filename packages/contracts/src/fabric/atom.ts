@@ -825,6 +825,22 @@ export interface AtomBlockDefinitionMetadata {
    * the app already name.
    */
   readonly origins?: BlockOrigins
+  /**
+   * The app's words the block reads of its own (`useAppMessage`), whenever it
+   * is placed (block-manifest, "Words a block draws"). `prop` names the block's
+   * prop that replaces the word when a receipt sets it; `when` names the prop
+   * that turns on the part that reads it (the word is read only while that
+   * prop, or its default, is set). A validator reports a declared word the
+   * app does not set (`MESSAGES_MISSING`).
+   */
+  readonly messages?: readonly BlockMessage[]
+}
+
+/** A `ui.*` word a block reads of its own, the prop that replaces it, and the prop it is read under. */
+export interface BlockMessage {
+  readonly id: string
+  readonly prop?: string
+  readonly when?: string
 }
 
 /**

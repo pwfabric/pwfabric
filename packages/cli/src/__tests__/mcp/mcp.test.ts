@@ -63,6 +63,7 @@ describe('pwf mcp', () => {
       'pwf_create_pack',
       'pwf_add_pack',
       'pwf_add_block',
+      'pwf_add_connection',
       'pwf_describe_project',
       'pwf_describe_block',
       'pwf_validate',
@@ -135,6 +136,36 @@ describe('pwf mcp', () => {
     expect(packed.structuredContent).toMatchObject({ id: '@pwpack/local/my-shop', file: join(root, 'dist', 'shop.pwpack') })
     expect((packed.structuredContent?.['hash'] as string).startsWith('sha256:')).toBe(true)
     expect(existsSync(join(root, 'dist', 'shop.pwpack'))).toBe(true)
+  })
+
+  it('declares a connection and a page source that names it, and refuses a credential', async () => {
+    const client = await connect()
+    const root = join(await tempDir(), 'bookings')
+    expect((await call(client, 'pwf_create_app', { projectDir: root, foundation: FIXTURE_FOUNDATION })).isError).toBeFalsy()
+    const added = await call(client, 'pwf_add_connection', {
+      projectDir: root,
+      name: 'booking',
+      origin: 'https://api.example.com/v2',
+      auth: 'api-key',
+      header: 'X-Api-Key',
+      page: 'home',
+      source: 'slots',
+      path: '/slots',
+    })
+    expect(added.isError, text(added)).toBeFalsy()
+    expect(text(added)).toContain('Added connection booking to app/definitions/connections.json')
+    expect(text(added)).toMatch(/\nNext: pwf_validate\.$/)
+    expect(added.structuredContent).toMatchObject({ name: 'booking', source: { id: 'slots', entityType: 'slots' } })
+    const written = await readFile(join(root, 'app', 'definitions', 'connections.json'), 'utf8')
+    expect(JSON.parse(written).connections[0]).toMatchObject({ name: 'booking', connector: 'rest', engine: { auth: { type: 'api-key' } } })
+    expect(written).not.toContain('X-Api-Key')
+    const receipt = await readFile(join(root, 'app', 'surfaces', 'home.receipt.json'), 'utf8')
+    expect(receipt).toContain('"connector": "booking"')
+    const refused = await call(client, 'pwf_add_connection', { projectDir: root, name: 'other', origin: 'https://u:p@api.example.com', auth: 'basic' })
+    expect(refused.isError).toBe(true)
+    expect(refused.structuredContent).toMatchObject({ error: { code: 'CONNECTION_SECRET' } })
+    const badAuth = await call(client, 'pwf_add_connection', { projectDir: root, name: 'other', origin: 'https://api.example.com', auth: 'oauth' })
+    expect(badAuth.isError).toBe(true)
   })
 
   it('describes one block in full: its pack, props with schema, children and knowledge', async () => {

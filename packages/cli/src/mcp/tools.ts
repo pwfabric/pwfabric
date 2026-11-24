@@ -30,6 +30,7 @@ import { pinsOf, readIdentityFile, stripBom, type PackPin } from '../commands/li
 import { cacheDir, cacheRelDir, readCachedPack, readProject } from '../commands/lib/project.js'
 import { countLine, validateProject } from '../commands/lib/report.js'
 import { addBlock, createPack } from '../commands/lib/scaffold.js'
+import { addConnection, CONNECTION_AUTH } from '../commands/lib/connection.js'
 import { catalogOf, type FoundationBlock } from '../commands/lib/starter.js'
 import { projectDirOf, readSource, writeTarget } from './paths.js'
 import type { PhiwebsToolsOptions } from './phiwebs.js'
@@ -357,6 +358,47 @@ export const TOOLS: readonly ToolDefinition[] = [
           `declare its props in ${added.dir}/manifest.json (definition.props: name, jsonSchema, default), render them in component.tsx, answer the knowledge questions in the manifest, then pwf_validate.`,
           { ...added }
         )
+      }),
+  },
+  {
+    name: 'pwf_add_connection',
+    title: 'Declare a connection',
+    description:
+      'Declare a connection to an outside API in app/definitions/connections.json: where it is (origin, https) and the kind of credential it takes (auth), never a credential. With page, source and path it also adds to that page a data source { kind: "entity", entityType, connector: <name> } that reads the collection through the connection, bound as {{<source>}}. Never use authProviderRef for an outside API: that is the app’s own sign-in token. The key itself is stored with the host that serves the app, not in the folder.',
+    inputSchema: {
+      projectDir,
+      name: z.string().describe('The connection name: letters, digits, _ or -, starting with a letter, e.g. shop.'),
+      origin: z.string().describe('The API address, e.g. https://api.example.com/v1. No user name, password or query: a credential is never written.'),
+      auth: z.enum(CONNECTION_AUTH).describe('The kind of credential the API takes: bearer, api-key, basic or none.'),
+      header: z.string().optional().describe('With api-key: the header the key goes in, e.g. X-Api-Key. Reported for the host, not written to the app.'),
+      items: z.string().optional().describe('Where the rows are in the answer, a dotted path; default data.'),
+      id: z.string().optional().describe('The field that identifies a row; default id.'),
+      page: z.string().optional().describe('With source and path: the page key that reads through the connection.'),
+      source: z.string().optional().describe('The id of the new data source on that page.'),
+      path: z.string().optional().describe('The collection path under the origin, starting with /, e.g. /bookings.'),
+    },
+    readOnly: false,
+    run: (input) =>
+      answer(async () => {
+        const root = projectDirOf(input['projectDir'] as string)
+        const pick = (k: string): Record<string, string> => (typeof input[k] === 'string' ? { [k]: input[k] as string } : {})
+        const added = await addConnection(root, {
+          name: input['name'] as string,
+          origin: input['origin'] as string,
+          auth: input['auth'] as string,
+          ...pick('header'),
+          ...pick('items'),
+          ...pick('id'),
+          ...pick('page'),
+          ...pick('source'),
+          ...pick('path'),
+        })
+        const lines = [
+          added.unchanged ? `Connection ${added.name} is declared already (${added.file})` : `Added connection ${added.name} to ${added.file}`,
+          ...(added.source ? [`Added source ${added.source.id} (${added.source.entityType} through ${added.name}) to ${added.source.receipt}`] : []),
+          ...added.next.slice(0, -1),
+        ]
+        return ok(lines, 'pwf_validate.', { ...added })
       }),
   },
   {

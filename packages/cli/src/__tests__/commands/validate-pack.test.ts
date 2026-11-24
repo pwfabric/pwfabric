@@ -421,3 +421,34 @@ describe('pwf pack', () => {
     expect(archiveName('', '1.0.0')).toBe('pack-1.0.0.pwpack')
   })
 })
+
+describe('pwf validate: the words placed blocks read', () => {
+  it('reports MESSAGES_MISSING for a ui.* word a placed block declares and the app does not set', async () => {
+    const { root } = await created()
+    expect(await main(['add', 'block', 'layout/menu-bar'], capture(root).io)).toBe(0)
+    const manifestPath = join(root, 'atoms', 'blocks', 'layout', 'menu-bar', 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    manifest.definition.messages = [{ id: 'ui.menu.open' }, { id: 'ui.nav.main', prop: 'navLabel' }]
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    const receiptPath = join(root, 'app', 'surfaces', 'home.receipt.json')
+    const receipt = JSON.parse(await readFile(receiptPath, 'utf8'))
+    receipt.blocks.push({ id: 'bar', type: 'menu-bar', props: { navLabel: 'Main' } })
+    await writeFile(receiptPath, JSON.stringify(receipt))
+
+    const c = capture(root)
+    expect(await main(['validate'], c.io)).toBe(1)
+    const said = c.text()
+    expect(said).toContain('MESSAGES_MISSING app/plan.json')
+    expect(said).toContain('ui.menu.open (layout.menu-bar, read by blocks[')
+    // The receipt sets the prop that replaces ui.nav.main.
+    expect(said).not.toContain('ui.nav.main')
+
+    const planPath = join(root, 'app', 'plan.json')
+    const plan = JSON.parse(await readFile(planPath, 'utf8'))
+    plan.messages = { ...plan.messages, 'ui.menu.open': 'Open the menu' }
+    await writeFile(planPath, JSON.stringify(plan))
+    const after = capture(root)
+    expect(await main(['validate'], after.io)).toBe(0)
+    expect(after.text()).not.toContain('MESSAGES_MISSING')
+  })
+})

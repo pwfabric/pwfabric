@@ -347,6 +347,48 @@ the component. A type the folder already has, in any category, is refused.
 `block` is the subcommand word, so a pack folder named `block` is added as
 `pwf add ./block`.
 
+### `pwf add connection`
+
+```text
+pwf add connection <name> --origin <url> --auth <bearer|api-key|basic|none>
+    [--header <name>] [--items <path>] [--id <field>]
+    [--page <key> --source <id> --path </collection>] [--dir <project>]
+```
+
+| Argument / option | Meaning |
+|---|---|
+| `<name>` | The connection's name: letters, digits, `_` or `-`, starting with a letter. Pages name it as a source's `connector`. |
+| `--origin <url>` | The API's address, `https://api.example.com/v1`. Plain `http://` on a loopback host only (`localhost`, `127.0.0.1`). An address with a user name, a password, a query or a fragment is refused (`CONNECTION_SECRET`). |
+| `--auth <kind>` | The kind of credential the API takes: `bearer`, `api-key`, `basic` or `none`. |
+| `--header <name>` | With `api-key`: the header the key goes in. Printed for the host that stores the key; not written to the app. |
+| `--items <path>` | Where the rows are in the API's answer, a dotted path. Default `data`. |
+| `--id <field>` | The row field that identifies a row. Default `id`. |
+| `--page`, `--source`, `--path` | Together: add to that page a data source with that id that reads the collection at that path through the connection. |
+
+Writes `app/definitions/connections.json`:
+
+```json
+{ "connections": [{
+  "name": "shop", "connector": "rest",
+  "config": { "baseUrl": "api.example.com/v1", "itemsPath": "data", "idField": "id" },
+  "engine": { "host": "{baseUrl}", "path": "/{entityType}", "auth": { "type": "bearer" },
+              "read": { "items": "{itemsPath}", "id": "{idField}", "flatten": "*" } }
+}] }
+```
+
+With `--page home --source products --path /products` it adds to the page's
+`platform/persistence` the source
+`{ "id": "products", "kind": "entity", "entityType": "products", "connector": "shop" }`,
+read as `{{products}}`. A source for an outside API names its connection; it
+never uses `authProviderRef`, which is the app's own sign-in token.
+
+No secret is ever written: the app states where the API is and the kind of
+credential, and the key itself is stored with the host that serves the app.
+Running the command again with the same connection only adds the source. A
+name already declared in another shape (`CONNECTION_EXISTS`), a page the app
+does not have (`PAGE_NOT_FOUND`) and a source id the page already has
+(`SOURCE_EXISTS`) are refused, and nothing is written.
+
 ## `pwf font add`
 
 ```text
@@ -460,6 +502,7 @@ no account and no network.
 | `pwf_create_pack` | `pwf create --pack`: a new, empty pack folder |
 | `pwf_add_pack` | `pwf add`: install a `.pwpack`, a pack folder, or a PhiWebs pack id `@pwpack/<handle>/<name>[@<version>]` (signed in) and pin it |
 | `pwf_add_block` | `pwf add block`: a new block of the folder's own |
+| `pwf_add_connection` | `pwf add connection`: declare a connection to an outside API and, with `page`, `source` and `path`, a page source that reads through it; never a secret |
 | `pwf_describe_project` | Read-only: the folder's pages, pinned packs, and the blocks (type, prop names, purpose) and themes they offer |
 | `pwf_describe_block` | Read-only: one block by `type` — the pack it comes from, every prop with its JSON schema, default and description, whether it takes children, and its full `knowledge`. An unknown type is `UNKNOWN_BLOCK_TYPE`, naming close matches |
 | `pwf_validate` | `pwf validate`: every finding with its code and path |

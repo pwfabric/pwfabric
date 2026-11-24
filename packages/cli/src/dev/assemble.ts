@@ -52,7 +52,7 @@ import { withSessionSources } from '../host/session-sources.js'
 import { authDeclarationOf, entityDeclarationsOf } from '../host/definitions.js'
 import { deriveCsp, headersFile } from './csp.js'
 import { documentHead, isRecordPage, pageDocuments, wordedText, publicOriginOf, robotsTxt, SERVED_FOLDERS, sitemapXml, sitemapXmlLocales, type PageDocument } from './documents.js'
-import { llmsFullTxt, llmsFullTxtLocales, llmsTxt, llmsTxtLocales, type LlmsPage } from './llms.js'
+import { CHROME_TRAIT, chromeOf, llmsFullTxt, llmsFullTxtLocales, llmsTxt, llmsTxtLocales, type LlmsPage } from './llms.js'
 import { planHeadersOf, planRedirectsOf, planScriptOrigins, planScriptsOf, redirectsFile } from './plan-site.js'
 import { parseHeadersFile } from '../commands/lib/static-server.js'
 import { firstPaintData, onPageFragmentLinks, paintPages, shareFrameStyles, staticPageFile, staticPageFragment, staticRootHtml, type PaintedPage } from './static-paint.js'
@@ -1400,6 +1400,19 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   // page has an address of its own to cite.
   if (byPath && origin !== undefined && listedDocs.length > 0) {
     const order = navigationOrder(JSON.parse(new TextDecoder().decode(files.get('pwpack/navigation.json'))) as unknown, entry, [...new Set(listedDocs.map((d) => d.key))])
+    // CHROME (pwapp-format §2.4): the layout around the page and every block
+    // whose manifest declares the chrome trait are not the page's words.
+    const chromeTypes = new Map<string, boolean>()
+    const isChromeType = (type: string): boolean => {
+      if (!chromeTypes.has(type)) {
+        const hit = resolveBlockType(type, named)
+        const definition = hit && !('ambiguous' in hit) && isRecord(hit.atom.manifest) ? hit.atom.manifest['definition'] : undefined
+        const traits = isRecord(definition) && Array.isArray(definition['traits']) ? definition['traits'] : []
+        chromeTypes.set(type, traits.includes(CHROME_TRAIT))
+      }
+      return chromeTypes.get(type) as boolean
+    }
+    const chromeFor = (receipt: unknown) => chromeOf(layoutPage?.receipt, receipt, isChromeType)
     const llmsPages: LlmsPage[] = order.map((key) => {
       const doc = listedDocs.find((d) => d.key === key) as { key: string; url: string }
       const receipt = servedReceipts.get(key)
@@ -1410,6 +1423,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
         url: doc.url,
         ...(description !== undefined ? { description } : {}),
         ...(own ? { html: own.html } : {}),
+        chrome: chromeFor(receipt),
       }
     })
     const appInfo = { name: title || identity.id, ...(appDescription !== undefined ? { description: appDescription } : {}) }
@@ -1439,6 +1453,7 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
             url: doc.url,
             ...(description !== undefined ? { description } : {}),
             ...(frame ? { html: frame.html } : {}),
+            chrome: chromeFor(receipt),
           }]
         })
         return { lang, pages: pagesHere }

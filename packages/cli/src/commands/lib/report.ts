@@ -16,11 +16,13 @@ import {
   connectionFieldSets,
   definedBlockTypes,
   hashPack,
+  placedBlockWords,
   validatePack,
   type BlockSource,
   type PackFolder,
   type PackIssue,
   type PackValidation,
+  type PlacedBlockWord,
   type PageReceipt,
 } from '@pwfabric/pack'
 import { assemblePage, isTitleTemplate, pluralProblems, PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
@@ -356,7 +358,7 @@ export function reachableMessageIds(root: string): string[] {
  * (3.0.1): the visitor reads nothing where each one goes, and a control is
  * named by the bare id.
  */
-export function checkMessages(root: string): PackIssue[] {
+export function checkMessages(root: string, blockWords: readonly PlacedBlockWord[] = []): PackIssue[] {
   // A pack (no `app` member) is not opened as an app: no visitor reaches a
   // runner message through it, so it has none to set.
   const pwpack = readJsonFile(join(root, 'pwpack.json'))
@@ -382,10 +384,14 @@ export function checkMessages(root: string): PackIssue[] {
       for (const problem of pluralProblems(text)) plurals.push({ severity: 'error', code: 'MESSAGES_INVALID', path, message: `messages["${id}"]: ${problem}` })
     }
   }
-  const missing = reachableMessageIds(root).filter((id) => !(typeof messages[id] === 'string' && messages[id] !== ''))
-  if (missing.length === 0) return plurals
+  const unset = (id: string): boolean => !(typeof messages[id] === 'string' && messages[id] !== '')
+  const missing = reachableMessageIds(root).filter(unset)
+  const wordsPath = locales ? `app/messages/${locales.defaultLocale}.json` : 'app/plan.json'
+  const blockIssues = blockWordsMissing(blockWords.filter((w) => unset(w.id)), wordsPath)
+  if (missing.length === 0) return [...plurals, ...blockIssues]
   return [
     ...plurals,
+    ...blockIssues,
     {
       severity: 'error',
       code: 'MESSAGES_MISSING',
@@ -393,6 +399,32 @@ export function checkMessages(root: string): PackIssue[] {
       message:
         `the app can show ${missing.length} runner message${missing.length === 1 ? '' : 's'} it does not set in messages, ` +
         `and the engine writes no words of its own, so the visitor reads nothing there: ${missing.join(', ')}`,
+    },
+  ]
+}
+
+/**
+ * MESSAGES_MISSING for the `ui.*` words placed blocks read of their own
+ * (their manifests' `definition.messages`) that the app does not set: one
+ * finding, each word once, with the first block that reads it.
+ */
+function blockWordsMissing(words: readonly PlacedBlockWord[], path: string): PackIssue[] {
+  if (words.length === 0) return []
+  const byId = new Map<string, PlacedBlockWord[]>()
+  for (const w of words) byId.set(w.id, [...(byId.get(w.id) ?? []), w])
+  const listed = [...byId].map(([id, all]) => {
+    const [first] = all as [PlacedBlockWord, ...PlacedBlockWord[]]
+    const more = all.length > 1 ? ` and ${all.length - 1} more` : ''
+    return `${id} (${first.atomId}, read by ${first.block} in ${first.path}${more})`
+  })
+  return [
+    {
+      severity: 'error',
+      code: 'MESSAGES_MISSING',
+      path,
+      message:
+        `placed blocks read ${byId.size} word${byId.size === 1 ? '' : 's'} of the app's that it does not set in messages, ` +
+        `and the engine writes no words of its own, so the visitor (or a screen reader) reads nothing there: ${listed.join('; ')}`,
     },
   ]
 }
@@ -549,7 +581,7 @@ export async function validateProject(root: string, pack: PackFolder): Promise<P
   const engineIssues: PackIssue[] = loaded
     ? engineRangeDiagnostics(loaded, engineVersion()).map((d) => ({ severity: 'error', code: d.code, message: d.message, ...(d.path ? { path: d.path } : {}) }))
     : []
-  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root), ...checkTitleTemplate(root), ...checkFavicon(root, pack), ...checkFontMetrics(root, pack), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
+  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root, placedBlockWords(sources)), ...checkTitleTemplate(root), ...checkFavicon(root, pack), ...checkFontMetrics(root, pack), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 

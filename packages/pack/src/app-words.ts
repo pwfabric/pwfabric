@@ -13,9 +13,13 @@
  *
  * Both are warnings: the page renders. Both read only declarative files
  * (block manifests and receipts); no block code runs.
+ *
+ * {@link placedBlockWords} lists the `ui.*` words placed blocks read of their
+ * own (`definition.messages`), for the check that the app sets each one
+ * (MESSAGES_MISSING, which reads the app's messages).
  */
 import type { PackFolder, PackIssue } from './types.js'
-import type { BlockPropsCatalog } from './block-props.js'
+import { blockPropDescriptors, namedBlocksOf, resolveBlockType, type BlockPropsCatalog, type BlockSource } from './block-props.js'
 
 /** A placed block shows its manifest's default for a copy prop the receipt does not set. */
 export const BLOCK_DEFAULT_COPY = 'BLOCK_DEFAULT_COPY'
@@ -182,4 +186,98 @@ export function checkReceiptErrorsAsText(receipt: unknown, catalog: BlockPropsCa
 /** ERROR_BOUND_AS_TEXT for every receipt of an app. */
 export function checkErrorsAsText(app: PackFolder, catalog: BlockPropsCatalog): PackIssue[] {
   return receiptPaths(app).flatMap((p) => checkReceiptErrorsAsText(jsonAt(app, p), catalog, p))
+}
+
+// ============================================================
+// The words placed blocks read of their own (definition.messages)
+// ============================================================
+
+/** A `ui.*` word a block reads of its own, and the prop that replaces it (block-manifest, "Words a block draws"). */
+export interface BlockMessage {
+  readonly id: string
+  /** The prop that replaces the word when a receipt sets it. */
+  readonly prop?: string
+  /** The prop that turns on the part that reads the word: read only while it (or its default) is set. */
+  readonly when?: string
+}
+
+const UI_WORD = /^ui\.[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*$/
+
+/** The words a block manifest declares in `definition.messages`; an entry that is not `{ id: "ui.…", prop? }` is skipped. */
+export function blockMessagesOf(manifest: unknown): BlockMessage[] {
+  const def = isRecord(manifest) ? manifest['definition'] : undefined
+  const list = isRecord(def) && Array.isArray(def['messages']) ? def['messages'] : []
+  const out: BlockMessage[] = []
+  for (const entry of list) {
+    if (!isRecord(entry) || typeof entry['id'] !== 'string' || !UI_WORD.test(entry['id'])) continue
+    const prop = entry['prop']
+    const when = entry['when']
+    out.push({
+      id: entry['id'],
+      ...(typeof prop === 'string' && prop !== '' ? { prop } : {}),
+      ...(typeof when === 'string' && when !== '' ? { when } : {}),
+    })
+  }
+  return out
+}
+
+/** One word a placed block reads: which, where the block is, and which block. */
+export interface PlacedBlockWord {
+  readonly id: string
+  /** The receipt (`app/surfaces/<page>.receipt.json`, `app/layout.receipt.json`). */
+  readonly path: string
+  /** Where in it, as the other findings print it: `blocks[0] (navbar "bar")`. */
+  readonly block: string
+  readonly atomId: string
+}
+
+/** Every receipt a visitor is shown: the pages, their per-locale receipts and the layout. */
+const SHOWN_RECEIPT = /^app\/(?:surfaces\/[^/]+|layout)\.receipt\.json$/
+
+/**
+ * The `ui.*` words the app's placed blocks read of their own, as their
+ * manifests declare them (`definition.messages`), resolved as `pwf dev`
+ * resolves a type (the app first, then its pinned packs; `sources[0]` is the
+ * app). A word whose `prop` the placed block sets is the receipt's, not read;
+ * a word under `when` is read only while that prop (or its default) is set.
+ */
+export function placedBlockWords(sources: readonly BlockSource[]): PlacedBlockWord[] {
+  const app = sources[0]
+  if (!app) return []
+  const blocks = namedBlocksOf(sources)
+  type Declared = { atomId: string; words: BlockMessage[]; defaults: Map<string, unknown> }
+  const declared = new Map<string, Declared | null>()
+  const wordsOf = (type: string): Declared | null => {
+    if (!declared.has(type)) {
+      const hit = resolveBlockType(type, blocks)
+      const manifest = hit && !('ambiguous' in hit) ? blocks.find((b) => b.atom === hit.atom)?.manifest : undefined
+      const words = blockMessagesOf(manifest)
+      const defaults = new Map<string, unknown>()
+      for (const d of blockPropDescriptors(manifest) ?? []) {
+        const value = d.default !== undefined ? d.default : isRecord(d.jsonSchema) ? d.jsonSchema['default'] : undefined
+        if (value !== undefined) defaults.set(d.name, value)
+      }
+      declared.set(type, hit && !('ambiguous' in hit) && words.length > 0 ? { atomId: hit.id, words, defaults } : null)
+    }
+    return declared.get(type) ?? null
+  }
+  /** A prop is set when its value (the receipt's, else its default) is anything but absent, false, 0, '' or []. */
+  const isOn = (value: unknown): boolean => (Array.isArray(value) ? value.length > 0 : Boolean(value))
+  const out: PlacedBlockWord[] = []
+  const paths = [...app.folder.files.keys()].filter((p) => SHOWN_RECEIPT.test(p)).sort()
+  for (const path of paths) {
+    eachBlock(jsonAt(app.folder, path), (node, at) => {
+      const type = node['type']
+      const found = typeof type === 'string' ? wordsOf(type) : null
+      if (!found) return
+      const props = isRecord(node['props']) ? node['props'] : {}
+      for (const word of found.words) {
+        const own = word.prop !== undefined ? props[word.prop] : undefined
+        if (typeof own === 'string' && own.trim() !== '') continue
+        if (word.when !== undefined && !isOn(props[word.when] !== undefined ? props[word.when] : found.defaults.get(word.when))) continue
+        out.push({ id: word.id, path, block: where(node, at), atomId: found.atomId })
+      }
+    })
+  }
+  return out
 }

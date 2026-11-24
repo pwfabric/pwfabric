@@ -143,7 +143,8 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
     ...(options.router !== undefined ? { router: options.router } : {}),
     ...(options.base !== undefined ? { base: options.base } : {}),
   }
-  const mount = options.router !== undefined && options.router !== 'hash' ? (options.base ?? '/') : '/'
+  const hashRouted = (options.router ?? 'hash') === 'hash'
+  const mount = hashRouted ? '/' : (options.base ?? '/')
   const cache = createCompileCache(
     internals.assemble?.cacheDir === undefined ? join(root, PWF_DIR, 'build-cache') : internals.assemble.cacheDir
   )
@@ -338,6 +339,16 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
       send(res, 404, CONTENT_TYPES['.txt'] as string, `not found: /${rel}`, head)
       return
     }
+    // A DEEP PAGE PATH UNDER HASH ROUTING (`/reservation/`): the one shell
+    // names its files relative to the app root, so answered here it would ask
+    // for `/reservation/pwpack/…` and miss every one. The page's address under
+    // hash routing is `#/<path>`: send the browser there, relative to the
+    // address it asked (`../#/reservation`), so the app resolves from its root
+    // under whatever prefix a preview serves it.
+    if (hashRouted && found.path === 'index.html' && rel !== 'index.html' && rel !== '') {
+      res.writeHead(302, { location: hashAddressFrom(url.pathname, rel, url.search), 'cache-control': 'no-store' }).end()
+      return
+    }
     // …with the headers the build declares for it (its Content-Security-Policy),
     // but not its caching: here a file changes on every edit.
     const declared = await declaredHeaders(source, rel)
@@ -416,6 +427,17 @@ export async function createDevServer(options: DevServerOptions, internals: DevS
 
 /** Implements the `pwf dev` contract (see ./types.ts). */
 export const startDevServer: StartDevServer = (options) => createDevServer(options)
+
+/**
+ * A page path's address under hash routing, relative to the address it was
+ * asked at: `/reservation/` → `../#/reservation`, `/a?x=1` → `./#/a?x=1`. The
+ * query goes into the hash, where the hash router reads a page's query.
+ */
+export function hashAddressFrom(pathname: string, rel: string, search: string): string {
+  const depth = Math.max(0, pathname.split('/').length - 2)
+  const up = depth === 0 ? './' : '../'.repeat(depth)
+  return `${up}#/${rel.split('/').map(encodeURIComponent).join('/')}${search}`
+}
 
 /** A Content-Security-Policy value without its `frame-ancestors` directive. */
 export function withoutFrameAncestors(policy: string): string {

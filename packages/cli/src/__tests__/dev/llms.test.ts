@@ -2,12 +2,12 @@
  * `llms.txt` and `llms-full.txt` (pwapp-format §2.4): the app's pages for a
  * language model, from the same first frames the page documents show.
  */
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { JSDOM } from 'jsdom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { assemblePwapp, navigationOrder } from '../../dev/assemble.js'
-import { bandsOf, llmsFullTxt, llmsTxt, markdownOf } from '../../dev/llms.js'
+import { bandsOf, chromeOf, llmsFullTxt, llmsTxt, markdownOf } from '../../dev/llms.js'
 import { parseFrame } from '../../dev/static-layout.js'
 import { makeApp, text } from './helpers.js'
 
@@ -89,7 +89,8 @@ describe('llms.txt and llms-full.txt', () => {
       const visible = (root.textContent ?? '').replace(/\s+/g, ' ').trim()
       const start = full.indexOf(`## ${title}\n`)
       const section = full.slice(start, full.indexOf('\n## ', start + 1) >>> 0 || undefined)
-      const words = section.split('\n').slice(4).join(' ').replace(/[#|-]\s|\[|\]\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()
+      // A heading's anchor ({#id}) is the address of its words, not words.
+      const words = section.split('\n').slice(4).join(' ').replace(/ \{#[^}]+\}/g, '').replace(/[#|-]\s|\[|\]\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()
       expect(words.length, file).toBeGreaterThan(0)
       expect(visible, file).toContain(words)
     }
@@ -125,6 +126,28 @@ describe('the Markdown of a frame', () => {
     ).toEqual(['shown'])
   })
 
+  it('a heading carries its anchor: its own id, else the id of the block it is in', () => {
+    expect(md('<h2 id="plans">Plans</h2><div data-block-wrapper="intro"><div><h3>Intro</h3><p>Words</p></div></div><h4>Loose</h4>')).toEqual([
+      '## Plans {#plans}',
+      '### Intro {#intro}',
+      'Words',
+      '#### Loose',
+    ])
+  })
+
+  it('leaves out the chrome it is told to, wherever it sits, and walks into the layout around the page', () => {
+    const html =
+      '<div data-block-wrapper="site-nav"><nav><a href="/">Home</a></nav></div>' +
+      '<div data-block-wrapper="main"><div data-block-wrapper="side"><a href="/b/">B</a></div><div data-block-wrapper="a"><p>Alpha</p></div>' +
+      '<div data-block-wrapper="list--0"><div data-block-wrapper="toc--0"><p>On this page</p></div><p>Row</p></div></div>' +
+      '<div data-block-wrapper="footer"><p>Footer words</p></div>'
+    const chrome = { skip: new Set(['site-nav', 'side', 'toc', 'footer']), through: new Set(['main']) }
+    expect(bandsOf(html, (h) => h, chrome)).toEqual([
+      { id: 'a', text: 'Alpha' },
+      { id: 'list--0', text: 'Row' },
+    ])
+  })
+
   it('a band every page shares is written once, under Site navigation', () => {
     const nav = '<div data-block-wrapper="nav"><nav><a href="/">Home</a></nav></div>'
     const pages = [
@@ -146,5 +169,93 @@ describe('the Markdown of a frame', () => {
       'a',
       'd',
     ])
+  })
+})
+
+describe('llms-full.txt leaves the chrome out', () => {
+  /** A two-page app in a layout (a header, the page, a footer) whose pages place a sidebar that declares itself chrome. */
+  async function chromed(): Promise<string> {
+    const a = await makeApp()
+    cleanups.push(a.cleanup)
+    const root = a.root
+    const block = join(root, 'atoms', 'blocks', 'nav', 'side-links')
+    await mkdir(block, { recursive: true })
+    await writeFile(
+      join(block, 'manifest.json'),
+      JSON.stringify({
+        id: 'nav.side-links',
+        kind: 'block',
+        version: '1.0.0',
+        category: 'nav',
+        name: 'side-links',
+        state: 'stable',
+        knowledge: { purpose: 'Links to the other pages, beside the page', useCases: ['A docs sidebar'], composesWith: [], antiPatterns: ['A page body'] },
+        definition: { props: [{ name: 'text', type: 'string', default: '', jsonSchema: { type: 'string' } }], defaultProps: { text: '' }, canHaveChildren: false, traits: ['chrome'] },
+      })
+    )
+    await writeFile(
+      join(block, 'component.tsx'),
+      "import * as React from 'react'\nexport default function SideLinks(p: { props?: { text?: string } }): React.ReactElement {\n  return <aside><a href=\"/about/\">{p.props?.text ?? ''}</a></aside>\n}\n"
+    )
+    await writeFile(
+      join(root, 'app', 'layout.receipt.json'),
+      JSON.stringify({
+        blocks: [
+          { id: 'site-header', type: 'title', props: { text: 'Header words' } },
+          { id: 'main', type: 'stack', props: {}, children: [{ type: 'pw:page' }] },
+          { id: 'site-footer', type: 'stack', props: {}, children: [{ id: 'footer-text', type: 'title', props: { text: 'Footer words' } }] },
+        ],
+      })
+    )
+    const body = (key: string, words: string): string =>
+      JSON.stringify({
+        title: key === 'home' ? 'Home' : 'About',
+        blocks: [
+          { id: `${key}-side`, type: 'side-links', props: { text: 'Sidebar words' } },
+          { id: `${key}-title`, type: 'title', props: { text: `${words} title` } },
+          { id: `${key}-body`, type: 'stack', props: {}, children: [{ id: `${key}-more`, type: 'title', props: { text: `${words} body` } }] },
+        ],
+      })
+    await writeFile(join(root, 'app', 'surfaces', 'home.receipt.json'), body('home', 'Welcome'))
+    await writeFile(join(root, 'app', 'surfaces', 'about.receipt.json'), body('about', 'Story'))
+    const identity = JSON.parse(await readFile(join(root, 'pwpack.json'), 'utf8')) as { app: Record<string, unknown> }
+    identity.app = { ...identity.app, surfaceOrder: ['home', 'about'] }
+    await writeFile(join(root, 'pwpack.json'), JSON.stringify(identity))
+    const planPath = join(root, 'app', 'plan.json')
+    const plan = JSON.parse(await readFile(planPath, 'utf8')) as Record<string, unknown>
+    await writeFile(planPath, JSON.stringify({ ...plan, origin: 'https://example.com' }))
+    return root
+  }
+
+  it('each page’s body once, no layout or chrome text, and anchors the page renders', async () => {
+    const r = await assemblePwapp(await chromed(), { cacheDir: null, router: 'path' })
+    expect(r.ok, r.diagnostics.filter((d) => d.severity === 'error').map((d) => `${d.code} ${d.message}`).join('\n')).toBe(true)
+    const full = text(r.files.get('llms-full.txt'))
+    for (const words of ['Welcome title', 'Welcome body', 'Story title', 'Story body']) expect(full.split(words).length - 1, words).toBe(1)
+    for (const chrome of ['Header words', 'Footer words', 'Sidebar words', 'Site navigation']) expect(full, chrome).not.toContain(chrome)
+    // Every anchor names an element of that page's document.
+    const anchors = [...full.matchAll(/^#+ .* \{#([^}]+)\}$/gm)].map((m) => m[1] as string)
+    expect(anchors).toEqual(['home-title', 'home-more', 'about-title', 'about-more'])
+    for (const [file, ids] of [['index.html', ['home-title', 'home-more']], ['about/index.html', ['about-title', 'about-more']]] as const) {
+      const doc = new JSDOM(text(r.files.get(file))).window.document
+      for (const id of ids) expect(doc.querySelector(`#${id}, [data-block-id="${id}"]`), `${file} #${id}`).not.toBeNull()
+    }
+  })
+})
+
+describe('chromeOf', () => {
+  it('the layout but what holds the page, and every chrome-typed block wherever it is', () => {
+    const layout = {
+      blocks: [
+        { id: 'bar', type: 'navbar' },
+        { id: 'shell', type: 'stack', children: [{ id: 'side', type: 'stack' }, { id: 'main', type: 'stack', children: [{ type: 'pw:page' }] }] },
+        { id: 'foot', type: 'stack' },
+      ],
+    }
+    const page = { blocks: [{ id: 'crumbs', type: 'breadcrumb' }, { id: 'body', type: 'stack', children: [{ id: 'toc', type: 'toc' }, { id: 'p', type: 'text' }] }] }
+    const chrome = chromeOf(layout, page, (t) => t === 'breadcrumb' || t === 'toc')
+    expect([...chrome.skip].sort()).toEqual(['bar', 'crumbs', 'foot', 'side', 'toc'])
+    expect([...chrome.through].sort()).toEqual(['main', 'shell'])
+    expect(chromeOf(undefined, { blocks: 'x' }, () => true)).toEqual({ skip: new Set(), through: new Set() })
   })
 })
