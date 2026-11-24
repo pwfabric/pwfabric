@@ -3,7 +3,7 @@ Business Source License 1.1
 Parameters
 
 Licensor:             PhiMajor Solutions
-Licensed Work:        @pwfabric/core 3.5.1
+Licensed Work:        @pwfabric/core 3.6.0
                       The Licensed Work is (c) 2026 PhiMajor Solutions.
 Additional Use Grant: You may make production use of the Licensed Work,
                       including building applications with it and hosting
@@ -12,7 +12,7 @@ Additional Use Grant: You may make production use of the Licensed Work,
                       to third parties as a hosted or managed service where
                       the service gives them substantially the functionality
                       of the Licensed Work.
-Change Date:          2030-11-23
+Change Date:          2030-11-24
 Change License:       Apache License, Version 2.0
 
 For information about alternative licensing arrangements for the Licensed

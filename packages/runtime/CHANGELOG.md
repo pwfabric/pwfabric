@@ -1,5 +1,9 @@
 # @pwfabric/runtime
 
+## 3.6.0
+
+- No changes; released with the other packages at 3.6.0.
+
 ## 3.5.1
 
 - No changes; released with the other packages at 3.5.1.

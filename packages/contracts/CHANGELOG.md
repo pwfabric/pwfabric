@@ -1,6 +1,6 @@
 # @pwfabric/contracts
 
-## Unreleased
+## 3.6.0
 
 - Added: `definition.messages` on a block manifest (`AtomBlockDefinitionMetadataSchema`, `BlockMessage`): the `ui.*` words the block reads of its own, each `{ id, prop?, when? }`.
 
