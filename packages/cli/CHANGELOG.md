@@ -1,5 +1,9 @@
 # @pwfabric/cli
 
+## 3.6.1
+
+- Fixed: `pwf add @pwpack/<name>` (an open pack's two-part id, as the PhiWebs source list gives it) installs the pack instead of failing with "no such file or folder". Any argument starting with `@pwpack/` (optional `@<version>`) is a pack id, matched exactly against the workspace's source list; anything else is a path.
+
 ## 3.6.0
 
 - Changed: `llms-full.txt` leaves chrome out: the layout's blocks that hold no part of the page (its header, footer, a sidebar beside the slot) and every block whose manifest declares the `chrome` trait, wherever it is placed, are not written, so each page's words appear once. Each heading carries the anchor the page renders for it (`## Plans {#plans}`).

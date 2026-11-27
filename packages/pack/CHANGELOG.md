@@ -1,5 +1,9 @@
 # @pwfabric/pack
 
+## 3.6.1
+
+- No changes; released with the other packages at 3.6.1.
+
 ## 3.6.0
 
 - Added: `blockMessagesOf(manifest)` and `placedBlockWords(sources)`: the `ui.*` words a block manifest declares in `definition.messages`, and those the app's placed blocks read (pages and the layout), skipping a word whose replacing prop the receipt sets, or whose `when` prop (or its default) is off.
