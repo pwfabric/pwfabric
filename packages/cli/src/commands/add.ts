@@ -135,8 +135,8 @@ export interface AddPackDeps extends StoreOptions {
 
 /**
  * Installs the pack `arg` names into the project at `root`. A path (absolute,
- * or relative to `base`) that exists is a local `.pwpack` or folder; else
- * `@pwpack/<handle>/<name>[@<version>]` is a pack of the signed-in PhiWebs
+ * or relative to `base`) that exists is a local `.pwpack` or folder; else an
+ * argument starting with `@pwpack/` (optional `@<version>`) is a pack of the signed-in PhiWebs
  * workspace, downloaded, checked against its sha256 and installed the same way.
  * Without `deps` there is no session to read: a pack id fails as signed out.
  */

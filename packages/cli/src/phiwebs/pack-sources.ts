@@ -18,8 +18,13 @@ export const PACK_SOURCES_PATH = '/api/pwpacks/sources'
 
 const TIMEOUT_MS = 5 * 60_000
 
-/** `@pwpack/<handle>/<name>` with an optional `@<version>`; handle and name kebab-case. */
-const PACK_REF = /^(@pwpack\/[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*)(?:@([0-9A-Za-z.+-]+))?$/
+/**
+ * Any argument that starts with `@pwpack/` is a PhiWebs pack id, with an optional
+ * `@<version>`. The id is not split into parts: open packs are `@pwpack/<name>`,
+ * published ones `@pwpack/<handle>/<name>`, and the server's source list is the
+ * only judge of which ids exist (matched exactly).
+ */
+const PACK_REF = /^(@pwpack\/[^@\s]+)(?:@([0-9A-Za-z.+-]+))?$/
 
 export interface PackRef {
   readonly id: string
