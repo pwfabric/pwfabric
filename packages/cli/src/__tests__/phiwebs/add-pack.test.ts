@@ -183,9 +183,15 @@ describe('pwf add <PhiWebs pack id>', () => {
 
     expect(parsePackRef(ID)).toEqual({ id: ID })
     expect(parsePackRef(`${ID}@1.2.0-rc.1`)).toEqual({ id: ID, version: '1.2.0-rc.1' })
-    expect(parsePackRef('@pwpack/cards')).toBeNull()
+    // The open packs' two-part id, as list_pack_sources gives it.
+    expect(parsePackRef('@pwpack/foundation')).toEqual({ id: '@pwpack/foundation' })
+    expect(parsePackRef('@pwpack/foundation@1.2.0')).toEqual({ id: '@pwpack/foundation', version: '1.2.0' })
+    expect(parsePackRef('@pwpack/acme/booking')).toEqual({ id: '@pwpack/acme/booking' })
+    // Not an id: a path, or nothing after the prefix.
     expect(parsePackRef('./cards.pwpack')).toBeNull()
-    expect(parsePackRef('@pwpack/Acme/cards')).toBeNull()
+    expect(parsePackRef('cards.pwpack')).toBeNull()
+    expect(parsePackRef('@pwpack/')).toBeNull()
+    expect(parsePackRef('@other/cards')).toBeNull()
   })
 })
 
