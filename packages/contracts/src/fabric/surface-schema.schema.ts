@@ -2,6 +2,7 @@
  * The zod schemas of `surface-schema.ts` (tooling only: `@pwfabric/<pkg>/schemas`).
  * The package root is zod-free, so the visitor bundle never loads zod.
  */
+import { BLOCK_NAME, BLOCK_TOKEN_NAME } from './block-tokens.js'
 import { FONT_FALLBACKS } from './surface-theme.js'
 import { z } from 'zod'
 import { SurfaceAppearanceRefSchema } from './surface-appearance.schema.js'
@@ -78,6 +79,10 @@ export const blockSnapshotSchema: z.ZodType<any> = z.lazy(() =>
     // validated snapshot lost its list. Additive and optional — a snapshot
     // without it parses exactly as before.
     repeat: z.string().optional(),
+    // Page furniture (receipt §2): this one placement is chrome — llms-full.txt and
+    // anything built from the page's text leave it out, as they leave out a block
+    // whose type declares the `chrome` trait. Without it here z.object would strip it.
+    chrome: z.boolean().optional(),
     children: z.array(blockSnapshotSchema).optional(),
   })
 )
@@ -177,9 +182,25 @@ export const surfaceThemeSchema = z
         bodyLineHeight: z.string().optional(),
         fontSizeSm: z.string().optional(),
         fontSizeXs: z.string().optional(),
+        headingWeightH1: z.string().optional(),
+        headingLineHeightH1: z.string().optional(),
+        headingWeightH2: z.string().optional(),
+        headingLineHeightH2: z.string().optional(),
+        headingWeightH3: z.string().optional(),
+        headingLineHeightH3: z.string().optional(),
+        headingWeightH4: z.string().optional(),
+        headingLineHeightH4: z.string().optional(),
+        headingWeightH5: z.string().optional(),
+        headingLineHeightH5: z.string().optional(),
+        headingWeightH6: z.string().optional(),
+        headingLineHeightH6: z.string().optional(),
       })
       .optional(),
     spacing: z.object({ base: z.string().optional() }).optional(),
+    // Block look tokens by block name (appearance §3.4); without it here z.object would strip them.
+    blocks: z
+      .record(z.string().regex(BLOCK_NAME), z.record(z.string().regex(BLOCK_TOKEN_NAME), z.string().min(1).regex(/^[^;{}<>\n\r]+$/)))
+      .optional(),
     layout: z
       .object({
         gap: z.string().optional(),

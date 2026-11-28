@@ -211,6 +211,10 @@ describe('deriveDarkTheme', () => {
       textMuted: '#64748b',
       border: '#e2e8f0',
       primary: '#4f46e5',
+      // A palette of its own (bright red and green that read on the dark page as
+      // they are), not the fallback's.
+      error: '#ef4444',
+      success: '#22c55e',
     },
   }
 

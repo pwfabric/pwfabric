@@ -155,6 +155,15 @@ export interface Block {
    */
   readonly repeat?: string
 
+  /**
+   * This placement is page furniture, not the page's text: "Last updated", "Edit
+   * this page", a copy button. llms-full.txt (and anything built from the page's
+   * text) leaves it and its children out — what the `chrome` trait does for every
+   * block of a type, for this one block. A layout block that holds no part of the
+   * page is chrome already; one that holds the page slot never is.
+   */
+  readonly chrome?: boolean
+
   /** Optional nested children */
   readonly children?: readonly Block[]
 }

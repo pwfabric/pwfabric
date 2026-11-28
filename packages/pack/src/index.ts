@@ -103,6 +103,15 @@ export {
   type NamedBlock,
 } from './block-props.js'
 export {
+  THEME_BLOCK_UNKNOWN,
+  THEME_BLOCK_TOKEN_UNKNOWN,
+  THEME_BLOCK_TOKEN_TYPE,
+  THEME_BLOCK_TOKEN_NO_DARK,
+  blockTokensCatalog,
+  checkThemeBlocks,
+} from './theme-blocks.js'
+export { THEME_APP_UNREACHED, THEME_LITERAL_LOOK, checkThemeReach, isLiteralLook } from './theme-reach.js'
+export {
   BLOCK_ID_DUPLICATE,
   checkAmbiguousBlockTypes,
   blockTypeFirstUses,

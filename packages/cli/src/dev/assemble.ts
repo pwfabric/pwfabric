@@ -12,6 +12,7 @@
  * be pinned). Nothing is fetched; every input is on disk.
  */
 import { join } from 'node:path'
+import { checkThemeBlocks, checkThemeReach } from '@pwfabric/pack'
 import { ambiguousBlockTypeMessage, BLOCK_TYPE_AMBIGUOUS, blockPropDescriptors, blockTypeFirstUses, blockTypeNames, checkBlockIds, resolveBlockType, checkReceiptBlockProps, hashPack, publicReservedReason, publicScriptReason, unknownBlockTypeIssue } from '@pwfabric/pack'
 import {
   addressTable,
@@ -30,6 +31,7 @@ import { atomKindMeta } from '@pwfabric/contracts/pack'
 import { safeParseBlockOrigins } from '@pwfabric/contracts/schemas'
 import { compileProviderBundle, compileSources, createCompileCache, providerFacetOf, type CompileCache, type CompiledAtom } from './compile.js'
 import { hasErrors, sortDiagnostics, type AssembleDiagnostic } from './diagnostics.js'
+import { connectionEngineOf, withConnectionPaths } from './connection-paths.js'
 import {
   blockTypesOf,
   buildConnections,
@@ -84,6 +86,7 @@ import {
   namedThemeOf,
   resolveAppearance,
   resolvePageAppearance,
+  resolveThemeBases,
   themeAtomOf,
   type PageAppearance,
   type PageTheme,
@@ -707,14 +710,16 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
   const atoms = await compileSources(all, cache)
 
   // ── themes ───────────────────────────────────────────────────────
-  const themes: ThemeAtom[] = []
+  const ownThemes: ThemeAtom[] = []
   for (const source of all) {
     for (const ref of source.validation.atoms) {
       if (ref.kind !== 'ui-appearance') continue
       const theme = themeAtomOf(ref.id, jsonOf(source.folder, ref.relPath), source.label || source.id)
-      if (theme) themes.push(theme)
+      if (theme) ownThemes.push(theme)
     }
   }
+  // A theme that extends another is drawn with its base underneath (appearance §3.5).
+  const themes = resolveThemeBases(ownThemes, diagnostics)
   const appearance = withFallbackStacks(resolveAppearance(appearanceDoc, themes, diagnostics))
   const config = appearanceConfigOf(appearance)
   // FONT_FILES_MISSING of a pack's theme the app wears: validation judges the
@@ -769,6 +774,15 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
     if (!hit || 'ambiguous' in hit) continue
     const props = blockPropDescriptors(hit.atom.manifest)
     if (props) propCatalog.set(name, { atomId: hit.id, props })
+  }
+  // The theme's blocks group against the blocks' manifests (appearance §3.4): the
+  // app's own appearance and theme atoms, as `pwf validate` judges them. Warnings.
+  // Whether the app's theme reaches its pages (a page theme everywhere, fixed radii and shadows).
+  for (const issue of checkThemeReach(app.folder)) {
+    diagnostics.push({ severity: 'warning', code: issue.code, message: issue.message, ...(issue.path ? { path: issue.path } : {}) })
+  }
+  for (const issue of checkThemeBlocks(app.folder, all.map((src) => ({ folder: src.folder, atoms: src.validation.atoms, ...(src.label ? { label: src.label } : {}) })))) {
+    diagnostics.push({ severity: 'warning', code: issue.code, message: issue.message, ...(issue.path ? { path: issue.path } : {}) })
   }
   for (const page of [...pages, ...localed.pages, ...(layoutPage ? [layoutPage] : [])]) {
     for (const issue of checkReceiptBlockProps(page.receipt, propCatalog, page.path)) {
@@ -839,6 +853,23 @@ export async function assemblePwapp(root: string, options: AssembleOptions = {})
 
   // ── engines ──────────────────────────────────────────────────────
   const connections = buildConnections(connectionsDoc, diagnostics)
+  // Each connection's paths (connections.json `pageSources`), derived from what the pages call
+  // through it, so a host that holds its secret refuses every other path (connection-paths.ts).
+  if (connections) {
+    connections.connections = withConnectionPaths(
+      connections.connections,
+      // Every receipt a visitor can be served: the pages and each page's locale receipts.
+      [...pages, ...localed.pages].map((p) => ({ path: p.path, doc: p.receipt })),
+      layoutPage ? { path: layoutPage.path, doc: layoutPage.receipt } : undefined,
+      (name, conn) => {
+        const wanted = typeof conn['connector'] === 'string' ? conn['connector'] : name
+        const atom = atoms.find((a) => (a.kind === 'connector' || a.kind === 'provider') && a.manifest?.['connection'] === wanted)
+        // An engine source beside the manifest is code, whether or not it compiled (compile.ts).
+        return connectionEngineOf(conn, atom ? { manifest: atom.manifest, hasCode: Boolean(atom.code) || atom.status === 'failed' } : undefined)
+      },
+      diagnostics
+    )
+  }
   // In connection order; a provider facet's entry is filled once its vendor's module is built.
   const engineSlots: (EngineManifestEntry | undefined)[] = []
   // A compiled provider facet goes into its vendor's ONE module (compile.ts compileProviderBundle).

@@ -87,8 +87,9 @@ describe('mode policy, contrast level, brand assets', () => {
 })
 
 describe('status inks and status text tones', () => {
-  it('positive control: the default error red does NOT read as text on white', () => {
-    expect(ratio(DEFAULT_APPEARANCE_THEME.colors!.error!, '#ffffff')).toBeLessThan(4.5)
+  it('positive control: a bright error red (#ef4444) does NOT read as text on white', () => {
+    // The fallback's own red (#dc2626) reads as text; a theme's brighter one may not.
+    expect(ratio('#ef4444', '#ffffff')).toBeLessThan(4.5)
   })
 
   it('every on-<status> ink reads on its fill, in 12 palettes x 2 modes', () => {
@@ -210,15 +211,17 @@ describe('wider contrast findings', () => {
     const vars = surfaceThemeToCSS(full())
     // Positive control: the divider colour itself is far under the line.
     expect(ratio(DEFAULT_APPEARANCE_THEME.colors!.border!, '#ffffff')).toBeLessThan(3)
-    expect(ratio(vars['--pw-color-control-border']!, '#ffffff')).toBeGreaterThanOrEqual(3)
-    expect(ratio(vars['--pw-color-control-border']!, '#f8fafc')).toBeGreaterThanOrEqual(3)
+    // On the grounds it sits on: the page and the card.
+    expect(ratio(vars['--pw-color-control-border']!, DEFAULT_APPEARANCE_THEME.colors!.background!)).toBeGreaterThanOrEqual(3)
+    expect(ratio(vars['--pw-color-control-border']!, DEFAULT_APPEARANCE_THEME.colors!.card!)).toBeGreaterThanOrEqual(3)
     expect(themeContrastFindings(full(), { extended: true }).some((f) => f.group === 'control')).toBe(false)
   })
 
   it('high contrast raises the base lines too', () => {
-    // #64748b muted text on white is 4.76: AA passes, the high line does not.
-    expect(themeContrastFindings(full())).toEqual([])
-    const high = themeContrastFindings(full(), { contrast: 'high' })
+    // A paler muted text (#64748b on white is 4.76): AA passes, the high line does not.
+    const pale = full({ colors: { textMuted: '#64748b' } })
+    expect(themeContrastFindings(pale)).toEqual([])
+    const high = themeContrastFindings(pale, { contrast: 'high' })
     expect(high.find((f) => f.pair[0] === 'textMuted' && f.pair[1] === 'background')).toMatchObject({ min: 7 })
   })
 })

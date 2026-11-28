@@ -2,6 +2,7 @@
  * The zod schemas of `atom.ts` (tooling only: `@pwfabric/<pkg>/schemas`).
  * The package root is zod-free, so the visitor bundle never loads zod.
  */
+import { BLOCK_TOKEN_NAME, BLOCK_TOKEN_TYPES } from './block-tokens.js'
 import { z } from 'zod'
 import { surfaceThemeSchema } from './surface-schema.schema.js'
 import { ATOM_KINDS, BLOCK_ORIGIN_DIRECTIVES, BLOCK_ORIGIN_INVALID, BlockOriginDirective, BlockOrigins, BlockOriginsValidation, blockOriginProblem } from './atom.js'
@@ -120,6 +121,16 @@ export function safeParseBlockOrigins(input: unknown): BlockOriginsValidation {
 
 const traitNameSchema = z.string().regex(/^[a-z][a-z0-9-]*$/, 'trait names must be kebab-case')
 
+/** Schema twin of {@link BlockTokenDescriptor}: a look knob the block declares, with its type and default. */
+const blockTokenSchema = z
+  .object({
+    name: z.string().regex(BLOCK_TOKEN_NAME, 'token names are camelCase'),
+    type: z.enum(BLOCK_TOKEN_TYPES),
+    default: z.string().min(1),
+    description: z.string().min(1),
+  })
+  .strict()
+
 /** Schema twin of {@link BlockMessage}: a `ui.*` word the block reads, the prop that replaces it and the prop it is read under. */
 const blockMessageSchema = z
   .object({
@@ -140,6 +151,9 @@ export const AtomBlockDefinitionMetadataSchema = z
     allowedChildTraits: z.array(traitNameSchema).optional(),
     origins: BlockOriginsSchema.optional(),
     messages: z.array(blockMessageSchema).optional(),
+    // Look tokens (block-manifest `definition.tokens`): a theme sets them in
+    // `blocks.<name>`, the block reads `var(--pw-<name>-<kebab-token>, <default>)`.
+    tokens: z.array(blockTokenSchema).optional(),
   })
   .strict()
 
@@ -252,6 +266,9 @@ export const AtomFileManifestSchema = z
     // a ui-appearance atom's own dark variant (appearance.md): the tokens it
     // sets override the derived dark palette.
     darkTheme: surfaceThemeSchema.optional(),
+    // a ui-appearance atom may name the theme it builds on (appearance §3.5): its
+    // own token sets are laid over that theme's, so it writes only what differs.
+    extends: z.string().min(1).optional(),
     // connector/provider payload. `connection` + `configSchema`
     // describe data already in production; `scopes` is the new declaration.
     connection: z.string().min(1).optional(),

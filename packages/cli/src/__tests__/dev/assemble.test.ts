@@ -182,11 +182,12 @@ describe('assemblePwapp', () => {
     expect(lost?.path).toBe('app/surfaces/lost.receipt.json')
     expect(served('lost')['appearance']).toEqual({ use: 'theme-ocean' })
 
-    // The document's ground under <html data-pw-page="night">, light and dark; the app's stays first.
+    // The document's ground under <html data-pw-page="night">, and on its surfaces (the app's palette
+    // is written on [data-pw-surface] itself), light and dark; the app's stays first.
     const css = text(r.files.get(asset(r, 'theme')))
-    expect(css.indexOf(':root, [data-pw-surface] {')).toBeLessThan(css.indexOf(':root[data-pw-page="night"] {'))
-    expect(css).toMatch(/:root\[data-pw-page="night"\] \{[^}]*--pw-color-background: #0b1020;/)
-    expect(css).toMatch(/:root\[data-pw-page="night"\]\[data-pw-theme="dark"\] \{[^}]*--pw-color-background: #000000;/)
+    expect(css.indexOf(':root, [data-pw-surface] {')).toBeLessThan(css.indexOf(':root[data-pw-page="night"], :root[data-pw-page="night"] [data-pw-surface] {'))
+    expect(css).toMatch(/:root\[data-pw-page="night"\], :root\[data-pw-page="night"\] \[data-pw-surface\] \{[^}]*--pw-color-background: #0b1020;/)
+    expect(css).toMatch(/:root\[data-pw-page="night"\]\[data-pw-theme="dark"\],\n:root\[data-pw-page="night"\]\[data-pw-theme="dark"\] \[data-pw-surface\] \{[^}]*--pw-color-background: #000000;/)
     expect(css).not.toContain('data-pw-page="same"')
     // A family without files gets no stand-in: there is no font service to wait for.
     expect(css).not.toContain('Nunito Fallback')

@@ -25,6 +25,7 @@ import {
   type PlacedBlockWord,
   type PageReceipt,
 } from '@pwfabric/pack'
+import { checkThemeBlocks, checkThemeReach } from '@pwfabric/pack'
 import { assemblePage, isTitleTemplate, pluralProblems, PROVIDER_LABEL_METHODS, RENDERER_MESSAGE_IDS, RUNNER_MESSAGE_IDS } from '@pwfabric/runner'
 import { layoutSlotProblems, localesOf, PAGE_SLOT_TYPE } from '@pwfabric/contracts'
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
@@ -34,6 +35,10 @@ import { appearanceConfigOf } from '../../dev/theme.js'
 import { bodyFontOf, fontAssetsOf, themeFontsOf, unreadableMetricsMessage } from '../../dev/fonts.js'
 import { engineRangeDiagnostics, isRecord, jsonOf, loadSources, type LoadedSources } from '../../dev/sources.js'
 import { servedPageKeys } from '../../dev/envelope.js'
+import { connectionEngineOf, withConnectionPaths, type ConnectionEngine } from '../../dev/connection-paths.js'
+import { buildConnections } from '../../dev/envelope.js'
+import { resolveSiblingEntry } from '@pwfabric/contracts/pack'
+import type { AssembleDiagnostic } from '../../dev/diagnostics.js'
 import { readAuth, readEntities, readReceipt, readSeed, surfaceKeys, type AuthDeclaration } from '../../host/definitions.js'
 
 /**
@@ -488,6 +493,49 @@ export async function checkProps(root: string, identity: PackValidation['identit
   return propIssues(await atomSources(root, identity))
 }
 
+/**
+ * The paths each connection may be called on, judged as the build writes them
+ * (dev/connection-paths.ts): a path the build cannot derive and the author did
+ * not declare is an error naming the connection, an unused connection a warning.
+ */
+export function checkConnectionPaths(pack: PackFolder, sources: readonly BlockSource[]): PackIssue[] {
+  // The same inputs the build reads: the connections without credential-like keys …
+  const connections = buildConnections(jsonOf(pack, 'app/definitions/connections.json'), [])?.connections ?? []
+  if (connections.length === 0) return []
+  // … every page a visitor can be served (and its locale receipts), and the layout …
+  const identity = jsonOf(pack, 'pwpack.json')
+  const app = isRecord(identity) && isRecord(identity['app']) ? identity['app'] : {}
+  // No surfaceOrder (an invalid identity, reported elsewhere): judge every receipt.
+  const served = Array.isArray(app['surfaceOrder']) ? new Set(servedPageKeys(app as never).keys) : null
+  const receipts = [...pack.files.keys()]
+    .filter((p) => {
+      const m = /^app\/surfaces\/([^/.]+)(?:\.[^/.]+)?\.receipt\.json$/.exec(p)
+      return m !== null && (served === null || served.has(m[1]!))
+    })
+    .sort()
+    .map((path) => ({ path, doc: jsonOf(pack, path) }))
+  const layout = pack.files.has(LAYOUT_RECEIPT) ? { path: LAYOUT_RECEIPT, doc: jsonOf(pack, LAYOUT_RECEIPT) } : undefined
+  // … and the same engine rule (connectionEngineOf): code when an engine source sits beside the manifest.
+  const engineOf = (name: string, conn: Record<string, unknown>): ConnectionEngine | undefined => {
+    const wanted = typeof conn['connector'] === 'string' ? conn['connector'] : name
+    for (const source of sources) {
+      for (const ref of source.atoms) {
+        if (ref.kind !== 'connector' && ref.kind !== 'provider') continue
+        const manifest = jsonOf(source.folder, ref.relPath)
+        if (!isRecord(manifest) || manifest['connection'] !== wanted) continue
+        const sibling = resolveSiblingEntry(ref.kind, ref.relPath)
+        return connectionEngineOf(conn, { manifest, hasCode: Boolean(sibling && source.folder.files.has(sibling.enginePath)) })
+      }
+    }
+    return connectionEngineOf(conn, undefined)
+  }
+  const found: AssembleDiagnostic[] = []
+  withConnectionPaths(connections, receipts, layout, engineOf, found)
+  return found.map((d) => ({ severity: d.severity === 'error' ? 'error' : 'warning', code: d.code, message: d.message, ...(d.path ? { path: d.path } : {}) }))
+}
+
+const LAYOUT_RECEIPT = 'app/layout.receipt.json'
+
 function propIssues(sources: readonly BlockSource[]): PackIssue[] {
   const app = sources[0]
   if (!app) return []
@@ -581,7 +629,7 @@ export async function validateProject(root: string, pack: PackFolder): Promise<P
   const engineIssues: PackIssue[] = loaded
     ? engineRangeDiagnostics(loaded, engineVersion()).map((d) => ({ severity: 'error', code: d.code, message: d.message, ...(d.path ? { path: d.path } : {}) }))
     : []
-  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root, placedBlockWords(sources)), ...checkTitleTemplate(root), ...checkFavicon(root, pack), ...checkFontMetrics(root, pack), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...fieldIssues]
+  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root, placedBlockWords(sources)), ...checkTitleTemplate(root), ...checkFavicon(root, pack), ...checkFontMetrics(root, pack), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...(loaded ? checkThemeBlocks(pack, sources) : []), ...checkThemeReach(pack), ...(loaded ? checkConnectionPaths(pack, sources) : []), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 

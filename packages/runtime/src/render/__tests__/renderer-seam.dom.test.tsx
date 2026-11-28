@@ -77,6 +77,20 @@ describe('decoration seam — default (no renderBlockWrapper)', () => {
   })
 })
 
+describe('a pinned wrapper says so (data-pw-position)', () => {
+  it('position sticky or fixed, hoisted to the wrapper, is named on it in the first frame; any other is not', () => {
+    const at = (position?: string): Block => ({ ...textBlock, id: `t-${position ?? 'none'}`, ...(position ? { style: { position, top: '0', zIndex: 'var(--pw-z-sticky)' } } : {}) })
+    const surface: RenderableSurface = { blocks: [at('sticky'), at('fixed'), at('relative'), at()] }
+    const { container } = render(<SurfaceRenderer surface={surface} components={components} />)
+    const attr = (id: string): string | null => (container.querySelector(`[data-block-wrapper="${id}"]`) as HTMLElement).getAttribute('data-pw-position')
+    expect(attr('t-sticky')).toBe('sticky')
+    expect(attr('t-fixed')).toBe('fixed')
+    expect(attr('t-relative')).toBeNull()
+    // A z-index that names a sticky token is not a sticky block.
+    expect(attr('t-none')).toBeNull()
+  })
+})
+
 describe('decoration seam — decorator supplied', () => {
   it('invokes renderBlockWrapper per block, replaces the default div, and forwards the runtime-computed style', () => {
     const seen: BlockWrapperRenderArgs[] = []

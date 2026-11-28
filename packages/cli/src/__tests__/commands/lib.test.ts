@@ -71,13 +71,16 @@ describe('starter', () => {
       'blocks/text/text/component.tsx': '',
       'blocks/text/text/manifest.json': '{ not json',
       'blocks/control/button/component.tsx': '',
-      'blocks/control/button/manifest.json': '{"name":"button","definition":{"props":[{"name":"text"},7,{"name":3}]}}',
+      'blocks/control/button/manifest.json': '{"name":"button","definition":{"props":[{"name":"text"},7,{"name":3}],"tokens":[{"name":"radius","type":"length","default":"6px","description":"Corner."},{"name":"bad-name","type":"length","default":"1px","description":"x"}]}}',
       'appearance/dark/manifest.json': '[]',
       'appearance/b-light/manifest.json': '{"id":"b-light"}',
     })
     const catalog = catalogOf(pack, validatePack(pack))
     expect(catalog.blocks.map((b) => b.type).sort()).toEqual(['button', 'text', 'title'])
     expect(catalog.blocks.find((b) => b.type === 'button')?.props).toEqual(['text'])
+    // Its look tokens by name (describe-project lists them); a malformed one is left out.
+    expect(catalog.blocks.find((b) => b.type === 'button')?.tokens).toEqual(['radius'])
+    expect(catalog.blocks.find((b) => b.type === 'title')?.tokens).toBeUndefined()
     expect(starterTheme(catalog)).toBe('b-light')
     const blocks = starterBlocks(catalog, 'My App')
     expect(blocks).toEqual([

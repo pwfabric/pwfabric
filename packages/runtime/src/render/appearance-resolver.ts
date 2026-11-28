@@ -14,6 +14,7 @@
 import type { SurfaceAppearanceRef, SurfaceTheme } from '@pwfabric/contracts'
 import {
   DEFAULT_APPEARANCE_THEME,
+  extraColorVars,
   mergeSurfaceThemes,
   resolveDarkTheme,
   resolveAppearanceMode,
@@ -80,7 +81,14 @@ export function resolveAppearanceDarkVars(
     cfg?.theme as SurfaceTheme | undefined
   )
   const dark = resolveDarkTheme(light, projectDarkTheme, cfg?.darkTheme as SurfaceTheme | undefined)
-  return surfaceThemeToCSS(dark, undefined, undefined, { contrast: resolveAppearanceMode(cfg).contrast })
+  const vars = surfaceThemeToCSS(dark, undefined, undefined, { contrast: resolveAppearanceMode(cfg).contrast })
+  // A block colour the light sets and the dark does not is reset in dark: the light
+  // value is written inline on the same surface and would otherwise stay (a dark
+  // heading on the dark ground). Custom styleVariables are the author's, untouched.
+  for (const name of Object.keys(extraColorVars(light.colors as Record<string, string | undefined> | undefined))) {
+    if (!(name in vars)) vars[name] = 'initial'
+  }
+  return vars
 }
 
 /**

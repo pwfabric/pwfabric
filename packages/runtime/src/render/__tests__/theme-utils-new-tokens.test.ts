@@ -326,8 +326,9 @@ describe('surfaceThemeToCSS — full 28-token theme', () => {
 
     // Assert — the token vars, the derived colour roles, the on-card ink tokens
     // (a card colour is present), on-<status> and <status>-ink for the four
-    // statuses, the control edge, the inverse set and the h1-h5 scale
-    expect(Object.keys(result)).toHaveLength(55)
+    // statuses, the control edge, the inverse set, the h1-h5 scale and the per-level
+    // heading weight and line height (h1-h6, 12)
+    expect(Object.keys(result)).toHaveLength(67)
   })
 
   it('should generate exactly 27 token vars when all tokens are set but headingFontFamily is omitted', () => {
@@ -378,6 +379,6 @@ describe('surfaceThemeToCSS — full 28-token theme', () => {
     const result = surfaceThemeToCSS(theme)
 
     // Assert — the same set, one token var fewer (no headingFontFamily)
-    expect(Object.keys(result)).toHaveLength(54)
+    expect(Object.keys(result)).toHaveLength(66)
   })
 })

@@ -3,6 +3,7 @@
  * the block types and themes the foundation pack actually carries.
  */
 import type { PackFolder, PackValidation } from '@pwfabric/pack'
+import { blockTokenDescriptors } from '@pwfabric/contracts'
 import { stripBom } from './identity.js'
 
 export interface FoundationBlock {
@@ -14,6 +15,8 @@ export interface FoundationBlock {
   readonly props: readonly string[]
   /** The manifest's `knowledge.purpose`, when it has one. */
   readonly purpose?: string
+  /** The look tokens the manifest declares (`definition.tokens`), by name. */
+  readonly tokens?: readonly string[]
 }
 
 export interface FoundationCatalog {
@@ -57,7 +60,8 @@ export function catalogOf(pack: PackFolder, validation: PackValidation): Foundat
         )
       : []
     const purpose = (manifest?.knowledge as { purpose?: unknown } | undefined)?.purpose
-    blocks.push({ type: name, id: atom.id, props, ...(typeof purpose === 'string' ? { purpose } : {}) })
+    const tokens = blockTokenDescriptors(manifest).map((t) => t.name)
+    blocks.push({ type: name, id: atom.id, props, ...(typeof purpose === 'string' ? { purpose } : {}), ...(tokens.length ? { tokens } : {}) })
   }
   return { blocks, themes }
 }

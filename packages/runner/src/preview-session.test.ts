@@ -205,12 +205,12 @@ describe('project theme', () => {
   it('keeps the new theme for later surface updates', async () => {
     const handle = { update: vi.fn() }
     const { send, nonce } = started({}, page({ handle }))
-    send({ type: PREVIEW_MESSAGE.projectTheme, nonce, theme: { use: 'theme-forest' } })
+    send({ type: PREVIEW_MESSAGE.projectTheme, nonce, theme: { use: 'theme-paper' } })
     send({ type: PREVIEW_MESSAGE.surfaceUpdate, nonce, pageKey: 'home', surface: { blocks: [] } })
     await flush()
     await flush()
     const last = handle.update.mock.calls.at(-1)![0] as { appearance: unknown }
-    expect(last.appearance).toEqual(projectAppearanceRef({ use: 'theme-forest' }))
+    expect(last.appearance).toEqual(projectAppearanceRef({ use: 'theme-paper' }))
   })
 })
 
