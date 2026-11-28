@@ -1,5 +1,13 @@
 # @pwfabric/cli
 
+## 3.7.0
+
+- Added: every build writes each connection’s `config.pageSources` in `pwpack/connections.json` — the paths and verbs the app calls it with, derived from the entity sources that name it (the engine template path with GET and HEAD; POST, DELETE where the app creates or deletes; a declared pre-flight with GET), so a host that holds the connection’s secret can refuse every other path. A connection no page calls gets `[]` (`CONNECTION_UNUSED`). A path the build cannot derive — a run-time template part, a query that rebinds it, an empty value, an engine that is code — is an error naming the connection (`CONNECTION_PATHS_UNDERIVED`) unless the author declares `pageSources`; a declared list must cover every derivable path (`CONNECTION_PATH_UNDECLARED`) and hold no empty path (`CONNECTION_PAGE_SOURCES_INVALID`). The same in `pwf validate`.
+- Added: `pwf validate` and the build report the theme `blocks` and theme-reach warnings; `pwf_describe_block` lists a block’s look tokens, `pwf_describe_project` their names.
+- Added: a theme atom’s `extends` is resolved (its base laid underneath, light over light, dark over dark); a missing base or a cycle is a warning.
+- Changed: a page that wears its own theme has its palette on its surfaces too, and resets the app’s block colours, so a page’s own dark theme no longer shows the app’s dark heading.
+- Changed: `llms.txt` / `llms-full.txt` leave out a block placed `chrome: true`.
+
 ## 3.6.1
 
 - Fixed: `pwf add @pwpack/<name>` (an open pack's two-part id, as the PhiWebs source list gives it) installs the pack instead of failing with "no such file or folder". Any argument starting with `@pwpack/` (optional `@<version>`) is a pack id, matched exactly against the workspace's source list; anything else is a path.

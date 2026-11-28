@@ -1,5 +1,10 @@
 # @pwfabric/pack
 
+## 3.7.0
+
+- Added: `checkThemeBlocks` — a theme’s `blocks` judged against the blocks’ manifests: `THEME_BLOCK_UNKNOWN`, `THEME_BLOCK_TOKEN_UNKNOWN` (with the nearest name), `THEME_BLOCK_TOKEN_TYPE`, `THEME_BLOCK_TOKEN_NO_DARK`. Warnings.
+- Added: `checkThemeReach` — `THEME_APP_UNREACHED` (every page names another theme, so the app’s is never drawn) and `THEME_LITERAL_LOOK` (a corner radius or shadow fixed in a page, which no theme can change). Warnings.
+
 ## 3.6.1
 
 - No changes; released with the other packages at 3.6.1.

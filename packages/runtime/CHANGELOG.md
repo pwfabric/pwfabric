@@ -1,5 +1,10 @@
 # @pwfabric/runtime
 
+## 3.7.0
+
+- Added: a wrapper pinned by its style (`position: sticky | fixed`) carries `data-pw-position` from the first frame, for CSS and scripts.
+- Fixed: a theme’s own dark no longer inherits the block colours its light sets (a dark heading on the dark ground): each one the dark does not restate is reset in dark. Custom `styleVariables` are left as written.
+
 ## 3.6.1
 
 - No changes; released with the other packages at 3.6.1.

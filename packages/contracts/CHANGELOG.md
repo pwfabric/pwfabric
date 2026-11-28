@@ -1,5 +1,14 @@
 # @pwfabric/contracts
 
+## 3.7.0
+
+- Added: block look tokens. A block manifest declares its own look knobs in `definition.tokens` (`{ name, type, default, description }`; `color`, `length`, `number`, `fontWeight`, `lineHeight`); a theme sets them in `blocks.<block>.<token>` (dark in `darkTheme.blocks`), emitted as `--pw-<block>-<kebab-token>` and merged per block, per token (`blockTokenDescriptors`, `blockTokenValueProblem`, `blockTokenVars`, `mergeThemeBlocks`). A length carries a unit (a bare `0` is refused: it breaks inside `calc()`); a value that could leave its declaration (a backslash, an unbalanced bracket or quote) is never emitted; block and token names are checked and merged into null-prototype objects.
+- Added: typography per heading level, `headingWeightH1…H6` and `headingLineHeightH1…H6` (`--pw-font-weight-h<n>`, `--pw-line-height-h<n>`); an unset level follows the heading weight / line height.
+- Added: a `ui-appearance` atom may name the theme it builds on in `extends`, and write only what differs.
+- Changed: a theme layer that states its own `colors.background` is a new palette — the lower layers’ block colours (`heading`, `link`, `codeSurface`, …) do not reach it (`mergeColorLayers`); the cascade resets each dropped one with `initial`, so a dark page no longer draws an app’s dark heading.
+- Changed: the built-in fallback theme (`DEFAULT_APPEARANCE_THEME`) is foundation’s `theme-base`: neutral grey and one blue `#2563eb`, system sans, 6px corners, light shadows (was indigo `#4f46e5` and Inter). An app that names no theme draws as one that wears the base.
+- Added: `chrome` on a placed block (page chrome, left out of the llms files).
+
 ## 3.6.1
 
 - No changes; released with the other packages at 3.6.1.
