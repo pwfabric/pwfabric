@@ -47,7 +47,7 @@
   },
   "peerDependencies": {},
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.7",
     "@vitest/coverage-v8": "^4.1.12",
     "jsdom": "^26.0.0",
     "typescript": "^5.4.0",
