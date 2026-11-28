@@ -58,9 +58,9 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
+    "@types/react": "^19.3.1",
     "@vitest/coverage-v8": "^4.1.12",
-    "react": "^19.0.0",
+    "react": "^19.3.1",
     "typescript": "^5.4.0",
     "vitest": "^4.1.12",
     "zod": "^4.6.7"
