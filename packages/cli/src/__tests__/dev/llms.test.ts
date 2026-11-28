@@ -258,4 +258,18 @@ describe('chromeOf', () => {
     expect([...chrome.through].sort()).toEqual(['main', 'shell'])
     expect(chromeOf(undefined, { blocks: 'x' }, () => true)).toEqual({ skip: new Set(), through: new Set() })
   })
+
+  it('a block placed with chrome: true is chrome, with its children; a layout block that holds the page never is', () => {
+    const layout = { blocks: [{ id: 'shell', type: 'stack', chrome: true, children: [{ type: 'pw:page' }] }] }
+    const page = {
+      blocks: [
+        { id: 'body', type: 'prose' },
+        { id: 'updated', type: 'text', chrome: true },
+        { id: 'box', type: 'stack', children: [{ id: 'copy', type: 'copy-button', chrome: true }, { id: 'note', type: 'text', chrome: false }] },
+      ],
+    }
+    const chrome = chromeOf(layout, page, () => false)
+    expect([...chrome.skip].sort()).toEqual(['copy', 'updated'])
+    expect([...chrome.through]).toEqual(['shell'])
+  })
 })

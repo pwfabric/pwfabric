@@ -215,7 +215,20 @@ function baseWrapperProps(
     // but with a separate job — the one marker that tells the wrapper apart
     // from the component root.
     'data-block-wrapper': block.id,
+    ...pinnedAttr(layoutStyle),
   }
+}
+
+/**
+ * `data-pw-position` on a wrapper the block's style pins (`position: sticky` or
+ * `fixed`, hoisted here from block.style). The block itself no longer carries the
+ * position, so it cannot know it is pinned before it hydrates and measures; the
+ * attribute says so in the first frame, for CSS (a sticky bar's anchor offset:
+ * `[data-pw-position] > [data-pw-navbar]`) as well as for scripts.
+ */
+export function pinnedAttr(style: React.CSSProperties | undefined): { 'data-pw-position'?: string } {
+  const position = style?.position
+  return position === 'sticky' || position === 'fixed' ? { 'data-pw-position': position } : {}
 }
 
 function emitBlockWrapper(

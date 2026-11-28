@@ -60,6 +60,7 @@ export * from './surface-theme.js'
 // Appearance cascade — the single theme→CSS implementation.
 // Consumed by the renderer, the theme exporter and the composer.
 export * from './appearance-cascade.js'
+export * from './block-tokens.js'
 
 // Canonical block type
 export * from './block.js'

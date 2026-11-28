@@ -151,8 +151,9 @@ describe('surfaceThemeToCSS', () => {
     const result = surfaceThemeToCSS(theme)
     // The token vars, the derived colour roles, the on-card ink tokens (a card
     // colour is present), on-<status> and <status>-ink for error and success,
-    // the control edge, the inverse set and the h1-h5 scale
-    expect(Object.keys(result)).toHaveLength(39)
+    // the control edge, the inverse set, the h1-h5 scale and the per-level
+    // heading weight and line height (h1-h6, 12)
+    expect(Object.keys(result)).toHaveLength(51)
     expect(result['--pw-color-primary']).toBe('#6366f1')
     expect(result['--pw-border-radius']).toBe('0.375rem')
     expect(result['--pw-font-family']).toBe('Inter, sans-serif')
@@ -189,7 +190,7 @@ describe('surfaceThemeToCSS', () => {
     }
     const result = surfaceThemeToCSS(theme)
     // The same set plus the heading font family
-    expect(Object.keys(result)).toHaveLength(40)
+    expect(Object.keys(result)).toHaveLength(52)
     expect(result['--pw-font-family-heading']).toBe('Georgia, serif')
   })
 

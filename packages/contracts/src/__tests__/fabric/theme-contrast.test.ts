@@ -141,7 +141,8 @@ describe('the focus ring clears 3:1 on page and card', () => {
 
   it('leaves a ring that already clears 3:1 untouched', () => {
     expect(surfaceThemeToCSS(PRESETS.forest!)['--pw-focus-ring-color']).toBe('#1a9447')
-    expect(surfaceThemeToCSS(DEFAULT_APPEARANCE_THEME)['--pw-focus-ring-color']).toBe('#4f46e5')
+    // The fallback's ring is its blue (#2563eb, 5.17:1 on white).
+    expect(surfaceThemeToCSS(DEFAULT_APPEARANCE_THEME)['--pw-focus-ring-color']).toBe('#2563eb')
   })
 
   it('emits the ring as written when the theme has no ground to measure against', () => {

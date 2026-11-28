@@ -19,6 +19,7 @@
  * @module @pwfabric/contracts/fabric/appearance-cascade
  */
 
+import { blockTokenVars, isContainedCssValue, mergeThemeBlocks, type SurfaceThemeBlocks } from './block-tokens.js'
 import type { SurfaceTheme, SurfaceThemeColors } from './surface-theme.js'
 import type { AppearanceContrast } from './surface-appearance.js'
 
@@ -169,9 +170,6 @@ const NAMED_COLORS: ReadonlySet<string> = new Set([
 /** A block colour name: camelCase letters and digits. */
 const BLOCK_COLOR_NAME = /^[a-z][a-zA-Z0-9]*$/
 
-/** A value that cannot leave its declaration (no `;`, braces, angle brackets or newlines). */
-const SAFE_CSS_VALUE = /^[^;{}<>\n\r]+$/
-
 /**
  * A THEME MAY CARRY EXTRA BLOCK TOKENS. A block that paints a surface the
  * cascade has no name for — a code block's surface, header, text, muted text
@@ -185,8 +183,32 @@ export function extraColorVars(colors: Readonly<Record<string, string | undefine
   const out: Record<string, string> = {}
   for (const [name, value] of Object.entries(colors ?? {})) {
     if (NAMED_COLORS.has(name) || !BLOCK_COLOR_NAME.test(name)) continue
-    if (typeof value !== 'string' || !SAFE_CSS_VALUE.test(value.trim())) continue
+    if (typeof value !== 'string' || !isContainedCssValue(value.trim())) continue
     out[`--pw-color-${name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()}`] = value.trim()
+  }
+  return out
+}
+
+/**
+ * Merge `colors` groups, later layers winning — except that a layer which states
+ * its own ground (`background`) is a new palette: the EXTRA colours a lower layer
+ * set (`heading`, `link`, `codeSurface`, `tableBorder`, …) do not reach it unless
+ * it sets them too. They were chosen for the lower layer's ground; carried onto
+ * another one, a dark heading set by an app theme drew invisible on a page's own
+ * dark theme. Left unset, each falls back to what the layer's own colours derive
+ * (heading → text, link → the primary's ink). The thirteen named colours merge
+ * as before.
+ */
+export function mergeColorLayers(
+  ...layers: ReadonlyArray<Readonly<Record<string, string | undefined>> | undefined>
+): Record<string, string | undefined> {
+  let out: Record<string, string | undefined> = {}
+  for (const layer of layers) {
+    if (!layer) continue
+    if (typeof layer['background'] === 'string') {
+      out = Object.fromEntries(Object.entries(out).filter(([name]) => NAMED_COLORS.has(name)))
+    }
+    out = { ...out, ...layer }
   }
   return out
 }
@@ -207,9 +229,10 @@ export function surfaceThemeToCSS(
   // own override. A surface that hasn't touched a given token inherits the
   // project's; one that has, keeps winning. Omitting projectTheme reproduces
   // the exact pre-Stage-2 two-layer behaviour (defaults → surface only).
+  const mergedBlocks = defaults ? mergeThemeBlocks(defaults.blocks, projectTheme?.blocks, theme?.blocks) : undefined
   const merged: SurfaceTheme | undefined = defaults
     ? {
-        colors: { ...defaults.colors, ...projectTheme?.colors, ...theme?.colors },
+        colors: mergeColorLayers(defaults.colors, projectTheme?.colors, theme?.colors) as NonNullable<SurfaceTheme['colors']>,
         border: { ...defaults.border, ...projectTheme?.border, ...theme?.border },
         typography: { ...defaults.typography, ...projectTheme?.typography, ...theme?.typography },
         spacing: { ...defaults.spacing, ...projectTheme?.spacing, ...theme?.spacing },
@@ -218,6 +241,7 @@ export function surfaceThemeToCSS(
         layout: { ...defaults.layout, ...projectTheme?.layout, ...theme?.layout },
         focus: { ...defaults.focus, ...projectTheme?.focus, ...theme?.focus },
         zIndex: { ...defaults.zIndex, ...projectTheme?.zIndex, ...theme?.zIndex },
+        ...(mergedBlocks ? { blocks: mergedBlocks as SurfaceThemeBlocks } : {}),
       }
     : theme
 
@@ -443,6 +467,13 @@ export function surfaceThemeToCSS(
       ['h5', typography.fontSizeH5, 'var(--pw-font-size-lg, 1.125rem)'],
     ]
     for (const [level, stated, derived] of steps) vars[`--pw-font-size-${level}`] = stated ?? derived
+    // Weight and line height per level: a stated one wins, an unstated one follows the
+    // heading weight / line height, so a theme that never names them draws as before.
+    const t = typography as Record<string, string | undefined>
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      vars[`--pw-font-weight-h${n}`] = t[`headingWeightH${n}`] ?? 'var(--pw-font-weight-heading)'
+      vars[`--pw-line-height-h${n}`] = t[`headingLineHeightH${n}`] ?? 'var(--pw-line-height-heading)'
+    }
   }
 
   // Spacing tokens
@@ -509,6 +540,17 @@ export function surfaceThemeToCSS(
   // Block colours the cascade has no name for, last: a token it emits or
   // derives above keeps its value.
   for (const [name, value] of Object.entries(extraColorVars(colors))) vars[name] ??= value
+  // A block colour a lower layer set and this one dropped (it states its own
+  // ground, §3.1) is RESET, not just left out: the lower layer's value is also
+  // written on an outer element (the app's theme on :root), and a custom property
+  // inherits. `initial` makes it guaranteed-invalid, so each block falls back to
+  // its own default (a heading to the text colour).
+  if (defaults) {
+    const lower = { ...extraColorVars(defaults.colors), ...extraColorVars(projectTheme?.colors) }
+    for (const name of Object.keys(lower)) if (!(name in vars)) vars[name] = 'initial'
+  }
+  // Block look tokens (appearance §3.4): --pw-<block>-<kebab-token>.
+  for (const [name, value] of Object.entries(blockTokenVars(merged.blocks))) vars[name] ??= value
 
   return vars
 }
@@ -864,7 +906,14 @@ export function mergeSurfaceThemes(...layers: ReadonlyArray<SurfaceTheme | undef
     for (const [key, value] of Object.entries(layer as Record<string, unknown>)) {
       if (value === undefined) continue
       const prev = out[key]
-      out[key] = isGroup(value) ? { ...(isGroup(prev) ? prev : {}), ...value } : value
+      out[key] =
+        key === 'blocks'
+          ? mergeThemeBlocks(prev, value)
+          : key === 'colors' && isGroup(value)
+            ? mergeColorLayers(isGroup(prev) ? (prev as Record<string, string>) : undefined, value as Record<string, string>)
+            : isGroup(value)
+            ? { ...(isGroup(prev) ? prev : {}), ...value }
+            : value
     }
   }
   return out as SurfaceTheme

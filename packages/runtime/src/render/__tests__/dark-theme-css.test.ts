@@ -199,3 +199,14 @@ describe('color-scheme follows the dark palette', () => {
     expect(buildDarkThemeCss(vars, 's1', 'light')).toBe('')
   })
 })
+
+describe('a surface’s own dark does not inherit its light block colours', () => {
+  const config = { theme: { colors: { background: '#ffffff', heading: '#111111' } }, darkTheme: { colors: { background: '#0b0b0b' } } }
+  it('a block colour the light sets and the dark does not is reset in dark', () => {
+    expect(resolveAppearanceDarkVars({ config } as never)['--pw-color-heading']).toBe('initial')
+  })
+  it('one the dark restates is kept (positive control)', () => {
+    const own = { ...config, darkTheme: { colors: { background: '#0b0b0b', heading: '#fafafa' } } }
+    expect(resolveAppearanceDarkVars({ config: own } as never)['--pw-color-heading']).toBe('#fafafa')
+  })
+})

@@ -3,12 +3,14 @@
  * against the themes the app and its packs carry, and the stylesheet the shell
  * links so the page has its identity before any script runs.
  */
+import { mergeColorLayers, mergeThemeBlocks } from '@pwfabric/contracts'
 import {
   DEFAULT_APPEARANCE_THEME,
   mergeSurfaceThemes,
   resolveAppearanceMode,
   resolveDarkTheme,
   surfaceThemeToCSS,
+  extraColorVars,
   type SurfaceTheme,
 } from '@pwfabric/contracts'
 import { withFontFallbacks } from './fonts.js'
@@ -22,21 +24,63 @@ export interface ThemeAtom {
   readonly manifestId?: string
   readonly theme: Record<string, unknown>
   readonly darkTheme?: Record<string, unknown>
+  /** The theme it builds on (`extends`), before {@link resolveThemeBases} lays it underneath. */
+  readonly extends?: string
   /** Where it came from, for diagnostics. */
   readonly from: string
 }
 
 /** Builds a {@link ThemeAtom} from a `ui-appearance` manifest, or null when it carries no token set. */
 export function themeAtomOf(id: string, manifest: unknown, from: string): ThemeAtom | null {
-  if (!isRecord(manifest) || !isRecord(manifest['theme'])) return null
+  if (!isRecord(manifest)) return null
+  const base = typeof manifest['extends'] === 'string' && manifest['extends'].trim() ? manifest['extends'].trim() : undefined
+  // A theme that builds on another may set nothing of its own in light.
+  if (!isRecord(manifest['theme']) && !base) return null
   const manifestId = typeof manifest['id'] === 'string' ? manifest['id'] : undefined
   return {
     id,
     ...(manifestId && manifestId !== id ? { manifestId } : {}),
-    theme: manifest['theme'],
+    theme: isRecord(manifest['theme']) ? manifest['theme'] : {},
     ...(isRecord(manifest['darkTheme']) ? { darkTheme: manifest['darkTheme'] } : {}),
+    ...(base ? { extends: base } : {}),
     from,
   }
+}
+
+export const THEME_BASE_NOT_FOUND = 'THEME_BASE_NOT_FOUND'
+export const THEME_BASE_CYCLE = 'THEME_BASE_CYCLE'
+
+/**
+ * Every theme with its base laid underneath (appearance §3.5): a theme that
+ * `extends` another writes only what differs, and is drawn as the base's token
+ * sets merged per group with its own on top (light over light, dark over dark).
+ * Bases chain (a base may extend another). A base that cannot be found, or a
+ * chain that comes back to itself, is a warning and that theme is drawn from its
+ * own tokens alone — a warning, because a pinned pack may ship a theme the app
+ * never wears, and its broken base must not fail the app's build.
+ */
+export function resolveThemeBases(themes: readonly ThemeAtom[], diagnostics: AssembleDiagnostic[]): ThemeAtom[] {
+  const done = new Map<ThemeAtom, ThemeAtom>()
+  const resolve = (t: ThemeAtom, seen: readonly ThemeAtom[]): ThemeAtom => {
+    const hit = done.get(t)
+    if (hit) return hit
+    if (!t.extends) return t
+    const { extends: name, ...own } = t
+    const base = findTheme(name, themes)
+    let out: ThemeAtom = own
+    if (!base) {
+      diagnostics.push({ severity: 'warning', code: THEME_BASE_NOT_FOUND, message: `theme "${t.id}" extends "${name}", which no theme of the app or its packs is called (from ${t.from})` })
+    } else if (base === t || seen.includes(base)) {
+      diagnostics.push({ severity: 'warning', code: THEME_BASE_CYCLE, message: `theme "${t.id}" extends "${name}", which comes back to it: ${[...seen, t, base].map((x) => x.id).join(' → ')}` })
+    } else {
+      const b = resolve(base, [...seen, t])
+      const dark = b.darkTheme || own.darkTheme ? { darkTheme: mergeGroups(b.darkTheme ?? {}, own.darkTheme) } : {}
+      out = { ...own, theme: mergeGroups(b.theme, own.theme), ...dark }
+    }
+    done.set(t, out)
+    return out
+  }
+  return themes.map((t) => resolve(t, []))
 }
 
 /**
@@ -61,7 +105,16 @@ export function mergeGroups(base: Record<string, unknown>, over: unknown): Recor
   if (isRecord(over)) {
     for (const [k, v] of Object.entries(over)) {
       const prev = out[k]
-      out[k] = isRecord(v) && isRecord(prev) ? { ...prev, ...v } : v
+      // blocks merge per block, per token (appearance §3.4).
+      // colors: a layer that states its own ground drops the lower layers' extra colours (appearance §3).
+      out[k] =
+        k === 'blocks'
+          ? mergeThemeBlocks(prev, v)
+          : k === 'colors' && isRecord(v) && isRecord(prev)
+            ? mergeColorLayers(prev as Record<string, string>, v as Record<string, string>)
+            : isRecord(v) && isRecord(prev)
+              ? { ...prev, ...v }
+              : v
     }
   }
   return out
@@ -226,7 +279,9 @@ const APP_SCOPE: PaletteScope = {
 /** A page's own palette: the document while it shows that page (`<html data-pw-page="<key>">`). */
 function pageScope(key: string): PaletteScope {
   const root = `:root[data-pw-page="${key.replace(/["\\]/g, (c) => `\\${c}`)}"]`
-  return { light: [root], refined: (r) => [`${root}${r}`] }
+  // On its surfaces too: the app's palette is written on [data-pw-surface] itself,
+  // which a rule on the document alone does not reach.
+  return { light: [root, `${root} [data-pw-surface]`], refined: (r) => [`${root}${r}`, `${root}${r} [data-pw-surface]`] }
 }
 
 function modeBlocks(
@@ -259,7 +314,7 @@ ${dark}
 }
 
 /** One configuration's palette (light, and dark per its mode policy) under `scope`. */
-function paletteCss(config: Record<string, unknown> | undefined, scope: PaletteScope): string {
+function paletteCss(config: Record<string, unknown> | undefined, scope: PaletteScope, resets: readonly string[] = []): string {
   const cfg = config as { theme?: SurfaceTheme; darkTheme?: SurfaceTheme; styleVariables?: Record<string, unknown> } | undefined
   const { policy, contrast } = resolveAppearanceMode(cfg)
   const options = { contrast }
@@ -272,6 +327,18 @@ function paletteCss(config: Record<string, unknown> | undefined, scope: PaletteS
   }
   const light = mergeSurfaceThemes(DEFAULT_APPEARANCE_THEME, cfg?.theme)
   const darkVars = surfaceThemeToCSS(resolveDarkTheme(light, cfg?.darkTheme), undefined, undefined, options)
+  // A block colour the app sets and this page does not is reset, so the app's
+  // value (chosen for its ground) does not reach the page's own (appearance §3.1).
+  for (const name of resets) {
+    if (!(name in lightVars)) lightVars[name] = 'initial'
+    if (!(name in darkVars)) darkVars[name] = 'initial'
+  }
+  // Its own dark the same way: a block colour its light sets and its dark does not
+  // is reset there, or the light value (a dark heading) reaches the dark ground.
+  // Custom styleVariables are the author's and stay as written.
+  for (const name of Object.keys(extraColorVars(light.colors as Record<string, string> | undefined))) {
+    if (!(name in darkVars)) darkVars[name] = 'initial'
+  }
   return modeBlocks(scope, policy, declList(lightVars), declList(darkVars), declList({ ...lightVars, ...darkVars }))
 }
 
@@ -292,7 +359,9 @@ export interface PageTheme {
  */
 export function buildThemeCss(config: Record<string, unknown> | undefined, pages: readonly PageTheme[] = [], fontCss = ''): string {
   const faces = fontCss
-  const palettes = [paletteCss(config, APP_SCOPE), ...pages.map((p) => paletteCss(p.config, pageScope(p.key)))].join('\n\n')
+  const appCfg = config as { theme?: SurfaceTheme; darkTheme?: SurfaceTheme } | undefined
+  const appExtras = Object.keys({ ...extraColorVars(appCfg?.theme?.colors as Record<string, string> | undefined), ...extraColorVars(appCfg?.darkTheme?.colors as Record<string, string> | undefined) })
+  const palettes = [paletteCss(config, APP_SCOPE), ...pages.map((p) => paletteCss(p.config, pageScope(p.key), appExtras))].join('\n\n')
   return `${faces ? `${faces}\n` : ''}${palettes}
 
 html, body {

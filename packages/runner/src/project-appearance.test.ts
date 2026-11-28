@@ -73,18 +73,18 @@ describe('projectAppearanceRef — a bare theme name resolves to its tokens', ()
     expect(ref?.config['use']).toBeUndefined()
   })
 
-  it('accepts the bare name too ("forest")', () => {
-    const theme = projectAppearanceRef({ use: 'forest' })?.config['theme'] as { colors: { primary: string } }
-    expect(theme.colors.primary).toBe('#22c55e')
+  it('accepts the bare name too ("paper")', () => {
+    const theme = projectAppearanceRef({ use: 'paper' })?.config['theme'] as { colors: { primary: string } }
+    expect(theme.colors.primary).toBe('#1f3354')
   })
 
   it('lets the colours the document states win over the preset (a stated brand palette)', () => {
-    const ref = projectAppearanceRef({ use: 'theme-ocean', theme: { colors: { primary: '#e8590c' } }, darkTheme: { colors: { accent: '#111111' } } })
+    const ref = projectAppearanceRef({ use: 'theme-paper', theme: { colors: { primary: '#e8590c' } }, darkTheme: { colors: { accent: '#111111' } } })
     const theme = ref?.config['theme'] as { colors: { primary: string; background: string }; border: { radius: string } }
     expect(theme.colors.primary).toBe('#e8590c')
     // Everything else still comes from the preset, not the platform default.
-    expect(theme.colors.background).toBe('#f0f9ff')
-    expect(theme.border.radius).toBe((THEME_PRESETS['theme-ocean'] as { border: { radius: string } }).border.radius)
+    expect(theme.colors.background).toBe('#f5efe3')
+    expect(theme.border.radius).toBe((THEME_PRESETS['theme-paper'] as { border: { radius: string } }).border.radius)
     expect(ref?.config['darkTheme']).toEqual({ colors: { accent: '#111111' } })
   })
 
@@ -96,19 +96,12 @@ describe('projectAppearanceRef — a bare theme name resolves to its tokens', ()
   })
 
   it('does not mutate the preset table', () => {
-    const before = JSON.stringify(THEME_PRESETS['theme-rose'])
-    projectAppearanceRef({ use: 'theme-rose', theme: { colors: { primary: '#000000' } } })
-    expect(JSON.stringify(THEME_PRESETS['theme-rose'])).toBe(before)
+    const before = JSON.stringify(THEME_PRESETS['theme-ember'])
+    projectAppearanceRef({ use: 'theme-ember', theme: { colors: { primary: '#000000' } } })
+    expect(JSON.stringify(THEME_PRESETS['theme-ember'])).toBe(before)
   })
 
-  it('carries the six foundation themes', () => {
-    expect(Object.keys(THEME_PRESETS).sort()).toEqual([
-      'theme-forest',
-      'theme-midnight',
-      'theme-ocean',
-      'theme-rose',
-      'theme-sunset',
-      'theme-zinc',
-    ])
+  it('carries the foundation themes, each with its base merged in', () => {
+    expect(Object.keys(THEME_PRESETS).sort()).toEqual(['theme-base', 'theme-ember', 'theme-paper', 'theme-zinc'])
   })
 })

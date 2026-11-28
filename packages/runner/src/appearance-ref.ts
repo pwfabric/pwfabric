@@ -7,6 +7,28 @@
  */
 import { THEME_PRESETS } from './theme-presets.js'
 
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/**
+ * `blocks` groups merged per block, per token, `over` winning (appearance §3.4).
+ * The same merge as contracts' `mergeThemeBlocks`, written here because runner.js
+ * imports nothing the renderer seeds. Block and token names are checked by shape
+ * and held in null-prototype objects, so a `"__proto__"` name reaches nothing.
+ */
+function mergeBlocks(prev: unknown, over: unknown): Record<string, Record<string, string>> | undefined {
+  let out: Record<string, Record<string, string>> | undefined
+  for (const layer of [prev, over]) {
+    if (!isRecord(layer)) continue
+    for (const [block, tokens] of Object.entries(layer)) {
+      if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(block) || !isRecord(tokens)) continue
+      out ??= Object.create(null) as Record<string, Record<string, string>>
+      const into = (out[block] ??= Object.create(null) as Record<string, string>)
+      for (const [token, value] of Object.entries(tokens)) if (/^[a-z][a-zA-Z0-9]*$/.test(token) && typeof value === 'string') into[token] = value
+    }
+  }
+  return out
+}
+
 /**
  * `pwpack/appearance.json` holds the project's appearance CONFIG
  * (`{ theme, styleVariables, darkTheme, … }`) — that is what
@@ -61,6 +83,18 @@ function mergeThemeGroups(
   for (const [k, v] of Object.entries(base)) out[k] = v && typeof v === 'object' ? { ...v } : v
   for (const [k, v] of Object.entries(over ?? {})) {
     const prev = out[k]
+    // blocks merge per block, per token (appearance §3.4).
+    if (k === 'blocks') {
+      out[k] = mergeBlocks(prev, v)
+      continue
+    }
+    // colors: a document that states its own ground drops the preset's extra colours
+    // (heading, link, …), chosen for the preset's ground — contracts' mergeColorLayers.
+    if (k === 'colors' && isRecord(v) && isRecord(prev) && typeof v['background'] === 'string') {
+      const named = new Set(['primary', 'secondary', 'accent', 'background', 'card', 'text', 'textMuted', 'border', 'error', 'success', 'warning', 'info', 'textOnPrimary'])
+      out[k] = { ...Object.fromEntries(Object.entries(prev).filter(([name]) => named.has(name))), ...v }
+      continue
+    }
     out[k] =
       v && typeof v === 'object' && !Array.isArray(v) && prev && typeof prev === 'object'
         ? { ...(prev as Record<string, unknown>), ...(v as Record<string, unknown>) }

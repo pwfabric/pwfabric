@@ -6,6 +6,7 @@
  * carrying the code (the engine's validation codes, or the command's own)
  * and how to fix it.
  */
+import { blockTokenDescriptors } from '@pwfabric/contracts'
 import { readdir } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import {
@@ -145,7 +146,7 @@ async function pinnedCatalog(root: string, pin: PackPin): Promise<CatalogEntry |
 }
 
 function blockLine(b: FoundationBlock): string {
-  return `  - ${b.type} (${b.id})${b.props.length ? ` props: ${b.props.join(', ')}` : ''}${b.purpose ? ` — ${b.purpose}` : ''}`
+  return `  - ${b.type} (${b.id})${b.props.length ? ` props: ${b.props.join(', ')}` : ''}${b.tokens?.length ? ` tokens: ${b.tokens.join(', ')}` : ''}${b.purpose ? ` — ${b.purpose}` : ''}`
 }
 
 /** Where a block was found: the folder itself or one of its pinned packs, as `<id>@<version>`. */
@@ -477,6 +478,7 @@ export const TOOLS: readonly ToolDefinition[] = [
         const props = (blockPropDescriptors(m) ?? []) as unknown as Record<string, unknown>[]
         const knowledge = isRecord(m['knowledge']) ? m['knowledge'] : {}
         const canHaveChildren = definition['canHaveChildren'] === true
+        const tokens = blockTokenDescriptors(m)
         const blockType = typeof m['name'] === 'string' ? m['name'] : (found.atomId.split('.').pop() as string)
         const extra = (['allowedParents', 'allowedChildTraits', 'traits'] as const).filter((k) => Array.isArray(definition[k]) && (definition[k] as unknown[]).length)
         const lines = [
@@ -488,6 +490,9 @@ export const TOOLS: readonly ToolDefinition[] = [
           props.length ? `Props (${props.length}):` : 'Props: none',
           ...props.flatMap(propLines),
           `Children: ${canHaveChildren ? 'yes, it is a container' : 'no, it is a leaf'}`,
+          ...(tokens.length
+            ? [`Look tokens (${tokens.length}), set in the theme as blocks.${blockType}.<name>, read as --pw-${blockType}-<kebab-name>:`, ...tokens.map((t) => `  - ${t.name} (${t.type}, default ${t.default}): ${t.description}`)]
+            : ['Look tokens: none']),
           ...extra.map((k) => `${k}: ${(definition[k] as unknown[]).map((v) => String(v)).join(', ')}`),
           'Knowledge:',
           ...knowledgeLines(knowledge),
@@ -506,6 +511,7 @@ export const TOOLS: readonly ToolDefinition[] = [
             props,
             ...(isRecord(definition['defaultProps']) ? { defaultProps: definition['defaultProps'] } : {}),
             canHaveChildren,
+            ...(tokens.length ? { tokens } : {}),
             ...Object.fromEntries(extra.map((k) => [k, definition[k]])),
             knowledge,
           }

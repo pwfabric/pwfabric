@@ -1,3 +1,4 @@
+import type { SurfaceThemeBlocks } from './block-tokens.js'
 /**
  * Surface Theme Types
  *
@@ -151,6 +152,24 @@ export interface SurfaceThemeTypography {
   fontSizeH3?: string
   fontSizeH4?: string
   fontSizeH5?: string
+  /**
+   * Heading weight and line height per level (appearance §3). Map to
+   * --pw-font-weight-h1 … -h6 and --pw-line-height-h1 … -h6; an unset level
+   * follows headingWeight / headingLineHeight, so a theme that never mentions
+   * them draws every level as it did.
+   */
+  headingWeightH1?: string
+  headingWeightH2?: string
+  headingWeightH3?: string
+  headingWeightH4?: string
+  headingWeightH5?: string
+  headingWeightH6?: string
+  headingLineHeightH1?: string
+  headingLineHeightH2?: string
+  headingLineHeightH3?: string
+  headingLineHeightH4?: string
+  headingLineHeightH5?: string
+  headingLineHeightH6?: string
 }
 
 // ============================================================
@@ -361,6 +380,11 @@ export interface SurfaceTheme {
   layout?: SurfaceThemeLayout
   focus?: SurfaceThemeFocus
   zIndex?: SurfaceThemeZIndex
+  /**
+   * Block look tokens by block name (appearance §3.4): `{ sidebar: { itemPaddingBlock: '6px' } }`,
+   * emitted as `--pw-<block>-<kebab-token>`. Each block declares its tokens in its manifest.
+   */
+  blocks?: SurfaceThemeBlocks
 }
 
 // ============================================================
@@ -377,55 +401,54 @@ export interface SurfaceTheme {
  * derive its baseline from one place (no drift), and surface configs / alternate
  * UI-kit appearance packs override on top.
  *
- * Values are identical to the former pw-defaults.css (zero visual change).
+ * Since 3.7.0 its values are foundation's theme-base (a test there keeps the two
+ * one look): an app that names no theme draws as one that wears the base.
  */
 export const DEFAULT_APPEARANCE_THEME: SurfaceTheme = {
+  // The same plain look as foundation's theme-base: an app that names no theme
+  // and an app that wears the base draw alike. Neutral grey and one blue
+  // (#2563eb: white on it 5.17:1, AA), system sans, 6px corners, light shadows.
   colors: {
-    // indigo-600 (not indigo-500 #6366f1): white-on-primary = 6.29:1, clears WCAG AA
-    // (≥4.5) for primary buttons/badges. #6366f1 was 4.47:1 — just under AA.
-    primary: '#4f46e5',
-    secondary: '#64748b',
-    accent: '#f59e0b',
+    primary: '#2563eb',
+    secondary: '#f3f4f6',
+    accent: '#eff6ff',
     background: '#ffffff',
-    card: '#f8fafc',
-    text: '#1e293b',
-    textMuted: '#64748b',
-    border: '#e2e8f0',
-    error: '#ef4444',
-    success: '#22c55e',
-    warning: '#f59e0b',
-    info: '#0369a1',
+    card: '#ffffff',
+    text: '#111827',
+    textMuted: '#4b5563',
+    border: '#e5e7eb',
+    error: '#dc2626',
+    success: '#15803d',
+    warning: '#b45309',
+    info: '#2563eb',
     textOnPrimary: '#ffffff',
   },
   border: {
-    radius: '0.375rem',
+    radius: '6px',
     width: '1px',
     style: 'solid',
-    radiusLarge: '0.75rem',
-    // Radius scale (Batch-1) — additive, all optional.
-    radiusSmall: '0.125rem',
-    radiusXl: '1rem',
-    radius2xl: '1.5rem',
+    radiusLarge: '8px',
+    radiusSmall: '4px',
+    radiusXl: '12px',
+    radius2xl: '16px',
     radiusFull: '9999px',
   },
   typography: {
-    fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-    headingFontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-    monoFontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    baseFontSize: '1rem',
-    headingWeight: '700',
-    headingLineHeight: '1.2',
+    fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    headingFontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    monoFontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    baseFontSize: '16px',
+    headingWeight: '600',
+    headingLineHeight: '1.25',
     letterSpacing: '0em',
-    bodyLineHeight: '1.5',
-    fontSizeSm: '0.875rem',
-    fontSizeXs: '0.75rem',
-    // Type scale (Batch-1) — additive, all optional, full ramp for headings/display.
-    fontSizeLg: '1.125rem',
-    fontSizeXl: '1.25rem',
-    fontSize2xl: '1.5rem',
-    fontSize3xl: '1.875rem',
-    fontSize4xl: '2.25rem',
-    // Body typography (Batch-1).
+    bodyLineHeight: '1.6',
+    fontSizeSm: '14px',
+    fontSizeXs: '12px',
+    fontSizeLg: '18px',
+    fontSizeXl: '20px',
+    fontSize2xl: '24px',
+    fontSize3xl: '30px',
+    fontSize4xl: '36px',
     bodyWeight: '400',
     bodyLetterSpacing: '0em',
   },
@@ -440,13 +463,12 @@ export const DEFAULT_APPEARANCE_THEME: SurfaceTheme = {
     xxl: '3rem',
   },
   shadows: {
-    card: '0 1px 3px rgba(0,0,0,0.1)',
+    card: '0 1px 2px rgba(0,0,0,.05)',
     button: 'none',
-    // Elevation ramp (matches the card block's variant shadows).
-    sm: '0 1px 2px rgba(0,0,0,0.05)',
-    md: '0 4px 6px rgba(0,0,0,0.07)',
-    lg: '0 10px 15px rgba(0,0,0,0.10)',
-    xl: '0 20px 25px rgba(0,0,0,0.15)',
+    sm: '0 1px 2px rgba(0,0,0,.05)',
+    md: '0 4px 12px rgba(0,0,0,.08)',
+    lg: '0 10px 24px rgba(0,0,0,.10)',
+    xl: '0 20px 40px rgba(0,0,0,.12)',
   },
   motion: {
     durationFast: '150ms',
@@ -470,9 +492,8 @@ export const DEFAULT_APPEARANCE_THEME: SurfaceTheme = {
     sectionPaddingX: 'clamp(1rem, 3vw, 1.5rem)',
   },
   focus: {
-    // Matches the default primary so the focus ring is on-brand + AA-contrasting;
-    // tenants override ringColor to keep focus visible against their palette.
-    ringColor: '#4f46e5',
+    // The primary, so the ring is on-palette and clears 3:1 on white (5.17:1).
+    ringColor: '#2563eb',
     ringWidth: '2px',
     ringOffset: '2px',
   },

@@ -75,7 +75,7 @@ const NO_CHROME: Chrome = { skip: new Set(), through: new Set() }
 /** The trait a block declares (`definition.traits`) to say it is site furniture, never a page's words. */
 export const CHROME_TRAIT = 'chrome'
 
-type Node = { readonly id?: unknown; readonly type?: unknown; readonly children?: unknown }
+type Node = { readonly id?: unknown; readonly type?: unknown; readonly chrome?: unknown; readonly children?: unknown }
 const nodesOf = (receipt: unknown): Node[] => {
   const blocks = receipt !== null && typeof receipt === 'object' ? (receipt as { blocks?: unknown }).blocks : undefined
   return Array.isArray(blocks) ? (blocks.filter((b) => b !== null && typeof b === 'object') as Node[]) : []
@@ -84,8 +84,10 @@ const childrenOf = (node: Node): Node[] => (Array.isArray(node.children) ? (node
 
 /**
  * What of a page's frame is chrome: every block of the layout but those that
- * hold the page slot (walked into), and every block, on the page or in the
- * layout, whose type declares the {@link CHROME_TRAIT}.
+ * hold the page slot (walked into), every block, on the page or in the layout,
+ * whose type declares the {@link CHROME_TRAIT}, and every block placed with
+ * `chrome: true` (receipt §2) — the trait for one placement. A layout block that
+ * holds the page slot is never chrome: it holds the page.
  */
 export function chromeOf(layout: unknown, page: unknown, isChromeType: (type: string) => boolean): Chrome {
   const skip = new Set<string>()
@@ -103,7 +105,7 @@ export function chromeOf(layout: unknown, page: unknown, isChromeType: (type: st
   }
   nodesOf(layout).forEach(walkLayout)
   const walkPage = (node: Node): void => {
-    if (typeof node.id === 'string' && node.id !== '' && typeof node.type === 'string' && isChromeType(node.type)) {
+    if (typeof node.id === 'string' && node.id !== '' && (node.chrome === true || (typeof node.type === 'string' && isChromeType(node.type)))) {
       skip.add(node.id)
       return
     }

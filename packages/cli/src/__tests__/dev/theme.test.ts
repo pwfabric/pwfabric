@@ -7,6 +7,9 @@ import {
   mergeGroups,
   resolveAppearance,
   resolvePageAppearance,
+  resolveThemeBases,
+  THEME_BASE_CYCLE,
+  THEME_BASE_NOT_FOUND,
   themeAtomOf,
   type ThemeAtom,
 } from '../../dev/theme.js'
@@ -106,12 +109,13 @@ describe('the theme stylesheet with pages of their own', () => {
       { key: 'night', config: { theme: { colors: { background: '#0b1020' } }, darkTheme: { colors: { background: '#000' } } } },
       { key: 'day', config: { theme: { colors: { background: '#fefefe' } }, mode: { policy: 'light' } } },
     ])
-    expect(css.indexOf(':root, [data-pw-surface] {')).toBeLessThan(css.indexOf(':root[data-pw-page="night"] {'))
-    expect(css).toMatch(/:root\[data-pw-page="night"\] \{[^}]*--pw-color-background: #0b1020;/)
-    expect(css).toMatch(/:root\[data-pw-page="night"\]\[data-pw-theme="dark"\] \{[^}]*--pw-color-background: #000;/)
-    expect(css).toMatch(/:root\[data-pw-page="night"\]:not\(\[data-pw-theme="light"\]\) \{/)
+    // On the document and on its surfaces (the app's palette is written on [data-pw-surface] itself).
+    expect(css.indexOf(':root, [data-pw-surface] {')).toBeLessThan(css.indexOf(':root[data-pw-page="night"], :root[data-pw-page="night"] [data-pw-surface] {'))
+    expect(css).toMatch(/:root\[data-pw-page="night"\] \[data-pw-surface\] \{[^}]*--pw-color-background: #0b1020;/)
+    expect(css).toMatch(/:root\[data-pw-page="night"\]\[data-pw-theme="dark"\] \[data-pw-surface\] \{[^}]*--pw-color-background: #000;/)
+    expect(css).toMatch(/:root\[data-pw-page="night"\]:not\(\[data-pw-theme="light"\]\) \[data-pw-surface\] \{/)
     // A light-only page has no dark rule.
-    expect(css).toMatch(/:root\[data-pw-page="day"\] \{[^}]*--pw-color-background: #fefefe;/)
+    expect(css).toMatch(/:root\[data-pw-page="day"\] \[data-pw-surface\] \{[^}]*--pw-color-background: #fefefe;/)
     expect(css).not.toContain(':root[data-pw-page="day"][data-pw-theme="dark"]')
     // No page of its own: the stylesheet is the app's alone.
     expect(buildThemeCss({ theme: { colors: { background: '#fff' } } })).not.toContain('data-pw-page')
@@ -207,5 +211,71 @@ describe('font fallbacks (fonts.ts)', () => {
 
   it("takes each family once across the app's and its pages' configurations", () => {
     expect(fontsOf([{ theme: { fonts: [font('Nunito')] } }, { theme: { fonts: [font('nunito'), font('Inter')] } }]).map((f) => f.family)).toEqual(['Nunito', 'Inter'])
+  })
+})
+
+describe('a page wearing its own theme does not inherit the app’s block colours', () => {
+  const app = { theme: { colors: { background: '#ffffff', text: '#09090b', heading: '#09090b', link: '#1d4ed8' } } }
+  const page = { key: 'night', config: { theme: { colors: { background: '#15110e', text: '#f8efe3' } } } }
+  const css = buildThemeCss(app, [page])
+  const pageRule = css.slice(css.indexOf(':root[data-pw-page="night"], :root[data-pw-page="night"] [data-pw-surface] {'))
+  it('resets each block colour the app sets and the page does not, on the page and its surfaces', () => {
+    expect(pageRule).toMatch(/^[^}]*--pw-color-heading: initial;/)
+    expect(pageRule).toMatch(/^[^}]*--pw-color-link: initial;/)
+  })
+  it('keeps one the page sets itself (positive control)', () => {
+    const own = buildThemeCss(app, [{ key: 'night', config: { theme: { colors: { ...page.config.theme.colors, heading: '#ffffff' } } } }])
+    expect(own.slice(own.indexOf(':root[data-pw-page="night"]'))).toMatch(/^[^}]*--pw-color-heading: #ffffff;/)
+  })
+})
+
+describe('a theme that extends another writes only what differs', () => {
+  const base = themeAtomOf('theme-base', {
+    theme: { colors: { primary: '#2563eb', background: '#ffffff', text: '#111827', heading: '#111827' }, border: { radius: '6px', width: '1px' } },
+    darkTheme: { colors: { primary: '#60a5fa', background: '#0b0f19', text: '#f3f4f6' } },
+  }, 'pack')!
+  const child = themeAtomOf('theme-round', { extends: 'theme-base', theme: { border: { radius: '16px' } }, darkTheme: { colors: { primary: '#93c5fd' } } }, 'pack')!
+  it('is drawn with its base underneath, light over light and dark over dark', () => {
+    const d: AssembleDiagnostic[] = []
+    const out = resolveThemeBases([base, child], d)
+    expect(d).toEqual([])
+    const round = out.find((t) => t.id === 'theme-round')!
+    expect(round.theme).toEqual({ colors: base.theme['colors'], border: { radius: '16px', width: '1px' } })
+    expect(round.darkTheme).toEqual({ colors: { primary: '#93c5fd', background: '#0b0f19', text: '#f3f4f6' } })
+    expect(round.extends).toBeUndefined()
+    // The base itself is unchanged (positive control).
+    expect(out.find((t) => t.id === 'theme-base')!.theme).toEqual(base.theme)
+  })
+  it('a child that states its own ground drops the base’s block colours (appearance §3.1)', () => {
+    const own = themeAtomOf('theme-cream', { extends: 'base', theme: { colors: { background: '#f5efe3' } } }, 'pack')!
+    const out = resolveThemeBases([base, own], [])
+    expect((out[1]!.theme['colors'] as Record<string, string>)['heading']).toBeUndefined()
+    expect((out[1]!.theme['colors'] as Record<string, string>)['primary']).toBe('#2563eb')
+  })
+  it('a missing base and a cycle are errors; the theme keeps its own tokens', () => {
+    const d: AssembleDiagnostic[] = []
+    const lost = themeAtomOf('theme-lost', { extends: 'theme-nowhere', theme: { border: { radius: '2px' } } }, 'app')!
+    const a = themeAtomOf('theme-a', { extends: 'theme-b', theme: {} }, 'app')!
+    const b = themeAtomOf('theme-b', { extends: 'theme-a', theme: {} }, 'app')!
+    const out = resolveThemeBases([lost, a, b], d)
+    expect(d.map((x) => x.code)).toEqual([THEME_BASE_NOT_FOUND, THEME_BASE_CYCLE])
+    expect(out[0]!.theme).toEqual({ border: { radius: '2px' } })
+  })
+})
+
+describe('a theme’s own dark does not inherit its light block colours', () => {
+  const cfg = { theme: { colors: { background: '#ffffff', text: '#111111', heading: '#111111' } }, darkTheme: { colors: { background: '#0b0b0b', text: '#f5f5f5' } } }
+  it('the dark rule resets a block colour its light sets and its dark does not', () => {
+    const css = buildThemeCss(cfg)
+    const dark = css.slice(css.indexOf(':root[data-pw-theme="dark"]'))
+    expect(dark).toMatch(/^[^}]*--pw-color-heading: initial;/)
+  })
+  it('so does a dark-only app (policy dark), whose one rule is light under dark', () => {
+    const css = buildThemeCss({ ...cfg, mode: { policy: 'dark' } })
+    expect(css).toMatch(/:root, \[data-pw-surface\] \{[^}]*--pw-color-heading: initial;/)
+  })
+  it('a dark that restates the colour keeps it (positive control)', () => {
+    const css = buildThemeCss({ ...cfg, darkTheme: { colors: { ...cfg.darkTheme.colors, heading: '#ffffff' } } })
+    expect(css.slice(css.indexOf(':root[data-pw-theme="dark"]'))).toMatch(/^[^}]*--pw-color-heading: #ffffff;/)
   })
 })
