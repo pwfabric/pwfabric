@@ -1,5 +1,10 @@
 # @pwfabric/cli
 
+## 3.8.0
+
+- Changed (upgrade note): an appearance that names a theme nothing carries is an error, `THEME_NOT_FOUND`, in `pwf build` and now in `pwf validate` too — the app’s `appearance.json` and each served page’s `appearance`. It was a warning, and the build drew another theme in its place. `default` and the runner’s presets (`theme-base`, `theme-zinc`, `theme-paper`, `theme-ember`) are always known; any other name must be a theme of the app or of a pack it pins. The message names the themes there are. A project that names a theme a pack upgrade removed (foundation 2’s `slate`, `midnight`, `linen`) names one of them, or writes its own theme atom that `extends` one. A pinned pack that cannot be read leaves theme names unjudged: its pin is the finding.
+- Added: `pwf validate` reports an entity source whose `connector` names no connection of `app/definitions/connections.json` (`CONNECTION_NOT_FOUND`, an error), instead of a false `ENTITY_UNDECLARED` for its fields. A `connections.json` that cannot be read leaves connectors unjudged.
+
 ## 3.7.0
 
 - Added: every build writes each connection’s `config.pageSources` in `pwpack/connections.json` — the paths and verbs the app calls it with, derived from the entity sources that name it (the engine template path with GET and HEAD; POST, DELETE where the app creates or deletes; a declared pre-flight with GET), so a host that holds the connection’s secret can refuse every other path. A connection no page calls gets `[]` (`CONNECTION_UNUSED`). A path the build cannot derive — a run-time template part, a query that rebinds it, an empty value, an engine that is code — is an error naming the connection (`CONNECTION_PATHS_UNDERIVED`) unless the author declares `pageSources`; a declared list must cover every derivable path (`CONNECTION_PATH_UNDECLARED`) and hold no empty path (`CONNECTION_PAGE_SOURCES_INVALID`). The same in `pwf validate`.

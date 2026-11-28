@@ -4,6 +4,7 @@
  * links so the page has its identity before any script runs.
  */
 import { mergeColorLayers, mergeThemeBlocks } from '@pwfabric/contracts'
+import { THEME_PRESETS } from '@pwfabric/runner'
 import {
   DEFAULT_APPEARANCE_THEME,
   mergeSurfaceThemes,
@@ -120,6 +121,32 @@ export function mergeGroups(base: Record<string, unknown>, over: unknown): Recor
   return out
 }
 
+export const THEME_NOT_FOUND = 'THEME_NOT_FOUND'
+
+/**
+ * Why a `use` names no theme the app or its packs carry, or undefined when it
+ * names one (or is `default`, the platform's own look). An error, not a quiet
+ * fallback: an app whose theme went away — a pack's next major removed it — would
+ * otherwise draw in another look nobody chose. The message names the theme and
+ * the ones there are, so the author moves the app to one of them on purpose or
+ * writes the app's own theme.
+ */
+export function missingThemeMessage(use: string, themes: readonly ThemeAtom[]): string | undefined {
+  if (use.trim() === 'default' || findTheme(use, themes) || isRunnerPreset(use)) return undefined
+  const known = [...new Set([...themes.map((t) => t.id), ...Object.keys(THEME_PRESETS)])]
+  return `appearance names theme "${use.trim()}", which neither the app nor its packs carry — a pack upgrade may have removed it. Name one of ${known.map((k) => `"${k}"`).join(', ')}, or write the app's own theme (a theme atom that "extends" one of them and sets what differs)`
+}
+
+/**
+ * A theme the runner itself carries (its presets: the foundation's kept themes).
+ * It draws as named even when no pinned pack carries the atom, so it is no
+ * finding — only a name nothing at all can draw is.
+ */
+function isRunnerPreset(use: string): boolean {
+  const name = use.trim()
+  return Object.hasOwn(THEME_PRESETS, name) || Object.hasOwn(THEME_PRESETS, `theme-${name.replace(/^(appearance|theme)-/, '')}`)
+}
+
 /** The theme `use` names, or undefined with THEME_NOT_FOUND reported at `path`. */
 function namedTheme(
   use: string,
@@ -127,18 +154,9 @@ function namedTheme(
   diagnostics: AssembleDiagnostic[],
   path: string
 ): ThemeAtom | undefined {
-  const theme = findTheme(use, themes)
-  if (!theme) {
-    diagnostics.push({
-      severity: 'warning',
-      code: 'THEME_NOT_FOUND',
-      message: `appearance names theme "${use}", which neither the app nor its packs carry (known: ${
-        themes.map((t) => t.id).join(', ') || 'none'
-      }); the runner falls back to its built-in presets`,
-      path,
-    })
-  }
-  return theme
+  const missing = missingThemeMessage(use, themes)
+  if (missing) diagnostics.push({ severity: 'error', code: THEME_NOT_FOUND, message: missing, path })
+  return findTheme(use, themes)
 }
 
 function resolveConfig(

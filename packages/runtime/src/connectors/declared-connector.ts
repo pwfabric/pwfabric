@@ -268,6 +268,41 @@ export function createDeclaredConnector(options: DeclaredConnectorOptions): Enti
     return applyTransforms(row)
   }
 
+  /**
+   * The list of rows in a response, found at `read.items`.
+   *
+   * `read.items: "$"` means THE RESPONSE ITSELF IS THE LIST (the JSONPath
+   * root): an API answering a bare array, e.g. `GET /posts → [ {...} ]`, has
+   * no key to name. Like `flatten: "*"`, it is spelled out, never inferred —
+   * a bare array under any other `read.items` is an error with a hint, not a
+   * guess. `$` is not a key any API wraps its rows in, so it cannot collide
+   * with a real path.
+   *
+   * Nothing at the path (undefined/null) is an empty list. Something there
+   * that is not a list — or a bare-array response read through a dotted
+   * path, which can never reach a row — is an error naming the path and what
+   * was found: a silent `[]` reads as "no data" while the real cause is a
+   * wrong records location. It surfaces as the query's `{ success: false, error }`.
+   */
+  function readList(raw: unknown): unknown[] {
+    // "$" is the response itself; "$.data" the same as "data" (JSONPath's root).
+    const path = readItems.startsWith('$.') ? readItems.slice(2) : readItems
+    const items = path === '$' ? raw : readPath(raw, path)
+    if (Array.isArray(items)) return items
+    const rootIsList = Array.isArray(raw)
+    if ((items === undefined || items === null) && !rootIsList) return []
+    const found =
+      items === undefined || items === null
+        ? 'nothing'
+        : typeof items === 'object'
+          ? 'an object'
+          : `a ${typeof items}`
+    const hint = rootIsList
+      ? '; the response itself is a list, so set the records location (read.items, --items) to "$"'
+      : ''
+    throw new Error(`engine "${name}": records location "${readItems}" holds ${found}, not a list${hint}`)
+  }
+
   /** One base per resolved binding set — the site is already inside baseUrl. */
   const bases = new Map<string, Promise<HttpEntityConnector>>()
   function baseFor(extra: Readonly<Record<string, string>>): Promise<HttpEntityConnector> {
@@ -285,10 +320,7 @@ export function createDeclaredConnector(options: DeclaredConnectorOptions): Enti
               // `none` means no credential at all: the visitor's token must never reach
               // a host that did not ask for it, so no auth config is passed.
               ...(d.auth.type === 'none' ? {} : { auth: { type: d.auth.type, token: getAccessToken } }),
-              responseMapper: (raw) => {
-                const items = readPath(raw, readItems)
-                return { items: Array.isArray(items) ? items.map(mapRow) : [] }
-              },
+              responseMapper: (raw) => ({ items: readList(raw).map(mapRow) }),
             })
         )
         .catch((err: unknown) => {

@@ -1,5 +1,9 @@
 # @pwfabric/runner
 
+## 3.8.0
+
+- No changes; released with the other packages at 3.8.0.
+
 ## 3.7.0
 
 - Changed: the theme presets a bare `"use": "<theme>"` resolves to are regenerated from foundation 3.0.0 — `theme-base`, `theme-zinc`, `theme-paper`, `theme-ember`, each with its base merged in (they had not been synced since the first public release).

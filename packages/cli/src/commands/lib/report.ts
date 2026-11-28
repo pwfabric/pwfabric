@@ -31,7 +31,7 @@ import { layoutSlotProblems, localesOf, PAGE_SLOT_TYPE } from '@pwfabric/contrac
 import { cacheDir, cacheRelDir, readCachedPack } from './project.js'
 import { engineVersion, pinsOf } from './identity.js'
 import { faviconOf } from '../../dev/favicon.js'
-import { appearanceConfigOf } from '../../dev/theme.js'
+import { appearanceConfigOf, missingThemeMessage, THEME_NOT_FOUND, themeAtomOf, type ThemeAtom } from '../../dev/theme.js'
 import { bodyFontOf, fontAssetsOf, themeFontsOf, unreadableMetricsMessage } from '../../dev/fonts.js'
 import { engineRangeDiagnostics, isRecord, jsonOf, loadSources, type LoadedSources } from '../../dev/sources.js'
 import { servedPageKeys } from '../../dev/envelope.js'
@@ -141,14 +141,23 @@ export function checkEntities(root: string): PackIssue[] {
     }
   }
   const declared = new Set(readEntities(root).map((e) => e.typeId))
+  const connections = connectionNamesOf(root)
   for (const key of surfaceKeys(root)) {
     const used = new Set<string>()
+    const connectors = new Set<string>()
     const walk = (v: unknown): void => {
       if (Array.isArray(v)) return v.forEach(walk)
       if (!v || typeof v !== 'object') return
+      // A source with a `connector` is served by that connection's engine, not
+      // by the app's own records (data-protocol §2.2), so entities.json need
+      // not declare its type. Only own-record uses (no connector) must be declared.
+      const connector = (v as Record<string, unknown>).connector
+      const served = typeof connector === 'string' && connector !== ''
+      if (served && typeof (v as Record<string, unknown>).entityType === 'string') connectors.add(connector)
       for (const [k, x] of Object.entries(v)) {
-        if (k === 'entityType' && typeof x === 'string' && x) used.add(x)
-        else walk(x)
+        if (k === 'entityType' && typeof x === 'string' && x) {
+          if (!served) used.add(x)
+        } else walk(x)
       }
     }
     try { walk(readReceipt(root, key)) } catch { continue }
@@ -157,8 +166,34 @@ export function checkEntities(root: string): PackIssue[] {
         issues.push({ severity: 'error', code: 'ENTITY_UNDECLARED', path: `app/surfaces/${key}.receipt.json`, message: `uses entity type "${type}", which ${path} does not declare` })
       }
     }
+    // A connector-served source names a connection of connections.json
+    // (data-protocol §2.2); a name no connection carries — a typo, a removed
+    // connection — would draw only its fallback, silently.
+    for (const name of connectors) {
+      if (connections && !connections.has(name)) {
+        issues.push({ severity: 'error', code: 'CONNECTION_NOT_FOUND', path: `app/surfaces/${key}.receipt.json`, message: `a source's connector names "${name}", which app/definitions/connections.json does not declare (it declares: ${[...(connections ?? [])].map((n) => `"${n}"`).join(', ') || 'nothing'})` })
+      }
+    }
   }
   return issues
+}
+
+/**
+ * The connection names of app/definitions/connections.json: none when it is
+ * missing; undefined when it cannot be read (that is its own finding, so the
+ * names are not judged against it).
+ */
+function connectionNamesOf(root: string): Set<string> | undefined {
+  const file = join(root, 'app/definitions/connections.json')
+  if (!existsSync(file)) return new Set()
+  try {
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as { connections?: unknown }
+    if (!Array.isArray(raw?.connections)) return undefined
+    const list: unknown[] = raw.connections
+    return new Set(list.flatMap((c) => (isRecord(c) && typeof c['name'] === 'string' && c['name'] ? [c['name']] : [])))
+  } catch {
+    return undefined
+  }
 }
 
 /** The members a `statusKeys` may name (data-protocol §4.2). */
@@ -494,6 +529,45 @@ export async function checkProps(root: string, identity: PackValidation['identit
 }
 
 /**
+ * THEME_NOT_FOUND as the build reports it (dev/theme.ts): the app's appearance or
+ * a served page's own names a theme neither the app nor its pinned packs (nor the
+ * runner's presets) carry — after a pack upgrade that removed it, say. An error,
+ * so `pwf validate` stops where the build would, and the author picks a theme on
+ * purpose. Judged on what the build resolves: the app's appearance and each
+ * served base page (a locale receipt wears its base page's; the layout's
+ * `appearance` is not read). Not judged while a pinned pack could not be read:
+ * its themes are unknown here, and its pin is already reported.
+ */
+export function checkThemeNames(loaded: LoadedSources): PackIssue[] {
+  const { app, identity } = loaded
+  if (!app || !identity?.app) return []
+  if (loaded.packs.length !== (identity.packs ?? []).length) return []
+  const themes: ThemeAtom[] = []
+  for (const source of blockSourcesOf(loaded)) {
+    for (const ref of source.atoms) {
+      if (ref.kind !== 'ui-appearance') continue
+      const theme = themeAtomOf(ref.id, jsonOf(source.folder, ref.relPath), source.label ?? 'app')
+      if (theme) themes.push(theme)
+    }
+  }
+  const issues: PackIssue[] = []
+  const judge = (doc: unknown, path: string): void => {
+    const config = isRecord(doc) ? appearanceConfigOf(doc) : undefined
+    const use = config?.['use']
+    if (typeof use !== 'string' || !use.trim()) return
+    const missing = missingThemeMessage(use, themes)
+    if (missing) issues.push({ severity: 'error', code: THEME_NOT_FOUND, message: missing, path })
+  }
+  judge(jsonOf(app.folder, 'app/definitions/appearance.json'), 'app/definitions/appearance.json')
+  for (const key of servedPageKeys(identity.app).keys) {
+    const path = `app/surfaces/${key}.receipt.json`
+    const receipt = jsonOf(app.folder, path)
+    if (isRecord(receipt) && receipt['appearance'] !== undefined) judge(receipt['appearance'], path)
+  }
+  return issues
+}
+
+/**
  * The paths each connection may be called on, judged as the build writes them
  * (dev/connection-paths.ts): a path the build cannot derive and the author did
  * not declare is an error naming the connection, an unused connection a warning.
@@ -629,7 +703,7 @@ export async function validateProject(root: string, pack: PackFolder): Promise<P
   const engineIssues: PackIssue[] = loaded
     ? engineRangeDiagnostics(loaded, engineVersion()).map((d) => ({ severity: 'error', code: d.code, message: d.message, ...(d.path ? { path: d.path } : {}) }))
     : []
-  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root, placedBlockWords(sources)), ...checkTitleTemplate(root), ...checkFavicon(root, pack), ...checkFontMetrics(root, pack), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...(loaded ? checkThemeBlocks(pack, sources) : []), ...checkThemeReach(pack), ...(loaded ? checkConnectionPaths(pack, sources) : []), ...fieldIssues]
+  const issues = [...result.issues, ...pinIssues, ...engineIssues, ...checkSeeds(root), ...checkEntities(root), ...checkAccess(root), ...checkMessages(root, placedBlockWords(sources)), ...checkTitleTemplate(root), ...checkFavicon(root, pack), ...checkFontMetrics(root, pack), ...checkReservedSources(root), ...checkStatusKeys(root), ...(loaded ? checkPages(loaded) : []), ...propIssues(sources), ...(loaded ? checkThemeBlocks(pack, sources) : []), ...checkThemeReach(pack), ...(loaded ? checkConnectionPaths(pack, sources) : []), ...(loaded ? checkThemeNames(loaded) : []), ...fieldIssues]
   return { ...result, issues, ok: !issues.some((i) => i.severity === 'error') }
 }
 

@@ -81,6 +81,47 @@ describe('checkEntities', () => {
     const none = await project({ 'app/surfaces/home.receipt.json': receipt('Booking') })
     expect(codes(checkEntities(none))).toEqual(['ENTITY_UNDECLARED'])
   })
+
+  it('does not ask entities.json to declare a type a connection serves, but still asks for own records', async () => {
+    const sources = (...dataSources: unknown[]) => ({ blocks: [], capabilities: [{ capability: 'platform/persistence', config: { dataSources } }] })
+    const shop = { connections: [{ name: 'shop', connector: 'rest', config: { baseUrl: 'api.shop.test/v1' } }] }
+    const served = await project({
+      'app/definitions/connections.json': shop,
+      'app/surfaces/plans.receipt.json': sources({ id: 'orders', kind: 'entity', entityType: 'orders', connector: 'shop' }),
+    })
+    expect(checkEntities(served)).toEqual([])
+    const own = await project({
+      'app/definitions/connections.json': shop,
+      'app/surfaces/plans.receipt.json': sources(
+        { id: 'orders', kind: 'entity', entityType: 'orders', connector: 'shop' },
+        { id: 'notes', kind: 'entity', entityType: 'Note' },
+      ),
+    })
+    expect(checkEntities(own)).toEqual([
+      expect.objectContaining({ code: 'ENTITY_UNDECLARED', path: 'app/surfaces/plans.receipt.json', message: expect.stringContaining('"Note"') }),
+    ])
+  })
+
+  it('a connector no connection carries is CONNECTION_NOT_FOUND, naming it and the ones there are', async () => {
+    const sources = (...dataSources: unknown[]) => ({ blocks: [], capabilities: [{ capability: 'platform/persistence', config: { dataSources } }] })
+    const typo = await project({
+      'app/definitions/connections.json': { connections: [{ name: 'shop', connector: 'rest', config: {} }] },
+      'app/surfaces/plans.receipt.json': sources({ id: 'orders', kind: 'entity', entityType: 'orders', connector: 'shpo' }),
+    })
+    expect(checkEntities(typo)).toEqual([
+      expect.objectContaining({ code: 'CONNECTION_NOT_FOUND', path: 'app/surfaces/plans.receipt.json', message: expect.stringMatching(/"shpo".*"shop"/) }),
+    ])
+    const none = await project({
+      'app/surfaces/plans.receipt.json': sources({ id: 'orders', kind: 'entity', entityType: 'orders', connector: 'shop' }),
+    })
+    expect(codes(checkEntities(none))).toEqual(['CONNECTION_NOT_FOUND'])
+    // An unreadable connections.json is its own finding: names are not judged against it.
+    const broken = await project({
+      'app/definitions/connections.json': { connections: 'shop' },
+      'app/surfaces/plans.receipt.json': sources({ id: 'orders', kind: 'entity', entityType: 'orders', connector: 'shop' }),
+    })
+    expect(checkEntities(broken)).toEqual([])
+  })
 })
 
 describe('checkAccess', () => {

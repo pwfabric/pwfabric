@@ -155,14 +155,13 @@ describe('assemblePwapp', () => {
     )
     const pwpackPath = join(root, 'pwpack.json')
     const pwpack = JSON.parse(await readFile(pwpackPath, 'utf8')) as { app: { surfaceOrder: string[] } }
-    pwpack.app.surfaceOrder = ['home', 'night', 'same', 'lost']
+    pwpack.app.surfaceOrder = ['home', 'night', 'same']
     await writeFile(pwpackPath, JSON.stringify(pwpack))
     const home = JSON.parse(await readFile(join(root, 'app', 'surfaces', 'home.receipt.json'), 'utf8')) as Record<string, unknown>
     const page = async (key: string, appearance: unknown): Promise<void> =>
       writeFile(join(root, 'app', 'surfaces', `${key}.receipt.json`), JSON.stringify({ ...home, title: key, appearance }))
     await page('night', { use: 'theme-night' })
     await page('same', { use: 'theme-sand' })
-    await page('lost', { use: 'theme-ocean' })
 
     const r = await assemblePwapp(root, { cacheDir: null })
     expect(r.ok, codes(r).join()).toBe(true)
@@ -177,10 +176,6 @@ describe('assemblePwapp', () => {
     // The app's own theme named again (or no theme): the page wears the app's, accent override included.
     expect(served('same')['appearance']).toBeUndefined()
     expect(served('home')['appearance']).toBeUndefined()
-    // An unknown name: the diagnostic the app-level `use` gets, on the receipt; kept as written.
-    const lost = r.diagnostics.find((d) => d.code === 'THEME_NOT_FOUND')
-    expect(lost?.path).toBe('app/surfaces/lost.receipt.json')
-    expect(served('lost')['appearance']).toEqual({ use: 'theme-ocean' })
 
     // The document's ground under <html data-pw-page="night">, and on its surfaces (the app's palette
     // is written on [data-pw-surface] itself), light and dark; the app's stays first.
@@ -328,6 +323,26 @@ describe('assemblePwapp', () => {
     const fromPlan = await assemblePwapp(root, { cacheDir: null })
     expect(text(fromPlan.files.get('index.html'))).toContain('<meta name="description" content="A demo app." />')
     expect(text(fromPlan.files.get('index.html'))).toContain('<meta property="og:description" content="A demo app." />')
+  })
+
+  it('a theme no pack carries any more stops the build, naming it and the ones there are', async () => {
+    // As after a pack's next major removed a theme the app (or a page) still names.
+    for (const where of ['app', 'page'] as const) {
+      const root = await app()
+      if (where === 'app') {
+        await writeFile(join(root, 'app', 'definitions', 'appearance.json'), JSON.stringify({ use: 'theme-linen' }))
+      } else {
+        const home = JSON.parse(await readFile(join(root, 'app', 'surfaces', 'home.receipt.json'), 'utf8')) as Record<string, unknown>
+        await writeFile(join(root, 'app', 'surfaces', 'home.receipt.json'), JSON.stringify({ ...home, appearance: { use: 'theme-linen' } }))
+      }
+      const r = await assemblePwapp(root, { cacheDir: null })
+      expect(r.ok, where).toBe(false)
+      const lost = r.diagnostics.find((d) => d.code === 'THEME_NOT_FOUND')
+      expect(lost?.severity, where).toBe('error')
+      expect(lost?.message).toContain('"theme-linen"')
+      expect(lost?.message).toContain('"theme-sand"')
+      expect(lost?.path).toBe(where === 'app' ? 'app/definitions/appearance.json' : 'app/surfaces/home.receipt.json')
+    }
   })
 
   it('says which command fills a missing pack cache', async () => {

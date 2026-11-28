@@ -1,5 +1,9 @@
 # @pwfabric/contracts
 
+## 3.8.0
+
+- No changes; released with the other packages at 3.8.0.
+
 ## 3.7.0
 
 - Added: block look tokens. A block manifest declares its own look knobs in `definition.tokens` (`{ name, type, default, description }`; `color`, `length`, `number`, `fontWeight`, `lineHeight`); a theme sets them in `blocks.<block>.<token>` (dark in `darkTheme.blocks`), emitted as `--pw-<block>-<kebab-token>` and merged per block, per token (`blockTokenDescriptors`, `blockTokenValueProblem`, `blockTokenVars`, `mergeThemeBlocks`). A length carries a unit (a bare `0` is refused: it breaks inside `calc()`); a value that could leave its declaration (a backslash, an unbalanced bracket or quote) is never emitted; block and token names are checked and merged into null-prototype objects.
