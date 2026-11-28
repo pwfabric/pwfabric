@@ -1,5 +1,11 @@
 # @pwfabric/runtime
 
+## 3.8.0
+
+- Added: a declared engine’s `read.items` may be `$`, the answer itself, for an API that answers with a bare list; a leading `$.` is the same as none (`$.data` reads `data`).
+- Fixed: an answer with no list where `read.items` points is an error of the source, not an empty page: a scalar or an object there names what it found (and suggests `$` when the answer itself is a list). Nothing there — absent or `null` — is still no rows.
+- Fixed: the reference HTTP connector refuses an answer of the wrong shape (a list where one record is expected, a scalar anywhere) once, naming it, instead of retrying it as a failure; a list answer is accepted only by a list read that maps its rows. A mapper that throws is reported as the source’s error.
+
 ## 3.7.0
 
 - Added: a wrapper pinned by its style (`position: sticky | fixed`) carries `data-pw-position` from the first frame, for CSS and scripts.

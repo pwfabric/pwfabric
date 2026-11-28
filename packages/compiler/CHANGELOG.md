@@ -1,5 +1,9 @@
 # @pwfabric/compiler
 
+## 3.8.0
+
+- No changes; released with the other packages at 3.8.0.
+
 ## 3.7.0
 
 - No changes; released with the other packages at 3.7.0.

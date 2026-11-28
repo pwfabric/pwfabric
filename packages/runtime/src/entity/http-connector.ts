@@ -111,6 +111,10 @@ export interface HttpConnectorConfig {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
+/** A body a response mapper may read: an object, or a bare JSON array. */
+const isRecordOrList = (v: unknown): v is Record<string, unknown> | unknown[] =>
+  isRecord(v) || Array.isArray(v)
+
 /**
  * A query answer: an object whose `items` (when present) is an array and
  * whose `total`/`offset`/`limit` (when present) are numbers. Other members
@@ -208,14 +212,20 @@ export class HttpEntityConnector implements EntityConnector {
     const params = this.buildQueryParams(query)
     const fullUrl = params ? `${url}?${params}` : url
 
-    const result = await this.request('GET', fullUrl)
-    if (!result.success) return result
-
     // A vendor shape is mapped BEFORE the built-in schema runs — the mapper
     // exists precisely for bodies this schema would reject, so validating first
-    // would refuse the very responses it was added to accept.
+    // would refuse the very responses it was added to accept. That includes a
+    // bare JSON array (`GET /posts → [ {...} ]`): only a mapper can read one,
+    // so only a query with a mapper lets one through.
     if (this.config.responseMapper) {
-      const mapped = this.config.responseMapper(result.data)
+      const answer = await this.requestJson('GET', fullUrl, undefined, isRecordOrList, 'a JSON object or list')
+      if (!answer.success) return answer
+      let mapped: ReturnType<NonNullable<typeof this.config.responseMapper>>
+      try {
+        mapped = this.config.responseMapper(answer.data)
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) }
+      }
       const items = mapped.items as Record<string, unknown>[]
       const total = mapped.total ?? items.length
       const offset = query.pagination?.offset ?? 0
@@ -230,6 +240,9 @@ export class HttpEntityConnector implements EntityConnector {
         },
       }
     }
+
+    const result = await this.request('GET', fullUrl)
+    if (!result.success) return result
 
     const data = queryResponseOf(result.data)
     if (!data) {
@@ -386,6 +399,21 @@ export class HttpEntityConnector implements EntityConnector {
     url: string,
     body?: Record<string, unknown>
   ): Promise<ConnectorResult> {
+    return this.requestJson(method, url, body, isRecord, 'a JSON object')
+  }
+
+  /**
+   * One HTTP exchange with retries; `accepts` says which JSON bodies count as
+   * an answer (`expected` names them). A body of the wrong shape is the
+   * server's answer, not a passing failure: it is returned at once, never retried.
+   */
+  private async requestJson<T>(
+    method: string,
+    url: string,
+    body: Record<string, unknown> | undefined,
+    accepts: (json: unknown) => json is T,
+    expected: string
+  ): Promise<{ readonly success: true; readonly data: T } | Extract<ConnectorResult, { success: false }>> {
     const retryConfig = this.config.retry ?? DEFAULT_RETRY
     let lastError = ''
 
@@ -423,11 +451,14 @@ export class HttpEntityConnector implements EntityConnector {
         }
 
         if (method === 'DELETE' && response.status === 204) {
-          return { success: true, data: {} }
+          return { success: true, data: {} as T }
         }
 
         const jsonData: unknown = await response.json()
-        if (!isRecord(jsonData)) throw new Error('the answer is not a JSON object')
+        if (!accepts(jsonData)) {
+          const found = jsonData === null ? 'null' : Array.isArray(jsonData) ? 'a list' : `a ${typeof jsonData}`
+          return { success: false, error: `the answer is ${found}, not ${expected}` }
+        }
         return { success: true, data: jsonData }
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err)

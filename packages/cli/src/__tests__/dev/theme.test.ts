@@ -8,6 +8,8 @@ import {
   resolveAppearance,
   resolvePageAppearance,
   resolveThemeBases,
+  missingThemeMessage,
+  THEME_NOT_FOUND,
   THEME_BASE_CYCLE,
   THEME_BASE_NOT_FOUND,
   themeAtomOf,
@@ -141,13 +143,15 @@ describe('resolveAppearance', () => {
     expect(out).toEqual({ config: { theme: { colors: { primary: '#000' } }, darkTheme: { colors: { primary: '#fff' } } } })
     expect(appearanceConfigOf(out)).toEqual(out?.['config'])
   })
-  it('warns and keeps the name when no pack carries the theme', () => {
+  it('is an error, keeping the name, when no pack carries the theme', () => {
     const d: AssembleDiagnostic[] = []
     expect(resolveAppearance({ use: 'ocean' }, [zinc], d)).toEqual({ use: 'ocean' })
     expect(d[0]?.code).toBe('THEME_NOT_FOUND')
+    expect(d[0]?.severity).toBe('error')
     expect(d[0]?.message).toContain('theme-zinc')
     resolveAppearance({ use: 'ocean' }, [], d)
-    expect(d[1]?.message).toContain('known: none')
+    // With no pack theme, the runner's own (the foundation's kept themes) are still named.
+    expect(d[1]?.message).toContain('"theme-base"')
   })
   it('passes bare configurations through and ignores non-objects', () => {
     expect(resolveAppearance({ theme: { colors: {} } }, [], [])).toEqual({ theme: { colors: {} } })
@@ -277,5 +281,33 @@ describe('a theme’s own dark does not inherit its light block colours', () => 
   it('a dark that restates the colour keeps it (positive control)', () => {
     const css = buildThemeCss({ ...cfg, darkTheme: { colors: { ...cfg.darkTheme.colors, heading: '#ffffff' } } })
     expect(css.slice(css.indexOf(':root[data-pw-theme="dark"]'))).toMatch(/^[^}]*--pw-color-heading: #ffffff;/)
+  })
+})
+
+describe('a theme name nothing carries is an error, never a quiet fallback', () => {
+  const themes = [themeAtomOf('theme-zinc', { theme: {} }, 'pack')!, themeAtomOf('theme-paper', { theme: {} }, 'pack')!]
+  it('names the missing theme and the ones there are, and says what to do', () => {
+    const m = missingThemeMessage('theme-linen', themes)!
+    expect(m).toContain('"theme-linen"')
+    expect(m).toContain('"theme-zinc", "theme-paper"')
+    expect(m).toContain('extends')
+  })
+  it('a theme that exists, or "default", is no finding (positive control)', () => {
+    expect(missingThemeMessage('paper', themes)).toBeUndefined()
+    expect(missingThemeMessage('default', themes)).toBeUndefined()
+  })
+  it('resolveAppearance reports it as an error', () => {
+    const d: AssembleDiagnostic[] = []
+    resolveAppearance({ use: 'theme-midnight' }, themes, d)
+    expect(d.map((x) => [x.code, x.severity])).toEqual([[THEME_NOT_FOUND, 'error']])
+  })
+})
+
+describe("the runner's presets are themes too, and only they", () => {
+  it('a kept foundation theme draws from the preset with no pack: no finding', () => {
+    for (const use of ['theme-base', 'zinc', 'appearance-paper', ' theme-ember ']) expect(missingThemeMessage(use, []), use).toBeUndefined()
+  })
+  it('a removed theme, or an object key, is still missing', () => {
+    for (const use of ['theme-linen', 'slate', 'midnight', 'toString', 'constructor']) expect(missingThemeMessage(use, []), use).toContain(`"${use}"`)
   })
 })

@@ -1,5 +1,9 @@
 # @pwfabric/pack
 
+## 3.8.0
+
+- No changes; released with the other packages at 3.8.0.
+
 ## 3.7.0
 
 - Added: `checkThemeBlocks` — a theme’s `blocks` judged against the blocks’ manifests: `THEME_BLOCK_UNKNOWN`, `THEME_BLOCK_TOKEN_UNKNOWN` (with the nearest name), `THEME_BLOCK_TOKEN_TYPE`, `THEME_BLOCK_TOKEN_NO_DARK`. Warnings.

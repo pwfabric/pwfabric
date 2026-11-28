@@ -311,6 +311,110 @@ describe('createDeclaredConnector', () => {
     expect(res.result.items).toEqual([{ id: 7, ad: 'Kalem', fiyat: 12 }])
   })
 
+  describe('read.items "$" — the response itself is the list', () => {
+    function restAnswering(body: unknown, itemsPath: string) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) => {
+          calls.push({ url: String(url), method: 'GET' })
+          return { ok: true, status: 200, json: async () => body } as unknown as Response
+        })
+      )
+      return createDeclaredConnector({
+        name: 'rest',
+        declaration: {
+          host: '{baseUrl}',
+          path: '/{entityType}',
+          auth: { type: 'none' as const },
+          read: { items: '{itemsPath}', id: '{idField}', flatten: '*' },
+        } as never,
+        config: { baseUrl: 'api.example.com', itemsPath, idField: 'postId' },
+        getAccessToken: async () => null,
+      })
+    }
+
+    it('reads a bare-array response with "$", taking the id from each element', async () => {
+      const rest = restAnswering(
+        [
+          { postId: 1, title: 'a' },
+          { postId: 2, title: 'b' },
+        ],
+        '$'
+      )
+      const res = await rest.query('posts' as EntityTypeId, {})
+      expect(res.success).toBe(true)
+      if (!res.success) return
+      expect(res.result.items).toEqual([
+        { id: 1, postId: 1, title: 'a' },
+        { id: 2, postId: 2, title: 'b' },
+      ])
+    })
+
+    it('a wrapped list still reads through its dotted path', async () => {
+      const rest = restAnswering({ payload: { rows: [{ postId: 9, title: 'z' }] } }, 'payload.rows')
+      const res = await rest.query('posts' as EntityTypeId, {})
+      expect(res.success).toBe(true)
+      if (!res.success) return
+      expect(res.result.items).toEqual([{ id: 9, postId: 9, title: 'z' }])
+    })
+
+    it('nothing at the path is still an empty list, not an error', async () => {
+      const rest = restAnswering({ other: 1 }, 'data')
+      const res = await rest.query('posts' as EntityTypeId, {})
+      expect(res.success).toBe(true)
+      if (!res.success) return
+      expect(res.result.items).toEqual([])
+    })
+
+    it('a non-list at the path is an error naming the path and what it found', async () => {
+      const rest = restAnswering({ data: { postId: 1 } }, 'data')
+      const res = await rest.query('posts' as EntityTypeId, {})
+      expect(res.success).toBe(false)
+      if (res.success) return
+      expect(res.error).toContain('"data"')
+      expect(res.error).toContain('an object')
+      expect(res.error).not.toContain('"$"')
+    })
+
+    it('a bare-array response read through a dotted path is an error with the "$" hint', async () => {
+      const rest = restAnswering([{ postId: 1 }], 'data')
+      const res = await rest.query('posts' as EntityTypeId, {})
+      expect(res.success).toBe(false)
+      if (res.success) return
+      expect(res.error).toContain('"data"')
+      expect(res.error).toContain('"$"')
+    })
+
+    it('"$" on an object response is an error, never a guess at a key', async () => {
+      const rest = restAnswering({ data: [{ postId: 1 }] }, '$')
+      const res = await rest.query('posts' as EntityTypeId, {})
+      expect(res.success).toBe(false)
+      if (res.success) return
+      expect(res.error).toContain('"$"')
+      expect(res.error).toContain('an object')
+    })
+
+    it('"$.payload.rows" reads like "payload.rows" (JSONPath root), never a silent empty list', async () => {
+      const rest = restAnswering({ payload: { rows: [{ postId: 4, title: 'q' }] } }, '$.payload.rows')
+      const res = await rest.query('posts' as EntityTypeId, {})
+      expect(res.success).toBe(true)
+      if (!res.success) return
+      expect(res.result.items).toEqual([{ id: 4, postId: 4, title: 'q' }])
+    })
+
+    it('a null or scalar answer is refused at once, named, and not retried', async () => {
+      for (const body of [null, 'ok', 3]) {
+        calls.length = 0
+        const rest = restAnswering(body, '$')
+        const res = await rest.query('posts' as EntityTypeId, {})
+        expect(res.success, String(body)).toBe(false)
+        if (res.success) continue
+        expect(res.error).toContain('not a JSON object or list')
+        expect(calls).toHaveLength(1)
+      }
+    })
+  })
+
   it('leaves graph-lists untouched — a literal read path fills to itself', async () => {
     // The whole change is additive on exactly this evidence: `fill()` on a
     // string with no `{name}` in it returns that string. If this test moves,
